@@ -1207,6 +1207,8 @@ body {
 .nav-pane-remove-btn:hover { color: var(--accent-danger); }
 .nav-pane-empty { padding: 1rem 0.75rem; font-size: 0.82rem; color: var(--accent-gray); }
 .admin-jobs-server-time { font-size: 0.8rem; color: var(--accent-gray); margin-bottom: 0.75rem; }
+.admin-deleted-path { font-family: monospace; font-size: 0.8rem; word-break: break-all; }
+.admin-deleted-date { white-space: nowrap; font-size: 0.82rem; color: var(--accent-gray); }
 
 /* ── Page Chat Panel ────────────────────────────────────────────────────────── */
 .page-chat-panel {

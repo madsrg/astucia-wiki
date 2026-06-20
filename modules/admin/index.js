@@ -51,6 +51,7 @@ const switchTab = (name) => {
     document.getElementById('admin-footer-ai')?.classList.toggle('hidden',           name !== 'ai');
     document.getElementById('admin-footer-api')?.classList.toggle('hidden',           name !== 'api');
     document.getElementById('admin-footer-jobs')?.classList.toggle('hidden',         name !== 'jobs');
+    document.getElementById('admin-footer-deleted')?.classList.toggle('hidden',      name !== 'deleted');
     if (name === 'logs')        loadLogFiles();
     if (name === 'requests')    loadRequests();
     if (name === 'errorlog')    loadErrorLogFiles();
@@ -58,6 +59,7 @@ const switchTab = (name) => {
     if (name === 'ai')          loadAiUsers();
     if (name === 'api')         loadApiAccounts();
     if (name === 'jobs')        loadAgentJobs();
+    if (name === 'deleted')     loadDeletedPages();
 };
 
 // ── Users tab ─────────────────────────────────────────────────────────────────
@@ -1314,6 +1316,76 @@ const deleteJob = async (job) => {
     if (result.success) {
         await loadAgentJobs();
     }
+};
+
+// ── Deleted Pages tab ─────────────────────────────────────────────────────────
+
+const loadDeletedPages = async () => {
+    const container = document.getElementById('admin-deleted-list');
+    const countEl   = document.getElementById('admin-deleted-count');
+    if (!container) return;
+    container.innerHTML = `<p class="admin-empty">${t('admin.deleted.loading')}</p>`;
+
+    const res = await api.call('git_deleted_files');
+    if (!res.success) {
+        container.innerHTML = `<p class="admin-empty">${t('admin.deleted.failed')}</p>`;
+        return;
+    }
+    const items = res.data || [];
+    if (countEl) countEl.textContent = t('admin.deleted.count', { n: items.length });
+
+    if (!items.length) {
+        container.innerHTML = `<p class="admin-empty">${t('admin.deleted.none')}</p>`;
+        return;
+    }
+
+    container.innerHTML = '';
+    const table = document.createElement('table');
+    table.className = 'admin-table';
+    table.innerHTML = `<thead><tr>
+        <th>${t('admin.deleted.col-path')}</th>
+        <th>${t('admin.deleted.col-deleted')}</th>
+        <th>${t('admin.deleted.col-by')}</th>
+        <th>${t('admin.deleted.col-commit')}</th>
+        <th></th>
+    </tr></thead>`;
+    const tbody = document.createElement('tbody');
+
+    items.forEach(item => {
+        const tr = document.createElement('tr');
+        const date = new Date(item.timestamp * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+        tr.innerHTML = `
+            <td class="admin-deleted-path">${escHtml(item.path)}</td>
+            <td class="admin-deleted-date">${escHtml(date)}</td>
+            <td>${escHtml(item.author)}</td>
+            <td><code title="${escHtml(item.message)}">${escHtml(item.short_hash)}</code></td>
+            <td></td>
+        `;
+        const restoreBtn = document.createElement('button');
+        restoreBtn.className = 'btn btn-sm btn-secondary';
+        restoreBtn.textContent = t('admin.deleted.restore-btn');
+        restoreBtn.addEventListener('click', async () => {
+            const confirmed = await confirmModal(
+                t('admin.deleted.restore-confirm', { path: item.path }),
+                { confirmLabel: t('admin.deleted.restore-btn'), icon: null }
+            );
+            if (!confirmed) return;
+            restoreBtn.disabled = true;
+            const r = await api.call('git_restore_deleted', { file: item.path, hash: item.hash }, 'POST');
+            if (r.success) {
+                showToast(t('admin.deleted.restore-done', { path: item.path }), 'success');
+                loadDeletedPages();
+            } else {
+                showToast(r.message || t('admin.deleted.restore-failed'), 'error');
+                restoreBtn.disabled = false;
+            }
+        });
+        tr.lastElementChild.appendChild(restoreBtn);
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────

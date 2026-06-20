@@ -562,7 +562,8 @@ if (isset($_REQUEST['action'])) {
                       'admin_delete_ai_user', 'admin_regenerate_ai_token',
                       'admin_get_api_accounts', 'admin_save_api_account',
                       'admin_delete_api_account', 'admin_regenerate_api_token',
-                      'admin_get_agent_jobs', 'admin_save_agent_job', 'admin_delete_agent_job', 'admin_run_agent_job'];
+                      'admin_get_agent_jobs', 'admin_save_agent_job', 'admin_delete_agent_job', 'admin_run_agent_job',
+                      'git_deleted_files', 'git_restore_deleted'];
     $requested_action = $_REQUEST['action'];
     $current_role     = get_current_role();
 
@@ -2187,6 +2188,66 @@ if (isset($_REQUEST['action'])) {
                     );
                 }
                 echo json_encode(['success' => true, 'diff' => $git_diff_res['output']]);
+                break;
+
+            case 'git_deleted_files':
+                $gdf_root = find_git_root();
+                if (!$gdf_root) { echo json_encode(['success' => true, 'data' => []]); break; }
+                $gdf_result = git_run(
+                    ['log', '--diff-filter=D', '--name-only', '--format=COMMIT:%H' . "\x1F" . '%at' . "\x1F" . '%an' . "\x1F" . '%s'],
+                    $gdf_root['root']
+                );
+                $deleted_files = [];
+                $gdf_cur       = null;
+                $gdf_prefix    = $gdf_root['prefix'];
+                $gdf_pages     = rtrim(PAGES_DIR, '/');
+                foreach (explode("\n", $gdf_result['output']) as $raw) {
+                    $line = trim($raw);
+                    if (!$line) continue;
+                    if (str_starts_with($line, 'COMMIT:')) {
+                        $parts = explode("\x1F", substr($line, 7), 4);
+                        $gdf_cur = count($parts) >= 3 ? [
+                            'hash'       => trim($parts[0]),
+                            'short_hash' => substr(trim($parts[0]), 0, 8),
+                            'timestamp'  => (int)trim($parts[1]),
+                            'author'     => trim($parts[2]),
+                            'message'    => trim($parts[3] ?? ''),
+                        ] : null;
+                    } elseif ($gdf_cur) {
+                        if ($gdf_prefix !== '' && !str_starts_with($line, $gdf_prefix)) continue;
+                        $rel = $gdf_prefix ? substr($line, strlen($gdf_prefix)) : $line;
+                        if (!preg_match('/\.(md|drawio|list|chat)$/', $rel)) continue;
+                        if (file_exists($gdf_pages . '/' . $rel)) continue;
+                        if (array_search($rel, array_column($deleted_files, 'path')) === false) {
+                            $deleted_files[] = array_merge(['path' => $rel], $gdf_cur);
+                        }
+                    }
+                }
+                echo json_encode(['success' => true, 'data' => $deleted_files]);
+                break;
+
+            case 'git_restore_deleted':
+                $grd_hash = preg_replace('/[^a-f0-9]/i', '', $_POST['hash'] ?? '');
+                $grd_rel  = ltrim(str_replace('..', '', $_POST['file'] ?? ''), '/');
+                if (strlen($grd_hash) < 7 || !$grd_rel) throw new Exception('Invalid parameters.');
+                $grd_root = find_git_root();
+                if (!$grd_root) throw new Exception('No git repository found.');
+                $grd_gitpath = $grd_root['prefix'] . $grd_rel;
+                // Restore from the commit just before the deletion
+                $grd_show = git_run(['show', $grd_hash . '^:' . $grd_gitpath], $grd_root['root']);
+                if ($grd_show['code'] !== 0) throw new Exception('Could not retrieve file from git history.');
+                $grd_dest = sanitize_path($grd_rel);
+                if (!$grd_dest) throw new Exception('Invalid file path.');
+                $grd_dir = dirname($grd_dest);
+                if (!is_dir($grd_dir)) mkdir($grd_dir, 0777, true);
+                if (file_put_contents($grd_dest, $grd_show['output']) === false) throw new Exception('Could not write file.');
+                $indexer->addPage($grd_dest);
+                $grd_actor = get_current_actor();
+                $grd_name  = $grd_actor['name'] ?? 'Wiki';
+                $grd_email = (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost';
+                echo json_encode(['success' => true]);
+                if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+                git_auto_commit($grd_dest, $grd_name, $grd_email, 'Restore deleted ' . basename($grd_rel));
                 break;
 
             case 'tree_mtime':

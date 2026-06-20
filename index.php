@@ -890,6 +890,7 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
                     <button class="admin-tab" data-tab="ai" data-i18n="admin.tab.ai">AI Users</button>
                     <button class="admin-tab" data-tab="api" data-i18n="admin.tab.api">API Accounts</button>
                     <button class="admin-tab" data-tab="jobs" data-i18n="admin.tab.jobs">Agent Jobs</button>
+                    <button class="admin-tab" data-tab="deleted" data-i18n="admin.tab.deleted">Deleted Pages</button>
                 </div>
             </div>
 
@@ -937,6 +938,11 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
             <!-- Agent Jobs pane -->
             <div id="admin-pane-jobs" class="admin-pane hidden">
                 <div id="admin-jobs-list" class="admin-scroll-area"></div>
+            </div>
+
+            <!-- Deleted Pages pane -->
+            <div id="admin-pane-deleted" class="admin-pane hidden">
+                <div id="admin-deleted-list" class="admin-scroll-area"></div>
             </div>
 
             <!-- Diagnostics pane -->
@@ -995,6 +1001,9 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
                 </div>
                 <div id="admin-footer-jobs" class="admin-footer-pane hidden">
                     <button id="admin-jobs-add-btn" class="btn btn-blue btn-sm" data-i18n="admin.jobs.add-btn">+ New Agent Job</button>
+                </div>
+                <div id="admin-footer-deleted" class="admin-footer-pane hidden">
+                    <span id="admin-deleted-count" class="admin-log-count"></span>
                 </div>
             </div>
         </div>
