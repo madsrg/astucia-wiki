@@ -513,4 +513,15 @@ export default {
 
     // Language selector
     'lang.title':     'Language',
+
+    // Page chat panel
+    'page-chat.open-btn':      'Page Chat',
+    'page-chat.panel-title':   'Page Chat',
+    'page-chat.create-title':  'Create Page Chat',
+    'page-chat.create-hint':   'When you mention an AI user in this chat, the linked page content is automatically used as context for its reply.',
+    'page-chat.create-confirm':'Create Chat',
+    'page-chat.load-failed':   'Could not load chat.',
+    'page-chat.create-failed': 'Could not create chat.',
+    'page-chat.send-failed':   'Failed to send message.',
+    'page-chat.page-updated':  'Page updated',
 };

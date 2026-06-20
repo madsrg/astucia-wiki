@@ -36,6 +36,7 @@ import { init as initSession } from './modules/session/index.js';
 import { init as initGit, checkSpaceGit } from './modules/git/index.js';
 import { init as initNav } from './modules/nav/index.js';
 import { init as initToc } from './modules/toc/index.js';
+import { init as initPageChat } from './modules/page_chat/index.js';
 import { api } from './modules/core/api.js';
 import { state } from './modules/core/state.js';
 
@@ -139,6 +140,7 @@ const init = async () => {
     initMentions();
     initSession();
     initToc();
+    initPageChat();
     initNav({
         onNavigate: async (id, space) => {
             if (space && space !== state.currentSpace) {

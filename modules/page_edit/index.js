@@ -37,8 +37,17 @@ export const setEditingMode = async (editing) => {
     const showAttachments = !editing && state.currentPageType === 'file';
     tagsContainer.classList.toggle('hidden', editing);
     attachmentsSection.classList.toggle('hidden', !showAttachments);
-    if (pageMetaRow) pageMetaRow.classList.toggle('hidden', editing);
+    if (pageMetaRow) pageMetaRow.classList.toggle('hidden', editing || !!state.pageChatPath);
     pageActionsGroup.classList.toggle('hidden', editing);
+
+    const pageChatBtn = document.getElementById('page-chat-btn');
+    if (pageChatBtn) {
+        const showChat = !editing && state.currentPageType === 'file';
+        pageChatBtn.classList.toggle('hidden', !showChat);
+    }
+    if (editing && state.pageChatPath) {
+        import('../page_chat/index.js').then(m => m.closePanel());
+    }
 
     if (editing) {
         editBtn.classList.add('hidden');

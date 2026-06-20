@@ -358,6 +358,17 @@ if (isset($_REQUEST['action'])) {
             . "When calling wiki_write_page you MUST include the complete markdown content in the \"content\" field in the same tool call — never call it with an empty or missing content field. "
             . "When the user asks you to create or modify wiki content, call the appropriate tool immediately — do not describe what you are about to do before doing it. "
             . "Only invoke tools when the user's request actually requires wiki content.\n\n";
+        // If a .md page with the same name exists in the same folder, inject its content as context
+        $linked_md       = dirname($chat_file) . '/' . $chat_name . '.md';
+        $pages_dir_real  = realpath(rtrim(PAGES_DIR, '/'));
+        if (file_exists($linked_md) && $pages_dir_real !== false && strpos(realpath($linked_md), $pages_dir_real) === 0) {
+            $page_content = file_get_contents($linked_md);
+            $wiki_ctx .= "The following is the current content of the wiki page \"{$chat_name}\" that this chat is attached to. "
+                      . "Use it as context when answering questions:\n\n```markdown\n"
+                      . $page_content
+                      . "\n```\n\n";
+        }
+
         $full_system = $wiki_ctx . $system_prompt;
 
         $tools  = get_wiki_tools($provider);
@@ -569,6 +580,16 @@ if (isset($_REQUEST['action'])) {
             case 'ping':
                 // Lightweight heartbeat — keeps the session alive, returns nothing else.
                 echo json_encode(['success' => true]);
+                break;
+
+            case 'exists':
+                $exists_path = sanitize_path($_GET['file'] ?? '');
+                echo json_encode(['success' => true, 'exists' => $exists_path !== '' && file_exists($exists_path) && is_file($exists_path)]);
+                break;
+
+            case 'file_mtime':
+                $mtime_path = sanitize_path($_GET['file'] ?? '');
+                echo json_encode(['success' => true, 'mtime' => ($mtime_path !== '' && file_exists($mtime_path)) ? (int)filemtime($mtime_path) : 0]);
                 break;
 
             case 'api_schema':

@@ -247,6 +247,7 @@ export const init = ({ onLoadPage, onGenerateTagCloud }) => {
             document.getElementById('page-id-display').classList.add('hidden');
             document.getElementById('edit-btn').classList.add('hidden');
             document.getElementById('diagram-edit-btn').classList.add('hidden');
+            document.getElementById('page-chat-btn')?.classList.add('hidden');
             document.getElementById('editor-mode-group')?.classList.add('hidden');
             document.getElementById('page-actions-group').classList.remove('hidden');
             document.getElementById('copy-btn').classList.add('hidden');

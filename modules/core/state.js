@@ -24,4 +24,5 @@ export const state = {
     inlineBlocks: [],
     lastApiCallTime: Date.now(),
     currentSpaceHasGit: false,
+    pageChatPath: null,
 };

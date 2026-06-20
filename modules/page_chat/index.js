@@ -1,0 +1,439 @@
+import { api } from '../core/api.js';
+import { state } from '../core/state.js';
+import { showToast, confirmModal } from '../core/utils.js';
+import { getUsers } from '../core/users.js';
+import { t } from '../i18n/index.js';
+
+const POLL_MS = 5000;
+const EMOJIS  = ['😀','😂','😍','🤔','😢','😮','😡','👍','👎','👋','🙏','❤️','🎉','🔥','✅','❌','⭐','💡','🚀','📝','🎯','👀','💬','🤝'];
+
+let _pollTimer      = null;
+let _lastMtime      = 0;
+let _linkedMdMtime  = 0;
+let _pcData         = null;
+let _pcPath         = null; // path currently loaded in the panel
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const avatarColor = uid => {
+    const p = ['#4a90d9','#7c3aed','#059669','#d97706','#dc2626','#0891b2','#9333ea','#b45309'];
+    return p[(uid ?? 0) % p.length];
+};
+
+const formatTime = ts => {
+    const d = new Date(ts), now = new Date();
+    if (d.toDateString() === now.toDateString())
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' '
+         + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const renderText = raw => esc(raw).replace(/#(\S+)/g, '<span class="chat-mention">#$1</span>');
+
+const isNearBottom = el => el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+
+// ── Row builder ───────────────────────────────────────────────────────────────
+
+const buildRow = (msg, grouped) => {
+    const currentUid  = window.WIKI_USER_UID ?? -1;
+    const currentRole = window.WIKI_ROLE || '';
+    const isMe = msg.uid === currentUid;
+
+    const row = document.createElement('div');
+    row.className = 'chat-row pc-row' + (isMe ? ' chat-row-mine' : '');
+    row.dataset.id = msg.id;
+
+    const avatarEl = document.createElement('div');
+    if (!grouped) {
+        avatarEl.className = 'chat-avatar pc-avatar';
+        avatarEl.textContent = (msg.name || '?')[0].toUpperCase();
+        avatarEl.style.background = avatarColor(msg.uid);
+    } else {
+        avatarEl.className = 'chat-avatar-gap';
+    }
+    row.appendChild(avatarEl);
+
+    const col = document.createElement('div');
+    col.className = 'chat-col';
+
+    if (!grouped) {
+        const meta = document.createElement('div');
+        meta.className = 'chat-meta';
+        meta.innerHTML = `<span class="chat-name">${esc(msg.name)}</span><span class="chat-time">${formatTime(msg.timestamp)}</span>`;
+        col.appendChild(meta);
+    }
+
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble' + (isMe ? ' chat-bubble-mine' : '');
+
+    if (msg.pending) {
+        const age = Date.now() - new Date(msg.timestamp).getTime();
+        const TIMEOUT_MS = 90_000;
+        if (age >= TIMEOUT_MS) {
+            bubble.innerHTML = `<span class="chat-pending-timeout">${t('chat.timeout')}</span>`;
+        } else {
+            bubble.innerHTML = `<span class="chat-pending-indicator"><span class="chat-spinner"></span>${t('chat.working')}</span>`;
+            const capturedPath = _pcPath;
+            setTimeout(() => {
+                if (_pcPath === capturedPath && _pcData) renderMessages(_pcData.messages || [], false);
+            }, TIMEOUT_MS - age + 500);
+        }
+        col.appendChild(bubble);
+        row.appendChild(col);
+        return row;
+    }
+
+    bubble.innerHTML = renderText(msg.text);
+
+    if (isMe || currentRole === 'admin') {
+        const del = document.createElement('button');
+        del.className = 'chat-del-btn';
+        del.title = t('chat.delete-title');
+        del.innerHTML = '&times;';
+        del.addEventListener('click', async () => {
+            const ok = await confirmModal(t('chat.delete-confirm'), { confirmLabel: t('btn.delete'), dangerous: true });
+            if (!ok) return;
+            const res = await api.call('delete_chat_message', { file: _pcPath, id: msg.id }, 'POST');
+            if (res.success) {
+                _pcData = res.data;
+                renderMessages(_pcData.messages || [], false);
+            } else {
+                showToast(res.message || 'Failed to delete', 'error');
+            }
+        });
+        bubble.appendChild(del);
+    }
+
+    col.appendChild(bubble);
+    row.appendChild(col);
+    return row;
+};
+
+// ── Render ────────────────────────────────────────────────────────────────────
+
+const renderMessages = (messages, scrollToBottom = true) => {
+    const container = document.getElementById('pc-messages');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!messages.length) {
+        container.innerHTML = `<p class="chat-empty">${t('chat.empty')}</p>`;
+        return;
+    }
+    let prevUid = null;
+    messages.forEach(msg => {
+        container.appendChild(buildRow(msg, msg.uid === prevUid));
+        prevUid = msg.uid;
+    });
+    if (scrollToBottom) container.scrollTop = container.scrollHeight;
+};
+
+const appendMessages = (newMsgs, prevUid) => {
+    const container = document.getElementById('pc-messages');
+    if (!container) return;
+    const placeholder = container.querySelector('.chat-empty');
+    if (placeholder) placeholder.remove();
+    const shouldScroll = isNearBottom(container);
+    newMsgs.forEach(msg => {
+        container.appendChild(buildRow(msg, msg.uid === prevUid));
+        prevUid = msg.uid;
+    });
+    if (shouldScroll) container.scrollTop = container.scrollHeight;
+};
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+
+const stopPoll = () => {
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+};
+
+const startPoll = (path, initialMtime = 0) => {
+    _lastMtime = initialMtime;
+    stopPoll();
+    const linkedMd = path.replace(/\.chat$/, '.md');
+    _pollTimer = setInterval(async () => {
+        if (_pcPath !== path) { stopPoll(); return; }
+        const msgs  = _pcData?.messages || [];
+        const maxId = msgs.length ? msgs[msgs.length - 1].id : 0;
+        const res   = await api.call('chat_messages', { file: path, since_id: maxId });
+        if (!res.success) return;
+        const newMsgs = res.messages || [];
+        if (newMsgs.length) {
+            _lastMtime = res.mtime || _lastMtime;
+            const prevUid = msgs.length ? msgs[msgs.length - 1].uid : null;
+            _pcData = { ..._pcData, messages: [...msgs, ...newMsgs] };
+            appendMessages(newMsgs, prevUid);
+        } else if ((res.mtime || 0) > _lastMtime) {
+            _lastMtime = res.mtime;
+            const full = await api.call('get', { file: path });
+            if (!full.success) return;
+            try {
+                const fullData = JSON.parse(full.data);
+                _pcData = fullData;
+                renderMessages(fullData.messages || [], false);
+            } catch { /* ignore parse errors */ }
+        }
+        // Check if the linked .md page was updated by the AI and refresh if so
+        const mtRes = await api.call('file_mtime', { file: linkedMd });
+        if (mtRes.success && mtRes.mtime > _linkedMdMtime) {
+            _linkedMdMtime = mtRes.mtime;
+            const pageView = await import('../page_view/index.js');
+            await pageView.refreshPageContent();
+            showToast(t('page-chat.page-updated'), 'info');
+        }
+    }, POLL_MS);
+};
+
+// ── Input / send ──────────────────────────────────────────────────────────────
+
+const autoResize = el => {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+};
+
+const doSend = async () => {
+    const textarea = document.getElementById('pc-input');
+    const sendBtn  = document.getElementById('pc-send-btn');
+    if (!textarea || !sendBtn || !_pcPath) return;
+    const text = textarea.value.trim();
+    if (!text) return;
+
+    sendBtn.disabled = true;
+    const res = await api.call('post_chat_message', { file: _pcPath, text }, 'POST');
+    sendBtn.disabled = false;
+
+    if (res && res.success) {
+        textarea.value = '';
+        autoResize(textarea);
+        _pcData = res.data;
+        renderMessages(_pcData.messages || [], true);
+    } else {
+        if (res) showToast(res.message || t('page-chat.send-failed'), 'error');
+    }
+};
+
+const setupInput = () => {
+    const textarea   = document.getElementById('pc-input');
+    const sendBtn    = document.getElementById('pc-send-btn');
+    const mentionPop = document.getElementById('pc-mention-popup');
+    const emojiBtn   = document.getElementById('pc-emoji-btn');
+    const emojiPicker = document.getElementById('pc-emoji-picker');
+    if (!textarea || !sendBtn || !mentionPop) return;
+
+    if (emojiBtn && emojiPicker) {
+        EMOJIS.forEach(e => {
+            const btn = document.createElement('button');
+            btn.className = 'chat-emoji-item';
+            btn.textContent = e;
+            btn.addEventListener('click', () => {
+                const p = textarea.selectionStart;
+                textarea.value = textarea.value.slice(0, p) + e + textarea.value.slice(p);
+                textarea.selectionStart = textarea.selectionEnd = p + e.length;
+                textarea.focus();
+                emojiPicker.classList.add('hidden');
+                autoResize(textarea);
+            });
+            emojiPicker.appendChild(btn);
+        });
+        emojiBtn.addEventListener('click', ev => { ev.stopPropagation(); emojiPicker.classList.toggle('hidden'); });
+        document.addEventListener('click', ev => {
+            if (!emojiPicker.contains(ev.target) && ev.target !== emojiBtn) emojiPicker.classList.add('hidden');
+        });
+    }
+
+    let mentionStart = -1, selectedIdx = -1;
+    const getItems = () => Array.from(mentionPop.querySelectorAll('.chat-mention-item'));
+    const closePop = () => { mentionPop.classList.add('hidden'); mentionStart = -1; selectedIdx = -1; };
+    const setSelected = idx => {
+        getItems().forEach((el, i) => el.classList.toggle('chat-mention-item-active', i === idx));
+        selectedIdx = idx;
+    };
+
+    textarea.addEventListener('input', async () => {
+        autoResize(textarea);
+        const val = textarea.value, pos = textarea.selectionStart;
+        let start = pos - 1;
+        while (start >= 0 && val[start] !== '#' && val[start] !== ' ' && val[start] !== '\n') start--;
+        if (start < 0 || val[start] !== '#') { closePop(); return; }
+        mentionStart = start;
+        const query   = val.slice(start + 1, pos).toLowerCase();
+        const matches = (await getUsers()).filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
+        if (!matches.length) { closePop(); return; }
+        selectedIdx = -1;
+        mentionPop.innerHTML = '';
+        matches.forEach(u => {
+            const item = document.createElement('div');
+            item.className = 'chat-mention-item';
+            item.textContent = '#' + u.name;
+            item.addEventListener('mousedown', e => {
+                e.preventDefault();
+                const curPos = textarea.selectionStart;
+                const insert = '#' + u.name + ' ';
+                textarea.value = textarea.value.slice(0, mentionStart) + insert + textarea.value.slice(curPos);
+                textarea.selectionStart = textarea.selectionEnd = mentionStart + insert.length;
+                closePop();
+            });
+            mentionPop.appendChild(item);
+        });
+        mentionPop.classList.remove('hidden');
+    });
+
+    textarea.addEventListener('blur', () => setTimeout(closePop, 150));
+    textarea.addEventListener('keydown', e => {
+        if (!mentionPop.classList.contains('hidden')) {
+            const items = getItems();
+            if (e.key === 'ArrowDown') { e.preventDefault(); setSelected(Math.min(selectedIdx + 1, items.length - 1)); return; }
+            if (e.key === 'ArrowUp')   { e.preventDefault(); setSelected(Math.max(selectedIdx - 1, 0)); return; }
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const active = selectedIdx >= 0 ? items[selectedIdx] : items[0];
+                if (active) active.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                return;
+            }
+            if (e.key === 'Escape') { closePop(); return; }
+        }
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
+    });
+
+    sendBtn.addEventListener('click', doSend);
+};
+
+// ── Panel open/close ──────────────────────────────────────────────────────────
+
+export const closePanel = () => {
+    stopPoll();
+    _pcPath = null;
+    _linkedMdMtime = 0;
+    state.pageChatPath = null;
+    const panel = document.getElementById('page-chat-panel');
+    if (panel) panel.classList.remove('open');
+    _updateChatBtnState(false);
+    document.getElementById('pc-page-input-area')?.classList.add('hidden');
+    // Restore meta row when closing on an md page that isn't in edit mode
+    if (state.currentPagePath?.endsWith('.md') && !state.isEditing) {
+        document.getElementById('page-meta-row')?.classList.remove('hidden');
+    }
+};
+
+const _updateChatBtnState = (isOpen) => {
+    const btn = document.getElementById('page-chat-btn');
+    if (btn) btn.classList.toggle('toc-btn-active', isOpen);
+};
+
+const _expandSidebarIfCollapsed = () => {
+    const container = document.querySelector('.app-container');
+    if (!container?.classList.contains('sidebar-collapsed')) return 0;
+    const btn = document.getElementById('sidebar-toggle-btn');
+    container.classList.remove('sidebar-collapsed');
+    if (btn) {
+        btn.innerHTML = '&#x2039;';
+        btn.title = t('nav.collapse');
+    }
+    localStorage.setItem('sidebarCollapsed', 'false');
+    return 220; // ms — sidebar CSS transition is 0.2s
+};
+
+const _matchSidebarWidth = () => {
+    const sidebar = document.querySelector('.sidebar');
+    const panel   = document.getElementById('page-chat-panel');
+    if (sidebar && panel) panel.style.width = sidebar.offsetWidth + 'px';
+};
+
+const loadAndOpen = async (chatPath) => {
+    const delay = _expandSidebarIfCollapsed();
+    if (delay) await new Promise(r => setTimeout(r, delay));
+    _matchSidebarWidth();
+
+    _pcPath = chatPath;
+    state.pageChatPath = chatPath;
+
+    // Snapshot the linked .md mtime so we only react to changes made after the panel opens
+    const linkedMd = chatPath.replace(/\.chat$/, '.md');
+    const mtRes = await api.call('file_mtime', { file: linkedMd });
+    _linkedMdMtime = mtRes.mtime || 0;
+
+    // Swap meta row (attachments/tags) for the page chat input
+    document.getElementById('page-meta-row')?.classList.add('hidden');
+    document.getElementById('pc-page-input-area')?.classList.remove('hidden');
+
+    const panel = document.getElementById('page-chat-panel');
+    if (panel) {
+        panel.classList.add('open');
+        const titleEl = document.getElementById('pc-panel-title');
+        if (titleEl) titleEl.textContent = chatPath.split('/').pop().replace(/\.chat$/, '');
+    }
+    _updateChatBtnState(true);
+
+    const container = document.getElementById('pc-messages');
+    if (container) container.innerHTML = `<p class="chat-empty" style="opacity:.5">Loading…</p>`;
+
+    const res = await api.call('chat_messages', { file: chatPath });
+    if (!res.success) { showToast(res.message || t('page-chat.load-failed'), 'error'); return; }
+
+    _pcData = { messages: res.messages || [], topic: res.topic || '' };
+    renderMessages(_pcData.messages, true);
+    startPoll(chatPath, res.mtime || 0);
+    document.getElementById('pc-input')?.focus();
+};
+
+const createAndOpen = async (chatPath) => {
+    const res = await api.call('create_chat', { path: chatPath, topic: '', git_commit: '0' }, 'POST');
+    if (!res.success) { showToast(res.message || t('page-chat.create-failed'), 'error'); return; }
+    await loadAndOpen(chatPath);
+};
+
+// ── Confirm lightbox ──────────────────────────────────────────────────────────
+
+const showCreateConfirm = (chatPath) => {
+    const lb = document.getElementById('page-chat-confirm-lightbox');
+    if (!lb) return;
+
+    const nameEl = document.getElementById('pcl-chat-name');
+    if (nameEl) nameEl.textContent = chatPath.split('/').pop();
+
+    const confirmBtn = document.getElementById('pcl-confirm-btn');
+    const cancelBtn  = document.getElementById('pcl-cancel-btn');
+    const closeBtn   = document.getElementById('pcl-close-btn');
+
+    // Replace buttons to remove stale listeners
+    const fresh = (el) => { const c = el.cloneNode(true); el.parentNode.replaceChild(c, el); return c; };
+    const fc = fresh(confirmBtn), fl = fresh(cancelBtn), fx = fresh(closeBtn);
+
+    const close = () => lb.classList.add('hidden');
+    fc.addEventListener('click', async () => { close(); await createAndOpen(chatPath); });
+    fl.addEventListener('click', close);
+    fx.addEventListener('click', close);
+    lb.onclick = e => { if (e.target === lb) close(); };
+
+    lb.classList.remove('hidden');
+};
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+export const openPageChat = async (pagePath) => {
+    // Toggle: if the panel is already showing this page's chat, close it
+    const chatPath = pagePath.replace(/\.md$/i, '.chat');
+    if (_pcPath === chatPath) { closePanel(); return; }
+
+    const res = await api.call('exists', { file: chatPath });
+    if (res.exists) {
+        await loadAndOpen(chatPath);
+    } else {
+        showCreateConfirm(chatPath);
+    }
+};
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+export const init = () => {
+    document.getElementById('pc-close-btn')?.addEventListener('click', closePanel);
+
+    document.getElementById('page-chat-btn')?.addEventListener('click', () => {
+        if (state.currentPagePath?.endsWith('.md')) {
+            openPageChat(state.currentPagePath);
+        }
+    });
+
+    setupInput();
+};

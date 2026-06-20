@@ -210,6 +210,36 @@ export const processIncludes = async (content, processedIds = []) => {
     return processedContent;
 };
 
+export const refreshPageContent = async () => {
+    if (!state.currentPagePath || state.currentPageType !== 'file' || state.isEditing) return;
+    const path = state.currentPagePath;
+    const result = await api.call('get', { file: path });
+    if (!result.success) return;
+
+    state.initialContent = result.data;
+    state.currentPageLastUpdated = result.lastUpdated;
+    document.getElementById('editor-container').value = state.initialContent;
+
+    const processedContent = await processIncludes(state.initialContent);
+    const withDiagrams = await processDiagramTags(processedContent);
+    const withLists = await processListTags(withDiagrams);
+    const withComments = await processUserCommentTags(withLists);
+    const headings = extractHeadings(withComments);
+    const withToc = processTocTag(withComments, headings);
+    let renderedHTML = marked.parse(withToc);
+
+    const filename = path.split('/').pop().replace(/\.(md|drawio|list)$/, '');
+    renderedHTML = renderedHTML.replaceAll('{filename}', filename);
+    if (state.currentPageLastUpdated) {
+        renderedHTML = renderedHTML.replaceAll('{lastUpdated}', new Date(state.currentPageLastUpdated * 1000).toLocaleString());
+    }
+
+    const viewerContent = document.getElementById('viewer-content');
+    viewerContent.innerHTML = renderedHTML;
+    addHeadingIds(viewerContent, headings);
+    updateTocPanel(headings, viewerContent);
+};
+
 export const loadPage = async (path, id, tags) => {
     setupDiagramObserver();
 
@@ -383,6 +413,11 @@ export const loadPage = async (path, id, tags) => {
 
     document.getElementById('diagram-edit-btn').classList.toggle('hidden', !isDiagram);
     document.getElementById('chat-topic-btn').classList.toggle('hidden', !isChat);
+
+    const isMarkdownPage = !isDiagram && !isList && !isChat;
+    document.getElementById('page-chat-btn')?.classList.toggle('hidden', !isMarkdownPage);
+    const pageChatMod = await import('../page_chat/index.js');
+    pageChatMod.closePanel();
     document.getElementById('copy-btn').classList.remove('hidden');
     document.getElementById('move-btn').classList.remove('hidden');
     document.getElementById('backlinks-btn').classList.remove('hidden');

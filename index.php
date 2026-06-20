@@ -42,6 +42,13 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
             </div>
             <nav id="toc-panel-nav" class="toc-panel-nav"></nav>
         </div>
+        <div id="page-chat-panel" class="page-chat-panel">
+            <div class="pc-panel-header">
+                <span class="pc-panel-title" id="pc-panel-title" data-i18n="page-chat.panel-title">Page Chat</span>
+                <button id="pc-close-btn" class="pc-close-btn" title="Close">&times;</button>
+            </div>
+            <div id="pc-messages" class="pc-messages"></div>
+        </div>
         <aside class="sidebar">
             <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" data-i18n-title="nav.collapse" title="Collapse sidebar">&#x2039;</button>
             <div class="sidebar-header">
@@ -200,6 +207,9 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
                     <button id="diagram-edit-btn" class="btn btn-icon btn-blue hidden" data-i18n-title="header.diagram-edit" title="Edit diagram">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
                     </button>
+                    <button id="page-chat-btn" class="btn btn-icon btn-secondary hidden" data-i18n-title="page-chat.open-btn" title="Page Chat">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    </button>
                     <button id="toc-btn" class="btn btn-icon btn-secondary hidden" data-i18n-title="toc.show-btn" title="Table of Contents">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="5" x2="21" y2="5"/><line x1="7" y1="9" x2="21" y2="9"/><line x1="7" y1="13" x2="21" y2="13"/><line x1="3" y1="17" x2="21" y2="17"/><line x1="7" y1="21" x2="21" y2="21"/></svg>
                     </button>
@@ -231,6 +241,15 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
                             <div id="tags-display"></div>
                             <input type="text" id="tag-input" data-i18n-placeholder="tags.placeholder" placeholder="Add a tag…" />
                         </div>
+                    </div>
+                    <div id="pc-page-input-area" class="chat-input-area hidden">
+                        <div id="pc-emoji-picker" class="chat-emoji-picker hidden"></div>
+                        <div id="pc-mention-popup" class="chat-mention-popup hidden"></div>
+                        <button id="pc-emoji-btn" class="btn btn-icon btn-secondary chat-emoji-btn" data-i18n-title="chat.emoji-title" title="Emoji">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                        </button>
+                        <textarea id="pc-input" class="chat-input" rows="1" data-i18n-placeholder="chat.placeholder" placeholder="Type a message… (Enter to send, Shift+Enter for new line, # to mention)"></textarea>
+                        <button id="pc-send-btn" class="btn btn-blue chat-send-btn" data-i18n="chat.send">Send</button>
                     </div>
                 </div>
                 <div class="editor-container-wrapper hidden">
@@ -313,6 +332,19 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
                 </div>
             </div>
         </main>
+    </div>
+
+    <div id="page-chat-confirm-lightbox" class="lightbox-overlay hidden">
+        <div class="lightbox-content lightbox-content-sm" style="padding:1.5rem">
+            <button id="pcl-close-btn" class="lightbox-close">&times;</button>
+            <h3 style="margin:0 0 1rem" data-i18n="page-chat.create-title">Create Page Chat</h3>
+            <p style="margin:0 0 .65rem">A chat named <strong id="pcl-chat-name"></strong> will be created in the same folder as this page.</p>
+            <p style="margin:0 0 1.5rem;font-size:.85rem;color:var(--text-muted)" data-i18n="page-chat.create-hint">When you mention an AI user in this chat, the linked page content is automatically used as context for its reply.</p>
+            <div class="lightbox-footer">
+                <button id="pcl-cancel-btn" class="btn btn-secondary" data-i18n="btn.cancel">Cancel</button>
+                <button id="pcl-confirm-btn" class="btn btn-blue" data-i18n="page-chat.create-confirm">Create Chat</button>
+            </div>
+        </div>
     </div>
 
     <div id="backlinks-lightbox" class="lightbox-overlay hidden">
