@@ -1,0 +1,12 @@
+{
+    "alt+1": { "prefix": "# ", "suffix": "" },
+    "alt+2": { "prefix": "## ", "suffix": "" },
+    "alt+3": { "prefix": "### ", "suffix": "" },
+    "alt+b": { "prefix": "**", "suffix": "**" },
+    "alt+i": { "prefix": "*", "suffix": "*" },
+    "alt+k": { "prefix": "[//]: # ()", "suffix": "" },
+    "alt+l": { "prefix": "[", "suffix": "](url)" },
+    "alt+c": { "prefix": "```\n", "suffix": "\n```" },
+    "alt+n": { "prefix": "{filename}", "suffix": "" },
+    "alt+t": { "prefix": "| Syntax | Description |\n| ----------- | ----------- |\n| Header | Title |\n| Paragraph | Text |", "suffix": "" }
+}

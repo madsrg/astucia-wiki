@@ -1,0 +1,6 @@
+vendor/
+CLAUDE.md
+config.php
+allowed_users.json
+users.json
+user_requests.json

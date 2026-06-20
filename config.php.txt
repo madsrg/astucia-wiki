@@ -1,0 +1,96 @@
+<?php
+// =================================================================
+// ASTUCIA WIKI — CONFIGURATION TEMPLATE
+// =================================================================
+// Copy this file to config.php and fill in your values.
+// config.php is excluded from version control so "git pull" will
+// never overwrite your live configuration.
+// =================================================================
+
+define('APP_TITLE', 'Astucia Wiki');
+
+// --- Session ---
+// Idle timeout in seconds before the user is redirected to the login page.
+define('SESSION_TIMEOUT', 3600); // 1 hour
+
+// --- Environment ---
+// Options: 'production', 'staging', 'development'
+// A banner is shown at the top of the page for non-production environments.
+define('ENVIRONMENT', 'production');
+
+// --- Content directory ---
+// Absolute path to the directory where wiki pages are stored.
+// Must be writable by the web server. Trailing slash required.
+define('PAGES_DIR', '/var/www/wiki-pages/');
+
+// --- Authentication ---
+// Set to true to require OIDC login. False = open access, everyone is admin.
+define('AUTHENTICATION_ENABLED', false);
+
+// When AUTHENTICATION_ENABLED is true and this is also true, unauthenticated
+// visitors can browse as readers without logging in. A Login button is shown
+// in the sidebar. When false (default), visitors are redirected to the login page.
+define('ANONYMOUS_ACCESS_ENABLED', true);
+
+// --- Auth0 / OIDC Provider Configuration ---
+// Only needed when AUTHENTICATION_ENABLED is true.
+// Find these values in your OIDC provider dashboard (tested with Auth0).
+//
+// OIDC_PROVIDER_URL: provider base URL, no trailing slash.
+//   Auth0 new tenants:    https://YOUR_TENANT.REGION.auth0.com
+//   Auth0 legacy tenants: https://YOUR_TENANT.auth0.com
+define('OIDC_PROVIDER_URL',   'https://YOUR_TENANT.REGION.auth0.com');
+define('OIDC_CLIENT_ID',      'YOUR_CLIENT_ID');
+define('OIDC_CLIENT_SECRET',  'YOUR_CLIENT_SECRET');
+// Must match an "Allowed Callback URL" in your OIDC provider settings.
+define('OIDC_REDIRECT_URI',   'https://your-domain.example.com/auth.php');
+
+// --- Wiki system data ---
+// Absolute path (with trailing slash) to the directory that holds:
+//   users.json, user_requests.json, and AI user configuration.
+//
+// SECURITY: this directory should be OUTSIDE your web root so its contents
+// are never directly reachable via HTTP. Example:
+//   Web root:       /var/www/wiki/          (served by Nginx/Apache)
+//   System data:    /var/wiki-data/         (not served, not publicly accessible)
+//
+// PERMISSIONS: the directory and its files must be writable by the web server
+// user. On Debian/Ubuntu:
+//   sudo mkdir -p /var/wiki-data
+//   sudo chown www-data:www-data /var/wiki-data
+//   sudo chmod 750 /var/wiki-data
+//
+// Bootstrap: when no users.json exists yet, create it with your first admin:
+//   { "users": [{ "sub": "auth0|YOUR_USER_ID", "name": "Your Name",
+//                 "email": "you@example.com", "notification_email": "", "role": "admin" }] }
+// Find YOUR_USER_ID in Auth0 → User Management → Users → your account → user_id.
+define('WIKI_SYSTEM_DATA', '');
+
+// --- Email (optional) ---
+// Set MAIL_PROVIDER to 'sendgrid' or 'mailgun'. If omitted, the provider is
+// auto-detected from whichever API key is present below.
+// define('MAIL_PROVIDER', 'sendgrid');
+
+// SendGrid — https://app.sendgrid.com/settings/api_keys
+// define('SENDGRID_API_KEY',    'SG.xxxxxxxxxxxxxxxxxxxxxxxx');
+// define('SENDGRID_FROM_EMAIL', 'no-reply@your-domain.example.com');
+// define('SENDGRID_FROM_NAME',  APP_TITLE);
+
+// Mailgun (Sinch) — https://app.mailgun.com/settings/api_security
+// MAILGUN_REGION: 'us' (default) or 'eu'
+// define('MAILGUN_API_KEY',    'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-xxxxxxxx-xxxxxxxx');
+// define('MAILGUN_DOMAIN',     'mail.your-domain.example.com');
+// define('MAILGUN_REGION',     'eu');
+// define('MAILGUN_FROM_EMAIL', 'no-reply@your-domain.example.com');
+// define('MAILGUN_FROM_NAME',  APP_TITLE);
+
+// --- Access log (optional) ---
+// Directory where daily access logs are written. Must be writable by the web
+// server. Set to null to disable.
+define('LOG_DIR', '/var/log/wiki/');
+
+// --- Diagnostics (optional) ---
+// Absolute paths to server log files shown in Admin → Diagnostics.
+// Leave empty ('') to hide the section.
+define('NGINX_ERROR_LOG',  '/var/log/nginx/error.log');
+define('NGINX_ACCESS_LOG', '/var/log/nginx/access.log');

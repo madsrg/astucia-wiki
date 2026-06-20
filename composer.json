@@ -1,0 +1,6 @@
+{
+    "require": {
+        "jumbojett/openid-connect-php": "^1.0",
+        "erusev/parsedown": "^1.8"
+    }
+}

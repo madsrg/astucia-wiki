@@ -1,0 +1,1393 @@
+import { api } from '../core/api.js';
+import { showToast, confirmModal } from '../core/utils.js';
+import { invalidateUsers } from '../core/users.js';
+import { t } from '../i18n/index.js';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+let users        = [];
+let requests     = [];
+let aiUsers      = [];
+let apiAccounts  = [];
+let allSpaces    = []; // loaded once when admin lightbox opens
+let isDirty     = false;
+const ROLES     = ['admin', 'editor', 'reader'];
+const AI_ROLES  = ['editor', 'reader'];
+const ME_SUB    = () => window.WIKI_USER_SUB || '';
+
+const escHtml = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const markDirty = (dirty = true) => {
+    isDirty = dirty;
+    document.getElementById('admin-dirty-notice')?.classList.toggle('hidden', !dirty);
+    const btn = document.getElementById('admin-save-btn');
+    if (btn) btn.disabled = !dirty;
+};
+
+const updateRequestsBadge = () => {
+    const badge = document.getElementById('admin-requests-badge');
+    if (!badge) return;
+    const pending = requests.filter(r => r.status === 'pending').length;
+    if (pending > 0) {
+        badge.textContent = pending;
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+};
+
+const switchTab = (name) => {
+    document.querySelectorAll('.admin-tab').forEach(tb =>
+        tb.classList.toggle('active', tb.dataset.tab === name));
+    document.querySelectorAll('.admin-pane').forEach(p =>
+        p.classList.toggle('hidden', p.id !== `admin-pane-${name}`));
+    document.getElementById('admin-footer-users')?.classList.toggle('hidden',        name !== 'users');
+    document.getElementById('admin-footer-requests')?.classList.toggle('hidden',     name !== 'requests');
+    document.getElementById('admin-footer-logs')?.classList.toggle('hidden',         name !== 'logs');
+    document.getElementById('admin-footer-errorlog')?.classList.toggle('hidden',      name !== 'errorlog');
+    document.getElementById('admin-footer-diagnostics')?.classList.toggle('hidden',  name !== 'diagnostics');
+    document.getElementById('admin-footer-ai')?.classList.toggle('hidden',           name !== 'ai');
+    document.getElementById('admin-footer-api')?.classList.toggle('hidden',           name !== 'api');
+    document.getElementById('admin-footer-jobs')?.classList.toggle('hidden',         name !== 'jobs');
+    if (name === 'logs')        loadLogFiles();
+    if (name === 'requests')    loadRequests();
+    if (name === 'errorlog')    loadErrorLogFiles();
+    if (name === 'diagnostics') loadDiagnostics();
+    if (name === 'ai')          loadAiUsers();
+    if (name === 'api')         loadApiAccounts();
+    if (name === 'jobs')        loadAgentJobs();
+};
+
+// ── Users tab ─────────────────────────────────────────────────────────────────
+
+const spacesLabel = (spaces) => {
+    if (spaces === null || spaces === undefined) return t('admin.users.all-spaces');
+    if (spaces.length === 0) return t('admin.users.none-label');
+    return spaces.join(', ');
+};
+
+const makeSpacesCell = (u, i) => {
+    const isAdmin = u.role === 'admin';
+    const td = document.createElement('td');
+
+    if (isAdmin || !allSpaces.length) {
+        const note = document.createElement('span');
+        note.className = 'admin-spaces-all';
+        note.textContent = isAdmin ? t('admin.users.all-admin') : spacesLabel(u.spaces ?? null);
+        td.appendChild(note);
+        return td;
+    }
+
+    // Dropdown wrapper
+    const wrap = document.createElement('div');
+    wrap.className = 'admin-spaces-wrap';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'admin-spaces-btn';
+    btn.textContent = spacesLabel(u.spaces ?? null);
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'admin-spaces-dropdown hidden';
+
+    // "All spaces" option
+    const allRow = document.createElement('label');
+    allRow.className = 'admin-spaces-option';
+    const allCb = document.createElement('input');
+    allCb.type = 'checkbox';
+    allCb.checked = (u.spaces === null || u.spaces === undefined);
+    const allLbl = document.createElement('span');
+    allLbl.textContent = t('admin.users.all-spaces');
+    allRow.append(allCb, allLbl);
+    dropdown.appendChild(allRow);
+
+    const sep = document.createElement('div');
+    sep.className = 'admin-spaces-sep';
+    dropdown.appendChild(sep);
+
+    // Individual space checkboxes
+    allSpaces.forEach(space => {
+        const row = document.createElement('label');
+        row.className = 'admin-spaces-option';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = space;
+        cb.checked = (u.spaces === null || u.spaces === undefined) ? false : u.spaces.includes(space);
+        cb.disabled = allCb.checked;
+        const lbl = document.createElement('span');
+        lbl.textContent = space;
+        row.append(cb, lbl);
+
+        cb.addEventListener('change', () => {
+            const selected = [...dropdown.querySelectorAll('input[type=checkbox][value]')]
+                .filter(c => c.checked).map(c => c.value);
+            users[i] = { ...users[i], spaces: selected };
+            btn.textContent = spacesLabel(selected);
+            markDirty();
+        });
+
+        dropdown.appendChild(row);
+    });
+
+    allCb.addEventListener('change', () => {
+        const isAll = allCb.checked;
+        dropdown.querySelectorAll('input[type=checkbox][value]').forEach(c => {
+            c.checked = false;
+            c.disabled = isAll;
+        });
+        users[i] = { ...users[i], spaces: isAll ? null : [] };
+        btn.textContent = spacesLabel(isAll ? null : []);
+        markDirty();
+    });
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdown.classList.toggle('hidden');
+    });
+
+    wrap.append(btn, dropdown);
+    td.appendChild(wrap);
+    return td;
+};
+
+const renderUsers = () => {
+    const container = document.getElementById('admin-users-table');
+    if (!container) return;
+
+    if (!users.length) {
+        container.innerHTML = `<p class="admin-empty">${t('admin.users.none')}</p>`;
+        return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'admin-table';
+    table.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Spaces</th><th></th></tr></thead>';
+    const tbody = document.createElement('tbody');
+
+    users.forEach((u, i) => {
+        const isMe = u.sub === ME_SUB();
+        const tr = document.createElement('tr');
+        if (isMe) tr.classList.add('admin-row-self');
+
+        const tdName = document.createElement('td');
+        tdName.className = 'admin-td-name';
+        tdName.textContent = u.name || '—';
+        if (isMe) {
+            const badge = document.createElement('span');
+            badge.className = 'admin-you-badge';
+            badge.textContent = t('admin.users.you');
+            tdName.appendChild(badge);
+        }
+
+        const tdEmail = document.createElement('td');
+        tdEmail.className = 'admin-td-email';
+        tdEmail.textContent = u.email || '—';
+
+        const tdRole = document.createElement('td');
+        const sel = document.createElement('select');
+        sel.className = 'form-control admin-role-select';
+        if (isMe) sel.title = t('admin.users.own-role');
+        if (isMe) sel.disabled = true;
+        ROLES.forEach(r => {
+            const opt = document.createElement('option');
+            opt.value = r;
+            opt.textContent = r.charAt(0).toUpperCase() + r.slice(1);
+            opt.selected = u.role === r;
+            sel.appendChild(opt);
+        });
+        sel.addEventListener('change', () => {
+            users[i] = { ...users[i], role: sel.value };
+            markDirty();
+            // Re-render spaces cell: admin role locks it to "All"
+            renderUsers();
+        });
+        tdRole.appendChild(sel);
+
+        const tdSpaces = makeSpacesCell(u, i);
+
+        const tdDel = document.createElement('td');
+        if (!isMe) {
+            const delBtn = document.createElement('button');
+            delBtn.className = 'btn btn-sm btn-danger admin-del-btn';
+            delBtn.title = t('admin.users.remove');
+            delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+            delBtn.addEventListener('click', () => { users.splice(i, 1); markDirty(); renderUsers(); });
+            tdDel.appendChild(delBtn);
+        }
+
+        tr.append(tdName, tdEmail, tdRole, tdSpaces, tdDel);
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.innerHTML = '';
+    container.appendChild(table);
+
+};
+
+const loadUsers = async () => {
+    const container = document.getElementById('admin-users-table');
+    if (container) container.innerHTML = `<p class="admin-loading">${t('admin.users.loading')}</p>`;
+    // Load spaces and users in parallel
+    const [spacesResult, usersResult] = await Promise.all([
+        api.call('list_spaces'),
+        api.call('admin_get_users'),
+    ]);
+    allSpaces = spacesResult.data || [];
+    if (usersResult.success) {
+        users = usersResult.data || [];
+        renderUsers();
+    } else {
+        if (container) container.innerHTML = `<p class="admin-empty">${t('admin.users.failed')}</p>`;
+    }
+};
+
+const saveUsers = async () => {
+    const btn = document.getElementById('admin-save-btn');
+    btn.disabled = true;
+    btn.textContent = t('admin.users.saving');
+    const result = await api.call('admin_save_users', { users: JSON.stringify(users) }, 'POST');
+    btn.textContent = t('admin.save-btn');
+    if (result.success) {
+        markDirty(false);
+        invalidateUsers();
+        showToast(t('admin.users.saved'), 'success');
+    } else {
+        btn.disabled = false;
+        showToast(result.message || t('admin.users.save-failed'), 'error');
+    }
+};
+
+// ── Requests tab ──────────────────────────────────────────────────────────────
+
+const renderRequests = () => {
+    const container = document.getElementById('admin-requests-table');
+    if (!container) return;
+
+    const countEl = document.getElementById('admin-requests-count');
+    const pending = requests.filter(r => r.status === 'pending');
+    const denied  = requests.filter(r => r.status === 'denied');
+
+    if (!requests.length) {
+        container.innerHTML = `<p class="admin-empty">${t('admin.req.none')}</p>`;
+        if (countEl) countEl.textContent = '';
+        return;
+    }
+    if (countEl) countEl.textContent = `${pending.length} ${t('admin.req.pending')}, ${denied.length} ${t('admin.req.denied')}`;
+
+    container.innerHTML = '';
+
+    const buildRow = (r) => {
+        const tr = document.createElement('tr');
+        const isPending = r.status === 'pending';
+
+        const tdName = document.createElement('td');
+        tdName.className = 'admin-td-email';
+        tdName.textContent = r.name || '—';
+
+        const tdEmail = document.createElement('td');
+        tdEmail.className = 'admin-td-email';
+        tdEmail.textContent = r.email || '—';
+
+        const tdDate = document.createElement('td');
+        tdDate.className = 'admin-log-time';
+        tdDate.textContent = r.requested_at ? new Date(r.requested_at).toLocaleString() : '—';
+
+        const tdStatus = document.createElement('td');
+        const badge = document.createElement('span');
+        badge.className = `admin-log-badge ${isPending ? 'log-ok' : 'log-denied'}`;
+        badge.textContent = isPending ? t('admin.req.pending') : t('admin.req.denied');
+        tdStatus.appendChild(badge);
+
+        const tdActions = document.createElement('td');
+        tdActions.className = 'admin-requests-actions';
+
+        if (isPending) {
+            const roleWrap = document.createElement('span');
+            roleWrap.className = 'admin-approve-role';
+            const roleLabel = document.createElement('label');
+            roleLabel.textContent = t('admin.req.role');
+            const roleSel = document.createElement('select');
+            roleSel.className = 'form-control admin-role-select';
+            ROLES.forEach(rr => {
+                const opt = document.createElement('option');
+                opt.value = rr;
+                opt.textContent = rr.charAt(0).toUpperCase() + rr.slice(1);
+                opt.selected = rr === 'editor';
+                roleSel.appendChild(opt);
+            });
+            roleWrap.append(roleLabel, roleSel);
+
+            const approveBtn = document.createElement('button');
+            approveBtn.className = 'btn btn-sm btn-green';
+            approveBtn.textContent = t('admin.req.approve');
+            approveBtn.addEventListener('click', async () => {
+                approveBtn.disabled = true;
+                const res = await api.call('admin_approve_request',
+                    { sub: r.sub, role: roleSel.value }, 'POST');
+                if (res.success) {
+                    invalidateUsers();
+                    showToast(t('admin.req.approved', { name: r.name || r.email, role: roleSel.value }), 'success');
+                    await loadRequests();
+                    await loadUsers();
+                } else {
+                    approveBtn.disabled = false;
+                    showToast(res.message || 'Failed to approve', 'error');
+                }
+            });
+
+            const denyBtn = document.createElement('button');
+            denyBtn.className = 'btn btn-sm btn-danger';
+            denyBtn.textContent = t('admin.req.deny');
+            denyBtn.addEventListener('click', async () => {
+                const ok = await confirmModal(t('admin.req.deny-confirm', { name: r.name || r.email }), {
+                    confirmLabel: t('admin.req.deny'), dangerous: true,
+                });
+                if (!ok) return;
+                denyBtn.disabled = true;
+                const res = await api.call('admin_deny_request', { sub: r.sub }, 'POST');
+                if (res.success) {
+                    showToast(t('admin.req.denied-msg', { name: r.name || r.email }), 'success');
+                    await loadRequests();
+                } else {
+                    denyBtn.disabled = false;
+                    showToast(res.message || 'Failed to deny', 'error');
+                }
+            });
+
+            tdActions.append(roleWrap, approveBtn, denyBtn);
+        } else {
+            // Denied — allow re-approval
+            const reApproveBtn = document.createElement('button');
+            reApproveBtn.className = 'btn btn-sm btn-secondary';
+            reApproveBtn.textContent = t('admin.req.reapprove');
+            reApproveBtn.addEventListener('click', async () => {
+                reApproveBtn.disabled = true;
+                const res = await api.call('admin_approve_request',
+                    { sub: r.sub, role: 'editor' }, 'POST');
+                if (res.success) {
+                    invalidateUsers();
+                    showToast(t('admin.req.re-approved', { name: r.name || r.email }), 'success');
+                    await loadRequests();
+                    await loadUsers();
+                } else {
+                    reApproveBtn.disabled = false;
+                    showToast(res.message || 'Failed', 'error');
+                }
+            });
+            tdActions.appendChild(reApproveBtn);
+        }
+
+        tr.append(tdName, tdEmail, tdDate, tdStatus, tdActions);
+        return tr;
+    };
+
+    if (requests.length) {
+        const table = document.createElement('table');
+        table.className = 'admin-table';
+        table.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Requested</th><th>Status</th><th></th></tr></thead>';
+        const tbody = document.createElement('tbody');
+        requests.forEach(r => tbody.appendChild(buildRow(r)));
+        table.appendChild(tbody);
+        container.appendChild(table);
+    }
+};
+
+const loadRequests = async () => {
+    const container = document.getElementById('admin-requests-table');
+    if (container) container.innerHTML = `<p class="admin-loading">${t('admin.users.loading')}</p>`;
+    const result = await api.call('admin_get_user_requests');
+    if (result.success) {
+        requests = result.data || [];
+        updateRequestsBadge();
+        renderRequests();
+    } else {
+        if (container) container.innerHTML = `<p class="admin-empty">${t('admin.users.failed')}</p>`;
+    }
+};
+
+// ── Log tab ───────────────────────────────────────────────────────────────────
+
+const EVENT_CLASS = {
+    LOGIN_OK:          'log-ok',
+    LOGIN_DENIED:      'log-denied',
+    LOGIN_ERROR:       'log-error',
+    LOGOUT:            'log-logout',
+    ACCESS_REQUESTED:  'log-ok',
+    USER_APPROVED:     'log-ok',
+    USER_DENIED:       'log-denied',
+};
+
+const renderLogEntries = (entries) => {
+    const container = document.getElementById('admin-log-entries');
+    const countEl   = document.getElementById('admin-log-count');
+    const suffix = entries.length === 1 ? t('admin.logs.entry') : t('admin.logs.entries');
+    if (countEl) countEl.textContent = t('admin.logs.count', { n: entries.length, suffix });
+
+    if (!entries.length) {
+        container.innerHTML = `<p class="admin-empty">${t('admin.logs.no-entries')}</p>`;
+        return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'admin-log-table';
+    table.innerHTML = '<thead><tr><th>Time</th><th>Event</th><th>Source</th><th>Name</th><th>IP</th><th>Detail</th></tr></thead>';
+    const tbody = document.createElement('tbody');
+
+    entries.forEach(e => {
+        const tr = document.createElement('tr');
+        const cls    = EVENT_CLASS[e.event] || 'log-unknown';
+        const source = e.sub  ? e.sub.split('|')[0]  : '-';
+        const name   = e.name || '-';
+        const detail = e.detail && e.detail !== '-'
+            ? `<span class="admin-log-detail" title="${e.detail.replace(/"/g, '&quot;')}">…</span>` : '';
+        tr.innerHTML = `
+            <td class="admin-log-time">${e.time}</td>
+            <td><span class="admin-log-badge ${cls}">${e.event}</span></td>
+            <td class="admin-log-source">${source}</td>
+            <td class="admin-log-name">${name}</td>
+            <td class="admin-log-ip">${e.ip}</td>
+            <td>${detail}</td>`;
+        const detailEl = tr.querySelector('.admin-log-detail');
+        if (detailEl) detailEl.addEventListener('click', () => alert(e.detail));
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.innerHTML = '';
+    container.appendChild(table);
+};
+
+const loadLogContent = async (filename) => {
+    if (!filename) return;
+    const container = document.getElementById('admin-log-entries');
+    container.innerHTML = `<p class="admin-loading">${t('admin.logs.loading')}</p>`;
+    const result = await api.call('admin_get_log_content', { file: filename });
+    if (result.success) {
+        renderLogEntries(result.data);
+    } else {
+        container.innerHTML = `<p class="admin-empty">${t('admin.diag.failed', { error: result.message || '' })}</p>`;
+    }
+};
+
+const loadLogFiles = async () => {
+    const select  = document.getElementById('admin-log-date');
+    const entries = document.getElementById('admin-log-entries');
+    select.innerHTML = `<option value="">${t('admin.logs.loading')}</option>`;
+    if (entries) entries.innerHTML = '';
+
+    const result = await api.call('admin_get_logs');
+    if (!result.success || !result.data.length) {
+        select.innerHTML = `<option value="">${t('admin.logs.no-files')}</option>`;
+        if (entries) entries.innerHTML = `<p class="admin-empty">${t('admin.logs.none')}</p>`;
+        return;
+    }
+
+    select.innerHTML = result.data.map(f =>
+        `<option value="${f.file}">${f.date}</option>`
+    ).join('');
+    loadLogContent(result.data[0].file);
+};
+
+// ── Diagnostics tab ───────────────────────────────────────────────────────────
+
+const renderDiagLog = (outputId, result) => {
+    const el = document.getElementById(outputId);
+    if (!el) return;
+    if (!result.configured) {
+        el.innerHTML = `<p class="admin-diag-hint">${t('admin.diag.not-configured', { hint: result.hint })}</p>`;
+        return;
+    }
+    if (result.message) {
+        el.innerHTML = `<p class="admin-empty">${result.message}</p>`;
+        return;
+    }
+    if (!result.lines.length) {
+        el.innerHTML = `<p class="admin-empty">${t('admin.diag.empty')}</p>`;
+        return;
+    }
+    const pre = document.createElement('pre');
+    pre.className = 'admin-diag-pre';
+    pre.textContent = result.lines.join('\n');
+    el.innerHTML = '';
+    el.appendChild(pre);
+    pre.scrollTop = pre.scrollHeight;
+};
+
+const loadDiagLog = async (type, outputId) => {
+    const el = document.getElementById(outputId);
+    if (el) el.innerHTML = `<p class="admin-loading">${t('admin.diag.loading')}</p>`;
+    const result = await api.call('admin_get_diag_log', { type });
+    if (result.success) {
+        renderDiagLog(outputId, result);
+    } else {
+        if (el) el.innerHTML = `<p class="admin-empty">${t('admin.diag.failed', { error: result.message || '' })}</p>`;
+    }
+};
+
+const loadDiagnostics = () => {
+    loadDiagLog('php',          'admin-diag-php-output');
+    loadDiagLog('nginx_error',  'admin-diag-nginx-error-output');
+    loadDiagLog('nginx_access', 'admin-diag-nginx-access-output');
+};
+
+const loadErrorLogFiles = async () => {
+    const sel = document.getElementById('admin-diag-error-log-select');
+    const out = document.getElementById('admin-diag-error-log-output');
+    if (!sel || !out) return;
+    const result = await api.call('admin_get_error_logs');
+    if (!result.success) { out.innerHTML = `<p class="admin-empty">${t('admin.errlog.failed')}</p>`; return; }
+    sel.innerHTML = '';
+    if (!result.data.length) {
+        sel.innerHTML = `<option value="">${t('admin.errlog.no-files')}</option>`;
+        out.innerHTML = `<p class="admin-empty">${t('admin.errlog.none')}</p>`;
+        return;
+    }
+    result.data.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.file;
+        opt.textContent = f.date;
+        sel.appendChild(opt);
+    });
+    loadErrorLogContent(result.data[0].file);
+};
+
+const loadErrorLogContent = async (filename) => {
+    const out = document.getElementById('admin-diag-error-log-output');
+    if (!out) return;
+    out.innerHTML = `<p class="admin-loading">${t('admin.diag.loading')}</p>`;
+    const result = await api.call('admin_get_error_log_content', { file: filename });
+    if (!result.success) { out.innerHTML = `<p class="admin-empty">${t('admin.diag.failed', { error: result.message || '' })}</p>`; return; }
+    if (!result.data.length) { out.innerHTML = `<p class="admin-empty">${t('admin.errlog.no-entries')}</p>`; return; }
+    const table = document.createElement('table');
+    table.className = 'admin-table';
+    table.innerHTML = '<thead><tr><th>Time</th><th>Page</th><th>Actor</th><th>IP</th><th>Message</th></tr></thead>';
+    const tbody = document.createElement('tbody');
+    result.data.forEach(e => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td style="white-space:nowrap">${e.time}</td><td>${e.page}</td><td>${e.actor}</td><td>${e.ip}</td><td>${e.message}</td>`;
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    out.innerHTML = '';
+    out.appendChild(table);
+};
+
+// ── AI Agent Instructions lightbox ────────────────────────────────────────────
+
+const showAgentInstructions = async (token) => {
+    const lightbox  = document.getElementById('agent-instructions-lightbox');
+    const textarea  = document.getElementById('agent-instructions-text');
+    const copyBtn   = document.getElementById('agent-instructions-copy-btn');
+    const closeBtn  = document.getElementById('agent-instructions-close-btn');
+    if (!lightbox || !textarea) return;
+
+    textarea.value = t('admin.ai.agent-instructions-loading');
+    lightbox.classList.remove('hidden');
+
+    const result = await api.call('api_agent_instructions', { token });
+    if (result.success) {
+        textarea.value = result.instructions;
+    } else {
+        textarea.value = result.message || 'Failed to load instructions.';
+    }
+
+    const close = () => lightbox.classList.add('hidden');
+    closeBtn.onclick = close;
+    lightbox.onclick = (e) => { if (e.target === lightbox) close(); };
+
+    copyBtn.onclick = async () => {
+        try {
+            await navigator.clipboard.writeText(textarea.value);
+            const orig = copyBtn.textContent;
+            copyBtn.textContent = t('admin.ai.agent-instructions-copied');
+            setTimeout(() => { copyBtn.textContent = orig; }, 2000);
+        } catch {
+            textarea.select();
+            document.execCommand('copy');
+        }
+    };
+};
+
+// ── AI Users tab ──────────────────────────────────────────────────────────────
+
+const renderAiUserList = () => {
+    const container = document.getElementById('admin-ai-list');
+    if (!container) return;
+
+    if (!aiUsers.length) {
+        container.innerHTML = `<p class="admin-empty">${t('admin.ai.none')}</p>`;
+        return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'admin-table';
+    table.innerHTML = `<thead><tr><th>${t('admin.ai.name')}</th><th>${t('admin.ai.role')}</th><th>Model</th><th>API URL</th><th></th></tr></thead>`;
+    const tbody = document.createElement('tbody');
+
+    aiUsers.forEach(u => {
+        const tr = document.createElement('tr');
+        const cfg = u.ai_config || {};
+
+        const tdName = document.createElement('td');
+        tdName.className = 'admin-td-name';
+        tdName.innerHTML = escHtml(u.name) + ' <span class="admin-ai-badge">AI</span>';
+
+        const tdRole = document.createElement('td');
+        tdRole.textContent = u.role || 'editor';
+
+        const tdModel = document.createElement('td');
+        tdModel.className = 'admin-log-source';
+        const providerLabel = cfg.provider === 'anthropic' ? t('admin.ai.anthropic').split(' ')[0] : 'OpenAI';
+        tdModel.textContent = cfg.model ? `${cfg.model} (${providerLabel})` : `— (${providerLabel})`;
+
+        const tdUrl = document.createElement('td');
+        tdUrl.className = 'admin-td-email';
+        const urlText = cfg.api_url || '—';
+        tdUrl.textContent = urlText.length > 40 ? urlText.slice(0, 40) + '…' : urlText;
+        tdUrl.title = urlText;
+
+        const tdActions = document.createElement('td');
+        tdActions.style.cssText = 'white-space:nowrap;display:flex;gap:4px;align-items:center;';
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-sm btn-secondary';
+        editBtn.textContent = 'Edit';
+        editBtn.addEventListener('click', () => openAiUserForm(u));
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-sm btn-danger admin-del-btn';
+        delBtn.title = 'Delete AI user';
+        delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+        delBtn.addEventListener('click', () => deleteAiUser(u));
+
+        tdActions.append(editBtn, delBtn);
+        tr.append(tdName, tdRole, tdModel, tdUrl, tdActions);
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.innerHTML = '';
+    container.appendChild(table);
+};
+
+const loadAiUsers = async () => {
+    const container = document.getElementById('admin-ai-list');
+    if (container) container.innerHTML = `<p class="admin-loading">${t('admin.users.loading')}</p>`;
+    const result = await api.call('admin_get_ai_users');
+    if (result.success) {
+        aiUsers = result.data || [];
+        renderAiUserList();
+    } else {
+        if (container) container.innerHTML = `<p class="admin-empty">${t('admin.users.failed')}</p>`;
+    }
+};
+
+const openAiUserForm = (u) => {
+    const container = document.getElementById('admin-ai-list');
+    if (!container) return;
+    const isNew = !u;
+    const cfg = u?.ai_config || {};
+
+    container.innerHTML = `
+        <div class="admin-ai-form">
+            <div style="display:flex;justify-content:flex-start;gap:0.4rem;margin-bottom:0.5rem">
+                ${!isNew ? `<button type="button" id="ai-f-agent-instructions-btn" class="btn btn-icon btn-secondary" title="${t('admin.ai.agent-instructions-btn')}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M12 11V6"/><circle cx="12" cy="4" r="2"/><line x1="8" y1="16" x2="8.01" y2="16" stroke-width="3"/><line x1="16" y1="16" x2="16.01" y2="16" stroke-width="3"/></svg>
+                </button>` : ''}
+                <button type="button" id="ai-f-help-btn" class="btn btn-icon btn-secondary" title="${t('admin.ai.help-btn')}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17" stroke-width="3"/></svg>
+                </button>
+            </div>
+            <div class="admin-ai-form-section">
+                <div class="form-group">
+                    <label>${t('admin.ai.name')}</label>
+                    <input type="text" id="ai-f-name" class="form-control" value="${escHtml(u?.name || '')}" placeholder="e.g. Atlas">
+                </div>
+                <div class="form-group">
+                    <label>${t('admin.ai.role')}</label>
+                    <select id="ai-f-role" class="form-control">
+                        ${AI_ROLES.map(r => `<option value="${r}" ${(u?.role || 'editor') === r ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            <div class="admin-ai-form-section-header">${t('admin.ai.api-cfg')}</div>
+            <div class="admin-ai-form-section">
+                <div class="form-group">
+                    <label>${t('admin.ai.provider')}</label>
+                    <select id="ai-f-provider" class="form-control">
+                        <option value="openai"    ${(cfg.provider || 'openai') === 'openai'    ? 'selected' : ''}>${t('admin.ai.openai')}</option>
+                        <option value="anthropic" ${(cfg.provider || 'openai') === 'anthropic' ? 'selected' : ''}>${t('admin.ai.anthropic')}</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>${t('admin.ai.url')}</label>
+                    <input type="url" id="ai-f-url" class="form-control" value="${escHtml(cfg.api_url || '')}" placeholder="https://api.openai.com/v1/chat/completions">
+                </div>
+                <div class="form-group">
+                    <label>${t('admin.ai.key')} ${cfg.api_key_set ? `<span class="admin-ai-key-set">${t('admin.ai.key-set')}</span>` : ''}</label>
+                    <input type="password" id="ai-f-key" class="form-control" placeholder="${cfg.api_key_set ? 'Leave blank to keep existing key' : 'sk-…'}">
+                </div>
+                <div class="form-group">
+                    <label>${t('admin.ai.model')}</label>
+                    <input type="text" id="ai-f-model" class="form-control" value="${escHtml(cfg.model || '')}" placeholder="gpt-4o">
+                </div>
+            </div>
+            <div class="admin-ai-form-section-header">${t('admin.ai.behaviour')}</div>
+            <div class="admin-ai-form-section">
+                <div class="form-group">
+                    <label>${t('admin.ai.prompt')}</label>
+                    <textarea id="ai-f-prompt" class="form-control admin-ai-prompt" rows="5" placeholder="${t('admin.ai.prompt-ph')}">${escHtml(cfg.system_prompt || '')}</textarea>
+                </div>
+                <div class="admin-ai-form-row">
+                    <div class="form-group">
+                        <label>${t('admin.ai.context')}</label>
+                        <input type="number" id="ai-f-context" class="form-control" value="${cfg.context_messages ?? 20}" min="1" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label>${t('admin.ai.temp')}</label>
+                        <input type="number" id="ai-f-temperature" class="form-control" value="${cfg.temperature ?? 0.7}" min="0" max="2" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>${t('admin.ai.tokens')}</label>
+                        <input type="number" id="ai-f-tokens" class="form-control" value="${cfg.max_tokens ?? 4096}" min="100" max="32000">
+                    </div>
+                </div>
+            </div>
+            ${!isNew ? `
+            <div class="admin-ai-form-section-header">${t('admin.ai.svc-token')}</div>
+            <div class="admin-ai-form-section">
+                <div class="admin-ai-token-row">
+                    <code id="ai-f-token" class="admin-ai-token">${escHtml(u.service_token || '')}</code>
+                    <button type="button" id="ai-f-regen-btn" class="btn btn-sm btn-secondary">${t('admin.ai.regen-btn')}</button>
+                </div>
+                <p class="admin-ai-token-hint">${t('admin.ai.token-hint')}</p>
+            </div>` : ''}
+            <div class="admin-ai-form-actions">
+                <button type="button" id="ai-f-cancel-btn" class="btn btn-secondary">${t('btn.cancel')}</button>
+                <button type="button" id="ai-f-save-btn" class="btn btn-green">${t('admin.ai.save-btn')}</button>
+            </div>
+        </div>`;
+
+    document.getElementById('ai-f-cancel-btn').addEventListener('click', () => {
+        renderAiUserList();
+        document.getElementById('admin-footer-ai').querySelector('#admin-ai-add-btn').classList.remove('hidden');
+    });
+
+    document.getElementById('ai-f-save-btn').addEventListener('click', () => saveAiUser(u?.uid ?? null));
+
+    if (!isNew) {
+        document.getElementById('ai-f-regen-btn').addEventListener('click', () => regenerateAiToken(u.uid));
+        document.getElementById('ai-f-agent-instructions-btn').addEventListener('click', () => {
+            const token = document.getElementById('ai-f-token')?.textContent.trim() || '';
+            showAgentInstructions(token);
+        });
+    }
+
+    document.getElementById('ai-f-help-btn').addEventListener('click', () => {
+        const lb = document.getElementById('ai-user-help-lightbox');
+        if (!lb) return;
+        lb.classList.remove('hidden');
+        lb.onclick = (e) => { if (e.target === lb) lb.classList.add('hidden'); };
+        lb.querySelector('#ai-user-help-close-btn')?.addEventListener('click', () => lb.classList.add('hidden'), { once: true });
+    });
+
+    document.getElementById('admin-footer-ai').querySelector('#admin-ai-add-btn').classList.add('hidden');
+};
+
+const saveAiUser = async (uid) => {
+    const name     = document.getElementById('ai-f-name')?.value.trim() || '';
+    const role     = document.getElementById('ai-f-role')?.value || 'editor';
+    const provider = document.getElementById('ai-f-provider')?.value || 'openai';
+    const api_url  = document.getElementById('ai-f-url')?.value.trim() || '';
+    const api_key  = document.getElementById('ai-f-key')?.value || '';
+    const model    = document.getElementById('ai-f-model')?.value.trim() || '';
+    const system_prompt    = document.getElementById('ai-f-prompt')?.value || '';
+    const context_messages = parseInt(document.getElementById('ai-f-context')?.value || '20', 10);
+    const temperature      = parseFloat(document.getElementById('ai-f-temperature')?.value || '0.7');
+    const max_tokens       = parseInt(document.getElementById('ai-f-tokens')?.value || '4096', 10);
+
+    if (!name) { showToast(t('admin.ai.name-req'), 'error'); return; }
+
+    const saveBtn = document.getElementById('ai-f-save-btn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = t('btn.saving');
+
+    const result = await api.call('admin_save_ai_user', {
+        uid: uid !== null ? String(uid) : '',
+        name, role,
+        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, context_messages, temperature, max_tokens }),
+    }, 'POST');
+
+    saveBtn.disabled = false;
+    saveBtn.textContent = t('admin.ai.save-btn');
+
+    if (result.success) {
+        showToast(t('admin.ai.saved'), 'success');
+        document.getElementById('admin-footer-ai').querySelector('#admin-ai-add-btn').classList.remove('hidden');
+        await loadAiUsers();
+    } else {
+        showToast(result.message || 'Failed to save', 'error');
+    }
+};
+
+const deleteAiUser = async (u) => {
+    const ok = await confirmModal(t('admin.ai.del-confirm', { name: u.name }), { confirmLabel: t('btn.delete'), dangerous: true });
+    if (!ok) return;
+    const result = await api.call('admin_delete_ai_user', { uid: String(u.uid) }, 'POST');
+    if (result.success) {
+        showToast(t('admin.ai.deleted', { name: u.name }), 'success');
+        await loadAiUsers();
+    } else {
+        showToast(result.message || 'Failed to delete', 'error');
+    }
+};
+
+const regenerateAiToken = async (uid) => {
+    const ok = await confirmModal(t('admin.ai.regen-confirm'), { confirmLabel: t('admin.ai.regen-btn'), dangerous: true });
+    if (!ok) return;
+    const result = await api.call('admin_regenerate_ai_token', { uid: String(uid) }, 'POST');
+    if (result.success) {
+        const tokenEl = document.getElementById('ai-f-token');
+        if (tokenEl) tokenEl.textContent = result.token;
+        showToast(t('admin.ai.regenerated'), 'success');
+    } else {
+        showToast(result.message || 'Failed to regenerate', 'error');
+    }
+};
+
+// ── API Accounts tab ──────────────────────────────────────────────────────────
+
+const renderApiAccountList = () => {
+    const container = document.getElementById('admin-api-list');
+    if (!container) return;
+
+    if (!apiAccounts.length) {
+        container.innerHTML = `<p class="admin-empty">${t('admin.api.none')}</p>`;
+        return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'admin-table';
+    table.innerHTML = `<thead><tr><th>Name</th><th>Role</th><th>${t('admin.api.token-col')}</th><th></th></tr></thead>`;
+    const tbody = document.createElement('tbody');
+
+    apiAccounts.forEach(u => {
+        const tr = document.createElement('tr');
+
+        const tdName = document.createElement('td');
+        tdName.className = 'admin-td-name';
+        tdName.innerHTML = escHtml(u.name) + ` <span class="admin-api-badge">${t('admin.api.badge')}</span>`;
+
+        const tdRole = document.createElement('td');
+        tdRole.textContent = u.role || 'editor';
+
+        const tdToken = document.createElement('td');
+        tdToken.className = 'admin-log-source';
+        const tok = u.service_token || '';
+        tdToken.textContent = tok ? tok.slice(0, 14) + '…' : '—';
+        tdToken.title = tok;
+
+        const tdActions = document.createElement('td');
+        tdActions.style.cssText = 'white-space:nowrap;display:flex;gap:4px;align-items:center;';
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-sm btn-secondary';
+        editBtn.textContent = 'Edit';
+        editBtn.addEventListener('click', () => openApiAccountForm(u));
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-sm btn-danger admin-del-btn';
+        delBtn.title = 'Delete API account';
+        delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+        delBtn.addEventListener('click', () => deleteApiAccount(u));
+
+        tdActions.append(editBtn, delBtn);
+        tr.append(tdName, tdRole, tdToken, tdActions);
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.innerHTML = '';
+    container.appendChild(table);
+};
+
+const loadApiAccounts = async () => {
+    const container = document.getElementById('admin-api-list');
+    if (container) container.innerHTML = `<p class="admin-loading">${t('admin.users.loading')}</p>`;
+    const result = await api.call('admin_get_api_accounts');
+    if (result.success) {
+        apiAccounts = result.data || [];
+        renderApiAccountList();
+    } else {
+        if (container) container.innerHTML = `<p class="admin-empty">${t('admin.users.failed')}</p>`;
+    }
+};
+
+const showApiAccountHelp = () => {
+    const lb = document.getElementById('api-account-help-lightbox');
+    if (!lb) return;
+    lb.classList.remove('hidden');
+    lb.onclick = (e) => { if (e.target === lb) lb.classList.add('hidden'); };
+    lb.querySelector('#api-account-help-close-btn')?.addEventListener('click', () => lb.classList.add('hidden'), { once: true });
+};
+
+const openApiAccountForm = (u) => {
+    const container = document.getElementById('admin-api-list');
+    if (!container) return;
+    const isNew = !u;
+
+    container.innerHTML = `
+        <div class="admin-ai-form">
+            <div style="display:flex;justify-content:flex-start;margin-bottom:0.5rem">
+                <button type="button" id="api-f-help-btn" class="btn btn-icon btn-secondary" title="${t('admin.api.help-btn')}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17" stroke-width="3"/></svg>
+                </button>
+            </div>
+            <div class="admin-ai-form-section">
+                <div class="form-group">
+                    <label>${t('admin.api.name-label')}</label>
+                    <input type="text" id="api-f-name" class="form-control" value="${escHtml(u?.name || '')}" placeholder="e.g. CI Bot">
+                </div>
+                <div class="form-group">
+                    <label>${t('admin.api.role-label')}</label>
+                    <select id="api-f-role" class="form-control">
+                        ${AI_ROLES.map(r => `<option value="${r}" ${(u?.role || 'editor') === r ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            ${!isNew ? `
+            <div class="admin-ai-form-section-header">${t('admin.api.token-section')}</div>
+            <div class="admin-ai-form-section">
+                <div class="admin-ai-token-row">
+                    <code id="api-f-token" class="admin-ai-token">${escHtml(u.service_token || '')}</code>
+                    <button type="button" id="api-f-regen-btn" class="btn btn-sm btn-secondary">${t('admin.ai.regen-btn')}</button>
+                </div>
+                <p class="admin-ai-token-hint">${t('admin.api.token-hint')}</p>
+            </div>` : ''}
+            <div class="admin-ai-form-actions">
+                <button type="button" id="api-f-cancel-btn" class="btn btn-secondary">${t('btn.cancel')}</button>
+                <button type="button" id="api-f-save-btn" class="btn btn-green">${t('admin.api.save-btn')}</button>
+            </div>
+        </div>`;
+
+    document.getElementById('api-f-help-btn').addEventListener('click', showApiAccountHelp);
+    document.getElementById('api-f-cancel-btn').addEventListener('click', () => {
+        renderApiAccountList();
+        document.getElementById('admin-api-add-btn').classList.remove('hidden');
+    });
+    document.getElementById('api-f-save-btn').addEventListener('click', () => saveApiAccount(u?.uid ?? null));
+    if (!isNew) {
+        document.getElementById('api-f-regen-btn').addEventListener('click', () => regenerateApiToken(u.uid));
+    }
+    document.getElementById('admin-api-add-btn').classList.add('hidden');
+};
+
+const saveApiAccount = async (uid) => {
+    const name = document.getElementById('api-f-name')?.value.trim() || '';
+    const role = document.getElementById('api-f-role')?.value || 'editor';
+    if (!name) { showToast(t('admin.ai.name-req'), 'error'); return; }
+
+    const saveBtn = document.getElementById('api-f-save-btn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = t('btn.saving');
+
+    const result = await api.call('admin_save_api_account', {
+        uid: uid !== null ? String(uid) : '',
+        name, role,
+    }, 'POST');
+
+    saveBtn.disabled = false;
+    saveBtn.textContent = t('admin.api.save-btn');
+
+    if (result.success) {
+        showToast(t('admin.api.saved'), 'success');
+        document.getElementById('admin-api-add-btn').classList.remove('hidden');
+        await loadApiAccounts();
+    } else {
+        showToast(result.message || 'Failed to save', 'error');
+    }
+};
+
+const deleteApiAccount = async (u) => {
+    const ok = await confirmModal(t('admin.api.del-confirm', { name: u.name }), { confirmLabel: t('btn.delete'), dangerous: true });
+    if (!ok) return;
+    const result = await api.call('admin_delete_api_account', { uid: String(u.uid) }, 'POST');
+    if (result.success) {
+        showToast(t('admin.api.deleted', { name: u.name }), 'success');
+        await loadApiAccounts();
+    } else {
+        showToast(result.message || 'Failed to delete', 'error');
+    }
+};
+
+const regenerateApiToken = async (uid) => {
+    const ok = await confirmModal(t('admin.ai.regen-confirm'), { confirmLabel: t('admin.ai.regen-btn'), dangerous: true });
+    if (!ok) return;
+    const result = await api.call('admin_regenerate_api_token', { uid: String(uid) }, 'POST');
+    if (result.success) {
+        const tokenEl = document.getElementById('api-f-token');
+        if (tokenEl) tokenEl.textContent = result.token;
+        showToast(t('admin.ai.regenerated'), 'success');
+    } else {
+        showToast(result.message || 'Failed to regenerate', 'error');
+    }
+};
+
+// ── Agent Jobs tab ────────────────────────────────────────────────────────────
+
+let agentJobs       = [];
+let agentJobAiUsers = {};
+let agentJobSpaces  = [];
+let agentServerTime = '';
+let agentServerTz   = '';
+
+const DOW_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const formatSchedule = (sched) => {
+    if (!sched || !sched.type) return '—';
+    const time = sched.time || '?';
+    switch (sched.type) {
+        case 'daily':   return `Daily at ${time}`;
+        case 'weekly': {
+            const days = (sched.days || []).map(d => DOW_NAMES[d] || d).join(', ');
+            return `${days || '?'} at ${time}`;
+        }
+        case 'monthly': return `${sched.day || 1}. of month at ${time}`;
+        default:        return '—';
+    }
+};
+
+const loadAgentJobs = async () => {
+    const container = document.getElementById('admin-jobs-list');
+    if (container) container.innerHTML = `<p class="admin-loading">${t('admin.users.loading')}</p>`;
+    const result = await api.call('admin_get_agent_jobs');
+    if (!result.success) {
+        if (container) container.innerHTML = `<p class="admin-empty">${t('admin.users.failed')}</p>`;
+        return;
+    }
+    agentJobs       = result.jobs     || [];
+    agentJobAiUsers = result.ai_users || {};
+    agentJobSpaces  = result.spaces   || [];
+    agentServerTime = result.server_time     || '';
+    agentServerTz   = result.server_timezone || '';
+    renderAgentJobList();
+};
+
+const renderAgentJobList = () => {
+    const container = document.getElementById('admin-jobs-list');
+    if (!container) return;
+
+    const serverTimeHtml = agentServerTime
+        ? `<div class="admin-jobs-server-time">${t('admin.jobs.server-time')}: <strong>${agentServerTime}</strong> (${agentServerTz})</div>`
+        : '';
+
+    if (!agentJobs.length) {
+        container.innerHTML = serverTimeHtml + `<p class="admin-empty">${t('admin.jobs.none')}</p>`;
+        return;
+    }
+    const table = document.createElement('table');
+    table.className = 'admin-table';
+    table.innerHTML = `<thead><tr>
+        <th>${t('admin.jobs.col-name')}</th>
+        <th>${t('admin.jobs.col-ai-user')}</th>
+        <th>${t('admin.jobs.col-space')}</th>
+        <th>${t('admin.jobs.col-schedule')}</th>
+        <th>${t('admin.jobs.col-last-run')}</th>
+        <th></th>
+    </tr></thead>`;
+    const tbody = document.createElement('tbody');
+    agentJobs.forEach(job => {
+        const tr = document.createElement('tr');
+        const aiName    = agentJobAiUsers[job.ai_user_uid] || `uid:${job.ai_user_uid}`;
+        const lastRun   = job.last_run ? new Date(job.last_run).toLocaleString() : '—';
+        const statusBadge = job.last_status
+            ? `<span class="admin-job-status admin-job-status-${job.last_status === 'ok' ? 'ok' : 'err'}">${job.last_status}</span>`
+            : '';
+        const enabledBadge = job.enabled
+            ? `<span class="admin-ai-badge" style="background:#48bb78">enabled</span>`
+            : `<span class="admin-ai-badge" style="background:#a0aec0">disabled</span>`;
+
+        tr.innerHTML = `
+            <td class="admin-td-name">${escHtml(job.name)} ${enabledBadge}</td>
+            <td>${escHtml(aiName)}</td>
+            <td><span class="admin-log-source">${escHtml(job.space || '—')}</span></td>
+            <td style="font-size:0.82rem">${escHtml(formatSchedule(job.schedule))}</td>
+            <td>${lastRun} ${statusBadge}</td>
+            <td style="white-space:nowrap;display:flex;gap:4px;align-items:center"></td>`;
+
+        const tdActions = tr.querySelector('td:last-child');
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-sm btn-secondary';
+        editBtn.textContent = t('admin.jobs.edit-btn');
+        editBtn.addEventListener('click', () => openJobForm(job));
+
+        const runBtn = document.createElement('button');
+        runBtn.className = 'btn btn-sm btn-blue';
+        runBtn.textContent = t('admin.jobs.run-btn');
+        runBtn.addEventListener('click', () => runJobNow(job, runBtn));
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-sm btn-danger admin-del-btn';
+        delBtn.title = t('admin.jobs.delete-btn');
+        delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+        delBtn.addEventListener('click', () => deleteJob(job));
+
+        tdActions.append(editBtn, runBtn, delBtn);
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.innerHTML = serverTimeHtml;
+    container.appendChild(table);
+};
+
+const openJobForm = (job) => {
+    const container = document.getElementById('admin-jobs-list');
+    if (!container) return;
+    const isNew  = !job;
+    const sched  = (!isNew && job.schedule) ? job.schedule : { type: 'daily', time: '08:00' };
+    const aiOptions = Object.entries(agentJobAiUsers)
+        .map(([uid, name]) => `<option value="${uid}" ${(!isNew && job.ai_user_uid == uid) ? 'selected' : ''}>${escHtml(name)}</option>`)
+        .join('');
+    const spaceOptions = agentJobSpaces
+        .map(s => `<option value="${s}" ${(!isNew && job.space === s) ? 'selected' : ''}>${escHtml(s)}</option>`)
+        .join('');
+    const schedDays = sched.days || [];
+
+    const dowCheckboxes = DOW_NAMES.map((name, i) =>
+        `<label><input type="checkbox" class="job-f-dow" value="${i}" ${schedDays.includes(i) ? 'checked' : ''}> ${name}</label>`
+    ).join('');
+
+    container.innerHTML = `
+        <div class="admin-ai-form">
+            <div class="job-form-grid">
+                <label>${t('admin.jobs.name-label')}</label>
+                <input type="text" id="job-f-name" class="form-control" value="${isNew ? '' : escHtml(job.name)}">
+
+                <label>${t('admin.jobs.enabled-label')}</label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="job-f-enabled" ${(!isNew && job.enabled) || isNew ? 'checked' : ''}>
+                    <span class="toggle-switch-track"></span>
+                    <span class="toggle-switch-thumb"></span>
+                </label>
+
+                <label>${t('admin.jobs.ai-user-label')}</label>
+                <select id="job-f-ai-user" class="form-control">${aiOptions}</select>
+
+                <label>${t('admin.jobs.space-label')}</label>
+                <select id="job-f-space" class="form-control">${spaceOptions}</select>
+            </div>
+
+            <div class="admin-ai-form-section-header">${t('admin.jobs.sched-label')}${agentServerTime ? ` <span style="font-size:0.78rem;font-weight:400;color:var(--accent-gray)">${t('admin.jobs.server-time')}: ${agentServerTime} (${agentServerTz})</span>` : ''}</div>
+            <div class="job-form-grid">
+                <label>${t('admin.jobs.sched-type')}</label>
+                <select id="job-f-sched-type" class="form-control">
+                    <option value="daily"   ${sched.type === 'daily'   ? 'selected' : ''}>${t('admin.jobs.sched-daily')}</option>
+                    <option value="weekly"  ${sched.type === 'weekly'  ? 'selected' : ''}>${t('admin.jobs.sched-weekly')}</option>
+                    <option value="monthly" ${sched.type === 'monthly' ? 'selected' : ''}>${t('admin.jobs.sched-monthly')}</option>
+                </select>
+
+                <label>${t('admin.jobs.sched-time')}</label>
+                <input type="time" id="job-f-sched-time" class="form-control" value="${escHtml(sched.time || '08:00')}">
+
+                <div id="job-f-sched-days-wrapper" style="${sched.type === 'weekly' ? 'display:contents' : 'display:none'}">
+                    <label>${t('admin.jobs.sched-days')}</label>
+                    <div class="admin-sched-days">${dowCheckboxes}</div>
+                </div>
+
+                <div id="job-f-sched-dom-wrapper" style="${sched.type === 'monthly' ? 'display:contents' : 'display:none'}">
+                    <label>${t('admin.jobs.sched-dom')}</label>
+                    <input type="number" id="job-f-sched-dom" class="form-control" min="1" max="31" value="${sched.day || 1}" style="max-width:6rem">
+                </div>
+            </div>
+
+            <div class="admin-ai-form-section-header">${t('admin.jobs.prompt-section')}</div>
+            <div class="admin-ai-form-section">
+                <label style="font-size:0.85rem;font-weight:600;color:var(--text-muted);margin-bottom:0.25rem">${t('admin.jobs.prompt-label')}</label>
+                <textarea id="job-f-prompt" class="form-control admin-ai-prompt" rows="8" placeholder="${t('admin.jobs.prompt-ph')}">${isNew ? '' : escHtml(job.prompt || '')}</textarea>
+            </div>
+
+            ${!isNew && job.last_run ? `
+            <div class="admin-ai-form-section-header">${t('admin.jobs.last-run-section')}</div>
+            <div class="job-form-grid" style="padding-top:0.5rem">
+                <label>${t('admin.jobs.last-run-label')}</label>
+                <span style="font-size:0.85rem">${new Date(job.last_run).toLocaleString()}</span>
+                <label>Status</label>
+                <span style="font-size:0.85rem">${escHtml(job.last_status || '—')}</span>
+                ${(job.last_log_file || job.last_log_page) ? `
+                <label>${t('admin.jobs.log-file-label')}</label>
+                <code style="font-size:0.75rem;word-break:break-all">${escHtml(job.last_log_file || job.last_log_page)}</code>` : ''}
+            </div>` : ''}
+
+            <div style="display:flex;gap:0.5rem;margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border-color)">
+                <button id="job-f-cancel-btn" class="btn btn-secondary">${t('btn.cancel')}</button>
+                <button id="job-f-save-btn" class="btn btn-green" style="margin-left:auto">${t('btn.save')}</button>
+            </div>
+        </div>`;
+
+    document.getElementById('admin-jobs-add-btn')?.classList.add('hidden');
+
+    // Show/hide schedule sub-rows on type change
+    document.getElementById('job-f-sched-type').addEventListener('change', (e) => {
+        document.getElementById('job-f-sched-days-wrapper').style.display = e.target.value === 'weekly'  ? 'contents' : 'none';
+        document.getElementById('job-f-sched-dom-wrapper').style.display  = e.target.value === 'monthly' ? 'contents' : 'none';
+    });
+
+    document.getElementById('job-f-save-btn').addEventListener('click', () => saveJob(isNew ? null : job.id));
+    document.getElementById('job-f-cancel-btn').addEventListener('click', () => {
+        document.getElementById('admin-jobs-add-btn')?.classList.remove('hidden');
+        renderAgentJobList();
+    });
+};
+
+const buildScheduleObject = () => {
+    const type = document.getElementById('job-f-sched-type')?.value || 'daily';
+    const time = document.getElementById('job-f-sched-time')?.value || '08:00';
+    const sched = { type, time };
+    if (type === 'weekly') {
+        sched.days = [...document.querySelectorAll('.job-f-dow:checked')].map(el => parseInt(el.value, 10));
+    }
+    if (type === 'monthly') {
+        sched.day = parseInt(document.getElementById('job-f-sched-dom')?.value || '1', 10);
+    }
+    return sched;
+};
+
+const saveJob = async (jobId) => {
+    const name   = document.getElementById('job-f-name')?.value.trim();
+    const prompt = document.getElementById('job-f-prompt')?.value.trim();
+    if (!name || !prompt) { showToast('Name and prompt are required.', 'error'); return; }
+    const params = {
+        id:          jobId || '',
+        name,
+        enabled:     document.getElementById('job-f-enabled')?.checked ? 'true' : 'false',
+        ai_user_uid: document.getElementById('job-f-ai-user')?.value || '',
+        space:       document.getElementById('job-f-space')?.value || '',
+        prompt,
+        schedule:    JSON.stringify(buildScheduleObject()),
+    };
+    const result = await api.call('admin_save_agent_job', params, 'POST');
+    if (result.success) {
+        document.getElementById('admin-jobs-add-btn')?.classList.remove('hidden');
+        await loadAgentJobs();
+    } else {
+        showToast(result.message || 'Failed to save job.', 'error');
+    }
+};
+
+const runJobNow = async (job, btn) => {
+    const statusEl = document.getElementById('job-f-run-status');
+    if (btn) { btn.disabled = true; btn.textContent = t('admin.jobs.running'); }
+    if (statusEl) { statusEl.style.display = ''; statusEl.innerHTML = `<span style="color:var(--accent-gray)">${t('admin.jobs.running')}…</span>`; }
+    const result = await api.call('admin_run_agent_job', { id: job.id }, 'POST');
+    if (btn) { btn.disabled = false; btn.textContent = t('admin.jobs.run-btn'); }
+    if (result.success) {
+        const ok  = result.status === 'ok';
+        const msg = ok ? (result.reply || '(no reply)') : (result.error || 'Error');
+        if (statusEl) {
+            statusEl.style.display = '';
+            statusEl.innerHTML = `<div class="admin-job-run-result ${ok ? 'admin-job-run-ok' : 'admin-job-run-err'}">
+                <strong>${ok ? '✓ Success' : '✗ Error'}</strong>
+                <pre class="admin-job-run-pre">${escHtml(msg)}</pre>
+                ${(result.log_file || result.log_page) ? `<div style="margin-top:0.4rem;font-size:0.8rem;color:var(--accent-gray)">${t('admin.jobs.log-file-label')}: <code>${escHtml(result.log_file || result.log_page)}</code></div>` : ''}
+            </div>`;
+        } else {
+            showToast(ok ? t('admin.jobs.run-ok') : (result.error || 'Job failed.'), ok ? 'success' : 'error');
+        }
+        await loadAgentJobs();
+    } else {
+        if (statusEl) {
+            statusEl.style.display = '';
+            statusEl.innerHTML = `<div class="admin-job-run-result admin-job-run-err"><strong>✗ Error</strong><pre class="admin-job-run-pre">${escHtml(result.message || 'Failed.')}</pre></div>`;
+        }
+    }
+};
+
+const deleteJob = async (job) => {
+    const { confirmModal } = await import('../core/utils.js');
+    const { icons } = await import('../core/icons.js');
+    if (!await confirmModal(`Delete job "${job.name}"?`, { confirmLabel: 'Delete', dangerous: true, icon: icons.trash })) return;
+    const result = await api.call('admin_delete_agent_job', { id: job.id }, 'POST');
+    if (result.success) {
+        await loadAgentJobs();
+    }
+};
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+export const init = () => {
+    if (!document.getElementById('admin-btn')) return;
+
+    const openAdmin = async () => {
+        document.getElementById('admin-lightbox').classList.remove('hidden');
+        switchTab('users');
+        markDirty(false);
+        await loadUsers();
+        // Load request count for badge without switching to that tab.
+        const res = await api.call('admin_get_user_requests');
+        if (res.success) { requests = res.data || []; updateRequestsBadge(); }
+    };
+
+    document.getElementById('admin-btn').addEventListener('click', (e) => { e.preventDefault(); openAdmin(); });
+
+    document.getElementById('admin-lightbox-close-btn').addEventListener('click', () => {
+        document.getElementById('admin-lightbox').classList.add('hidden');
+    });
+    document.getElementById('admin-lightbox').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+    });
+
+    document.querySelectorAll('.admin-tab').forEach(tab =>
+        tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
+
+    document.getElementById('admin-save-btn').addEventListener('click', saveUsers);
+
+    document.getElementById('admin-ai-add-btn')?.addEventListener('click', () => openAiUserForm(null));
+    document.getElementById('admin-api-add-btn')?.addEventListener('click', () => openApiAccountForm(null));
+    document.getElementById('admin-jobs-add-btn')?.addEventListener('click', () => openJobForm(null));
+
+    // Close spaces dropdowns on outside click
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.admin-spaces-wrap')) {
+            document.querySelectorAll('.admin-spaces-dropdown').forEach(d => d.classList.add('hidden'));
+        }
+    });
+
+    document.getElementById('admin-log-date').addEventListener('change', (e) => loadLogContent(e.target.value));
+    document.getElementById('admin-log-refresh-btn').addEventListener('click', () => {
+        const sel = document.getElementById('admin-log-date');
+        if (sel.value) loadLogContent(sel.value); else loadLogFiles();
+    });
+
+    document.getElementById('admin-diag-email-btn')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const statusEl = document.getElementById('admin-diag-email-status');
+        btn.disabled = true;
+        btn.textContent = t('admin.diag.sending');
+        if (statusEl) statusEl.innerHTML = '';
+        const result = await api.call('admin_send_test_email', {}, 'POST');
+        btn.disabled = false;
+        btn.textContent = t('admin.diag.email-btn');
+        if (statusEl) {
+            statusEl.innerHTML = result.success
+                ? `<span class="admin-diag-ok">${result.message}</span>`
+                : `<span class="admin-diag-err">${result.message || 'Failed to send email.'}</span>`;
+        }
+    });
+
+    document.querySelectorAll('.admin-diag-refresh-btn').forEach(btn => {
+        btn.addEventListener('click', () =>
+            loadDiagLog(btn.dataset.logType, btn.dataset.output));
+    });
+
+    document.getElementById('admin-diag-error-log-select')?.addEventListener('change', e => {
+        if (e.target.value) loadErrorLogContent(e.target.value);
+    });
+    document.getElementById('admin-diag-error-log-refresh-btn')?.addEventListener('click', () => {
+        const sel = document.getElementById('admin-diag-error-log-select');
+        if (sel?.value) loadErrorLogContent(sel.value); else loadErrorLogFiles();
+    });
+};
