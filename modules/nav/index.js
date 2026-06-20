@@ -135,12 +135,13 @@ export const updateBreadcrumb = (path, space) => {
  */
 export const trackPageVisit = (id, path, space) => {
     if (!id || !path) return;
+    const idStr = String(id); // normalize: API returns integers, dataset returns strings
     const title = pageTitle(path);
     let recents = loadRecents();
     // Remove existing entry for this id
-    recents = recents.filter(r => r.id !== id);
+    recents = recents.filter(r => String(r.id) !== idStr);
     // Prepend new entry
-    recents.unshift({ id, path, space: space || '', title });
+    recents.unshift({ id: idStr, path, space: space || '', title });
     // Trim to max
     if (recents.length > MAX_RECENTS) recents = recents.slice(0, MAX_RECENTS);
     saveRecents(recents);

@@ -348,7 +348,8 @@ body {
 }
 
 #tags-pane #search-query-input {
-    flex-grow: 1;
+    flex: 1 1 0;
+    min-width: 0;
     border: 1px solid var(--accent-gray-hover);
     background-color: var(--sidebar-bg);
     color: var(--sidebar-text);
