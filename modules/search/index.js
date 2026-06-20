@@ -111,6 +111,7 @@ export const displaySearchResults = (title, results) => {
     document.getElementById('viewer-container').classList.remove('hidden');
     document.getElementById('edit-btn').classList.add('hidden');
     document.getElementById('editor-mode-group')?.classList.add('hidden');
+    document.getElementById('page-chat-btn')?.classList.add('hidden');
 };
 
 const performSearch = async () => {
