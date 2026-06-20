@@ -24,7 +24,7 @@ Authentication is optional. When enabled it uses OIDC (tested with Auth0) with t
 
 ```bash
 git clone https://github.com/madsrg/astucia-wiki.git
-cd AstuciaWiki
+cd astucia-wiki
 composer install
 cp config.php.txt config.php   # edit config.php before starting
 php -S localhost:8000
