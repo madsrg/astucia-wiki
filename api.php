@@ -233,7 +233,7 @@ if (isset($_REQUEST['action'])) {
         $tools_def = [
             [
                 'name'        => 'wiki_list_pages',
-                'description' => 'List all pages in the current wiki space. Returns a JSON array of relative file paths.',
+                'description' => 'List all pages in the current wiki space. Returns a JSON array of objects with "id", "path", and "space" fields.',
                 'params'      => ['type' => 'object', 'properties' => (object)[], 'required' => []],
             ],
             [
@@ -277,9 +277,14 @@ if (isset($_REQUEST['action'])) {
         switch ($tool_name) {
             case 'wiki_list_pages':
                 $pages = $indexer->getAllPages();
-                $paths = array_values(array_filter(array_column($pages, 'path')));
-                sort($paths);
-                return json_encode($paths);
+                $space_name_lp = basename($space_dir);
+                $result_lp = [];
+                foreach ($pages as $id => $data) {
+                    if (empty($data['path'])) continue;
+                    $result_lp[] = ['id' => (string)$id, 'path' => $data['path'], 'space' => $space_name_lp];
+                }
+                usort($result_lp, fn($a, $b) => strcmp($a['path'], $b['path']));
+                return json_encode($result_lp);
 
             case 'wiki_read_page':
                 $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
@@ -357,7 +362,9 @@ if (isset($_REQUEST['action'])) {
             . "and wiki_write_page to create or update .md pages. "
             . "When calling wiki_write_page you MUST include the complete markdown content in the \"content\" field in the same tool call — never call it with an empty or missing content field. "
             . "When the user asks you to create or modify wiki content, call the appropriate tool immediately — do not describe what you are about to do before doing it. "
-            . "Only invoke tools when the user's request actually requires wiki content.\n\n";
+            . "Only invoke tools when the user's request actually requires wiki content. "
+            . "When writing internal links to other wiki pages, use the Markdown syntax [Page Title](?pageid=ID&space=SPACE) "
+            . "where ID and SPACE come from the wiki_list_pages results. Never use file paths as link targets for internal pages.\n\n";
         // If a .md page with the same name exists in the same folder, inject its content as context
         $linked_md       = dirname($chat_file) . '/' . $chat_name . '.md';
         $pages_dir_real  = realpath(rtrim(PAGES_DIR, '/'));
