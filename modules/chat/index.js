@@ -15,6 +15,7 @@ let _lastMtime    = 0;
 let _loadingMore  = false;
 let _aiModalActive    = false;
 let _aiModalCloseTimer = null;
+let _aiUids       = new Set();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -34,8 +35,13 @@ const avatarColor = (uid) => {
     return palette[(uid ?? 0) % palette.length];
 };
 
-const renderText = (raw) =>
-    escHtml(raw).replace(/#(\S+)/g, '<span class="chat-mention">#$1</span>');
+const renderText = (raw, isAi = false) => {
+    if (isAi && typeof marked !== 'undefined') {
+        const html = marked.parse(String(raw ?? ''));
+        return html.replace(/#(\w+)/g, '<span class="chat-mention">#$1</span>');
+    }
+    return escHtml(raw).replace(/#(\S+)/g, '<span class="chat-mention">#$1</span>');
+};
 
 const isNearBottom = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 
@@ -208,7 +214,8 @@ const buildRow = (msg, grouped) => {
     }
 
     const bubble = document.createElement('div');
-    let bubbleClass = 'chat-bubble' + (isMe ? ' chat-bubble-mine' : '');
+    const isAiMsg = _aiUids.has(msg.uid);
+    let bubbleClass = 'chat-bubble' + (isMe ? ' chat-bubble-mine' : '') + (isAiMsg ? ' chat-bubble-md' : '');
     if (isSticky) bubbleClass += ' chat-bubble-sticky';
     bubble.className = bubbleClass;
 
@@ -232,7 +239,7 @@ const buildRow = (msg, grouped) => {
         return row;
     }
 
-    bubble.innerHTML = renderText(msg.text);
+    bubble.innerHTML = renderText(msg.text, _aiUids.has(msg.uid));
 
     if (isMe || currentRole === 'admin') {
         const del = document.createElement('button');
@@ -629,7 +636,10 @@ export const init = () => {
         }
     });
 
-    getUsers(); // warm the cache on init
+    // Warm the cache and build the AI UID set for Markdown rendering
+    getUsers().then(users => {
+        _aiUids = new Set(users.filter(u => u.is_ai).map(u => u.uid));
+    });
 
     // ── Topic lightbox ─────────────────────────────────────────────────────────
     const topicLightbox  = document.getElementById('chat-topic-lightbox');

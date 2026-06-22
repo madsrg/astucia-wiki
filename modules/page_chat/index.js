@@ -12,6 +12,7 @@ let _lastMtime      = 0;
 let _linkedMdMtime  = 0;
 let _pcData         = null;
 let _pcPath         = null; // path currently loaded in the panel
+let _aiUids         = new Set();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -30,7 +31,13 @@ const formatTime = ts => {
          + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
-const renderText = raw => esc(raw).replace(/#(\S+)/g, '<span class="chat-mention">#$1</span>');
+const renderText = (raw, isAi = false) => {
+    if (isAi && typeof marked !== 'undefined') {
+        const html = marked.parse(String(raw ?? ''));
+        return html.replace(/#(\w+)/g, '<span class="chat-mention">#$1</span>');
+    }
+    return esc(raw).replace(/#(\S+)/g, '<span class="chat-mention">#$1</span>');
+};
 
 const isNearBottom = el => el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 
@@ -65,8 +72,9 @@ const buildRow = (msg, grouped) => {
         col.appendChild(meta);
     }
 
+    const isAiMsg = _aiUids.has(msg.uid);
     const bubble = document.createElement('div');
-    bubble.className = 'chat-bubble' + (isMe ? ' chat-bubble-mine' : '');
+    bubble.className = 'chat-bubble' + (isMe ? ' chat-bubble-mine' : '') + (isAiMsg ? ' chat-bubble-md' : '');
 
     if (msg.pending) {
         const age = Date.now() - new Date(msg.timestamp).getTime();
@@ -85,7 +93,7 @@ const buildRow = (msg, grouped) => {
         return row;
     }
 
-    bubble.innerHTML = renderText(msg.text);
+    bubble.innerHTML = renderText(msg.text, isAiMsg);
 
     if (isMe || currentRole === 'admin') {
         const del = document.createElement('button');
@@ -352,6 +360,10 @@ const loadAndOpen = async (chatPath) => {
     const linkedMd = chatPath.replace(/\.chat$/, '.md');
     const mtRes = await api.call('file_mtime', { file: linkedMd });
     _linkedMdMtime = mtRes.mtime || 0;
+
+    // Cache AI user UIDs so renderText can render their messages as Markdown
+    const users = await getUsers();
+    _aiUids = new Set(users.filter(u => u.is_ai).map(u => u.uid));
 
     // Swap meta row (attachments/tags) for the page chat input
     document.getElementById('page-meta-row')?.classList.add('hidden');

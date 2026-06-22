@@ -1030,6 +1030,15 @@ body {
 /* Bubbles */
 .chat-bubble { position: relative; background: #f0f4f8; color: var(--text-color); border-radius: 0 12px 12px 12px; padding: 0.45rem 0.75rem; font-size: 0.9rem; line-height: 1.45; word-break: break-word; white-space: pre-wrap; max-width: 100%; }
 .chat-bubble-mine { background: #ebf8ff; border-radius: 12px 0 12px 12px; }
+.chat-bubble-md { white-space: normal; }
+.chat-bubble-md p  { margin: 0 0 .4em; }
+.chat-bubble-md p:last-child { margin-bottom: 0; }
+.chat-bubble-md ul, .chat-bubble-md ol { margin: .25em 0 .4em 1.25em; padding: 0; }
+.chat-bubble-md li { margin-bottom: .15em; }
+.chat-bubble-md h1,.chat-bubble-md h2,.chat-bubble-md h3 { font-size: 1em; font-weight: 700; margin: .4em 0 .2em; }
+.chat-bubble-md pre { background: rgba(0,0,0,.06); border-radius: 4px; padding: .35em .6em; overflow-x: auto; white-space: pre; font-size: .85em; margin: .3em 0; }
+.chat-bubble-md code { background: rgba(0,0,0,.06); border-radius: 3px; padding: .1em .3em; font-size: .85em; }
+.chat-bubble-md pre code { background: none; padding: 0; }
 .chat-mention { color: #2b6cb0; font-weight: 600; }
 
 /* Delete button inside bubble */
