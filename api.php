@@ -233,7 +233,7 @@ if (isset($_REQUEST['action'])) {
         $tools_def = [
             [
                 'name'        => 'wiki_list_pages',
-                'description' => 'List all pages in the current wiki space. Returns a JSON array of objects with "id", "path", and "space" fields.',
+                'description' => 'List all pages in the current wiki space. Returns a JSON array of objects with "id", "path", "space", and "tags" (array, only present when non-empty) fields. Use this to find pages by tag or to discover what content exists before reading.',
                 'params'      => ['type' => 'object', 'properties' => (object)[], 'required' => []],
             ],
             [
@@ -281,7 +281,9 @@ if (isset($_REQUEST['action'])) {
                 $result_lp = [];
                 foreach ($pages as $id => $data) {
                     if (empty($data['path'])) continue;
-                    $result_lp[] = ['id' => (string)$id, 'path' => $data['path'], 'space' => $space_name_lp];
+                    $entry_lp = ['id' => (string)$id, 'path' => $data['path'], 'space' => $space_name_lp];
+                    if (!empty($data['tags'])) $entry_lp['tags'] = $data['tags'];
+                    $result_lp[] = $entry_lp;
                 }
                 usort($result_lp, fn($a, $b) => strcmp($a['path'], $b['path']));
                 return json_encode($result_lp);
