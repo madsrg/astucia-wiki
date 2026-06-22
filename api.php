@@ -257,6 +257,18 @@ if (isset($_REQUEST['action'])) {
                     'required'   => ['path', 'content'],
                 ],
             ],
+            [
+                'name'        => 'wiki_set_tags',
+                'description' => 'Set the tags on an existing wiki page, replacing any current tags. Pass an empty array to clear all tags. Only available when the AI user has editor role.',
+                'params'      => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'path' => ['type' => 'string', 'description' => 'Relative path to the page, e.g. Notes/Meeting.md'],
+                        'tags' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Array of tag strings to set on the page. Replaces existing tags.'],
+                    ],
+                    'required'   => ['path', 'tags'],
+                ],
+            ],
         ];
 
         if ($provider === 'anthropic') {
@@ -321,6 +333,18 @@ if (isset($_REQUEST['action'])) {
                 $indexer->updateModified($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
                 git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Update ' . basename($rel));
                 return "Page updated: {$rel}";
+
+            case 'wiki_set_tags':
+                if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot set tags.';
+                $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
+                if (!$rel) return 'Error: path is required.';
+                $tags_input = $tool_input['tags'] ?? [];
+                if (!is_array($tags_input)) return 'Error: tags must be an array.';
+                $page_id = $indexer->getId($rel);
+                if ($page_id === null) return 'Error: page not found in index — make sure the path matches exactly what wiki_list_pages returns.';
+                $indexer->updateTags($page_id, $tags_input);
+                $set_count = count(array_filter(array_map('trim', $tags_input)));
+                return $set_count > 0 ? "Tags set on {$rel}: " . implode(', ', array_filter(array_map('trim', $tags_input))) : "Tags cleared on {$rel}.";
 
             default:
                 return 'Error: unknown tool.';
