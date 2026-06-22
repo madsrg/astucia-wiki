@@ -22,6 +22,13 @@ const getCreationPath = () => {
     return pathPrefix;
 };
 
+const switchToTreePane = () => {
+    const tab = document.querySelector('.pane-tab[data-pane="pages"]');
+    if (!tab) return;
+    if (!tab.classList.contains('active')) tab.click();
+    if (tab.dataset.nav === 'folder') tab.click();
+};
+
 const createAndOpen = async (ext, apiAction, promptKey, defaultKey, createdKey, icon) => {
     let fileName = await promptModal(t(promptKey), t(defaultKey), '', icon);
     if (!fileName) return;
@@ -31,6 +38,7 @@ const createAndOpen = async (ext, apiAction, promptKey, defaultKey, createdKey, 
     if (res.success) {
         showToast(t(createdKey), 'success');
         await refreshFileTree();
+        switchToTreePane();
         const newFileEl = document.querySelector(`[data-path="${path}"]`);
         if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
     }
@@ -72,6 +80,7 @@ export const init = () => {
         if (res.success) {
             showToast(t('new.page-created'), 'success');
             await refreshFileTree();
+            switchToTreePane();
             const newFileEl = document.querySelector(`[data-path="${path}"]`);
             if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
         }
@@ -93,6 +102,7 @@ export const init = () => {
             if (r.success) {
                 showToast(t('new.page-created'), 'success');
                 await refreshFileTree();
+                switchToTreePane();
                 const newFileEl = document.querySelector(`[data-path="${path}"]`);
                 if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
             }
@@ -144,6 +154,7 @@ export const init = () => {
         if (res.success) {
             showToast(t('new.chat-created'), 'success');
             await refreshFileTree();
+            switchToTreePane();
             const newFileEl = document.querySelector(`[data-path="${path}"]`);
             if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
         }
