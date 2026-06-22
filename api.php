@@ -334,6 +334,9 @@ if (isset($_REQUEST['action'])) {
             $ai_name = $u['name'] ?? '';
             if (!$ai_name) continue;
             if (!preg_match('/(^|[\s,])[@#]' . preg_quote($ai_name, '/') . '(\b|$)/iu', $message_text)) continue;
+            ignore_user_abort(true);
+            set_time_limit(0);
+            if (session_id()) session_write_close();
             if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
             trigger_ai_response($u, $chat_file, $chat_data, $indexer, $space_dir);
             return;
@@ -941,6 +944,21 @@ if (isset($_REQUEST['action'])) {
                 if (!file_exists($cm_path) || !is_file($cm_path)) throw new Exception('Chat file not found.');
                 $cm_data  = json_decode(file_get_contents($cm_path), true);
                 if ($cm_data === null) throw new Exception('Invalid chat file.');
+                // Resolve stale pending messages (AI worker died before responding)
+                $cm_stale_timeout = 300; // 5 minutes
+                $cm_changed = false;
+                foreach ($cm_data['messages'] as &$_cm_msg) {
+                    if (empty($_cm_msg['pending'])) continue;
+                    $cm_age = time() - strtotime($_cm_msg['timestamp'] ?? '');
+                    if ($cm_age > $cm_stale_timeout) {
+                        $_cm_msg['text']    = '⚠️ No response was received. The request may have timed out on the server.';
+                        $_cm_msg['timestamp'] = date('c');
+                        unset($_cm_msg['pending']);
+                        $cm_changed = true;
+                    }
+                }
+                unset($_cm_msg);
+                if ($cm_changed) file_put_contents($cm_path, json_encode($cm_data, JSON_PRETTY_PRINT));
                 $cm_all   = array_values($cm_data['messages'] ?? []);
                 $cm_total = count($cm_all);
                 $cm_limit = min(max((int)($_GET['limit'] ?? 50), 1), 200);
@@ -1088,10 +1106,14 @@ if (isset($_REQUEST['action'])) {
                 }
 
                 file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
-                $_async_ai = $_pending_ai_user !== null && function_exists('fastcgi_finish_request');
-                echo json_encode(['success' => true, 'data' => $chat_data, 'async_ai' => $_async_ai]);
+                echo json_encode(['success' => true, 'data' => $chat_data]);
 
                 if ($_pending_ai_user !== null) {
+                    // Release session lock immediately so chat-poll requests are not blocked
+                    // while the AI processes (which can take minutes for complex queries).
+                    ignore_user_abort(true);
+                    set_time_limit(0);
+                    if (session_id()) session_write_close();
                     if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
                     trigger_ai_response($_pending_ai_user, $file_path, $chat_data, $indexer, $space_dir, $_pending_placeholder_id);
                 }
