@@ -62,10 +62,11 @@ An AI user is a bot that participates in chat threads. When a regular user #ment
 
 AI users also receive a **service token** (`wk_ai_…`) that can be used to call the API on their behalf from external scripts.
 
-AI users can use three tools the wiki exposes:
-- **`wiki_list_pages`** — lists all page paths in the current Space
-- **`wiki_read_page`** — reads the content of any `.md`, `.list`, or `.chat` file by ID
+AI users can use four tools the wiki exposes:
+- **`wiki_list_pages`** — lists all pages in the current Space, including their tags
+- **`wiki_read_page`** — reads the content of any `.md`, `.list`, or `.chat` file
 - **`wiki_write_page`** — creates or overwrites a `.md` page (editor role only)
+- **`wiki_set_tags`** — sets or clears the tags on any page (editor role only)
 
 ### System users
 
