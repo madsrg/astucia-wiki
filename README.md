@@ -38,6 +38,36 @@ Open `http://localhost:8000`. No database, no build step.
 
 The minimum required settings are `PAGES_DIR` (where wiki content is stored) and `APP_TITLE`. Everything else — authentication, email, logging — is optional and disabled by default.
 
+## Authentication
+
+Authentication is optional and disabled by default. When enabled it uses OIDC (tested with Auth0, Keycloak, Okta). Set `AUTHENTICATION_ENABLED = true` in `config.php` along with the four OIDC constants (`OIDC_PROVIDER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`).
+
+### Bootstrapping the first admin
+
+Because you have server-side access during setup, the easiest way to create the first admin account is:
+
+1. Enable authentication and open the wiki in a browser.
+2. Log in with your identity provider. You will land on an *"Access pending"* page — that is expected. The wiki has written your OIDC `sub`, name, and email into `user_requests.json` on the server.
+3. On the server, open `user_requests.json` and find your entry. Copy the `sub`, `name`, and `email` into `users.json` (create it if it doesn't exist), add `"role": "admin"` and `"spaces": null`:
+
+```json
+{
+  "users": [
+    {
+      "sub":    "<paste sub from user_requests.json>",
+      "name":   "Your Name",
+      "email":  "you@example.com",
+      "role":   "admin",
+      "spaces": null
+    }
+  ]
+}
+```
+
+4. Log in again — you are now admin and can approve or deny all future user requests from the **Admin panel**.
+
+No need to look up your `sub` ID in the provider dashboard; the wiki captures it automatically on first login. After bootstrap, `users.json` is managed entirely through the Admin panel.
+
 ## AI assistants and system users
 
 The admin panel (gear icon, **Users** tab) lets you create two kinds of non-human users.
