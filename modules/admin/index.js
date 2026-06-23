@@ -848,6 +848,7 @@ const saveAiUser = async (uid) => {
 
     if (result.success) {
         showToast(t('admin.ai.saved'), 'success');
+        invalidateUsers();
         document.getElementById('admin-footer-ai').querySelector('#admin-ai-add-btn').classList.remove('hidden');
         await loadAiUsers();
     } else {
