@@ -931,7 +931,7 @@ body {
 .admin-table tbody tr:hover { background: #f7fafc; }
 .admin-table tbody tr.admin-row-self { background: #fffff0; }
 .admin-table tbody tr.admin-row-self:hover { background: #fefce8; }
-.admin-table tbody td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #f0f4f8; vertical-align: middle; }
+.admin-table tbody td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #f0f4f8; vertical-align: middle; font-size: 0.875rem; }
 .admin-td-name { font-size: 0.875rem; }
 .admin-td-name .admin-you-badge { margin-left: 0.35rem; }
 .admin-td-email { font-size: 0.875rem; }
