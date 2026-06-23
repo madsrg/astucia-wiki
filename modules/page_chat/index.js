@@ -83,6 +83,18 @@ const buildRow = (msg, grouped) => {
             bubble.innerHTML = `<span class="chat-pending-timeout">${t('chat.timeout')}</span>`;
         } else {
             bubble.innerHTML = `<span class="chat-pending-indicator"><span class="chat-spinner"></span>${t('chat.working')}</span>`;
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'btn btn-sm btn-secondary chat-pending-cancel';
+            cancelBtn.textContent = t('btn.cancel');
+            cancelBtn.addEventListener('click', async () => {
+                cancelBtn.disabled = true;
+                const res = await api.call('cancel_pending_chat_message', { file: _pcPath, id: msg.id }, 'POST');
+                if (res.success) {
+                    _pcData = res.data;
+                    renderMessages(_pcData.messages || [], false);
+                }
+            });
+            bubble.appendChild(cancelBtn);
             const capturedPath = _pcPath;
             setTimeout(() => {
                 if (_pcPath === capturedPath && _pcData) renderMessages(_pcData.messages || [], false);

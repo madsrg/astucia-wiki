@@ -1064,6 +1064,7 @@ body {
 .chat-bubble-sticky { border-left: 2px solid #f6ad55; }
 .chat-bubble-mine.chat-bubble-sticky { border-right: 2px solid #f6ad55; border-left: none; }
 .chat-pending-indicator { display: flex; align-items: center; gap: 0.5rem; color: var(--accent-gray); font-style: italic; font-size: 0.875rem; }
+.chat-pending-cancel { margin-top: 0.4rem; display: block; font-size: 0.75rem; padding: 2px 8px; }
 .chat-spinner { flex-shrink: 0; width: 13px; height: 13px; border: 2px solid #cbd5e0; border-top-color: #4a90d9; border-radius: 50%; animation: chat-spin 0.75s linear infinite; }
 @keyframes chat-spin { to { transform: rotate(360deg); } }
 .chat-pending-timeout { font-size: 0.875rem; color: #c05621; }

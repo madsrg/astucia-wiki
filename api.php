@@ -567,6 +567,7 @@ if (isset($_REQUEST['action'])) {
             $replaced = false;
             foreach ($fresh['messages'] as &$_m) {
                 if ((int)($_m['id'] ?? -1) === $placeholder_id) {
+                    if (empty($_m['pending'])) break; // already cancelled — don't overwrite
                     $_m['text']      = $reply;
                     $_m['timestamp'] = date('c');
                     unset($_m['pending']);
@@ -587,7 +588,7 @@ if (isset($_REQUEST['action'])) {
     }
 
     $edit_actions  = ['save', 'create_file', 'create_folder', 'create_diagram', 'create_list', 'create_chat',
-                      'post_chat_message', 'delete_chat_message', 'update_chat_topic', 'toggle_sticky',
+                      'post_chat_message', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'toggle_sticky',
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags',
                       'save_diagram_svg', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore'];
@@ -1163,6 +1164,27 @@ if (isset($_REQUEST['action'])) {
                     throw new Exception('Permission denied.');
                 }
                 array_splice($chat_data['messages'], $idx, 1);
+                file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
+                echo json_encode(['success' => true, 'data' => $chat_data]);
+                break;
+
+            case 'cancel_pending_chat_message':
+                $file_path = sanitize_path($_POST['file']);
+                $msg_id = (int)($_POST['id'] ?? 0);
+                $chat_data = json_decode(file_get_contents($file_path), true);
+                if ($chat_data === null) throw new Exception('Invalid chat file.');
+                $cancelled = false;
+                foreach ($chat_data['messages'] as &$_cm) {
+                    if ((int)($_cm['id'] ?? -1) === $msg_id && !empty($_cm['pending'])) {
+                        $_cm['text'] = '⚠️ Request cancelled.';
+                        $_cm['timestamp'] = date('c');
+                        unset($_cm['pending']);
+                        $cancelled = true;
+                        break;
+                    }
+                }
+                unset($_cm);
+                if (!$cancelled) throw new Exception('No pending message found with that ID.');
                 file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
                 echo json_encode(['success' => true, 'data' => $chat_data]);
                 break;
