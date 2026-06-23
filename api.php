@@ -398,8 +398,10 @@ if (isset($_REQUEST['action'])) {
         $linked_md       = dirname($chat_file) . '/' . $chat_name . '.md';
         $pages_dir_real  = realpath(rtrim(PAGES_DIR, '/'));
         if (file_exists($linked_md) && $pages_dir_real !== false && strpos(realpath($linked_md), $pages_dir_real) === 0) {
+            $linked_md_rel = ltrim(str_replace(rtrim($space_dir, '/') . '/', '', $linked_md), '/');
             $page_content = file_get_contents($linked_md);
             $wiki_ctx .= "The following is the current content of the wiki page \"{$chat_name}\" that this chat is attached to. "
+                      . "Its full path (use this exact value when calling wiki_write_page to update it) is: \"{$linked_md_rel}\". "
                       . "Use it as context when answering questions:\n\n```markdown\n"
                       . $page_content
                       . "\n```\n\n";
