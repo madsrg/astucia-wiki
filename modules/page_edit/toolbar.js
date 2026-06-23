@@ -1,5 +1,5 @@
 import { state } from '../core/state.js';
-import { insertMarkdown, insertHeading } from './editor.js';
+import { insertMarkdown, insertHeading, prependLines } from './editor.js';
 import { openIncludeLightbox, openImageLightbox, openDiagramInsertLightbox, openListInsertLightbox } from './insert_media.js';
 import { openCommentLightbox } from './insert_comment.js';
 import { openLinkLightbox, openExternalLinkLightbox } from './link_lightbox.js';
@@ -67,6 +67,11 @@ export const createEditorToolbar = () => {
         svg('<line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>'),
         'Ordered list',
         () => insertMarkdown('1. ')
+    );
+    addBtn(
+        svg('<rect x="2" y="5" width="6" height="6" rx="1"/><polyline points="3.5 8 5 9.5 7.5 6.5"/><line x1="11" y1="8" x2="22" y2="8"/><rect x="2" y="14" width="6" height="6" rx="1"/><line x1="11" y1="17" x2="22" y2="17"/>'),
+        'Checkbox list — prepends "- [ ] " to each selected line',
+        () => prependLines('- [ ] ')
     );
 
     // ── Block formatting ────────────────────────────────────────────────────

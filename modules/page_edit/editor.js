@@ -26,6 +26,28 @@ export const insertHeading = (level) => {
     editor.dispatchEvent(new Event('input'));
 };
 
+// Prepends prefix to every selected line; inserts prefix at cursor when nothing is selected.
+export const prependLines = (prefix) => {
+    const editor = getEditor();
+    if (!editor) return;
+    const start = editor.selectionStart;
+    const end   = editor.selectionEnd;
+    const selectedText = editor.value.substring(start, end);
+
+    if (start !== end) {
+        const lines = selectedText.split('\n');
+        const newText = lines.map((line, i) =>
+            (line === '' && i === lines.length - 1) ? '' : prefix + line
+        ).join('\n');
+        editor.setRangeText(newText, start, end, 'end');
+    } else {
+        editor.setRangeText(prefix, start, start, 'end');
+    }
+
+    editor.focus();
+    editor.dispatchEvent(new Event('input'));
+};
+
 // Core text-insertion helper used by toolbar, hotkeys, search/replace, and link lightbox.
 export const insertMarkdown = (prefix, suffix = '') => {
     const editor = getEditor();
