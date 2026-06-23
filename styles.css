@@ -1173,6 +1173,9 @@ body {
 .admin-ai-token-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .admin-ai-token { font-family: monospace; font-size: 0.78rem; background: #f1f5f9; border: 1px solid var(--border-color); border-radius: 4px; padding: 3px 7px; word-break: break-all; flex: 1; }
 .admin-ai-token-hint { font-size: 0.78rem; color: var(--accent-gray); margin: 0.35rem 0 0; }
+.admin-ai-temp-slider { width: 100%; margin: 0.35rem 0 0.1rem; cursor: pointer; accent-color: var(--accent-blue); }
+.admin-ai-temp-val { font-weight: 600; color: var(--accent-blue); }
+.form-hint { font-size: 0.78rem; color: var(--accent-gray); margin: 0.25rem 0 0; line-height: 1.5; }
 .agent-instructions-textarea { width: 100%; box-sizing: border-box; flex: 1; min-height: 420px; resize: vertical; font-family: 'JetBrains Mono', 'Cascadia Code', monospace; font-size: 0.75rem; line-height: 1.6; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 4px; background: #0f172a; color: #e2e8f0; }
 .admin-ai-form-actions { display: flex; gap: 0.5rem; justify-content: flex-end; padding-top: 0.5rem; border-top: 1px solid var(--border-color); margin-top: 0.25rem; }
 .admin-job-status { font-size: 0.72rem; padding: 1px 7px; border-radius: 10px; font-weight: 600; }

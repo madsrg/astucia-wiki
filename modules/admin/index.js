@@ -734,47 +734,48 @@ const openAiUserForm = (u) => {
                             ${AI_ROLES.map(r => `<option value="${r}" ${(u?.role || 'editor') === r ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join('')}
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label>${t('admin.ai.provider')}</label>
-                        <select id="ai-f-provider" class="form-control">
-                        <option value="openai"    ${(cfg.provider || 'openai') === 'openai'    ? 'selected' : ''}>${t('admin.ai.openai')}</option>
-                        <option value="anthropic" ${(cfg.provider || 'openai') === 'anthropic' ? 'selected' : ''}>${t('admin.ai.anthropic')}</option>
-                    </select>
-                    </div>
                 </div>
             </div>
             <div class="admin-ai-form-section-header">${t('admin.ai.api-cfg')}</div>
             <div class="admin-ai-form-section">
                 <div class="admin-ai-form-row">
                     <div class="form-group">
+                        <label>${t('admin.ai.provider')}</label>
+                        <select id="ai-f-provider" class="form-control">
+                            <option value="openai"    ${(cfg.provider || 'openai') === 'openai'    ? 'selected' : ''}>${t('admin.ai.openai')}</option>
+                            <option value="anthropic" ${(cfg.provider || 'openai') === 'anthropic' ? 'selected' : ''}>${t('admin.ai.anthropic')}</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label>${t('admin.ai.url')}</label>
                         <input type="url" id="ai-f-url" class="form-control" value="${escHtml(cfg.api_url || '')}" placeholder="https://api.openai.com/v1/chat/completions">
                     </div>
+                </div>
+                <div class="admin-ai-form-row">
                     <div class="form-group">
                         <label>${t('admin.ai.key')} ${cfg.api_key_set && !isClone ? `<span class="admin-ai-key-set">${t('admin.ai.key-set')}</span>` : ''}</label>
                         <input type="password" id="ai-f-key" class="form-control" placeholder="${isClone ? 'Leave blank to copy key from source' : cfg.api_key_set ? 'Leave blank to keep existing key' : 'sk-…'}">
                         ${isClone ? `<input type="hidden" id="ai-f-source-uid" value="${escHtml(String(u._cloneSourceUid))}">` : '<input type="hidden" id="ai-f-source-uid" value="">'}
                     </div>
-                </div>
-                <div class="admin-ai-form-row">
                     <div class="form-group">
                         <label>${t('admin.ai.model')}</label>
                         <input type="text" id="ai-f-model" class="form-control" value="${escHtml(cfg.model || '')}" placeholder="gpt-4o">
                     </div>
-                    <div class="form-group">
-                        <label>${t('admin.ai.context')}</label>
-                        <input type="number" id="ai-f-context" class="form-control" value="${cfg.context_messages ?? 20}" min="1" max="100">
-                    </div>
                 </div>
                 <div class="admin-ai-form-row">
                     <div class="form-group">
-                        <label>${t('admin.ai.temp')}</label>
-                        <input type="number" id="ai-f-temperature" class="form-control" value="${cfg.temperature ?? 0.7}" min="0" max="2" step="0.1">
+                        <label>${t('admin.ai.context')}</label>
+                        <input type="number" id="ai-f-context" class="form-control" value="${cfg.context_messages ?? 20}" min="1" max="100">
                     </div>
                     <div class="form-group">
                         <label>${t('admin.ai.tokens')}</label>
                         <input type="number" id="ai-f-tokens" class="form-control" value="${cfg.max_tokens ?? 4096}" min="100" max="32000">
                     </div>
+                </div>
+                <div class="form-group">
+                    <label>${t('admin.ai.temp')} — <span id="ai-f-temperature-display" class="admin-ai-temp-val">${cfg.temperature ?? 0.7}</span></label>
+                    <input type="range" id="ai-f-temperature" class="admin-ai-temp-slider" value="${cfg.temperature ?? 0.7}" min="0" max="2" step="0.05">
+                    <p class="form-hint">Controls randomness. <strong>0.7</strong> (default) balances creativity with coherence — good for most tasks. Lower values (0–0.4) produce more focused, deterministic replies; useful for factual Q&amp;A or structured output. Higher values (1.0–2.0) increase variety and creativity but risk incoherent or off-topic replies.</p>
                 </div>
             </div>
             <div class="admin-ai-form-section-header">${t('admin.ai.behaviour')}</div>
@@ -799,6 +800,10 @@ const openAiUserForm = (u) => {
                 <button type="button" id="ai-f-save-btn" class="btn btn-green">${t('admin.ai.save-btn')}</button>
             </div>
         </div>`;
+
+    document.getElementById('ai-f-temperature').addEventListener('input', (e) => {
+        document.getElementById('ai-f-temperature-display').textContent = parseFloat(e.target.value).toFixed(2).replace(/\.?0+$/, '') || '0';
+    });
 
     document.getElementById('ai-f-cancel-btn').addEventListener('click', () => {
         renderAiUserList();
