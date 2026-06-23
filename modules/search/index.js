@@ -112,6 +112,7 @@ export const displaySearchResults = (title, results) => {
     document.getElementById('edit-btn').classList.add('hidden');
     document.getElementById('editor-mode-group')?.classList.add('hidden');
     document.getElementById('page-chat-btn')?.classList.add('hidden');
+    document.getElementById('toc-btn')?.classList.add('hidden');
 };
 
 const performSearch = async () => {
