@@ -769,6 +769,7 @@ const openAiUserForm = (u) => {
             </div>` : ''}
             <div class="admin-ai-form-actions">
                 <button type="button" id="ai-f-cancel-btn" class="btn btn-secondary">${t('btn.cancel')}</button>
+                ${!isNew ? `<button type="button" id="ai-f-clone-btn" class="btn btn-secondary">Clone…</button>` : ''}
                 <button type="button" id="ai-f-save-btn" class="btn btn-green">${t('admin.ai.save-btn')}</button>
             </div>
         </div>`;
@@ -786,6 +787,7 @@ const openAiUserForm = (u) => {
             const token = document.getElementById('ai-f-token')?.textContent.trim() || '';
             showAgentInstructions(token);
         });
+        document.getElementById('ai-f-clone-btn').addEventListener('click', () => cloneAiUser(u));
     }
 
     document.getElementById('ai-f-help-btn').addEventListener('click', () => {
@@ -833,6 +835,47 @@ const saveAiUser = async (uid) => {
     } else {
         showToast(result.message || 'Failed to save', 'error');
     }
+};
+
+const cloneAiUser = (source) => {
+    const lb       = document.getElementById('clone-ai-lightbox');
+    const nameInput = document.getElementById('clone-ai-name');
+    const confirmBtn = document.getElementById('clone-ai-confirm-btn');
+    const cancelBtn  = document.getElementById('clone-ai-cancel-btn');
+    const closeBtn   = document.getElementById('clone-ai-close-btn');
+    if (!lb || !nameInput) return;
+
+    nameInput.value = '';
+    lb.classList.remove('hidden');
+    setTimeout(() => nameInput.focus(), 50);
+
+    const close = () => {
+        lb.classList.add('hidden');
+        confirmBtn.removeEventListener('click', onConfirm);
+        cancelBtn.removeEventListener('click', close);
+        closeBtn.removeEventListener('click', close);
+        lb.removeEventListener('click', onOverlay);
+        nameInput.removeEventListener('keydown', onKey);
+    };
+
+    const onConfirm = () => {
+        const newName = nameInput.value.trim();
+        if (!newName) { nameInput.focus(); return; }
+        close();
+        openAiUserForm({ ...source, uid: null, name: newName, service_token: '' });
+    };
+
+    const onOverlay = (e) => { if (e.target === lb) close(); };
+    const onKey = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); onConfirm(); }
+        if (e.key === 'Escape') close();
+    };
+
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', close);
+    closeBtn.addEventListener('click', close);
+    lb.addEventListener('click', onOverlay);
+    nameInput.addEventListener('keydown', onKey);
 };
 
 const deleteAiUser = async (u) => {

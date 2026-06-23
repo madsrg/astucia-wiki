@@ -787,6 +787,32 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
         </div>
     </div>
 
+    <!-- Clone AI User lightbox -->
+    <div id="clone-ai-lightbox" class="lightbox-overlay hidden">
+        <div class="lightbox-content" style="max-width:520px;height:auto;max-height:82vh;overflow-y:auto">
+            <button id="clone-ai-close-btn" class="lightbox-close">&times;</button>
+            <h3 style="margin:0 0 0.9rem">Clone AI User</h3>
+            <div style="font-size:0.85rem;line-height:1.6;color:var(--text-muted);background:var(--bg-alt);border:1px solid var(--border-color);border-radius:6px;padding:0.75rem 0.9rem;margin-bottom:1rem">
+                <p style="margin:0 0 0.5rem"><strong style="color:var(--text-color)">Why clone an AI User?</strong></p>
+                <p style="margin:0 0 0.5rem">Cloning lets you create multiple AI Users backed by the same model, each with a different <em>System Prompt</em> that defines a specific role or area of expertise. That way, the AI already knows its job the moment you #mention it — no need to re-explain in every message.</p>
+                <p style="margin:0 0 0.4rem">Examples:</p>
+                <ul style="margin:0 0 0 1.1rem;padding:0">
+                    <li style="margin-bottom:0.25rem"><strong>#botPO</strong> — <em>"Think like a Product Owner. Focus on user value, acceptance criteria and backlog priorities. Stay within the product domain."</em></li>
+                    <li style="margin-bottom:0.25rem"><strong>#botDev</strong> — <em>"You are a senior backend developer. Prefer code over prose. Be concise."</em></li>
+                    <li><strong>#botQA</strong> — <em>"You are a QA engineer. Think in test cases, edge cases and failure modes."</em></li>
+                </ul>
+            </div>
+            <div class="form-group" style="margin-bottom:1.1rem">
+                <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:0.35rem">Name for the new AI User</label>
+                <input type="text" id="clone-ai-name" class="form-control" placeholder="e.g. botPO" autocomplete="off">
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:0.5rem">
+                <button id="clone-ai-cancel-btn" class="btn btn-secondary">Cancel</button>
+                <button id="clone-ai-confirm-btn" class="btn btn-green">Clone</button>
+            </div>
+        </div>
+    </div>
+
     <!-- New Page lightbox -->
     <div id="new-page-lightbox" class="lightbox-overlay hidden">
         <div class="lightbox-content lightbox-content-sm">
