@@ -6,6 +6,9 @@ import { t } from '../i18n/index.js';
 
 const POLL_MS = 5000;
 const EMOJIS  = ['😀','😂','😍','🤔','😢','😮','😡','👍','👎','👋','🙏','❤️','🎉','🔥','✅','❌','⭐','💡','🚀','📝','🎯','👀','💬','🤝'];
+const CHAT_COMMANDS = [
+    { name: 'newTopic', description: t('chat.cmd.new-topic') },
+];
 
 let _pollTimer      = null;
 let _lastMtime      = 0;
@@ -275,9 +278,13 @@ const setupInput = () => {
         });
     }
 
-    let mentionStart = -1, selectedIdx = -1;
+    let triggerStart = -1, triggerChar = '', selectedIdx = -1;
     const getItems = () => Array.from(mentionPop.querySelectorAll('.chat-mention-item'));
-    const closePop = () => { mentionPop.classList.add('hidden'); mentionStart = -1; selectedIdx = -1; };
+    const closePop = () => {
+        mentionPop.classList.add('hidden');
+        mentionPop.classList.remove('chat-mention-popup-cmd');
+        triggerStart = -1; triggerChar = ''; selectedIdx = -1;
+    };
     const setSelected = idx => {
         getItems().forEach((el, i) => el.classList.toggle('chat-mention-item-active', i === idx));
         selectedIdx = idx;
@@ -287,28 +294,57 @@ const setupInput = () => {
         autoResize(textarea);
         const val = textarea.value, pos = textarea.selectionStart;
         let start = pos - 1;
-        while (start >= 0 && val[start] !== '#' && val[start] !== ' ' && val[start] !== '\n') start--;
-        if (start < 0 || val[start] !== '#') { closePop(); return; }
-        mentionStart = start;
-        const query   = val.slice(start + 1, pos).toLowerCase();
-        const matches = (await getUsers()).filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
-        if (!matches.length) { closePop(); return; }
+        while (start >= 0 && val[start] !== '#' && val[start] !== '/' && val[start] !== ' ' && val[start] !== '\n') start--;
+        if (start < 0 || (val[start] !== '#' && val[start] !== '/')) { closePop(); return; }
+        if (val[start] === '/' && start !== 0) { closePop(); return; }
+        triggerStart = start; triggerChar = val[start];
+        const query = val.slice(start + 1, pos).toLowerCase();
         selectedIdx = -1;
         mentionPop.innerHTML = '';
-        matches.forEach(u => {
-            const item = document.createElement('div');
-            item.className = 'chat-mention-item';
-            item.textContent = '#' + u.name;
-            item.addEventListener('mousedown', e => {
-                e.preventDefault();
-                const curPos = textarea.selectionStart;
-                const insert = '#' + u.name + ' ';
-                textarea.value = textarea.value.slice(0, mentionStart) + insert + textarea.value.slice(curPos);
-                textarea.selectionStart = textarea.selectionEnd = mentionStart + insert.length;
-                closePop();
+
+        if (triggerChar === '#') {
+            mentionPop.classList.remove('chat-mention-popup-cmd');
+            const matches = (await getUsers()).filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
+            if (!matches.length) { closePop(); return; }
+            matches.forEach(u => {
+                const item = document.createElement('div');
+                item.className = 'chat-mention-item';
+                item.textContent = '#' + u.name;
+                item.addEventListener('mousedown', e => {
+                    e.preventDefault();
+                    const curPos = textarea.selectionStart;
+                    const insert = '#' + u.name + ' ';
+                    textarea.value = textarea.value.slice(0, triggerStart) + insert + textarea.value.slice(curPos);
+                    textarea.selectionStart = textarea.selectionEnd = triggerStart + insert.length;
+                    closePop();
+                });
+                mentionPop.appendChild(item);
             });
-            mentionPop.appendChild(item);
-        });
+        } else {
+            mentionPop.classList.add('chat-mention-popup-cmd');
+            const matches = CHAT_COMMANDS.filter(c => c.name.toLowerCase().startsWith(query));
+            if (!matches.length) { closePop(); return; }
+            matches.forEach(c => {
+                const item = document.createElement('div');
+                item.className = 'chat-mention-item';
+                const nameEl = document.createElement('span');
+                nameEl.className = 'chat-cmd-name';
+                nameEl.textContent = '/' + c.name;
+                const descEl = document.createElement('span');
+                descEl.className = 'chat-cmd-desc';
+                descEl.textContent = c.description;
+                item.append(nameEl, descEl);
+                item.addEventListener('mousedown', e => {
+                    e.preventDefault();
+                    const curPos = textarea.selectionStart;
+                    const insert = '/' + c.name + ' ';
+                    textarea.value = textarea.value.slice(0, triggerStart) + insert + textarea.value.slice(curPos);
+                    textarea.selectionStart = textarea.selectionEnd = triggerStart + insert.length;
+                    closePop();
+                });
+                mentionPop.appendChild(item);
+            });
+        }
         mentionPop.classList.remove('hidden');
     });
 

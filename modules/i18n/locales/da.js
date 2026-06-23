@@ -61,7 +61,7 @@ export default {
     'search.results': 'Søgeresultater for "{query}"',
     'search.no-results': 'Ingen sider fundet.', 'search.tag-results': 'Sider tagget med "{tag}"',
 
-    'chat.send': 'Send', 'chat.placeholder': 'Skriv en besked… (Enter for at sende, Skift+Enter for ny linje, # for at nævne)',
+    'chat.send': 'Send', 'chat.placeholder': 'Skriv en besked… (Enter for at sende, Skift+Enter for ny linje, # for at nævne, / for kommandoer)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Svar til {name}',
     'chat.reaction-title': 'Tilføj reaktion', 'chat.delete-confirm': 'Slet denne besked?',
     'chat.delete-title': 'Slet besked', 'chat.pin-title': 'Fastgør besked',

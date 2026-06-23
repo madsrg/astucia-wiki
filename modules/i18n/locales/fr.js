@@ -61,7 +61,7 @@ export default {
     'search.results': 'Résultats de recherche pour « {query} »',
     'search.no-results': 'Aucune page trouvée.', 'search.tag-results': 'Pages avec le tag « {tag} »',
 
-    'chat.send': 'Envoyer', 'chat.placeholder': 'Tapez un message… (Entrée pour envoyer, Maj+Entrée pour nouvelle ligne, # pour mentionner)',
+    'chat.send': 'Envoyer', 'chat.placeholder': 'Tapez un message… (Entrée pour envoyer, Maj+Entrée pour nouvelle ligne, # pour mentionner, / pour commandes)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Répondre à {name}',
     'chat.reaction-title': 'Ajouter une réaction', 'chat.delete-confirm': 'Supprimer ce message ?',
     'chat.delete-title': 'Supprimer le message', 'chat.pin-title': 'Épingler le message',

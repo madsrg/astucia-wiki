@@ -6,6 +6,9 @@ import { t } from '../i18n/index.js';
 
 const EMOJIS     = ['😀','😂','😍','🤔','😢','😮','😡','👍','👎','👋','🙏','❤️','🎉','🔥','✅','❌','⭐','💡','🚀','📝','🎯','👀','💬','🤝'];
 const REACTIONS  = ['👍','👎','❤️','😂','😮','🎉','🔥'];
+const CHAT_COMMANDS = [
+    { name: 'newTopic', description: t('chat.cmd.new-topic') },
+];
 const POLL_MS = 5000;
 
 let pollTimer     = null;
@@ -470,10 +473,11 @@ export const startPolling = (path, initialMtime = 0) => {
     }, POLL_MS);
 };
 
-// ── Mention autocomplete ──────────────────────────────────────────────────────
+// ── Mention + command autocomplete ────────────────────────────────────────────
 
 const setupMentionAutocomplete = (textarea, popup) => {
-    let mentionStart = -1;
+    let triggerStart = -1;
+    let triggerChar  = '';
     let selectedIdx  = -1;
 
     const getItems = () => Array.from(popup.querySelectorAll('.chat-mention-item'));
@@ -486,8 +490,7 @@ const setupMentionAutocomplete = (textarea, popup) => {
     };
 
     const insertSelected = () => {
-        const items = getItems();
-        const active = selectedIdx >= 0 ? items[selectedIdx] : items[0];
+        const active = selectedIdx >= 0 ? getItems()[selectedIdx] : getItems()[0];
         if (!active) return false;
         active.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
         return true;
@@ -495,38 +498,70 @@ const setupMentionAutocomplete = (textarea, popup) => {
 
     const closePop = () => {
         popup.classList.add('hidden');
+        popup.classList.remove('chat-mention-popup-cmd');
         selectedIdx  = -1;
-        mentionStart = -1;
+        triggerStart = -1;
+        triggerChar  = '';
     };
 
     textarea.addEventListener('input', async () => {
         const val = textarea.value;
         const pos = textarea.selectionStart;
         let start = pos - 1;
-        while (start >= 0 && val[start] !== '#' && val[start] !== ' ' && val[start] !== '\n') start--;
-        if (start < 0 || val[start] !== '#') { closePop(); return; }
+        while (start >= 0 && val[start] !== '#' && val[start] !== '/' && val[start] !== ' ' && val[start] !== '\n') start--;
+        if (start < 0 || (val[start] !== '#' && val[start] !== '/')) { closePop(); return; }
+        // slash commands must be at the very start of the message
+        if (val[start] === '/' && start !== 0) { closePop(); return; }
 
-        mentionStart = start;
-        const query   = val.slice(start + 1, pos).toLowerCase();
-        const matches = (await getUsers()).filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
-        if (!matches.length) { closePop(); return; }
-
-        selectedIdx = -1;
+        triggerStart = start;
+        triggerChar  = val[start];
+        const query  = val.slice(start + 1, pos).toLowerCase();
+        selectedIdx  = -1;
         popup.innerHTML = '';
-        matches.forEach(u => {
-            const item = document.createElement('div');
-            item.className = 'chat-mention-item';
-            item.textContent = '#' + u.name;
-            item.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                const curPos = textarea.selectionStart;
-                const insert = '#' + u.name + ' ';
-                textarea.value = textarea.value.slice(0, mentionStart) + insert + textarea.value.slice(curPos);
-                textarea.selectionStart = textarea.selectionEnd = mentionStart + insert.length;
-                closePop();
+
+        if (triggerChar === '#') {
+            popup.classList.remove('chat-mention-popup-cmd');
+            const matches = (await getUsers()).filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
+            if (!matches.length) { closePop(); return; }
+            matches.forEach(u => {
+                const item = document.createElement('div');
+                item.className = 'chat-mention-item';
+                item.textContent = '#' + u.name;
+                item.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    const curPos = textarea.selectionStart;
+                    const insert = '#' + u.name + ' ';
+                    textarea.value = textarea.value.slice(0, triggerStart) + insert + textarea.value.slice(curPos);
+                    textarea.selectionStart = textarea.selectionEnd = triggerStart + insert.length;
+                    closePop();
+                });
+                popup.appendChild(item);
             });
-            popup.appendChild(item);
-        });
+        } else {
+            popup.classList.add('chat-mention-popup-cmd');
+            const matches = CHAT_COMMANDS.filter(c => c.name.toLowerCase().startsWith(query));
+            if (!matches.length) { closePop(); return; }
+            matches.forEach(c => {
+                const item = document.createElement('div');
+                item.className = 'chat-mention-item';
+                const nameEl = document.createElement('span');
+                nameEl.className = 'chat-cmd-name';
+                nameEl.textContent = '/' + c.name;
+                const descEl = document.createElement('span');
+                descEl.className = 'chat-cmd-desc';
+                descEl.textContent = c.description;
+                item.append(nameEl, descEl);
+                item.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    const curPos = textarea.selectionStart;
+                    const insert = '/' + c.name + ' ';
+                    textarea.value = textarea.value.slice(0, triggerStart) + insert + textarea.value.slice(curPos);
+                    textarea.selectionStart = textarea.selectionEnd = triggerStart + insert.length;
+                    closePop();
+                });
+                popup.appendChild(item);
+            });
+        }
         popup.classList.remove('hidden');
     });
 

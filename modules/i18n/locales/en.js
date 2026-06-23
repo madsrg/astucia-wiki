@@ -149,7 +149,7 @@ export default {
 
     // Chat
     'chat.send':          'Send',
-    'chat.placeholder':   'Type a message… (Enter to send, Shift+Enter for new line, # to mention)',
+    'chat.placeholder':   'Type a message… (Enter to send, Shift+Enter for new line, # to mention, / for commands)',
     'chat.emoji-title':   'Emoji',
     'chat.reply-title':   'Reply to {name}',
     'chat.reaction-title':'Add reaction',
@@ -161,6 +161,7 @@ export default {
     'chat.working':       'Working…',
     'chat.timeout':       '⚠️ No response received — the request may have timed out.',
     'chat.new-topic':     'New topic',
+    'chat.cmd.new-topic': 'Reset AI context — ignore messages before this point',
     'chat.load-older':    'Load older messages',
     'chat.loading-older': 'Loading…',
     'chat.ai-working':    'AI is thinking…',

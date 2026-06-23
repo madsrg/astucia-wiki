@@ -61,7 +61,7 @@ export default {
     'search.results': 'Suchergebnisse für „{query}"',
     'search.no-results': 'Keine Seiten gefunden.', 'search.tag-results': 'Seiten mit Tag „{tag}"',
 
-    'chat.send': 'Senden', 'chat.placeholder': 'Nachricht eingeben… (Enter zum Senden, Umschalt+Enter für neue Zeile, # für Erwähnungen)',
+    'chat.send': 'Senden', 'chat.placeholder': 'Nachricht eingeben… (Enter zum Senden, Umschalt+Enter für neue Zeile, # für Erwähnungen, / für Befehle)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Antwort an {name}',
     'chat.reaction-title': 'Reaktion hinzufügen', 'chat.delete-confirm': 'Diese Nachricht löschen?',
     'chat.delete-title': 'Nachricht löschen', 'chat.pin-title': 'Nachricht anheften',

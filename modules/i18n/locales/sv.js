@@ -61,7 +61,7 @@ export default {
     'search.results': 'Sökresultat för "{query}"',
     'search.no-results': 'Inga sidor hittades.', 'search.tag-results': 'Sidor taggade med "{tag}"',
 
-    'chat.send': 'Skicka', 'chat.placeholder': 'Skriv ett meddelande… (Enter för att skicka, Skift+Enter för ny rad, # för att nämna)',
+    'chat.send': 'Skicka', 'chat.placeholder': 'Skriv ett meddelande… (Enter för att skicka, Skift+Enter för ny rad, # för att nämna, / för kommandon)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Svara {name}',
     'chat.reaction-title': 'Lägg till reaktion', 'chat.delete-confirm': 'Ta bort det här meddelandet?',
     'chat.delete-title': 'Ta bort meddelande', 'chat.pin-title': 'Fäst meddelande',
