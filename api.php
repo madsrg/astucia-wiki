@@ -258,13 +258,25 @@ if (isset($_REQUEST['action'])) {
                 ],
             ],
             [
-                'name'        => 'wiki_set_tags',
-                'description' => 'Set the tags on an existing wiki page, replacing any current tags. Pass an empty array to clear all tags. Only available when the AI user has editor role.',
+                'name'        => 'wiki_add_tags',
+                'description' => 'Add one or more tags to an existing wiki page without removing its current tags. Use this when you want to tag a page without affecting tags already on it. Only available when the AI user has editor role.',
                 'params'      => [
                     'type'       => 'object',
                     'properties' => [
                         'path' => ['type' => 'string', 'description' => 'Relative path to the page, e.g. Notes/Meeting.md'],
-                        'tags' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Array of tag strings to set on the page. Replaces existing tags.'],
+                        'tags' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Array of tag strings to add to the page. Existing tags are kept.'],
+                    ],
+                    'required'   => ['path', 'tags'],
+                ],
+            ],
+            [
+                'name'        => 'wiki_set_tags',
+                'description' => 'Replace ALL tags on an existing wiki page with the provided list. Use wiki_add_tags instead if you only want to add tags without removing existing ones. Pass an empty array to clear all tags. Only available when the AI user has editor role.',
+                'params'      => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'path' => ['type' => 'string', 'description' => 'Relative path to the page, e.g. Notes/Meeting.md'],
+                        'tags' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Array of tag strings. Completely replaces existing tags.'],
                     ],
                     'required'   => ['path', 'tags'],
                 ],
@@ -333,6 +345,19 @@ if (isset($_REQUEST['action'])) {
                 $indexer->updateModified($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
                 git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Update ' . basename($rel));
                 return "Page updated: {$rel}";
+
+            case 'wiki_add_tags':
+                if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot set tags.';
+                $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
+                if (!$rel) return 'Error: path is required.';
+                $tags_input = $tool_input['tags'] ?? [];
+                if (!is_array($tags_input)) return 'Error: tags must be an array.';
+                $page_id = $indexer->getId($rel);
+                if ($page_id === null) return 'Error: page not found in index — make sure the path matches exactly what wiki_list_pages returns.';
+                $existing_tags = $indexer->getTags($page_id);
+                $merged_tags = array_values(array_unique(array_merge($existing_tags, array_filter(array_map('trim', $tags_input)))));
+                $indexer->updateTags($page_id, $merged_tags);
+                return "Tags on {$rel}: " . implode(', ', $merged_tags);
 
             case 'wiki_set_tags':
                 if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot set tags.';
