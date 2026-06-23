@@ -911,8 +911,8 @@ body {
 /* Header + tabs */
 .admin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.45rem; flex-shrink: 0; }
 .admin-header h3 { margin: 0; }
-.admin-group-bar { display: flex; gap: 2px; margin-right: 50px; }
-.admin-group { background: none; border: none; padding: 4px 11px; border-radius: 4px; font-size: 0.78rem; font-weight: 600; cursor: pointer; color: var(--accent-gray); letter-spacing: 0.02em; transition: background 0.15s, color 0.15s; }
+.admin-group-bar { display: flex; gap: 4px; margin-right: 50px; }
+.admin-group { background: none; border: none; padding: 6px 18px; border-radius: 5px; font-size: 0.85rem; font-weight: 600; cursor: pointer; color: var(--accent-gray); letter-spacing: 0.02em; transition: background 0.15s, color 0.15s; }
 .admin-group.active { background: var(--accent-blue); color: #fff; }
 .admin-group:not(.active):hover { background: rgba(0,0,0,0.05); color: var(--text-color); }
 .admin-tab-bar { display: flex; gap: 2px; background: #f0f4f8; border-radius: 6px; padding: 3px; margin-bottom: 0.65rem; flex-shrink: 0; }
