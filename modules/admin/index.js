@@ -722,26 +722,28 @@ const openAiUserForm = (u) => {
                 </button>
             </div>
             <div class="admin-ai-form-section">
-                <div class="form-group">
-                    <label>${t('admin.ai.name')}</label>
-                    <input type="text" id="ai-f-name" class="form-control" value="${escHtml(u?.name || '')}" placeholder="e.g. Atlas">
-                </div>
-                <div class="form-group">
-                    <label>${t('admin.ai.role')}</label>
-                    <select id="ai-f-role" class="form-control">
-                        ${AI_ROLES.map(r => `<option value="${r}" ${(u?.role || 'editor') === r ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join('')}
+                <div class="admin-ai-form-row">
+                    <div class="form-group">
+                        <label>${t('admin.ai.name')}</label>
+                        <input type="text" id="ai-f-name" class="form-control" value="${escHtml(u?.name || '')}" placeholder="e.g. Atlas">
+                    </div>
+                    <div class="form-group">
+                        <label>${t('admin.ai.role')}</label>
+                        <select id="ai-f-role" class="form-control">
+                            ${AI_ROLES.map(r => `<option value="${r}" ${(u?.role || 'editor') === r ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>${t('admin.ai.provider')}</label>
+                        <select id="ai-f-provider" class="form-control">
+                        <option value="openai"    ${(cfg.provider || 'openai') === 'openai'    ? 'selected' : ''}>${t('admin.ai.openai')}</option>
+                        <option value="anthropic" ${(cfg.provider || 'openai') === 'anthropic' ? 'selected' : ''}>${t('admin.ai.anthropic')}</option>
                     </select>
+                    </div>
                 </div>
             </div>
             <div class="admin-ai-form-section-header">${t('admin.ai.api-cfg')}</div>
             <div class="admin-ai-form-section">
-                <div class="form-group">
-                    <label>${t('admin.ai.provider')}</label>
-                    <select id="ai-f-provider" class="form-control">
-                        <option value="openai"    ${(cfg.provider || 'openai') === 'openai'    ? 'selected' : ''}>${t('admin.ai.openai')}</option>
-                        <option value="anthropic" ${(cfg.provider || 'openai') === 'anthropic' ? 'selected' : ''}>${t('admin.ai.anthropic')}</option>
-                    </select>
-                </div>
                 <div class="form-group">
                     <label>${t('admin.ai.url')}</label>
                     <input type="url" id="ai-f-url" class="form-control" value="${escHtml(cfg.api_url || '')}" placeholder="https://api.openai.com/v1/chat/completions">
