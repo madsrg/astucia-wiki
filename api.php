@@ -2449,10 +2449,11 @@ if (isset($_REQUEST['action'])) {
                 break;
 
             case 'admin_save_ai_user':
-                $ai_name   = trim($_POST['name'] ?? '');
-                $ai_role   = in_array($_POST['role'] ?? '', ['editor', 'reader']) ? $_POST['role'] : 'editor';
-                $ai_uid    = isset($_POST['uid']) && $_POST['uid'] !== '' ? (int)$_POST['uid'] : null;
-                $ai_cfg_in = json_decode($_POST['ai_config'] ?? '{}', true) ?? [];
+                $ai_name      = trim($_POST['name'] ?? '');
+                $ai_role      = in_array($_POST['role'] ?? '', ['editor', 'reader']) ? $_POST['role'] : 'editor';
+                $ai_uid       = isset($_POST['uid']) && $_POST['uid'] !== '' ? (int)$_POST['uid'] : null;
+                $ai_source_uid = isset($_POST['source_uid']) && $_POST['source_uid'] !== '' ? (int)$_POST['source_uid'] : null;
+                $ai_cfg_in    = json_decode($_POST['ai_config'] ?? '{}', true) ?? [];
                 if (!$ai_name) throw new Exception('AI user name is required.');
                 $uf_sai = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? ['users' => []]) : ['users' => []];
                 if ($ai_uid !== null) {
@@ -2482,6 +2483,16 @@ if (isset($_REQUEST['action'])) {
                 } else {
                     $max_uid_ai = 0;
                     foreach ($uf_sai['users'] as $eu) { if (isset($eu['uid']) && $eu['uid'] > $max_uid_ai) $max_uid_ai = $eu['uid']; }
+                    // If cloning and no key entered, inherit the key from the source user
+                    $new_api_key = $ai_cfg_in['api_key'] ?? '';
+                    if ($new_api_key === '' && $ai_source_uid !== null) {
+                        foreach ($uf_sai['users'] as $src) {
+                            if (!empty($src['is_ai']) && (int)($src['uid'] ?? -1) === $ai_source_uid) {
+                                $new_api_key = $src['ai_config']['api_key'] ?? '';
+                                break;
+                            }
+                        }
+                    }
                     $uf_sai['users'][] = [
                         'uid'           => $max_uid_ai + 1,
                         'name'          => $ai_name,
@@ -2491,7 +2502,7 @@ if (isset($_REQUEST['action'])) {
                         'ai_config'     => [
                             'provider'         =>        $ai_cfg_in['provider']         ?? 'openai',
                             'api_url'          => trim($ai_cfg_in['api_url']            ?? ''),
-                            'api_key'          =>        $ai_cfg_in['api_key']          ?? '',
+                            'api_key'          => $new_api_key,
                             'model'            => trim($ai_cfg_in['model']              ?? ''),
                             'system_prompt'    =>        $ai_cfg_in['system_prompt']    ?? '',
                             'context_messages' => (int)( $ai_cfg_in['context_messages'] ?? 20),

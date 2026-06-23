@@ -709,6 +709,7 @@ const openAiUserForm = (u) => {
     const container = document.getElementById('admin-ai-list');
     if (!container) return;
     const isNew = !u;
+    const isClone = !!u?._cloneSourceUid;
     const cfg = u?.ai_config || {};
 
     container.innerHTML = `
@@ -749,8 +750,9 @@ const openAiUserForm = (u) => {
                     <input type="url" id="ai-f-url" class="form-control" value="${escHtml(cfg.api_url || '')}" placeholder="https://api.openai.com/v1/chat/completions">
                 </div>
                 <div class="form-group">
-                    <label>${t('admin.ai.key')} ${cfg.api_key_set ? `<span class="admin-ai-key-set">${t('admin.ai.key-set')}</span>` : ''}</label>
-                    <input type="password" id="ai-f-key" class="form-control" placeholder="${cfg.api_key_set ? 'Leave blank to keep existing key' : 'sk-…'}">
+                    <label>${t('admin.ai.key')} ${cfg.api_key_set && !isClone ? `<span class="admin-ai-key-set">${t('admin.ai.key-set')}</span>` : ''}</label>
+                    <input type="password" id="ai-f-key" class="form-control" placeholder="${isClone ? 'Leave blank to copy key from source' : cfg.api_key_set ? 'Leave blank to keep existing key' : 'sk-…'}">
+                    ${isClone ? `<input type="hidden" id="ai-f-source-uid" value="${escHtml(String(u._cloneSourceUid))}">` : '<input type="hidden" id="ai-f-source-uid" value="">'}
                 </div>
                 <div class="form-group">
                     <label>${t('admin.ai.model')}</label>
@@ -839,8 +841,10 @@ const saveAiUser = async (uid) => {
     saveBtn.disabled = true;
     saveBtn.textContent = t('btn.saving');
 
+    const source_uid = document.getElementById('ai-f-source-uid')?.value || '';
     const result = await api.call('admin_save_ai_user', {
         uid: uid !== null ? String(uid) : '',
+        source_uid,
         name, role,
         ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, context_messages, temperature, max_tokens }),
     }, 'POST');
@@ -883,7 +887,7 @@ const cloneAiUser = (source) => {
         const newName = nameInput.value.trim();
         if (!newName) { nameInput.focus(); return; }
         close();
-        openAiUserForm({ ...source, uid: null, name: newName, service_token: '' });
+        openAiUserForm({ ...source, uid: null, name: newName, service_token: '', _cloneSourceUid: source.uid });
     };
 
     const onOverlay = (e) => { if (e.target === lb) close(); };
