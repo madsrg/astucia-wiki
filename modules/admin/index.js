@@ -745,31 +745,28 @@ const openAiUserForm = (u) => {
             </div>
             <div class="admin-ai-form-section-header">${t('admin.ai.api-cfg')}</div>
             <div class="admin-ai-form-section">
-                <div class="form-group">
-                    <label>${t('admin.ai.url')}</label>
-                    <input type="url" id="ai-f-url" class="form-control" value="${escHtml(cfg.api_url || '')}" placeholder="https://api.openai.com/v1/chat/completions">
-                </div>
-                <div class="form-group">
-                    <label>${t('admin.ai.key')} ${cfg.api_key_set && !isClone ? `<span class="admin-ai-key-set">${t('admin.ai.key-set')}</span>` : ''}</label>
-                    <input type="password" id="ai-f-key" class="form-control" placeholder="${isClone ? 'Leave blank to copy key from source' : cfg.api_key_set ? 'Leave blank to keep existing key' : 'sk-…'}">
-                    ${isClone ? `<input type="hidden" id="ai-f-source-uid" value="${escHtml(String(u._cloneSourceUid))}">` : '<input type="hidden" id="ai-f-source-uid" value="">'}
-                </div>
-                <div class="form-group">
-                    <label>${t('admin.ai.model')}</label>
-                    <input type="text" id="ai-f-model" class="form-control" value="${escHtml(cfg.model || '')}" placeholder="gpt-4o">
-                </div>
-            </div>
-            <div class="admin-ai-form-section-header">${t('admin.ai.behaviour')}</div>
-            <div class="admin-ai-form-section">
-                <div class="form-group">
-                    <label>${t('admin.ai.prompt')}</label>
-                    <textarea id="ai-f-prompt" class="form-control admin-ai-prompt" rows="10" placeholder="${t('admin.ai.prompt-ph')}">${escHtml(cfg.system_prompt || '')}</textarea>
+                <div class="admin-ai-form-row">
+                    <div class="form-group">
+                        <label>${t('admin.ai.url')}</label>
+                        <input type="url" id="ai-f-url" class="form-control" value="${escHtml(cfg.api_url || '')}" placeholder="https://api.openai.com/v1/chat/completions">
+                    </div>
+                    <div class="form-group">
+                        <label>${t('admin.ai.key')} ${cfg.api_key_set && !isClone ? `<span class="admin-ai-key-set">${t('admin.ai.key-set')}</span>` : ''}</label>
+                        <input type="password" id="ai-f-key" class="form-control" placeholder="${isClone ? 'Leave blank to copy key from source' : cfg.api_key_set ? 'Leave blank to keep existing key' : 'sk-…'}">
+                        ${isClone ? `<input type="hidden" id="ai-f-source-uid" value="${escHtml(String(u._cloneSourceUid))}">` : '<input type="hidden" id="ai-f-source-uid" value="">'}
+                    </div>
                 </div>
                 <div class="admin-ai-form-row">
+                    <div class="form-group">
+                        <label>${t('admin.ai.model')}</label>
+                        <input type="text" id="ai-f-model" class="form-control" value="${escHtml(cfg.model || '')}" placeholder="gpt-4o">
+                    </div>
                     <div class="form-group">
                         <label>${t('admin.ai.context')}</label>
                         <input type="number" id="ai-f-context" class="form-control" value="${cfg.context_messages ?? 20}" min="1" max="100">
                     </div>
+                </div>
+                <div class="admin-ai-form-row">
                     <div class="form-group">
                         <label>${t('admin.ai.temp')}</label>
                         <input type="number" id="ai-f-temperature" class="form-control" value="${cfg.temperature ?? 0.7}" min="0" max="2" step="0.1">
@@ -778,6 +775,13 @@ const openAiUserForm = (u) => {
                         <label>${t('admin.ai.tokens')}</label>
                         <input type="number" id="ai-f-tokens" class="form-control" value="${cfg.max_tokens ?? 4096}" min="100" max="32000">
                     </div>
+                </div>
+            </div>
+            <div class="admin-ai-form-section-header">${t('admin.ai.behaviour')}</div>
+            <div class="admin-ai-form-section">
+                <div class="form-group">
+                    <label>${t('admin.ai.prompt')}</label>
+                    <textarea id="ai-f-prompt" class="form-control admin-ai-prompt" rows="10" placeholder="${t('admin.ai.prompt-ph')}">${escHtml(cfg.system_prompt || '')}</textarea>
                 </div>
             </div>
             ${!isNew ? `
