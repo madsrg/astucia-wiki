@@ -905,7 +905,7 @@ body {
 .role-reader .remove-attachment-btn { display: none !important; }
 
 /* ── Admin lightbox ───────────────────────────────────────────────────────── */
-.admin-lightbox-content { width: 80vw; max-width: 80vw; height: min(680px, 88vh); }
+.admin-lightbox-content { width: 900px; max-width: 95vw; height: min(680px, 88vh); }
 
 /* Header + tabs */
 .admin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.45rem; flex-shrink: 0; }
