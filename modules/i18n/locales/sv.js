@@ -67,7 +67,7 @@ export default {
     'chat.delete-title': 'Ta bort meddelande', 'chat.pin-title': 'Fäst meddelande',
     'chat.unpin-title': 'Ta bort fästning',
     'chat.empty': 'Inga meddelanden än — var den första att säga något!',
-    'chat.working': 'Arbetar…', 'chat.timeout': '⚠️ Inget svar mottogs — förfrågan kan ha tagit för lång tid.',
+    'chat.working': 'Arbetar…', 'chat.timeout': '⚠️ Inget svar mottogs — förfrågan kan ha tagit för lång tid.', 'chat.new-topic': 'Nytt ämne',
     'chat.load-older': 'Ladda äldre meddelanden', 'chat.loading-older': 'Laddar…', 'chat.ai-working': 'AI tänker…',
 
     'link.title': 'Länk till sida', 'link.space-label': 'Space:',

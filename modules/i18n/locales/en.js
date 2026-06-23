@@ -160,6 +160,7 @@ export default {
     'chat.empty':         'No messages yet — be the first to say something!',
     'chat.working':       'Working…',
     'chat.timeout':       '⚠️ No response received — the request may have timed out.',
+    'chat.new-topic':     'New topic',
     'chat.load-older':    'Load older messages',
     'chat.loading-older': 'Loading…',
     'chat.ai-working':    'AI is thinking…',

@@ -44,6 +44,19 @@ const isNearBottom = el => el.scrollHeight - el.scrollTop - el.clientHeight < 80
 // ── Row builder ───────────────────────────────────────────────────────────────
 
 const buildRow = (msg, grouped) => {
+    if (msg.is_new_topic) {
+        const strippedText = msg.text.replace(/^#newTopic\s*/i, '').trim();
+        const divider = document.createElement('div');
+        divider.className = 'chat-new-topic-divider';
+        divider.dataset.id = msg.id;
+        divider.innerHTML = `<span class="chat-new-topic-label">${t('chat.new-topic')}</span>`;
+        if (!strippedText) return divider;
+        const frag = document.createDocumentFragment();
+        frag.appendChild(divider);
+        frag.appendChild(buildRow({ ...msg, is_new_topic: false, text: strippedText }, false));
+        return frag;
+    }
+
     const currentUid  = window.WIKI_USER_UID ?? -1;
     const currentRole = window.WIKI_ROLE || '';
     const isMe = msg.uid === currentUid;

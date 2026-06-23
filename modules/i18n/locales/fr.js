@@ -67,7 +67,7 @@ export default {
     'chat.delete-title': 'Supprimer le message', 'chat.pin-title': 'Épingler le message',
     'chat.unpin-title': 'Désépingler le message',
     'chat.empty': 'Aucun message pour l\'instant — soyez le premier à dire quelque chose !',
-    'chat.working': 'En cours…', 'chat.timeout': '⚠️ Aucune réponse reçue — la requête a peut-être expiré.',
+    'chat.working': 'En cours…', 'chat.timeout': '⚠️ Aucune réponse reçue — la requête a peut-être expiré.', 'chat.new-topic': 'Nouveau sujet',
     'chat.load-older': 'Charger les messages plus anciens', 'chat.loading-older': 'Chargement…', 'chat.ai-working': "L'IA réfléchit…",
 
     'link.title': 'Lien vers une page', 'link.space-label': 'Space :',

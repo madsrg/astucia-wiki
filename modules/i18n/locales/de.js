@@ -67,7 +67,7 @@ export default {
     'chat.delete-title': 'Nachricht löschen', 'chat.pin-title': 'Nachricht anheften',
     'chat.unpin-title': 'Nachricht loslösen',
     'chat.empty': 'Noch keine Nachrichten — seien Sie der Erste, der etwas sagt!',
-    'chat.working': 'Verarbeitung…', 'chat.timeout': '⚠️ Keine Antwort erhalten — die Anfrage ist möglicherweise abgelaufen.',
+    'chat.working': 'Verarbeitung…', 'chat.timeout': '⚠️ Keine Antwort erhalten — die Anfrage ist möglicherweise abgelaufen.', 'chat.new-topic': 'Neues Thema',
     'chat.load-older': 'Ältere Nachrichten laden', 'chat.loading-older': 'Wird geladen…', 'chat.ai-working': 'KI denkt nach…',
 
     'link.title': 'Link zu Seite', 'link.space-label': 'Space:',

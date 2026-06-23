@@ -67,7 +67,7 @@ export default {
     'chat.delete-title': 'Eliminar mensaje', 'chat.pin-title': 'Fijar mensaje',
     'chat.unpin-title': 'Desfijar mensaje',
     'chat.empty': 'Aún no hay mensajes — ¡sé el primero en decir algo!',
-    'chat.working': 'Procesando…', 'chat.timeout': '⚠️ No se recibió respuesta — es posible que la solicitud haya expirado.',
+    'chat.working': 'Procesando…', 'chat.timeout': '⚠️ No se recibió respuesta — es posible que la solicitud haya expirado.', 'chat.new-topic': 'Nuevo tema',
     'chat.load-older': 'Cargar mensajes anteriores', 'chat.loading-older': 'Cargando…', 'chat.ai-working': 'La IA está pensando…',
 
     'link.title': 'Enlazar a página', 'link.space-label': 'Space:',

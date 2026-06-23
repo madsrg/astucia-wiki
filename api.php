@@ -435,7 +435,20 @@ if (isset($_REQUEST['action'])) {
         $full_system = $wiki_ctx . $system_prompt;
 
         $tools  = get_wiki_tools($provider);
-        $recent = array_slice(array_values(array_filter($chat_data['messages'], fn($m) => empty($m['pending']))), -$context_msgs);
+        // Respect #newTopic sentinels: only include messages after the last one
+        $all_msgs = array_values(array_filter($chat_data['messages'], fn($m) => empty($m['pending'])));
+        $nt_sentinel = null;
+        $nt_pos = -1;
+        foreach ($all_msgs as $i => $m) {
+            if (!empty($m['is_new_topic'])) { $nt_sentinel = $m; $nt_pos = $i; }
+        }
+        if ($nt_pos >= 0) $all_msgs = array_slice($all_msgs, $nt_pos + 1);
+        $recent = array_slice($all_msgs, -$context_msgs);
+        // Prepend the text portion of the sentinel itself (everything after "#newTopic")
+        if ($nt_sentinel !== null) {
+            $nt_tail = trim(preg_replace('/^#newTopic\s*/i', '', $nt_sentinel['text'] ?? ''));
+            if ($nt_tail) array_unshift($recent, ['uid' => $nt_sentinel['uid'] ?? 0, 'name' => $nt_sentinel['name'] ?? 'User', 'text' => $nt_tail]);
+        }
 
         // Build initial message list (provider-specific format)
         if ($provider === 'anthropic') {
@@ -1125,13 +1138,16 @@ if (isset($_REQUEST['action'])) {
                 $chat_data = json_decode(file_get_contents($file_path), true);
                 if ($chat_data === null) throw new Exception('Invalid chat file.');
                 $actor = get_current_actor();
-                $chat_data['messages'][] = [
+                $is_new_topic = (bool)preg_match('/^#newTopic(\s|$)/i', $text);
+                $new_msg = [
                     'id'        => $chat_data['nextMessageId'],
                     'uid'       => AUTHENTICATION_ENABLED ? (int)($actor['uid'] ?? 0) : 0,
                     'name'      => AUTHENTICATION_ENABLED ? ($actor['name'] ?? 'Unknown') : 'Local User',
                     'timestamp' => date('c'),
                     'text'      => $text,
                 ];
+                if ($is_new_topic) $new_msg['is_new_topic'] = true;
+                $chat_data['messages'][] = $new_msg;
                 $chat_data['nextMessageId']++;
 
                 // Detect first AI @mention and add a pending placeholder now so the

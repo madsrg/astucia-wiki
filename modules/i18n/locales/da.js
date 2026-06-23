@@ -67,7 +67,7 @@ export default {
     'chat.delete-title': 'Slet besked', 'chat.pin-title': 'Fastgør besked',
     'chat.unpin-title': 'Fjern fastgørelse',
     'chat.empty': 'Ingen beskeder endnu — vær den første til at sige noget!',
-    'chat.working': 'Arbejder…', 'chat.timeout': '⚠️ Ingen respons modtaget — anmodningen er muligvis udløbet.',
+    'chat.working': 'Arbejder…', 'chat.timeout': '⚠️ Ingen respons modtaget — anmodningen er muligvis udløbet.', 'chat.new-topic': 'Nyt emne',
     'chat.load-older': 'Indlæs ældre beskeder', 'chat.loading-older': 'Indlæser…', 'chat.ai-working': 'AI tænker…',
 
     'link.title': 'Link til side', 'link.space-label': 'Space:',
