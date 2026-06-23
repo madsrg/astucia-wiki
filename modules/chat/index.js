@@ -185,7 +185,7 @@ const buildStickyArea = (messages) => {
 
 const buildRow = (msg, grouped) => {
     if (msg.is_new_topic) {
-        const strippedText = msg.text.replace(/^#newTopic\s*/i, '').trim();
+        const strippedText = msg.text.replace(/^\/newTopic\s*/i, '').trim();
         const divider = document.createElement('div');
         divider.className = 'chat-new-topic-divider';
         divider.dataset.id = msg.id;

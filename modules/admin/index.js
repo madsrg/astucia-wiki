@@ -765,7 +765,7 @@ const openAiUserForm = (u) => {
                 <div class="form-group">
                     <label>${t('admin.ai.context')} — <span id="ai-f-context-display" class="admin-ai-temp-val">${cfg.context_messages ?? 10}</span></label>
                     <input type="range" id="ai-f-context" class="admin-ai-temp-slider" value="${cfg.context_messages ?? 10}" min="0" max="20" step="1">
-                    <p class="form-hint"><strong>0</strong> sends only the current message — the AI has no memory of earlier exchanges. <strong>10</strong> (default) covers a short focused thread. <strong>20</strong> (maximum) gives the most context but risks confusing the AI with unrelated earlier topics — use <code>#newTopic</code> to reset when switching subjects.</p>
+                    <p class="form-hint"><strong>0</strong> sends only the current message — the AI has no memory of earlier exchanges. <strong>10</strong> (default) covers a short focused thread. <strong>20</strong> (maximum) gives the most context but risks confusing the AI with unrelated earlier topics — use <code>/newTopic</code> to reset when switching subjects.</p>
                 </div>
                 <div class="admin-ai-form-row">
                     <div class="form-group">
