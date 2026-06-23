@@ -38,6 +38,22 @@ const updateRequestsBadge = () => {
     }
 };
 
+const TAB_GROUPS = {
+    users:      ['users', 'requests', 'api'],
+    ai:         ['ai', 'jobs'],
+    monitoring: ['logs', 'errorlog', 'diagnostics'],
+    content:    ['deleted'],
+};
+const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 'deleted' };
+
+const switchGroup = (groupName) => {
+    document.querySelectorAll('.admin-group').forEach(g =>
+        g.classList.toggle('active', g.dataset.group === groupName));
+    document.querySelectorAll('.admin-tab').forEach(tab =>
+        tab.classList.toggle('hidden', tab.dataset.group !== groupName));
+    switchTab(lastTabInGroup[groupName] || TAB_GROUPS[groupName][0]);
+};
+
 const switchTab = (name) => {
     document.querySelectorAll('.admin-tab').forEach(tb =>
         tb.classList.toggle('active', tb.dataset.tab === name));
@@ -52,6 +68,8 @@ const switchTab = (name) => {
     document.getElementById('admin-footer-api')?.classList.toggle('hidden',           name !== 'api');
     document.getElementById('admin-footer-jobs')?.classList.toggle('hidden',         name !== 'jobs');
     document.getElementById('admin-footer-deleted')?.classList.toggle('hidden',      name !== 'deleted');
+    const activeTab = document.querySelector(`.admin-tab[data-tab="${name}"]`);
+    if (activeTab?.dataset.group) lastTabInGroup[activeTab.dataset.group] = name;
     if (name === 'logs')        loadLogFiles();
     if (name === 'requests')    loadRequests();
     if (name === 'errorlog')    loadErrorLogFiles();
@@ -1438,7 +1456,7 @@ export const init = () => {
 
     const openAdmin = async () => {
         document.getElementById('admin-lightbox').classList.remove('hidden');
-        switchTab('users');
+        switchGroup('users');
         markDirty(false);
         await loadUsers();
         // Load request count for badge without switching to that tab.
@@ -1455,6 +1473,8 @@ export const init = () => {
         if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
     });
 
+    document.querySelectorAll('.admin-group').forEach(grp =>
+        grp.addEventListener('click', () => switchGroup(grp.dataset.group)));
     document.querySelectorAll('.admin-tab').forEach(tab =>
         tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
 

@@ -908,10 +908,14 @@ body {
 .admin-lightbox-content { width: 80vw; max-width: 80vw; height: min(680px, 88vh); }
 
 /* Header + tabs */
-.admin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; flex-shrink: 0; }
+.admin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.45rem; flex-shrink: 0; }
 .admin-header h3 { margin: 0; }
-.admin-tab-bar { display: flex; gap: 2px; background: #f0f4f8; border-radius: 6px; padding: 3px; margin-right: 50px; }
-.admin-tab { background: none; border: none; padding: 5px 16px; border-radius: 4px; font-size: 0.85rem; font-weight: 500; cursor: pointer; color: var(--accent-gray); transition: background 0.15s, color 0.15s; }
+.admin-group-bar { display: flex; gap: 2px; margin-right: 50px; }
+.admin-group { background: none; border: none; padding: 4px 11px; border-radius: 4px; font-size: 0.78rem; font-weight: 600; cursor: pointer; color: var(--accent-gray); letter-spacing: 0.02em; transition: background 0.15s, color 0.15s; }
+.admin-group.active { background: var(--accent-blue); color: #fff; }
+.admin-group:not(.active):hover { background: rgba(0,0,0,0.05); color: var(--text-color); }
+.admin-tab-bar { display: flex; gap: 2px; background: #f0f4f8; border-radius: 6px; padding: 3px; margin-bottom: 0.65rem; flex-shrink: 0; }
+.admin-tab { background: none; border: none; padding: 5px 14px; border-radius: 4px; font-size: 0.82rem; font-weight: 500; cursor: pointer; color: var(--accent-gray); transition: background 0.15s, color 0.15s; }
 .admin-tab.active { background: white; color: var(--text-color); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 .admin-tab:not(.active):hover { color: var(--text-color); }
 

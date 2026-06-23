@@ -907,17 +907,23 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
 
             <div class="admin-header">
                 <h3 data-i18n="admin.title">Admin</h3>
-                <div class="admin-tab-bar">
-                    <button class="admin-tab active" data-tab="users" data-i18n="admin.tab.users">Users</button>
-                    <button class="admin-tab" data-tab="requests"><span data-i18n="admin.tab.requests">Requests</span> <span id="admin-requests-badge" class="admin-badge hidden"></span></button>
-                    <button class="admin-tab" data-tab="logs" data-i18n="admin.tab.logs">Access Log</button>
-                    <button class="admin-tab" data-tab="errorlog" data-i18n="admin.tab.errorlog">Error Log</button>
-                    <button class="admin-tab" data-tab="diagnostics" data-i18n="admin.tab.diag">Diagnostics</button>
-                    <button class="admin-tab" data-tab="ai" data-i18n="admin.tab.ai">AI Users</button>
-                    <button class="admin-tab" data-tab="api" data-i18n="admin.tab.api">API Accounts</button>
-                    <button class="admin-tab" data-tab="jobs" data-i18n="admin.tab.jobs">Agent Jobs</button>
-                    <button class="admin-tab" data-tab="deleted" data-i18n="admin.tab.deleted">Deleted Pages</button>
+                <div class="admin-group-bar">
+                    <button class="admin-group active" data-group="users">Users</button>
+                    <button class="admin-group" data-group="ai">AI</button>
+                    <button class="admin-group" data-group="monitoring">Monitoring</button>
+                    <button class="admin-group" data-group="content">Content</button>
                 </div>
+            </div>
+            <div class="admin-tab-bar">
+                <button class="admin-tab active" data-tab="users" data-group="users" data-i18n="admin.tab.users">Users</button>
+                <button class="admin-tab" data-tab="requests" data-group="users"><span data-i18n="admin.tab.requests">Requests</span> <span id="admin-requests-badge" class="admin-badge hidden"></span></button>
+                <button class="admin-tab" data-tab="api" data-group="users" data-i18n="admin.tab.api">API Accounts</button>
+                <button class="admin-tab hidden" data-tab="ai" data-group="ai" data-i18n="admin.tab.ai">AI Users</button>
+                <button class="admin-tab hidden" data-tab="jobs" data-group="ai" data-i18n="admin.tab.jobs">Agent Jobs</button>
+                <button class="admin-tab hidden" data-tab="logs" data-group="monitoring" data-i18n="admin.tab.logs">Access Log</button>
+                <button class="admin-tab hidden" data-tab="errorlog" data-group="monitoring" data-i18n="admin.tab.errorlog">Error Log</button>
+                <button class="admin-tab hidden" data-tab="diagnostics" data-group="monitoring" data-i18n="admin.tab.diag">Diagnostics</button>
+                <button class="admin-tab hidden" data-tab="deleted" data-group="content" data-i18n="admin.tab.deleted">Deleted Pages</button>
             </div>
 
             <!-- Users pane -->
