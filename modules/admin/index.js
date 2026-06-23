@@ -762,11 +762,12 @@ const openAiUserForm = (u) => {
                         <input type="text" id="ai-f-model" class="form-control" value="${escHtml(cfg.model || '')}" placeholder="gpt-4o">
                     </div>
                 </div>
+                <div class="form-group">
+                    <label>${t('admin.ai.context')} — <span id="ai-f-context-display" class="admin-ai-temp-val">${cfg.context_messages ?? 10}</span></label>
+                    <input type="range" id="ai-f-context" class="admin-ai-temp-slider" value="${cfg.context_messages ?? 10}" min="0" max="20" step="1">
+                    <p class="form-hint"><strong>0</strong> sends only the current message — the AI has no memory of earlier exchanges. <strong>10</strong> (default) covers a short focused thread. <strong>20</strong> (maximum) gives the most context but risks confusing the AI with unrelated earlier topics — use <code>#newTopic</code> to reset when switching subjects.</p>
+                </div>
                 <div class="admin-ai-form-row">
-                    <div class="form-group">
-                        <label>${t('admin.ai.context')}</label>
-                        <input type="number" id="ai-f-context" class="form-control" value="${cfg.context_messages ?? 20}" min="1" max="100">
-                    </div>
                     <div class="form-group">
                         <label>${t('admin.ai.tokens')}</label>
                         <input type="number" id="ai-f-tokens" class="form-control" value="${cfg.max_tokens ?? 4096}" min="100" max="32000">
@@ -801,6 +802,9 @@ const openAiUserForm = (u) => {
             </div>
         </div>`;
 
+    document.getElementById('ai-f-context').addEventListener('input', (e) => {
+        document.getElementById('ai-f-context-display').textContent = e.target.value;
+    });
     document.getElementById('ai-f-temperature').addEventListener('input', (e) => {
         document.getElementById('ai-f-temperature-display').textContent = parseFloat(e.target.value).toFixed(2).replace(/\.?0+$/, '') || '0';
     });
@@ -840,7 +844,7 @@ const saveAiUser = async (uid) => {
     const api_key  = document.getElementById('ai-f-key')?.value || '';
     const model    = document.getElementById('ai-f-model')?.value.trim() || '';
     const system_prompt    = document.getElementById('ai-f-prompt')?.value || '';
-    const context_messages = parseInt(document.getElementById('ai-f-context')?.value || '20', 10);
+    const context_messages = parseInt(document.getElementById('ai-f-context')?.value || '10', 10);
     const temperature      = parseFloat(document.getElementById('ai-f-temperature')?.value || '0.7');
     const max_tokens       = parseInt(document.getElementById('ai-f-tokens')?.value || '4096', 10);
 

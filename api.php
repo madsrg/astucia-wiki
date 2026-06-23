@@ -401,7 +401,7 @@ if (isset($_REQUEST['action'])) {
         $api_key       = $config['api_key']          ?? '';
         $model         = $config['model']            ?? 'gpt-4o';
         $system_prompt = $config['system_prompt']    ?? 'You are a helpful assistant.';
-        $context_msgs  = (int)($config['context_messages'] ?? 20);
+        $context_msgs  = (int)($config['context_messages'] ?? 10);
         $max_tokens    = (int)($config['max_tokens']       ?? 4096);
         $temperature   = (float)($config['temperature']    ?? 0.7);
         if (!$api_key || !$api_url || !function_exists('curl_init')) return;
@@ -2509,7 +2509,7 @@ if (isset($_REQUEST['action'])) {
                             'api_url'          => trim($ai_cfg_in['api_url']            ?? $ec['api_url']          ?? ''),
                             'model'            => trim($ai_cfg_in['model']              ?? $ec['model']            ?? ''),
                             'system_prompt'    =>        $ai_cfg_in['system_prompt']    ?? $ec['system_prompt']    ?? '',
-                            'context_messages' => (int)( $ai_cfg_in['context_messages'] ?? $ec['context_messages'] ?? 20),
+                            'context_messages' => (int)( $ai_cfg_in['context_messages'] ?? $ec['context_messages'] ?? 10),
                             'max_tokens'       => (int)( $ai_cfg_in['max_tokens']       ?? $ec['max_tokens']       ?? 4096),
                             'temperature'      => (float)($ai_cfg_in['temperature']      ?? $ec['temperature']      ?? 0.7),
                         ];
@@ -2546,7 +2546,7 @@ if (isset($_REQUEST['action'])) {
                             'api_key'          => $new_api_key,
                             'model'            => trim($ai_cfg_in['model']              ?? ''),
                             'system_prompt'    =>        $ai_cfg_in['system_prompt']    ?? '',
-                            'context_messages' => (int)( $ai_cfg_in['context_messages'] ?? 20),
+                            'context_messages' => (int)( $ai_cfg_in['context_messages'] ?? 10),
                             'max_tokens'       => (int)( $ai_cfg_in['max_tokens']       ?? 4096),
                             'temperature'      => (float)($ai_cfg_in['temperature']      ?? 0.7),
                         ],
