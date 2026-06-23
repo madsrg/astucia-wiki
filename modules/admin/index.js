@@ -761,7 +761,7 @@ const openAiUserForm = (u) => {
             <div class="admin-ai-form-section">
                 <div class="form-group">
                     <label>${t('admin.ai.prompt')}</label>
-                    <textarea id="ai-f-prompt" class="form-control admin-ai-prompt" rows="5" placeholder="${t('admin.ai.prompt-ph')}">${escHtml(cfg.system_prompt || '')}</textarea>
+                    <textarea id="ai-f-prompt" class="form-control admin-ai-prompt" rows="10" placeholder="${t('admin.ai.prompt-ph')}">${escHtml(cfg.system_prompt || '')}</textarea>
                 </div>
                 <div class="admin-ai-form-row">
                     <div class="form-group">
