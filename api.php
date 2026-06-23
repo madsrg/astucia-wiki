@@ -458,7 +458,7 @@ if (isset($_REQUEST['action'])) {
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
                 CURLOPT_POSTFIELDS     => json_encode($payload),
-                CURLOPT_HTTPHEADER     => $headers, CURLOPT_TIMEOUT => 60,
+                CURLOPT_HTTPHEADER     => $headers, CURLOPT_TIMEOUT => 120,
             ]);
             $raw      = curl_exec($ch);
             $curl_err = curl_error($ch);

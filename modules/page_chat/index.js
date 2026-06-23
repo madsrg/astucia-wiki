@@ -78,7 +78,7 @@ const buildRow = (msg, grouped) => {
 
     if (msg.pending) {
         const age = Date.now() - new Date(msg.timestamp).getTime();
-        const TIMEOUT_MS = 90_000;
+        const TIMEOUT_MS = 300_000;
         if (age >= TIMEOUT_MS) {
             bubble.innerHTML = `<span class="chat-pending-timeout">${t('chat.timeout')}</span>`;
         } else {
