@@ -87,11 +87,16 @@ const _startStatusPoll = (filePath) => {
     const metaEl  = document.getElementById('ai-status-meta');
     if (!panel) return;
     panel.classList.remove('hidden');
+    if (stepEl) stepEl.textContent = 'Starting…';
+    if (metaEl) metaEl.textContent = '';
     _startStatusTimer();
     _statusPollTimer = setInterval(async () => {
         if (!_aiModalActive) { _stopStatusTimer(); return; }
-        const res = await api.call('get_ai_status', { file: filePath });
-        if (!res?.success || !res.data) return;
+        let res;
+        try { res = await api.call('get_ai_status', { file: filePath }); } catch (e) { console.warn('[ai-status] poll error', e); return; }
+        console.debug('[ai-status]', filePath, res);
+        if (!res?.success) return;
+        if (!res.data) { if (stepEl && !stepEl.textContent) stepEl.textContent = 'Starting…'; return; }
         const d = res.data;
         let step = _stepLabel(d.step);
         if (d.step === 'calling_api' || d.step === 'received')
@@ -102,7 +107,7 @@ const _startStatusPoll = (filePath) => {
         const parts = [`model: ${d.model || '?'}`, `ctx: ${d.context_messages ?? '?'} msgs`];
         if (d.tools_used?.length) parts.push(`tools: ${[...new Set(d.tools_used)].join(', ')}`);
         if (metaEl) metaEl.textContent = parts.join(' · ');
-    }, 1000);
+    }, 500);
 };
 
 const _closeAiModal = (delay = 0) => {
