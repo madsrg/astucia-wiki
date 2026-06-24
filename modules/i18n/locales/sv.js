@@ -74,7 +74,6 @@ export default {
     'chat.cmd.topic':           'Uppdatera chattämnet — /topic Ny rubrik här',
     'chat.cmd.purge':           'Behåll de N senaste meddelandena, ta bort resten — /purge 20 eller /purge 20 -y',
     'chat.cmd.summarize':       'Be en AI sammanfatta konversationen',
-    'chat.cmd.help':            'Visa alla tillgängliga kommandon',
     'chat.cmd.topic-usage':     'Användning: /topic Ny rubrik här',
     'chat.cmd.topic-fail':      'Det gick inte att uppdatera ämnet',
     'chat.cmd.purge-usage':     'Användning: /purge 20  (behåll de 20 senaste meddelandena)',

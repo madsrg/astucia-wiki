@@ -74,7 +74,6 @@ export default {
     'chat.cmd.topic':           'Chat-Thema aktualisieren — /topic Neuer Titel hier',
     'chat.cmd.purge':           'Letzte N Nachrichten behalten, Rest löschen — /purge 20 oder /purge 20 -y',
     'chat.cmd.summarize':       'Eine KI bitten, die Konversation zusammenzufassen',
-    'chat.cmd.help':            'Alle verfügbaren Befehle anzeigen',
     'chat.cmd.topic-usage':     'Verwendung: /topic Neuer Titel hier',
     'chat.cmd.topic-fail':      'Thema konnte nicht aktualisiert werden',
     'chat.cmd.purge-usage':     'Verwendung: /purge 20  (letzte 20 Nachrichten behalten)',

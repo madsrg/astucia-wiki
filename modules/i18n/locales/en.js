@@ -166,7 +166,6 @@ export default {
     'chat.cmd.topic':           'Update the chat topic — /topic New title here',
     'chat.cmd.purge':           'Keep last N messages, delete the rest — /purge 20 or /purge 20 -y to skip confirmation',
     'chat.cmd.summarize':       'Ask an AI to summarise the conversation',
-    'chat.cmd.help':            'Show all available commands',
     'chat.cmd.topic-usage':     'Usage: /topic New title here',
     'chat.cmd.topic-fail':      'Failed to update topic',
     'chat.cmd.purge-usage':     'Usage: /purge 20  (keep last 20 messages)',

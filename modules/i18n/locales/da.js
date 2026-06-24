@@ -74,7 +74,6 @@ export default {
     'chat.cmd.topic':           'Opdater chattemnet — /topic Ny titel her',
     'chat.cmd.purge':           'Behold de N seneste beskeder, slet resten — /purge 20 eller /purge 20 -y',
     'chat.cmd.summarize':       'Bed en AI om at opsummere samtalen',
-    'chat.cmd.help':            'Vis alle tilgængelige kommandoer',
     'chat.cmd.topic-usage':     'Brug: /topic Ny titel her',
     'chat.cmd.topic-fail':      'Kunne ikke opdatere emnet',
     'chat.cmd.purge-usage':     'Brug: /purge 20  (behold de 20 seneste beskeder)',

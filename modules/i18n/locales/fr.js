@@ -74,7 +74,6 @@ export default {
     'chat.cmd.topic':           'Mettre à jour le sujet — /topic Nouveau titre ici',
     'chat.cmd.purge':           'Conserver les N derniers messages, supprimer le reste — /purge 20 ou /purge 20 -y',
     'chat.cmd.summarize':       "Demander à une IA de résumer la conversation",
-    'chat.cmd.help':            'Afficher toutes les commandes disponibles',
     'chat.cmd.topic-usage':     'Usage : /topic Nouveau titre ici',
     'chat.cmd.topic-fail':      'Impossible de mettre à jour le sujet',
     'chat.cmd.purge-usage':     'Usage : /purge 20  (conserver les 20 derniers messages)',

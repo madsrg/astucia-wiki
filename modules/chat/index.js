@@ -12,7 +12,6 @@ const CHAT_COMMANDS = [
     { name: 'topic',     description: t('chat.cmd.topic') },
     { name: 'purge',     description: t('chat.cmd.purge') },
     { name: 'summarize', description: t('chat.cmd.summarize') },
-    { name: 'help',      description: t('chat.cmd.help') },
 ];
 const POLL_MS = 5000;
 
@@ -735,13 +734,6 @@ export const init = () => {
             }
             if (cmd === '/summarize') {
                 textarea.value = '#';
-                textarea.dispatchEvent(new Event('input'));
-                textarea.selectionStart = textarea.selectionEnd = 1;
-                textarea.focus();
-                return;
-            }
-            if (cmd === '/help') {
-                textarea.value = '/';
                 textarea.dispatchEvent(new Event('input'));
                 textarea.selectionStart = textarea.selectionEnd = 1;
                 textarea.focus();
