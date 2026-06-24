@@ -164,7 +164,7 @@ export default {
     'chat.cmd.new-topic':       'Reset AI context — ignore messages before this point',
     'chat.cmd.me':              'Post an action message — /me is reviewing the draft',
     'chat.cmd.topic':           'Update the chat topic — /topic New title here',
-    'chat.cmd.purge':           'Keep last N messages, delete the rest — /purge 20',
+    'chat.cmd.purge':           'Keep last N messages, delete the rest — /purge 20 or /purge 20 -y to skip confirmation',
     'chat.cmd.summarize':       'Ask an AI to summarise the conversation',
     'chat.cmd.help':            'Show all available commands',
     'chat.cmd.topic-usage':     'Usage: /topic New title here',

@@ -661,11 +661,14 @@ export const init = () => {
                 return;
             }
             if (cmd === '/purge') {
-                const keep = parseInt(arg, 10);
+                const noConfirm = /\b-y\b/i.test(arg);
+                const keep = parseInt(arg.replace(/-y/gi, '').trim(), 10);
                 if (isNaN(keep) || keep < 0) { showToast(t('chat.cmd.purge-usage'), 'error'); return; }
-                const confirmMsg = keep === 0 ? t('chat.cmd.purge-confirm-all') : t('chat.cmd.purge-confirm', { keep });
-                const ok = await confirmModal(confirmMsg, { confirmLabel: t('chat.cmd.purge-btn'), dangerous: true });
-                if (!ok) return;
+                if (!noConfirm) {
+                    const confirmMsg = keep === 0 ? t('chat.cmd.purge-confirm-all') : t('chat.cmd.purge-confirm', { keep });
+                    const ok = await confirmModal(confirmMsg, { confirmLabel: t('chat.cmd.purge-btn'), dangerous: true });
+                    if (!ok) return;
+                }
                 textarea.value = ''; autoResize(textarea);
                 const res = await api.call('purge_chat_messages', { file: state.currentPagePath, keep }, 'POST');
                 if (res.success) renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
