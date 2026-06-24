@@ -3,6 +3,7 @@ import { state } from '../core/state.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { getUsers } from '../core/users.js';
 import { t } from '../i18n/index.js';
+import { openAiModal, closeAiModal, checkAiModal, startStatusPoll } from '../core/ai_modal.js';
 
 const EMOJIS     = ['😀','😂','😍','🤔','😢','😮','😡','👍','👎','👋','🙏','❤️','🎉','🔥','✅','❌','⭐','💡','🚀','📝','🎯','👀','💬','🤝'];
 const REACTIONS  = ['👍','👎','❤️','😂','😮','🎉','🔥'];
@@ -16,12 +17,11 @@ const CHAT_COMMANDS = [
 const POLL_MS = 5000;
 
 let pollTimer     = null;
+let _chatPath     = null;
 let _hasMore      = false;
 let _minVisibleId = null;
 let _lastMtime    = 0;
 let _loadingMore  = false;
-let _aiModalActive    = false;
-let _aiModalCloseTimer = null;
 let _aiUids       = new Set();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -52,79 +52,6 @@ const renderText = (raw, isAi = false) => {
 
 const isNearBottom = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 
-let _statusPollTimer  = null;
-let _statusStartTime  = 0;
-let _statusTimerRaf   = null;
-
-const _startStatusTimer = () => {
-    _statusStartTime = Date.now();
-    const timerEl = document.getElementById('ai-status-timer');
-    const tick = () => {
-        if (!_aiModalActive) return;
-        if (timerEl) timerEl.textContent = ((Date.now() - _statusStartTime) / 1000).toFixed(1) + 's';
-        _statusTimerRaf = requestAnimationFrame(tick);
-    };
-    _statusTimerRaf = requestAnimationFrame(tick);
-};
-
-const _stopStatusTimer = () => {
-    if (_statusTimerRaf) { cancelAnimationFrame(_statusTimerRaf); _statusTimerRaf = null; }
-    clearInterval(_statusPollTimer); _statusPollTimer = null;
-    const panel = document.getElementById('ai-status-panel');
-    if (panel) panel.classList.add('hidden');
-};
-
-const _stepLabel = (s) => {
-    if (!s) return '';
-    const map = { preparing: 'Preparing context…', calling_api: 'Calling API…', received: 'Processing response…', executing_tool: 'Executing tool…' };
-    return map[s] || s;
-};
-
-const _startStatusPoll = (filePath, pendingId) => {
-    const panel   = document.getElementById('ai-status-panel');
-    const stepEl  = document.getElementById('ai-status-step');
-    const metaEl  = document.getElementById('ai-status-meta');
-    if (!panel) return;
-    panel.classList.remove('hidden');
-    if (stepEl) stepEl.textContent = 'Starting…';
-    if (metaEl) metaEl.textContent = '';
-    _statusPollTimer = setInterval(async () => {
-        if (!_aiModalActive) { _stopStatusTimer(); return; }
-        let res;
-        try { res = await api.call('get_ai_status', { file: filePath, id: pendingId }); } catch (e) { console.warn('[ai-status] poll error', e); return; }
-        console.debug('[ai-status]', filePath, pendingId, res);
-        if (!res?.success) return;
-        if (!res.data) { if (stepEl && !stepEl.textContent) stepEl.textContent = 'Starting…'; return; }
-        const d = res.data;
-        let step = _stepLabel(d.step);
-        if (d.step === 'calling_api' || d.step === 'received')
-            step += ` (call ${d.api_calls}${d.last_call_ms ? ', ' + (d.last_call_ms / 1000).toFixed(1) + 's' : ''})`;
-        if (d.step === 'executing_tool' && d.tool)
-            step += `: ${d.tool}`;
-        if (stepEl) stepEl.textContent = step;
-        const parts = [`model: ${d.model || '?'}`, `ctx: ${d.context_messages ?? '?'} msgs`];
-        if (d.tools_used?.length) parts.push(`tools: ${[...new Set(d.tools_used)].join(', ')}`);
-        if (metaEl) metaEl.textContent = parts.join(' · ');
-    }, 500);
-};
-
-const _closeAiModal = (delay = 0) => {
-    if (!_aiModalActive) return;
-    _aiModalActive = false;
-    _stopStatusTimer();
-    const modal = document.getElementById('ai-processing-modal');
-    if (!modal) return;
-    if (delay > 0) {
-        _aiModalCloseTimer = setTimeout(() => { modal.classList.add('hidden'); }, delay);
-    } else {
-        clearTimeout(_aiModalCloseTimer);
-        modal.classList.add('hidden');
-    }
-};
-
-const _checkAiModal = (messages) => {
-    if (_aiModalActive && !messages.some(m => m.pending)) _closeAiModal(1000);
-};
 
 // ── Reaction picker (shared singleton) ───────────────────────────────────────
 
@@ -163,7 +90,7 @@ const showReactionPicker = (msgId, anchorEl) => {
 };
 
 const toggleReaction = async (msgId, emoji) => {
-    const res = await api.call('toggle_reaction', { file: state.currentPagePath, id: msgId, emoji }, 'POST');
+    const res = await api.call('toggle_reaction', { file: _chatPath, id: msgId, emoji }, 'POST');
     if (res.success) {
         const msgEl    = document.getElementById('chat-messages');
         const atBottom = msgEl ? isNearBottom(msgEl) : true;
@@ -235,7 +162,7 @@ const buildStickyArea = (messages) => {
             close.title = 'Unpin message';
             close.innerHTML = '&times;';
             close.addEventListener('click', async () => {
-                const res = await api.call('toggle_sticky', { file: state.currentPagePath, id: msg.id }, 'POST');
+                const res = await api.call('toggle_sticky', { file: _chatPath, id: msg.id }, 'POST');
                 if (res.success) renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
                 else showToast(res.message || 'Failed to unpin', 'error');
             });
@@ -315,9 +242,9 @@ const buildRow = (msg, grouped) => {
         } else {
             bubble.innerHTML = `<span class="chat-pending-indicator"><span class="chat-spinner"></span>${t('chat.working')}</span>`;
             // Flip to timeout state when the deadline passes, but only if still on this chat
-            const capturedPath = state.currentPagePath;
+            const capturedPath = _chatPath;
             setTimeout(() => {
-                if (state.currentPagePath === capturedPath && state.currentChatData) {
+                if (_chatPath === capturedPath && state.currentChatData) {
                     renderChatView(state.currentChatData);
                 }
             }, TIMEOUT_MS - age + 500);
@@ -337,7 +264,7 @@ const buildRow = (msg, grouped) => {
         del.addEventListener('click', async () => {
             const ok = await confirmModal(t('chat.delete-confirm'), { confirmLabel: t('btn.delete'), dangerous: true });
             if (!ok) return;
-            const res = await api.call('delete_chat_message', { file: state.currentPagePath, id: msg.id }, 'POST');
+            const res = await api.call('delete_chat_message', { file: _chatPath, id: msg.id }, 'POST');
             if (res.success) {
                 const msgEl    = document.getElementById('chat-messages');
                 const atBottom = msgEl ? isNearBottom(msgEl) : true;
@@ -358,7 +285,7 @@ const buildRow = (msg, grouped) => {
         pin.title = isSticky ? t('chat.unpin-title') : t('chat.pin-title');
         pin.textContent = '📌';
         pin.addEventListener('click', async () => {
-            const res = await api.call('toggle_sticky', { file: state.currentPagePath, id: msg.id }, 'POST');
+            const res = await api.call('toggle_sticky', { file: _chatPath, id: msg.id }, 'POST');
             if (res.success) renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
             else showToast(res.message || 'Failed to pin', 'error');
         });
@@ -415,7 +342,7 @@ const _loadOlderMessages = async () => {
     const container = document.getElementById('chat-messages');
     const savedScrollHeight = container.scrollHeight;
 
-    const res = await api.call('chat_messages', { file: state.currentPagePath, before_id: _minVisibleId });
+    const res = await api.call('chat_messages', { file: _chatPath, before_id: _minVisibleId });
     _loadingMore = false;
 
     if (!res.success) {
@@ -496,21 +423,24 @@ const appendNewMessages = (newMsgs, prevUid) => {
     });
 
     if (shouldScroll) container.scrollTop = container.scrollHeight;
-    _checkAiModal(state.currentChatData?.messages || []);
+    checkAiModal(state.currentChatData?.messages || []);
 };
 
 // ── Polling ───────────────────────────────────────────────────────────────────
 
 export const stopPolling = () => {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-    _closeAiModal();
+    _chatPath = null;
+    closeAiModal();
 };
 
 export const startPolling = (path, initialMtime = 0) => {
     _lastMtime = initialMtime;
     stopPolling();
+    _chatPath = path;
     pollTimer = setInterval(async () => {
-        if (state.currentPagePath !== path) { stopPolling(); return; }
+        // Stop if a different non-folder page is opened; folder clicks don't unload the chat
+        if (state.currentPageType !== 'folder' && state.currentPagePath !== path) { stopPolling(); return; }
 
         const current = state.currentChatData?.messages || [];
         const maxId   = current.length ? current[current.length - 1].id : 0;
@@ -540,7 +470,7 @@ export const startPolling = (path, initialMtime = 0) => {
             const savedTop = msgEl ? msgEl.scrollTop : 0;
             renderChatView(_applyFullDataToWindow(fullData), _hasMore, false);
             if (msgEl) msgEl.scrollTop = atBottom ? msgEl.scrollHeight : savedTop;
-            _checkAiModal(state.currentChatData?.messages || []);
+            checkAiModal(state.currentChatData?.messages || []);
         }
     }, POLL_MS);
 };
@@ -698,9 +628,6 @@ export const init = () => {
     setupMentionAutocomplete(textarea, mentionPop);
     textarea.addEventListener('input', () => autoResize(textarea));
 
-    const aiModal     = document.getElementById('ai-processing-modal');
-    const aiCancelBtn = document.getElementById('ai-processing-cancel-btn');
-
     const sendMessage = async () => {
         const text = textarea.value.trim();
         if (!text) return;
@@ -712,7 +639,7 @@ export const init = () => {
             if (cmd === '/topic') {
                 if (!arg) { showToast(t('chat.cmd.topic-usage'), 'error'); return; }
                 textarea.value = ''; autoResize(textarea);
-                const res = await api.call('update_chat_topic', { file: state.currentPagePath, topic: arg }, 'POST');
+                const res = await api.call('update_chat_topic', { file: _chatPath, topic: arg }, 'POST');
                 if (res.success) renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
                 else showToast(res.message || t('chat.cmd.topic-fail'), 'error');
                 return;
@@ -727,7 +654,7 @@ export const init = () => {
                     if (!ok) return;
                 }
                 textarea.value = ''; autoResize(textarea);
-                const res = await api.call('purge_chat_messages', { file: state.currentPagePath, keep }, 'POST');
+                const res = await api.call('purge_chat_messages', { file: _chatPath, keep }, 'POST');
                 if (res.success) renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
                 else showToast(res.message || t('chat.cmd.purge-fail'), 'error');
                 return;
@@ -752,29 +679,20 @@ export const init = () => {
 
         let abortCtrl = null;
 
-        if (hasAiMention && aiModal) {
+        if (hasAiMention) {
             abortCtrl = new AbortController();
-            clearTimeout(_aiModalCloseTimer);
-            _aiModalActive = true;
-            const nameEl = document.getElementById('ai-processing-name');
-            if (nameEl) nameEl.textContent = mentionedAi.name;
-            aiModal.classList.remove('hidden');
-            _startStatusTimer();
-            aiCancelBtn.addEventListener('click', () => {
-                abortCtrl.abort();
-                _closeAiModal();
-            }, { once: true });
+            openAiModal(mentionedAi.name, () => abortCtrl.abort());
         }
 
         sendBtn.disabled = true;
         let res;
         try {
-            res = await api.call('post_chat_message', { file: state.currentPagePath, text }, 'POST', abortCtrl?.signal);
+            res = await api.call('post_chat_message', { file: _chatPath, text }, 'POST', abortCtrl?.signal);
         } finally {
             sendBtn.disabled = false;
         }
 
-        if (!res || res.aborted) { _closeAiModal(); return; }
+        if (!res || res.aborted) { closeAiModal(); return; }
 
         if (res.success) {
             textarea.value = '';
@@ -785,12 +703,12 @@ export const init = () => {
             // No async_ai: AI already ran synchronously — close modal now.
             if (res.async_ai) {
                 const pendingMsg = (res.data?.messages || []).slice().reverse().find(m => m.pending);
-                if (pendingMsg) _startStatusPoll(state.currentPagePath, pendingMsg.id);
+                if (pendingMsg) startStatusPoll(_chatPath, pendingMsg.id);
             } else {
-                _closeAiModal();
+                closeAiModal();
             }
         } else {
-            _closeAiModal();
+            closeAiModal();
             showToast(res.message || 'Failed to send', 'error');
         }
     };
@@ -848,7 +766,7 @@ export const init = () => {
         const saveTopic = async () => {
             const topic = topicInput.value.trim();
             topicSaveBtn.disabled = true;
-            const res = await api.call('update_chat_topic', { file: state.currentPagePath, topic }, 'POST');
+            const res = await api.call('update_chat_topic', { file: _chatPath, topic }, 'POST');
             topicSaveBtn.disabled = false;
             if (res.success) {
                 state.currentChatData = res.data;

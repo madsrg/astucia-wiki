@@ -3,6 +3,7 @@ import { state } from '../core/state.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { getUsers } from '../core/users.js';
 import { t } from '../i18n/index.js';
+import { openAiModal, closeAiModal, checkAiModal, startStatusPoll } from '../core/ai_modal.js';
 
 const POLL_MS = 5000;
 const EMOJIS  = ['😀','😂','😍','🤔','😢','😮','😡','👍','👎','👋','🙏','❤️','🎉','🔥','✅','❌','⭐','💡','🚀','📝','🎯','👀','💬','🤝'];
@@ -191,6 +192,7 @@ const appendMessages = (newMsgs, prevUid) => {
         prevUid = msg.uid;
     });
     if (shouldScroll) container.scrollTop = container.scrollHeight;
+    checkAiModal(_pcData?.messages || []);
 };
 
 // ── Polling ───────────────────────────────────────────────────────────────────
@@ -223,6 +225,7 @@ const startPoll = (path, initialMtime = 0) => {
                 const fullData = JSON.parse(full.data);
                 _pcData = fullData;
                 renderMessages(fullData.messages || [], false);
+                checkAiModal(_pcData.messages || []);
             } catch { /* ignore parse errors */ }
         }
         // Check if the linked .md page was updated by the AI and refresh if so
@@ -287,17 +290,41 @@ const doSend = async () => {
         // /me and /newTopic fall through to normal posting
     }
 
-    sendBtn.disabled = true;
-    const res = await api.call('post_chat_message', { file: _pcPath, text }, 'POST');
-    sendBtn.disabled = false;
+    const users = await getUsers();
+    const aiUsers = users.filter(u => u.is_ai);
+    const mentions = (text.match(/#(\S+)/g) || []).map(m => m.slice(1).toLowerCase());
+    const mentionedAi = aiUsers.find(u => mentions.includes(u.name.toLowerCase()));
 
-    if (res && res.success) {
+    let abortCtrl = null;
+    if (mentionedAi) {
+        abortCtrl = new AbortController();
+        openAiModal(mentionedAi.name, () => abortCtrl.abort());
+    }
+
+    sendBtn.disabled = true;
+    let res;
+    try {
+        res = await api.call('post_chat_message', { file: _pcPath, text }, 'POST', abortCtrl?.signal);
+    } finally {
+        sendBtn.disabled = false;
+    }
+
+    if (!res || res.aborted) { closeAiModal(); return; }
+
+    if (res.success) {
         textarea.value = '';
         autoResize(textarea);
         _pcData = res.data;
         renderMessages(_pcData.messages || [], true);
+        if (res.async_ai) {
+            const pendingMsg = (_pcData.messages || []).slice().reverse().find(m => m.pending);
+            if (pendingMsg) startStatusPoll(_pcPath, pendingMsg.id);
+        } else {
+            closeAiModal();
+        }
     } else {
-        if (res) showToast(res.message || t('page-chat.send-failed'), 'error');
+        closeAiModal();
+        showToast(res.message || t('page-chat.send-failed'), 'error');
     }
 };
 
@@ -424,6 +451,7 @@ const setupInput = () => {
 
 export const closePanel = () => {
     stopPoll();
+    closeAiModal();
     _pcPath = null;
     _linkedMdMtime = 0;
     state.pageChatPath = null;
