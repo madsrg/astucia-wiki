@@ -414,7 +414,7 @@ const setupInput = () => {
             const items = getItems();
             if (e.key === 'ArrowDown') { e.preventDefault(); setSelected(Math.min(selectedIdx + 1, items.length - 1)); return; }
             if (e.key === 'ArrowUp')   { e.preventDefault(); setSelected(Math.max(selectedIdx - 1, 0)); return; }
-            if (e.key === 'Tab') {
+            if (e.key === 'Tab' || e.key === 'Enter') {
                 e.preventDefault();
                 const active = selectedIdx >= 0 ? items[selectedIdx] : items[0];
                 if (active) active.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));

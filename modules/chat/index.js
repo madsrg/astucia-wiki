@@ -592,8 +592,9 @@ const setupMentionAutocomplete = (textarea, popup) => {
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
             setSelected(Math.max(selectedIdx - 1, 0));
-        } else if (e.key === 'Tab') {
+        } else if (e.key === 'Tab' || e.key === 'Enter') {
             e.preventDefault();
+            e.stopImmediatePropagation();
             insertSelected();
         } else if (e.key === 'Escape') {
             closePop();
