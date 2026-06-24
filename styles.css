@@ -1074,7 +1074,8 @@ body {
 .chat-pending-timeout { font-size: 0.875rem; color: #c05621; }
 .ai-processing-content { text-align: center; padding: 2.5rem 2rem; min-width: 320px; }
 .ai-processing-spinner { width: 40px; height: 40px; border: 3px solid #cbd5e0; border-top-color: #4a90d9; border-radius: 50%; animation: chat-spin 0.75s linear infinite; margin: 0 auto 1.25rem; }
-.ai-processing-label { margin: 0 0 1rem; color: var(--text-secondary); font-size: 1rem; }
+.ai-processing-label { margin: 0 0 1rem; color: var(--text-secondary); font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 0.4rem; }
+.ai-processing-icon { font-size: 1.25rem; line-height: 1; }
 .ai-status-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem 1rem; margin: 0 0 1.25rem; text-align: left; font-size: 0.8rem; font-family: monospace; display: flex; flex-direction: column; gap: 0.35rem; }
 .ai-status-step { color: var(--text-primary); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ai-status-meta { color: var(--text-secondary); }

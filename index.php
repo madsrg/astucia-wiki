@@ -855,7 +855,7 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
     <div id="ai-processing-modal" class="lightbox-overlay hidden" style="z-index:1100">
         <div class="lightbox-content lightbox-content-sm ai-processing-content">
             <div class="ai-processing-spinner"></div>
-            <p class="ai-processing-label" data-i18n="chat.ai-working">AI is thinking…</p>
+            <p id="ai-processing-label" class="ai-processing-label"><span class="ai-processing-icon">🤖</span><span id="ai-processing-name">AI</span> is thinking…</p>
             <div id="ai-status-panel" class="ai-status-panel hidden">
                 <div id="ai-status-step" class="ai-status-step"></div>
                 <div id="ai-status-meta" class="ai-status-meta"></div>

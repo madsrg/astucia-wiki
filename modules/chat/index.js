@@ -753,9 +753,11 @@ export const init = () => {
 
         // Detect AI user mention so we can show a waiting modal
         const users       = await getUsers();
-        const aiNames     = new Set(users.filter(u => u.is_ai).map(u => u.name.toLowerCase()));
+        const aiUsers     = users.filter(u => u.is_ai);
+        const aiNames     = new Set(aiUsers.map(u => u.name.toLowerCase()));
         const mentions    = (text.match(/#(\S+)/g) || []).map(m => m.slice(1).toLowerCase());
-        const hasAiMention = mentions.some(m => aiNames.has(m));
+        const mentionedAi = aiUsers.find(u => mentions.includes(u.name.toLowerCase()));
+        const hasAiMention = !!mentionedAi;
 
         let abortCtrl = null;
 
@@ -763,6 +765,8 @@ export const init = () => {
             abortCtrl = new AbortController();
             clearTimeout(_aiModalCloseTimer);
             _aiModalActive = true;
+            const nameEl = document.getElementById('ai-processing-name');
+            if (nameEl) nameEl.textContent = mentionedAi.name;
             aiModal.classList.remove('hidden');
             _startStatusPoll(state.currentPagePath);
             aiCancelBtn.addEventListener('click', () => {
