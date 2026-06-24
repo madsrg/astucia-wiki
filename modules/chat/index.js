@@ -81,7 +81,7 @@ const _stepLabel = (s) => {
     return map[s] || s;
 };
 
-const _startStatusPoll = (filePath) => {
+const _startStatusPoll = (filePath, pendingId) => {
     const panel   = document.getElementById('ai-status-panel');
     const stepEl  = document.getElementById('ai-status-step');
     const metaEl  = document.getElementById('ai-status-meta');
@@ -89,12 +89,11 @@ const _startStatusPoll = (filePath) => {
     panel.classList.remove('hidden');
     if (stepEl) stepEl.textContent = 'Starting…';
     if (metaEl) metaEl.textContent = '';
-    _startStatusTimer();
     _statusPollTimer = setInterval(async () => {
         if (!_aiModalActive) { _stopStatusTimer(); return; }
         let res;
-        try { res = await api.call('get_ai_status', { file: filePath }); } catch (e) { console.warn('[ai-status] poll error', e); return; }
-        console.debug('[ai-status]', filePath, res);
+        try { res = await api.call('get_ai_status', { file: filePath, id: pendingId }); } catch (e) { console.warn('[ai-status] poll error', e); return; }
+        console.debug('[ai-status]', filePath, pendingId, res);
         if (!res?.success) return;
         if (!res.data) { if (stepEl && !stepEl.textContent) stepEl.textContent = 'Starting…'; return; }
         const d = res.data;
@@ -768,7 +767,7 @@ export const init = () => {
             const nameEl = document.getElementById('ai-processing-name');
             if (nameEl) nameEl.textContent = mentionedAi.name;
             aiModal.classList.remove('hidden');
-            _startStatusPoll(state.currentPagePath);
+            _startStatusTimer();
             aiCancelBtn.addEventListener('click', () => {
                 abortCtrl.abort();
                 _closeAiModal();
@@ -792,7 +791,12 @@ export const init = () => {
             // async_ai: server used fastcgi_finish_request — AI runs in background, keep
             // modal open until polling resolves the pending message.
             // No async_ai: AI already ran synchronously — close modal now.
-            if (!res.async_ai) _closeAiModal();
+            if (res.async_ai) {
+                const pendingMsg = (res.data?.messages || []).slice().reverse().find(m => m.pending);
+                if (pendingMsg) _startStatusPoll(state.currentPagePath, pendingMsg.id);
+            } else {
+                _closeAiModal();
+            }
         } else {
             _closeAiModal();
             showToast(res.message || 'Failed to send', 'error');

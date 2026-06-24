@@ -406,7 +406,7 @@ if (isset($_REQUEST['action'])) {
         $temperature   = (float)($config['temperature']    ?? 0.7);
         if (!$api_key || !$api_url || !function_exists('curl_init')) return;
 
-        $status_file = $chat_file . '.ai-status';
+        $status_file = $chat_file . '.ai-status.' . (int)$placeholder_id;
         $started_at  = microtime(true);
         $api_call_count = 0;
         $tools_log   = [];
@@ -1089,7 +1089,7 @@ if (isset($_REQUEST['action'])) {
 
             case 'get_ai_status':
                 $gs_path = sanitize_path($_GET['file']);
-                $gs_status_file = $gs_path . '.ai-status';
+                $gs_status_file = $gs_path . '.ai-status.' . (int)($_GET['id'] ?? 0);
                 if (!file_exists($gs_status_file)) {
                     echo json_encode(['success' => true, 'data' => null]);
                 } else {
