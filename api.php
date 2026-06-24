@@ -1179,7 +1179,7 @@ if (isset($_REQUEST['action'])) {
                 }
 
                 file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
-                echo json_encode(['success' => true, 'data' => $chat_data]);
+                echo json_encode(['success' => true, 'data' => $chat_data, 'async_ai' => $_pending_ai_user !== null]);
 
                 if ($_pending_ai_user !== null) {
                     // Release session lock immediately so chat-poll requests are not blocked
