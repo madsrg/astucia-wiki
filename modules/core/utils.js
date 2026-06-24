@@ -48,13 +48,14 @@ export const confirmModal = (title, { message = '', confirmLabel = 'Confirm', ca
     const onOk = () => close(true);
     const onCancel = () => close(false);
     const onKeydown = e => {
-        if (e.key === 'Enter') { e.preventDefault(); close(true); }
+        if (e.key === 'Enter' && !dangerous) { e.preventDefault(); close(true); }
         if (e.key === 'Escape') close(false);
     };
 
     okBtn.addEventListener('click', onOk);
     cancelBtn.addEventListener('click', onCancel);
-    document.addEventListener('keydown', onKeydown);
+    // Delay to avoid auto-repeat keydown from the keystroke that triggered the modal
+    setTimeout(() => document.addEventListener('keydown', onKeydown), 300);
 });
 
 export const promptModal = (title, defaultValue = '', placeholder = '', icon = '') => new Promise(resolve => {
