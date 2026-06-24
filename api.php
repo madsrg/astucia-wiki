@@ -626,7 +626,7 @@ if (isset($_REQUEST['action'])) {
     }
 
     $edit_actions  = ['save', 'create_file', 'create_folder', 'create_diagram', 'create_list', 'create_chat',
-                      'post_chat_message', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'toggle_sticky',
+                      'post_chat_message', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'purge_chat_messages', 'toggle_sticky',
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags',
                       'save_diagram_svg', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore'];
@@ -1139,14 +1139,17 @@ if (isset($_REQUEST['action'])) {
                 if ($chat_data === null) throw new Exception('Invalid chat file.');
                 $actor = get_current_actor();
                 $is_new_topic = (bool)preg_match('/^\/newTopic(\s|$)/i', $text);
+                $is_action    = (bool)preg_match('/^\/me(\s|$)/i', $text);
+                $stored_text  = $is_action ? trim(preg_replace('/^\/me\s*/i', '', $text)) : $text;
                 $new_msg = [
                     'id'        => $chat_data['nextMessageId'],
                     'uid'       => AUTHENTICATION_ENABLED ? (int)($actor['uid'] ?? 0) : 0,
                     'name'      => AUTHENTICATION_ENABLED ? ($actor['name'] ?? 'Unknown') : 'Local User',
                     'timestamp' => date('c'),
-                    'text'      => $text,
+                    'text'      => $stored_text,
                 ];
                 if ($is_new_topic) $new_msg['is_new_topic'] = true;
+                if ($is_action)    $new_msg['is_action']    = true;
                 $chat_data['messages'][] = $new_msg;
                 $chat_data['nextMessageId']++;
 
@@ -1154,7 +1157,7 @@ if (isset($_REQUEST['action'])) {
                 // client sees a spinner immediately in the initial response.
                 $_pending_ai_user       = null;
                 $_pending_placeholder_id = null;
-                if (!$ai_auth_user && defined('WIKI_SYSTEM_DATA') && file_exists(WIKI_SYSTEM_DATA . 'users.json')) {
+                if (!$ai_auth_user && !$is_action && defined('WIKI_SYSTEM_DATA') && file_exists(WIKI_SYSTEM_DATA . 'users.json')) {
                     foreach ((json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? []) as $_aiu) {
                         if (empty($_aiu['is_ai'])) continue;
                         $_aname = $_aiu['name'] ?? '';
@@ -1236,6 +1239,16 @@ if (isset($_REQUEST['action'])) {
                 $chat_data = json_decode(file_get_contents($file_path), true);
                 if ($chat_data === null) throw new Exception('Invalid chat file.');
                 $chat_data['topic'] = $new_topic;
+                file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
+                echo json_encode(['success' => true, 'data' => $chat_data]);
+                break;
+
+            case 'purge_chat_messages':
+                $file_path = sanitize_path($_POST['file']);
+                $keep = max(0, (int)($_POST['keep'] ?? 0));
+                $chat_data = json_decode(file_get_contents($file_path), true);
+                if ($chat_data === null) throw new Exception('Invalid chat file.');
+                $chat_data['messages'] = $keep === 0 ? [] : array_slice($chat_data['messages'] ?? [], -$keep);
                 file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
                 echo json_encode(['success' => true, 'data' => $chat_data]);
                 break;

@@ -7,7 +7,12 @@ import { t } from '../i18n/index.js';
 const EMOJIS     = ['😀','😂','😍','🤔','😢','😮','😡','👍','👎','👋','🙏','❤️','🎉','🔥','✅','❌','⭐','💡','🚀','📝','🎯','👀','💬','🤝'];
 const REACTIONS  = ['👍','👎','❤️','😂','😮','🎉','🔥'];
 const CHAT_COMMANDS = [
-    { name: 'newTopic', description: t('chat.cmd.new-topic') },
+    { name: 'newTopic',  description: t('chat.cmd.new-topic') },
+    { name: 'me',        description: t('chat.cmd.me') },
+    { name: 'topic',     description: t('chat.cmd.topic') },
+    { name: 'purge',     description: t('chat.cmd.purge') },
+    { name: 'summarize', description: t('chat.cmd.summarize') },
+    { name: 'help',      description: t('chat.cmd.help') },
 ];
 const POLL_MS = 5000;
 
@@ -187,6 +192,17 @@ const buildStickyArea = (messages) => {
 // ── Row builder (shared by full render and append) ────────────────────────────
 
 const buildRow = (msg, grouped) => {
+    if (msg.is_action) {
+        const row = document.createElement('div');
+        row.className = 'chat-action-row';
+        row.dataset.id = msg.id;
+        const span = document.createElement('span');
+        span.className = 'chat-action-text';
+        span.textContent = `* ${msg.name} ${msg.text} *`;
+        row.appendChild(span);
+        return row;
+    }
+
     if (msg.is_new_topic) {
         const strippedText = msg.text.replace(/^\/newTopic\s*/i, '').trim();
         const divider = document.createElement('div');
@@ -631,6 +647,47 @@ export const init = () => {
     const sendMessage = async () => {
         const text = textarea.value.trim();
         if (!text) return;
+
+        if (text.startsWith('/')) {
+            const spaceIdx = text.indexOf(' ');
+            const cmd = (spaceIdx === -1 ? text : text.slice(0, spaceIdx)).toLowerCase();
+            const arg = spaceIdx === -1 ? '' : text.slice(spaceIdx + 1).trim();
+            if (cmd === '/topic') {
+                if (!arg) { showToast(t('chat.cmd.topic-usage'), 'error'); return; }
+                textarea.value = ''; autoResize(textarea);
+                const res = await api.call('update_chat_topic', { file: state.currentPagePath, topic: arg }, 'POST');
+                if (res.success) renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
+                else showToast(res.message || t('chat.cmd.topic-fail'), 'error');
+                return;
+            }
+            if (cmd === '/purge') {
+                const keep = parseInt(arg, 10);
+                if (isNaN(keep) || keep < 0) { showToast(t('chat.cmd.purge-usage'), 'error'); return; }
+                const confirmMsg = keep === 0 ? t('chat.cmd.purge-confirm-all') : t('chat.cmd.purge-confirm', { keep });
+                const ok = await confirmModal(confirmMsg, { confirmLabel: t('chat.cmd.purge-btn'), dangerous: true });
+                if (!ok) return;
+                textarea.value = ''; autoResize(textarea);
+                const res = await api.call('purge_chat_messages', { file: state.currentPagePath, keep }, 'POST');
+                if (res.success) renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
+                else showToast(res.message || t('chat.cmd.purge-fail'), 'error');
+                return;
+            }
+            if (cmd === '/summarize') {
+                textarea.value = '#';
+                textarea.dispatchEvent(new Event('input'));
+                textarea.selectionStart = textarea.selectionEnd = 1;
+                textarea.focus();
+                return;
+            }
+            if (cmd === '/help') {
+                textarea.value = '/';
+                textarea.dispatchEvent(new Event('input'));
+                textarea.selectionStart = textarea.selectionEnd = 1;
+                textarea.focus();
+                return;
+            }
+            // /me and /newTopic fall through to normal posting
+        }
 
         // Detect AI user mention so we can show a waiting modal
         const users       = await getUsers();
