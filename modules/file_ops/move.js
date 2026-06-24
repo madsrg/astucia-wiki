@@ -101,16 +101,31 @@ export const init = () => {
         if (result.success) {
             showToast(t('fileops.moved'), 'success');
             close();
+
+            const wasCurrentPage = state.currentPagePath === state.sourcePathToMove;
+            const savedId   = state.currentPageId;
+            const savedTags = state.currentPageTags;
+
+            if (!isCrossSpace && wasCurrentPage) {
+                // Update state immediately so any active chat poll stops at its next tick
+                // rather than requesting the old (now-moved) path and showing an error toast
+                state.currentPagePath = newPath;
+            }
+
             await refreshFileTree();
-            if (isCrossSpace && state.currentPagePath === state.sourcePathToMove) {
-                // Item moved away — load start page
+
+            if (isCrossSpace && wasCurrentPage) {
+                // Item moved to another space — navigate to start page
                 const startResult = await api.call('get_start_page');
                 if (startResult.success) {
                     await loadPage(startResult.path, startResult.id, []);
                     revealAndSelectFile(startResult.path);
                 }
             } else {
-                if (state.currentPagePath === state.sourcePathToMove) state.currentPagePath = newPath;
+                if (wasCurrentPage) {
+                    // Reload at the new path to update the view and restart any polling
+                    await loadPage(newPath, savedId, savedTags);
+                }
                 revealAndSelectFile(newPath);
             }
         }

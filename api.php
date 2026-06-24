@@ -626,8 +626,14 @@ if (isset($_REQUEST['action'])) {
             }
         }
 
-        $fresh = json_decode(file_get_contents($chat_file), true);
-        if (!$fresh) return;
+        // Re-read the file to get the latest state (including any messages posted by others
+        // while the AI was thinking). If the file was moved while the AI was processing,
+        // file_get_contents() returns false and we bail — the pending placeholder stays visible
+        // and will time out gracefully in the UI rather than disappearing silently.
+        $fresh_raw = file_get_contents($chat_file);
+        if ($fresh_raw === false) { @unlink($status_file); return; }
+        $fresh = json_decode($fresh_raw, true);
+        if (!$fresh) { @unlink($status_file); return; }
         if ($placeholder_id !== null) {
             $replaced = false;
             foreach ($fresh['messages'] as &$_m) {

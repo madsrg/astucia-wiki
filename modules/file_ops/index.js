@@ -25,16 +25,22 @@ export const handleRename = async () => {
     pathParts.pop();
     const newPath = (pathParts.length > 0 ? pathParts.join('/') + '/' : '') + newName;
 
-    api.call('move', { old_path: state.currentPagePath, new_path: newPath }, 'POST').then(res => {
-        if (res.success) {
-            showToast(t('fileops.renamed'), 'success');
-            refreshFileTree().then(() => {
-                state.currentPagePath = newPath;
-                document.getElementById('current-page-title').textContent = newPath.replace(/\.(md|drawio|list|chat)$/, '');
-                revealAndSelectFile(newPath);
-            });
+    const res = await api.call('move', { old_path: state.currentPagePath, new_path: newPath }, 'POST');
+    if (res.success) {
+        showToast(t('fileops.renamed'), 'success');
+        // Update path immediately so any active chat poll stops before it requests the old path
+        const savedId   = state.currentPageId;
+        const savedTags = state.currentPageTags;
+        state.currentPagePath = newPath;
+        await refreshFileTree();
+        if (state.currentPageType === 'chat') {
+            // Reload the chat at the new path to restart polling correctly
+            await loadPage(newPath, savedId, savedTags);
+        } else {
+            document.getElementById('current-page-title').textContent = newPath.replace(/\.(md|drawio|list|chat)$/, '');
         }
-    });
+        revealAndSelectFile(newPath);
+    }
 };
 
 export const handleDelete = async () => {
