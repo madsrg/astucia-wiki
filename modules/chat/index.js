@@ -53,9 +53,62 @@ const renderText = (raw, isAi = false) => {
 
 const isNearBottom = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 
+let _statusPollTimer  = null;
+let _statusStartTime  = 0;
+let _statusTimerRaf   = null;
+
+const _startStatusTimer = () => {
+    _statusStartTime = Date.now();
+    const timerEl = document.getElementById('ai-status-timer');
+    const tick = () => {
+        if (!_aiModalActive) return;
+        if (timerEl) timerEl.textContent = ((Date.now() - _statusStartTime) / 1000).toFixed(1) + 's';
+        _statusTimerRaf = requestAnimationFrame(tick);
+    };
+    _statusTimerRaf = requestAnimationFrame(tick);
+};
+
+const _stopStatusTimer = () => {
+    if (_statusTimerRaf) { cancelAnimationFrame(_statusTimerRaf); _statusTimerRaf = null; }
+    clearInterval(_statusPollTimer); _statusPollTimer = null;
+    const panel = document.getElementById('ai-status-panel');
+    if (panel) panel.classList.add('hidden');
+};
+
+const _stepLabel = (s) => {
+    if (!s) return '';
+    const map = { preparing: 'Preparing context…', calling_api: 'Calling API…', received: 'Processing response…', executing_tool: 'Executing tool…' };
+    return map[s] || s;
+};
+
+const _startStatusPoll = (filePath) => {
+    const panel   = document.getElementById('ai-status-panel');
+    const stepEl  = document.getElementById('ai-status-step');
+    const metaEl  = document.getElementById('ai-status-meta');
+    if (!panel) return;
+    panel.classList.remove('hidden');
+    _startStatusTimer();
+    _statusPollTimer = setInterval(async () => {
+        if (!_aiModalActive) { _stopStatusTimer(); return; }
+        const res = await api.call('get_ai_status', { file: filePath });
+        if (!res?.success || !res.data) return;
+        const d = res.data;
+        let step = _stepLabel(d.step);
+        if (d.step === 'calling_api' || d.step === 'received')
+            step += ` (call ${d.api_calls}${d.last_call_ms ? ', ' + (d.last_call_ms / 1000).toFixed(1) + 's' : ''})`;
+        if (d.step === 'executing_tool' && d.tool)
+            step += `: ${d.tool}`;
+        if (stepEl) stepEl.textContent = step;
+        const parts = [`model: ${d.model || '?'}`, `ctx: ${d.context_messages ?? '?'} msgs`];
+        if (d.tools_used?.length) parts.push(`tools: ${[...new Set(d.tools_used)].join(', ')}`);
+        if (metaEl) metaEl.textContent = parts.join(' · ');
+    }, 1000);
+};
+
 const _closeAiModal = (delay = 0) => {
     if (!_aiModalActive) return;
     _aiModalActive = false;
+    _stopStatusTimer();
     const modal = document.getElementById('ai-processing-modal');
     if (!modal) return;
     if (delay > 0) {
@@ -706,6 +759,7 @@ export const init = () => {
             clearTimeout(_aiModalCloseTimer);
             _aiModalActive = true;
             aiModal.classList.remove('hidden');
+            _startStatusPoll(state.currentPagePath);
             aiCancelBtn.addEventListener('click', () => {
                 abortCtrl.abort();
                 _closeAiModal();

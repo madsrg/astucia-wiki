@@ -1072,9 +1072,13 @@ body {
 .chat-spinner { flex-shrink: 0; width: 13px; height: 13px; border: 2px solid #cbd5e0; border-top-color: #4a90d9; border-radius: 50%; animation: chat-spin 0.75s linear infinite; }
 @keyframes chat-spin { to { transform: rotate(360deg); } }
 .chat-pending-timeout { font-size: 0.875rem; color: #c05621; }
-.ai-processing-content { text-align: center; padding: 2.5rem 2rem; }
+.ai-processing-content { text-align: center; padding: 2.5rem 2rem; min-width: 320px; }
 .ai-processing-spinner { width: 40px; height: 40px; border: 3px solid #cbd5e0; border-top-color: #4a90d9; border-radius: 50%; animation: chat-spin 0.75s linear infinite; margin: 0 auto 1.25rem; }
-.ai-processing-label { margin: 0 0 1.5rem; color: var(--text-secondary); font-size: 1rem; }
+.ai-processing-label { margin: 0 0 1rem; color: var(--text-secondary); font-size: 1rem; }
+.ai-status-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem 1rem; margin: 0 0 1.25rem; text-align: left; font-size: 0.8rem; font-family: monospace; display: flex; flex-direction: column; gap: 0.35rem; }
+.ai-status-step { color: var(--text-primary); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ai-status-meta { color: var(--text-secondary); }
+.ai-status-timer { color: var(--accent-blue); font-weight: 700; font-size: 0.9rem; }
 
 /* Sticky messages area */
 .chat-sticky-area { flex-shrink: 0; background: #fffbeb; border-bottom: 1px solid #fcd34d; padding: 0.3rem 1.25rem; display: flex; flex-direction: column; gap: 2px; }

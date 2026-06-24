@@ -406,6 +406,22 @@ if (isset($_REQUEST['action'])) {
         $temperature   = (float)($config['temperature']    ?? 0.7);
         if (!$api_key || !$api_url || !function_exists('curl_init')) return;
 
+        $status_file = $chat_file . '.ai-status';
+        $started_at  = microtime(true);
+        $api_call_count = 0;
+        $tools_log   = [];
+        $write_status = function(string $step, array $extra = []) use ($status_file, &$started_at, &$api_call_count, &$tools_log, $model, $context_msgs) {
+            file_put_contents($status_file, json_encode(array_merge([
+                'step'             => $step,
+                'model'            => $model,
+                'context_messages' => $context_msgs,
+                'api_calls'        => $api_call_count,
+                'tools_used'       => $tools_log,
+                'elapsed_ms'       => (int)((microtime(true) - $started_at) * 1000),
+            ], $extra)));
+        };
+        $write_status('preparing');
+
         $ai_uid     = (int)($ai_user['uid'] ?? -2);
         $space_name = basename($space_dir);
         $chat_name  = basename($chat_file, '.chat');
@@ -492,6 +508,9 @@ if (isset($_REQUEST['action'])) {
                 $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key];
             }
 
+            $api_call_count++;
+            $write_status('calling_api', ['iteration' => $iter + 1]);
+            $call_start = microtime(true);
             $ch = curl_init($api_url);
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
@@ -501,6 +520,8 @@ if (isset($_REQUEST['action'])) {
             $raw      = curl_exec($ch);
             $curl_err = curl_error($ch);
             curl_close($ch);
+            $last_call_ms = (int)((microtime(true) - $call_start) * 1000);
+            $write_status('received', ['iteration' => $iter + 1, 'last_call_ms' => $last_call_ms]);
 
             if (!$raw) {
                 $api_error = $curl_err ?: 'No response from the API (connection failed or timed out).';
@@ -546,10 +567,13 @@ if (isset($_REQUEST['action'])) {
                     $messages[] = ['role' => 'assistant', 'content' => $assistant_content];
                     $results = [];
                     foreach ($tool_uses as $tu) {
+                        $_tname = $tu['name'] ?? 'unknown';
+                        $tools_log[] = $_tname;
+                        $write_status('executing_tool', ['tool' => $_tname, 'iteration' => $iter + 1]);
                         $results[] = [
                             'type'        => 'tool_result',
                             'tool_use_id' => $tu['id'],
-                            'content'     => execute_ai_tool($tu['name'] ?? '', $tu['input'] ?? [], $ai_user, $indexer, $space_dir),
+                            'content'     => execute_ai_tool($_tname, $tu['input'] ?? [], $ai_user, $indexer, $space_dir),
                         ];
                     }
                     $messages[] = ['role' => 'user', 'content' => $results];
@@ -574,11 +598,14 @@ if (isset($_REQUEST['action'])) {
                     if (!$tool_calls) break;
                     $messages[] = $choice['message'];
                     foreach ($tool_calls as $tc) {
+                        $_tname = $tc['function']['name'] ?? 'unknown';
+                        $tools_log[] = $_tname;
+                        $write_status('executing_tool', ['tool' => $_tname, 'iteration' => $iter + 1]);
                         $fn_args = json_decode($tc['function']['arguments'] ?? '{}', true) ?? [];
                         $messages[] = [
                             'role'         => 'tool',
                             'tool_call_id' => $tc['id'] ?? '',
-                            'content'      => execute_ai_tool($tc['function']['name'] ?? '', $fn_args, $ai_user, $indexer, $space_dir),
+                            'content'      => execute_ai_tool($_tname, $fn_args, $ai_user, $indexer, $space_dir),
                         ];
                     }
                     continue;
@@ -623,6 +650,7 @@ if (isset($_REQUEST['action'])) {
             $fresh['nextMessageId']++;
         }
         file_put_contents($chat_file, json_encode($fresh, JSON_PRETTY_PRINT));
+        @unlink($status_file);
     }
 
     $edit_actions  = ['save', 'create_file', 'create_folder', 'create_diagram', 'create_list', 'create_chat',
@@ -1057,6 +1085,17 @@ if (isset($_REQUEST['action'])) {
                     'nextMessageId' => $cm_data['nextMessageId'] ?? 1,
                     'mtime'         => $cm_mtime,
                 ]);
+                break;
+
+            case 'get_ai_status':
+                $gs_path = sanitize_path($_GET['file']);
+                $gs_status_file = $gs_path . '.ai-status';
+                if (!file_exists($gs_status_file)) {
+                    echo json_encode(['success' => true, 'data' => null]);
+                } else {
+                    $gs_data = json_decode(file_get_contents($gs_status_file), true);
+                    echo json_encode(['success' => true, 'data' => $gs_data ?: null]);
+                }
                 break;
 
             case 'create_diagram':
