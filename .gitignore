@@ -2,6 +2,3 @@ vendor/
 CLAUDE.md
 config.php
 allowed_users.json
-search.sqlite
-search.sqlite-wal
-search.sqlite-shm
