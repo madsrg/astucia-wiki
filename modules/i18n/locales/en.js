@@ -147,6 +147,9 @@ export default {
     'search.no-results':  'No pages found.',
     'search.tag-results': 'Pages tagged with "{tag}"',
     'search.all-spaces':  'All spaces',
+    'search.prev':        '← Previous',
+    'search.next':        'Next →',
+    'search.page-of':     'Page {page} of {total}',
 
     // Chat
     'chat.send':          'Send',

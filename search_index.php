@@ -192,7 +192,7 @@ class SearchIndex {
                         JOIN pages p ON p.id = pages_fts.rowid
                         WHERE pages_fts MATCH ?
                           AND p.space = ?
-                        ORDER BY rank LIMIT 50";
+                        ORDER BY rank LIMIT 500";
                 $params = [$ftsQuery, $space];
             } elseif ($allSpaces && $allowedSpaces !== null) {
                 $ph  = implode(',', array_fill(0, count($allowedSpaces), '?'));
@@ -202,7 +202,7 @@ class SearchIndex {
                         JOIN pages p ON p.id = pages_fts.rowid
                         WHERE pages_fts MATCH ?
                           AND p.space IN ($ph)
-                        ORDER BY rank LIMIT 100";
+                        ORDER BY rank LIMIT 500";
                 $params = array_merge([$ftsQuery], $allowedSpaces);
             } else {
                 // Admin, all spaces
@@ -211,7 +211,7 @@ class SearchIndex {
                         FROM pages_fts
                         JOIN pages p ON p.id = pages_fts.rowid
                         WHERE pages_fts MATCH ?
-                        ORDER BY rank LIMIT 100";
+                        ORDER BY rank LIMIT 500";
                 $params = [$ftsQuery];
             }
 

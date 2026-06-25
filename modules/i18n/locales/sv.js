@@ -60,6 +60,7 @@ export default {
     'search.replace-btn': 'Ersätt', 'search.replace-all': 'Ersätt alla',
     'search.results': 'Sökresultat för "{query}"',
     'search.no-results': 'Inga sidor hittades.', 'search.tag-results': 'Sidor taggade med "{tag}"', 'search.all-spaces': 'Alla utrymmen',
+    'search.prev': '← Föregående', 'search.next': 'Nästa →', 'search.page-of': 'Sida {page} av {total}',
 
     'chat.send': 'Skicka', 'chat.placeholder': 'Skriv ett meddelande… (Enter för att skicka, Skift+Enter för ny rad, # för att nämna, / för kommandon)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Svara {name}',

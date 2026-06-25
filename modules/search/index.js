@@ -25,6 +25,12 @@ export const generateTagCloud = (fileTree) => {
     });
 };
 
+const RESULTS_PER_PAGE = 50;
+let _results    = [];
+let _showSpace  = false;
+let _title      = '';
+let _curPage    = 0;
+
 const PAGE_TYPE = (path) => {
     if (path.endsWith('.drawio')) return { label: 'diagram', cls: 'sr-type-diagram' };
     if (path.endsWith('.list'))   return { label: 'list',    cls: 'sr-type-list'    };
@@ -82,11 +88,41 @@ const buildResultCard = (page, showSpace) => {
         </div>`;
 };
 
+const renderPage = (page) => {
+    _curPage = page;
+    const total      = _results.length;
+    const totalPages = Math.ceil(total / RESULTS_PER_PAGE) || 1;
+    const start      = page * RESULTS_PER_PAGE;
+    const slice      = _results.slice(start, start + RESULTS_PER_PAGE);
+
+    const pageLabel = totalPages > 1 ? ` — ${t('search.page-of', { page: page + 1, total: totalPages })}` : '';
+    document.getElementById('current-page-title').textContent = `${_title} (${total})${pageLabel}`;
+
+    let html = `<div class="search-results">`;
+    if (total === 0) {
+        html += `<div class="sr-empty">${t('search.no-results')}</div>`;
+    } else {
+        slice.forEach(p => { html += buildResultCard(p, _showSpace); });
+        if (totalPages > 1) {
+            html += `<div class="sr-pagination">
+                <button class="sr-pag-btn" data-pag="prev"${page === 0 ? ' disabled' : ''}>${t('search.prev')}</button>
+                <span class="sr-pag-info">${t('search.page-of', { page: page + 1, total: totalPages })}</span>
+                <button class="sr-pag-btn" data-pag="next"${page >= totalPages - 1 ? ' disabled' : ''}>${t('search.next')}</button>
+            </div>`;
+        }
+    }
+    html += `</div>`;
+    document.getElementById('viewer-content').innerHTML = html;
+    document.getElementById('viewer-content').scrollTop = 0;
+};
+
 export const displaySearchResults = (title, results, showSpace = false) => {
     state.currentPagePath = null;
     state.currentPageId = null;
-    const count = results.length;
-    document.getElementById('current-page-title').textContent = `${title} (${count})`;
+    _results   = results;
+    _showSpace = showSpace;
+    _title     = title;
+
     document.getElementById('page-id-display').classList.add('hidden');
     document.getElementById('edit-btn').disabled = true;
     document.getElementById('viewer-container').classList.remove('hidden');
@@ -94,15 +130,6 @@ export const displaySearchResults = (title, results, showSpace = false) => {
     document.getElementById('chat-view-container').classList.add('hidden');
     document.getElementById('diagram-viewer').classList.add('hidden');
     document.getElementById('viewer-content').classList.remove('hidden');
-
-    let html = `<div class="search-results">`;
-    if (count === 0) {
-        html += `<div class="sr-empty">${t('search.no-results')}</div>`;
-    } else {
-        results.forEach(page => { html += buildResultCard(page, showSpace); });
-    }
-    html += `</div>`;
-    document.getElementById('viewer-content').innerHTML = html;
 
     // Clear edit state
     document.getElementById('tags-container').classList.add('hidden');
@@ -116,6 +143,8 @@ export const displaySearchResults = (title, results, showSpace = false) => {
     document.getElementById('editor-mode-group')?.classList.add('hidden');
     document.getElementById('page-chat-btn')?.classList.add('hidden');
     document.getElementById('toc-btn')?.classList.add('hidden');
+
+    renderPage(0);
 };
 
 const performSearch = async () => {
@@ -154,6 +183,14 @@ export const init = () => {
 
     // Click on a search result link — handles same-space and cross-space navigation.
     viewerContent.addEventListener('click', async (e) => {
+        const pagBtn = e.target.closest('[data-pag]');
+        if (pagBtn) {
+            const totalPages = Math.ceil(_results.length / RESULTS_PER_PAGE) || 1;
+            if (pagBtn.dataset.pag === 'prev' && _curPage > 0) renderPage(_curPage - 1);
+            else if (pagBtn.dataset.pag === 'next' && _curPage < totalPages - 1) renderPage(_curPage + 1);
+            return;
+        }
+
         const link = e.target.closest('.search-result-link');
         if (!link) return;
         e.preventDefault();

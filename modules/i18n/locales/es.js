@@ -60,6 +60,7 @@ export default {
     'search.replace-btn': 'Reemplazar', 'search.replace-all': 'Reemplazar todo',
     'search.results': 'Resultados de búsqueda para "{query}"',
     'search.no-results': 'No se encontraron páginas.', 'search.tag-results': 'Páginas etiquetadas con \"{tag}\"', 'search.all-spaces': 'Todos los espacios',
+    'search.prev': '← Anterior', 'search.next': 'Siguiente →', 'search.page-of': 'Página {page} de {total}',
 
     'chat.send': 'Enviar', 'chat.placeholder': 'Escribe un mensaje… (Enter para enviar, Mayús+Enter para nueva línea, # para mencionar, / para comandos)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Responder a {name}',

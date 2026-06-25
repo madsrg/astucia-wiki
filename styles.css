@@ -402,6 +402,12 @@ body {
 .search-all-spaces-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #718096; cursor: pointer; user-select: none; }
 .search-all-spaces-label input[type="checkbox"] { cursor: pointer; }
 
+.sr-pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; padding: 1.25rem 0 0.25rem; margin-top: 0.75rem; border-top: 1px solid #e2e8f0; }
+.sr-pag-btn { padding: 0.35rem 1rem; border: 1px solid #cbd5e0; border-radius: 4px; background: #fff; color: #4a5568; cursor: pointer; font-size: 0.82rem; line-height: 1.4; transition: background 0.15s; }
+.sr-pag-btn:hover:not(:disabled) { background: #edf2f7; }
+.sr-pag-btn:disabled { opacity: 0.38; cursor: default; }
+.sr-pag-info { font-size: 0.82rem; color: #718096; }
+
 
 /* Basic styling for rendered markdown content */
 #viewer-content h1, #viewer-content h2, #viewer-content h3 { margin-top: 0; margin-bottom: 12px; }

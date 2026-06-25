@@ -47,7 +47,7 @@ define('OIDC_REDIRECT_URI',   'https://your-domain.example.com/auth.php');
 
 // --- Wiki system data ---
 // Absolute path (with trailing slash) to the directory that holds:
-//   users.json, user_requests.json, and AI user configuration.
+//   users.json, user_requests.json, AI user configuration, and search.sqlite.
 //
 // SECURITY: this directory should be OUTSIDE your web root so its contents
 // are never directly reachable via HTTP. Example:
@@ -65,6 +65,20 @@ define('OIDC_REDIRECT_URI',   'https://your-domain.example.com/auth.php');
 //                 "email": "you@example.com", "notification_email": "", "role": "admin" }] }
 // Find YOUR_USER_ID in Auth0 → User Management → Users → your account → user_id.
 define('WIKI_SYSTEM_DATA', '');
+
+// --- Admin email (optional) ---
+// Email address for admin alerts (e.g. agent job failures, user access requests).
+// If not set, no alert emails are sent.
+// define('ADMIN_EMAIL', 'admin@your-domain.example.com');
+
+// --- Search engine (optional) ---
+// 'basic' (default) — built-in keyword search, no extra setup required.
+// 'sqlite' — SQLite FTS5 index with relevance ranking, highlighted snippets,
+//            prefix matching, and cross-space search. Requires PHP PDO SQLite
+//            with FTS5 support (standard on PHP 7.4+ / SQLite 3.9+; install
+//            php-sqlite3 if not present). After enabling, call once to build
+//            the initial index:  GET /api.php?action=indexfiles
+define('SEARCH_ENGINE', 'basic');
 
 // --- Email (optional) ---
 // Set MAIL_PROVIDER to 'sendgrid' or 'mailgun'. If omitted, the provider is

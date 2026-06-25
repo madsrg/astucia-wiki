@@ -13,7 +13,8 @@ Astucia Wiki combines several content types in one place:
 - **AI assistants** — per-space AI users (Claude, GPT, or any OpenAI-compatible model) that respond to #mentions in chat and can read and write wiki pages
 - **AI agent jobs** — scheduled or on-demand jobs that run an AI user against a prompt and optionally write the result to a wiki page
 - **File attachments** — drag-and-drop upload stored per-page
-- **Full-text search** — keyword search and tag cloud across all content
+- **Full-text search** — keyword search and tag cloud across all content; optional SQLite FTS5 engine adds relevance ranking, highlighted snippets, prefix matching, and cross-space search
+- **Page chat** — each Markdown page can have its own chat thread alongside the content
 - **Spaces** — isolated workspaces for different teams or projects, with per-user access control
 - **Localization** — UI available in English, Danish, Swedish, Spanish, French, and German; users pick their language from the sidebar
 - **Git integration** — optional version history per file; pages and diagrams auto-commit on save, chats and lists support manual snapshots
@@ -133,7 +134,7 @@ Full documentation, feature guides, and a step-by-step installation guide for De
 
 ## Tech stack
 
-- **Backend:** PHP 8.0+, no framework, no database
+- **Backend:** PHP 8.0+, no framework; content stored as plain files (no database required; SQLite optionally used for the search index)
 - **Frontend:** Vanilla ES modules, no bundler
 - **Auth:** OIDC via `jumbojett/openid-connect-php` (optional)
 - **Email:** SendGrid or Mailgun via HTTP API (optional)
