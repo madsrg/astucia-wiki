@@ -1,7 +1,7 @@
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { loadPage } from '../page_view/index.js';
-import { revealAndSelectFile } from '../file_tree/index.js';
+import { revealAndSelectFile, refreshFileTree } from '../file_tree/index.js';
 import { t } from '../i18n/index.js';
 
 export const generateTagCloud = (fileTree) => {
@@ -44,7 +44,7 @@ const fmtDate = (ts) => {
 
 const escHtml = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-const buildResultCard = (page) => {
+const buildResultCard = (page, showSpace) => {
     const segments   = page.path.replace(/\.(md|drawio|list|chat)$/, '').split('/');
     const name       = segments.pop();
     const folderPath = segments.join(' / ');
@@ -66,11 +66,14 @@ const buildResultCard = (page) => {
     }
     const metaHtml = metaParts.length ? `<div class="sr-meta">${metaParts.join('<span class="sr-meta-sep">·</span>')}${tagsHtml}</div>` : (tagsHtml ? `<div class="sr-meta">${tagsHtml}</div>` : '');
 
+    const spaceBadge = (showSpace && page.space)
+        ? `<span class="sr-space-badge">${escHtml(page.space)}</span>` : '';
+
     return `
         <div class="sr-card">
             <div class="sr-card-top">
-                <a href="#" class="sr-title search-result-link" data-id="${page.id}">${escHtml(name)}</a>
-                <span class="sr-type-badge ${type.cls}">${type.label}</span>
+                <a href="#" class="sr-title search-result-link" data-id="${page.id}" data-space="${escHtml(page.space || '')}">${escHtml(name)}</a>
+                ${spaceBadge}<span class="sr-type-badge ${type.cls}">${type.label}</span>
             </div>
             ${folderPath ? `<div class="sr-path">${escHtml(folderPath)}</div>` : ''}
             ${heading    ? `<div class="sr-heading">${escHtml(heading)}</div>` : ''}
@@ -79,7 +82,7 @@ const buildResultCard = (page) => {
         </div>`;
 };
 
-export const displaySearchResults = (title, results) => {
+export const displaySearchResults = (title, results, showSpace = false) => {
     state.currentPagePath = null;
     state.currentPageId = null;
     const count = results.length;
@@ -96,7 +99,7 @@ export const displaySearchResults = (title, results) => {
     if (count === 0) {
         html += `<div class="sr-empty">${t('search.no-results')}</div>`;
     } else {
-        results.forEach(page => { html += buildResultCard(page); });
+        results.forEach(page => { html += buildResultCard(page, showSpace); });
     }
     html += `</div>`;
     document.getElementById('viewer-content').innerHTML = html;
@@ -118,8 +121,13 @@ export const displaySearchResults = (title, results) => {
 const performSearch = async () => {
     const query = document.getElementById('search-query-input').value.trim();
     if (!query) return;
-    const result = await api.call('search', { query });
-    if (result.success) displaySearchResults(t('search.results', { query }), result.data);
+    const allSpaces = document.getElementById('search-all-spaces-chk')?.checked;
+    const params = { query };
+    if (allSpaces) params.all_spaces = '1';
+    const result = await api.call('search', params);
+    if (result.success) {
+        displaySearchResults(t('search.results', { query }), result.data, !!result.cross_space);
+    }
 };
 
 export const init = () => {
@@ -127,6 +135,11 @@ export const init = () => {
     const searchQueryInput = document.getElementById('search-query-input');
     const searchQueryBtn = document.getElementById('search-query-btn');
     const viewerContent = document.getElementById('viewer-content');
+
+    // Show "Search all spaces" toggle only when SQLite engine is active.
+    if (window.WIKI_SEARCH_ENGINE === 'sqlite') {
+        document.getElementById('search-all-spaces-row')?.classList.remove('hidden');
+    }
 
     tagCloud.addEventListener('click', async (e) => {
         if (e.target.classList.contains('tag-cloud-item')) {
@@ -139,14 +152,27 @@ export const init = () => {
     searchQueryBtn.addEventListener('click', performSearch);
     searchQueryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') performSearch(); });
 
-    // Click on a search result link
+    // Click on a search result link — handles same-space and cross-space navigation.
     viewerContent.addEventListener('click', async (e) => {
         const link = e.target.closest('.search-result-link');
         if (!link) return;
         e.preventDefault();
-        const pageId = link.dataset.id;
-        const result = await api.call('get_path_from_id', { pageid: pageId });
+        const pageId    = link.dataset.id;
+        const linkSpace = link.dataset.space || null;
+
+        // Pass the result's space so get_path_from_id uses the right indexer.
+        const getParams = { pageid: pageId };
+        if (linkSpace && linkSpace !== state.currentSpace) getParams.space = linkSpace;
+        const result = await api.call('get_path_from_id', getParams);
+
         if (result.success && result.path) {
+            const targetSpace = result.space || (linkSpace !== state.currentSpace ? linkSpace : null);
+            if (targetSpace && targetSpace !== state.currentSpace) {
+                const { switchSpaceSilently } = await import('../spaces/index.js');
+                switchSpaceSilently(targetSpace);
+                await refreshFileTree();
+            }
+
             const findItem = (items, path) => {
                 for (const item of items) {
                     if (item.path === path) return item;

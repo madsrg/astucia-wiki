@@ -146,6 +146,7 @@ export default {
     'search.results':     'Search Results for "{query}"',
     'search.no-results':  'No pages found.',
     'search.tag-results': 'Pages tagged with "{tag}"',
+    'search.all-spaces':  'All spaces',
 
     // Chat
     'chat.send':          'Send',

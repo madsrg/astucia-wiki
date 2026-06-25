@@ -396,6 +396,12 @@ body {
 .sr-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-left: auto; }
 .sr-tag  { background: #f7fafc; border: 1px solid var(--border-color); border-radius: 3px; padding: 0.05em 0.4em; font-size: 0.7rem; color: #718096; }
 
+.sr-space-badge { font-size: 0.68rem; font-weight: 600; padding: 0.15em 0.55em; border-radius: 4px; background: #e6fffa; color: #234e52; flex-shrink: 0; }
+
+.search-all-spaces-row { padding: 0.2rem 0.1rem 0.4rem; }
+.search-all-spaces-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #718096; cursor: pointer; user-select: none; }
+.search-all-spaces-label input[type="checkbox"] { cursor: pointer; }
+
 
 /* Basic styling for rendered markdown content */
 #viewer-content h1, #viewer-content h2, #viewer-content h3 { margin-top: 0; margin-bottom: 12px; }

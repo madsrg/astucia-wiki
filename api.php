@@ -41,6 +41,7 @@ if (AUTHENTICATION_ENABLED && !$_anonymous_reader && !isset($_SESSION['user']) &
 }
 
 require_once 'indexer.php';
+require_once 'search_index.php';
 
 // --- API ROUTER ---
 if (isset($_REQUEST['action'])) {
@@ -73,6 +74,17 @@ if (isset($_REQUEST['action'])) {
     }
 
     $indexer = new PageIndexer($space_dir);
+
+    // SQLite FTS5 search index (null when SEARCH_ENGINE !== 'sqlite').
+    $search_idx = null;
+    if (defined('SEARCH_ENGINE') && SEARCH_ENGINE === 'sqlite') {
+        try { $search_idx = new SearchIndex(); } catch (\Throwable $_sie) {}
+    }
+    // Helper: space name for the current request's space_dir.
+    function _sidx_space(): string {
+        global $space_dir;
+        return basename(rtrim($space_dir, '/'));
+    }
 
     // Session timeout check — app-level idle expiry, more reliable than PHP GC.
     if (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) {
@@ -1118,6 +1130,7 @@ if (isset($_REQUEST['action'])) {
                         $actor = get_current_actor();
                         $indexer->addPage($file_path_raw, $actor['uid'], $actor['name']);
                         echo json_encode(['success' => true, 'message' => 'Diagram created.']);
+                        if ($search_idx) { try { $search_idx->upsertPage(_sidx_space(), ltrim(str_replace('..','', $file_path_raw),'/'), ''); } catch(\Throwable $_e){} }
                         if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
                         $git_name  = $actor['name'] ?? 'Wiki';
                         $git_email = (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost';
@@ -1148,6 +1161,7 @@ if (isset($_REQUEST['action'])) {
                         $actor = get_current_actor();
                         $indexer->addPage($file_path_raw, $actor['uid'], $actor['name']);
                         echo json_encode(['success' => true, 'message' => 'List created.']);
+                        if ($search_idx) { try { $search_idx->upsertPage(_sidx_space(), ltrim(str_replace('..','', $file_path_raw),'/'), ''); } catch(\Throwable $_e){} }
                     } else {
                         throw new Exception('Could not create list file.');
                     }
@@ -1167,6 +1181,7 @@ if (isset($_REQUEST['action'])) {
                         $actor = get_current_actor();
                         $indexer->addPage($file_path_raw, $actor['uid'], $actor['name']);
                         echo json_encode(['success' => true, 'message' => 'Chat created.']);
+                        if ($search_idx) { try { $search_idx->upsertPage(_sidx_space(), ltrim(str_replace('..','', $file_path_raw),'/'), ''); } catch(\Throwable $_e){} }
                     } else {
                         throw new Exception('Could not create chat file.');
                     }
@@ -1491,62 +1506,116 @@ if (isset($_REQUEST['action'])) {
                 break;
 
             case 'search':
-                $query = $_GET['query'];
+                $query = trim($_GET['query'] ?? '');
                 if (empty($query)) {
                     echo json_encode(['success' => true, 'data' => []]);
                     break;
                 }
-                $all_pages = $indexer->getAllPages();
-                $results = [];
-                foreach ($all_pages as $id => $data) {
-                    if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') {
-                        continue; // Only search markdown files
-                    }
-                    $full_path = sanitize_path($data['path']);
-                    if (!file_exists($full_path)) {
-                        continue;
-                    }
-                    $content = file_get_contents($full_path);
 
-                    // Search content and path (case-insensitive)
-                    $content_pos = stripos($content, $query);
-                    $path_pos = stripos($data['path'], $query);
+                if ($search_idx !== null) {
+                    // ── SQLite FTS5 path ──────────────────────────────────────
+                    $all_spaces_req = !empty($_GET['all_spaces']);
 
-                    if ($content_pos !== false || $path_pos !== false) {
-                        $lines = explode("\n", $content);
-                        $header = '';
-                        foreach ($lines as $line) {
-                            if (substr(trim($line), 0, 1) === '#') {
-                                $header = trim($line);
-                                break;
-                            }
+                    // Determine which spaces the user may access.
+                    $allowed_spaces = null; // null = no restriction (admin)
+                    if (AUTHENTICATION_ENABLED && !$ai_auth_user) {
+                        $s_role   = $_SESSION['user']['role']   ?? 'reader';
+                        $s_spaces = $_SESSION['user']['spaces'] ?? null;
+                        if ($s_role !== 'admin' && $s_spaces !== null) {
+                            $allowed_spaces = $s_spaces;
                         }
-                        
-                        $preview = '';
-                        if ($content_pos !== false) {
-                            $start = max(0, $content_pos - 50);
-                            $length = strlen($query) + 100;
-                            $snippet = htmlspecialchars(substr($content, $start, $length));
-                            $preview = '...' . preg_replace('/' . preg_quote($query, '/') . '/i', '<mark>$0</mark>', $snippet) . '...';
-                        } else {
-                             $preview_lines = [];
-                             foreach ($lines as $line) {
-                                 if (!empty($header) && count($preview_lines) < 2 && trim($line) !== '') {
-                                     $preview_lines[] = trim($line);
-                                 }
-                             }
-                             $preview = htmlspecialchars(implode(' ', $preview_lines));
-                        }
+                    }
 
+                    if (!$all_spaces_req) {
+                        // Single-space mode: restrict to the current space.
+                        $cur_sp = _sidx_space();
+                        $fts_rows = $search_idx->search($query, [$cur_sp], false);
+                    } else {
+                        $fts_rows = $search_idx->search($query, $allowed_spaces, true);
+                    }
+
+                    // Hydrate results with metadata from each space's index.json.
+                    $space_indexers = []; // lazy cache
+                    $results = [];
+                    foreach ($fts_rows as $row) {
+                        $sp = $row['space'];
+                        if (!isset($space_indexers[$sp])) {
+                            $sp_dir = rtrim(PAGES_DIR, '/') . '/' . $sp;
+                            if (!is_dir($sp_dir)) continue;
+                            $space_indexers[$sp] = new PageIndexer($sp_dir);
+                        }
+                        $idx   = $space_indexers[$sp];
+                        $pg_id = $idx->getId($row['path']);
+                        if (!$pg_id) continue;
+                        $data  = $idx->getAllPages()[$pg_id] ?? null;
+                        if (!$data) continue;
+
+                        $preview = $row['snippet'] !== '…' ? $row['snippet'] : ($row['preview'] ?? '');
                         $results[] = array_merge([
-                            'id'      => $id,
-                            'path'    => $data['path'],
-                            'header'  => $header,
+                            'id'      => $pg_id,
+                            'path'    => $row['path'],
+                            'space'   => $sp,
+                            'header'  => $row['title'],
                             'preview' => $preview,
                         ], page_meta($data));
                     }
+                    echo json_encode([
+                        'success'     => true,
+                        'data'        => $results,
+                        'engine'      => 'sqlite',
+                        'cross_space' => $all_spaces_req,
+                    ]);
+                } else {
+                    // ── Basic (per-file stripos) path ─────────────────────────
+                    $all_pages = $indexer->getAllPages();
+                    $results = [];
+                    foreach ($all_pages as $id => $data) {
+                        if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') {
+                            continue;
+                        }
+                        $full_path = sanitize_path($data['path']);
+                        if (!file_exists($full_path)) continue;
+                        $content = file_get_contents($full_path);
+
+                        $content_pos = stripos($content, $query);
+                        $path_pos    = stripos($data['path'], $query);
+
+                        if ($content_pos !== false || $path_pos !== false) {
+                            $lines  = explode("\n", $content);
+                            $header = '';
+                            foreach ($lines as $line) {
+                                if (substr(trim($line), 0, 1) === '#') { $header = trim($line); break; }
+                            }
+
+                            $preview = '';
+                            if ($content_pos !== false) {
+                                $start   = max(0, $content_pos - 50);
+                                $length  = strlen($query) + 100;
+                                $snippet = htmlspecialchars(substr($content, $start, $length));
+                                $preview = '...' . preg_replace(
+                                    '/' . preg_quote($query, '/') . '/i',
+                                    '<mark>$0</mark>', $snippet
+                                ) . '...';
+                            } else {
+                                $pl = [];
+                                foreach ($lines as $line) {
+                                    if (!empty($header) && count($pl) < 2 && trim($line) !== '') {
+                                        $pl[] = trim($line);
+                                    }
+                                }
+                                $preview = htmlspecialchars(implode(' ', $pl));
+                            }
+
+                            $results[] = array_merge([
+                                'id'      => $id,
+                                'path'    => $data['path'],
+                                'header'  => $header,
+                                'preview' => $preview,
+                            ], page_meta($data));
+                        }
+                    }
+                    echo json_encode(['success' => true, 'data' => $results]);
                 }
-                echo json_encode(['success' => true, 'data' => $results]);
                 break;
 
             case 'get_mentions':
@@ -1656,6 +1725,9 @@ if (isset($_REQUEST['action'])) {
                     $actor = get_current_actor();
                     $indexer->updateModified($_GET['file'], $actor['uid'], $actor['name']);
                     echo json_encode(['success' => true, 'message' => 'File saved successfully.']);
+                    if ($search_idx && $ext_save === 'md') {
+                        try { $search_idx->upsertPage(_sidx_space(), $rel_save, $content); } catch (\Throwable $_e) {}
+                    }
                     if (in_array($ext_save, ['md', 'drawio'], true) && $indexer->getGitCommit($rel_save, true)) {
                         if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
                         $git_name  = $actor['name'] ?? 'Wiki';
@@ -1702,6 +1774,7 @@ if (isset($_REQUEST['action'])) {
                         $actor = get_current_actor();
                         $indexer->addPage($file_path_raw, $actor['uid'], $actor['name']);
                         echo json_encode(['success' => true, 'message' => 'File created.']);
+                        if ($search_idx) { try { $search_idx->upsertPage(_sidx_space(), ltrim(str_replace('..','', $file_path_raw),'/'), $content); } catch(\Throwable $_e){} }
                         if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
                         $git_name  = $actor['name'] ?? 'Wiki';
                         $git_email = (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost';
@@ -1730,13 +1803,17 @@ if (isset($_REQUEST['action'])) {
             case 'delete':
                 $path_raw = $_POST['path'];
                 $path_sanitized = sanitize_path($path_raw);
-                function delete_recursive($dir, $indexer, $base_dir) {
+                function delete_recursive($dir, $indexer, $base_dir, $sidx = null) {
                     if (!is_dir($dir)) {
-                        $indexer->removePage(str_replace($base_dir . '/', '', $dir));
+                        $rel = str_replace($base_dir . '/', '', $dir);
+                        $indexer->removePage($rel);
+                        if ($sidx) {
+                            try { $sidx->deletePage(basename(rtrim($base_dir, '/')), $rel); } catch (\Throwable $_e) {}
+                        }
                         // Also delete associated uploads folder if it exists
                         $uploads_dir = $dir . '.uploads';
                         if (is_dir($uploads_dir)) {
-                            delete_recursive($uploads_dir, $indexer, $base_dir);
+                            delete_recursive($uploads_dir, $indexer, $base_dir, $sidx);
                         }
                         // Delete cached SVG export if this is a drawio file
                         $svg_cache = $dir . '.svg';
@@ -1747,13 +1824,13 @@ if (isset($_REQUEST['action'])) {
                     }
                     foreach (scandir($dir) as $item) {
                         if ($item == '.' || $item == '..') continue;
-                        if (!delete_recursive($dir . DIRECTORY_SEPARATOR . $item, $indexer, $base_dir)) return false;
+                        if (!delete_recursive($dir . DIRECTORY_SEPARATOR . $item, $indexer, $base_dir, $sidx)) return false;
                     }
                     return rmdir($dir);
                 }
 
                 if (file_exists($path_sanitized)) {
-                    if (delete_recursive($path_sanitized, $indexer, $space_dir)) {
+                    if (delete_recursive($path_sanitized, $indexer, $space_dir, $search_idx)) {
                         echo json_encode(['success' => true, 'message' => 'Item deleted.']);
                     } else {
                         throw new Exception('Could not delete item.');
@@ -1783,6 +1860,10 @@ if (isset($_REQUEST['action'])) {
                 if (!is_dir($new_parent)) {
                     mkdir($new_parent, 0755, true);
                 }
+                $src_space_name = _sidx_space();
+                $tgt_space_name = ($is_cross_space && $target_space_name !== '')
+                    ? basename($target_space_name) : $src_space_name;
+
                 if (rename($old_path_sanitized, $new_path_sanitized)) {
                     if ($is_directory) {
                         if ($is_cross_space) {
@@ -1799,17 +1880,33 @@ if (isset($_REQUEST['action'])) {
                                 $cb_name = $pdata['createdBy']['name'] ?? null;
                                 $target_indexer->addPage($new_entry_rel, $cb_uid, $cb_name);
                                 $indexer->removePage($ppath);
+                                if ($search_idx) {
+                                    try { $search_idx->movePageCrossSpace($src_space_name, $ppath, $tgt_space_name, $new_entry_rel); } catch (\Throwable $_e) {}
+                                }
                             }
                         } else {
                             $indexer->updateFolderPath($old_path_raw, $new_path_raw);
+                            if ($search_idx) {
+                                $old_pfx = ltrim(str_replace('..', '', $old_path_raw), '/') . '/';
+                                $new_pfx = ltrim(str_replace('..', '', $new_path_raw), '/') . '/';
+                                try { $search_idx->moveFolderPaths($src_space_name, $old_pfx, $new_pfx); } catch (\Throwable $_e) {}
+                            }
                         }
                     } else {
+                        $old_rel = ltrim(str_replace('..', '', $old_path_raw), '/');
                         if ($is_cross_space) {
                             $actor = get_current_actor();
                             $target_indexer->addPage($new_path_rel, $actor['uid'], $actor['name']);
-                            $indexer->removePage(ltrim(str_replace('..', '', $old_path_raw), '/'));
+                            $indexer->removePage($old_rel);
+                            if ($search_idx) {
+                                try { $search_idx->movePageCrossSpace($src_space_name, $old_rel, $tgt_space_name, $new_path_rel); } catch (\Throwable $_e) {}
+                            }
                         } else {
                             $indexer->updatePath($old_path_raw, $new_path_raw);
+                            if ($search_idx) {
+                                $new_rel = ltrim(str_replace('..', '', $new_path_raw), '/');
+                                try { $search_idx->movePage($src_space_name, $old_rel, $new_rel); } catch (\Throwable $_e) {}
+                            }
                         }
                         // Move associated uploads folder if it exists
                         $old_uploads_dir = $old_path_sanitized . '.uploads';
@@ -1866,6 +1963,12 @@ if (isset($_REQUEST['action'])) {
                         $dest_indexer->updateTags($new_id, $source_tags);
                     }
                     echo json_encode(['success' => true, 'message' => 'Page copied successfully.']);
+                    if ($search_idx) {
+                        $cp_space = ($target_space_name !== '') ? basename($target_space_name) : _sidx_space();
+                        $cp_ext   = pathinfo($new_path_rel, PATHINFO_EXTENSION);
+                        $cp_raw   = ($cp_ext === 'md') ? (file_get_contents($new_path_sanitized) ?: '') : '';
+                        try { $search_idx->upsertPage($cp_space, $new_path_rel, $cp_raw); } catch (\Throwable $_e) {}
+                    }
                 } else {
                     throw new Exception('Could not copy page.');
                 }
@@ -2435,8 +2538,23 @@ if (isset($_REQUEST['action'])) {
 
             case 'indexfiles':
                 $count = $indexer->rebuildIndex($space_dir);
+                $sqlite_msg = '';
+                if ($search_idx) {
+                    try {
+                        $sp_name = _sidx_space();
+                        // If called without a specific space, rebuild everything.
+                        if ($sp_name === basename(rtrim(PAGES_DIR, '/'))) {
+                            $sqlite_count = $search_idx->rebuildAll();
+                        } else {
+                            $sqlite_count = $search_idx->rebuildSpace($sp_name);
+                        }
+                        $sqlite_msg = " SQLite FTS index rebuilt ({$sqlite_count} pages).";
+                    } catch (\Throwable $_e) {
+                        $sqlite_msg = " SQLite FTS rebuild failed: " . $_e->getMessage();
+                    }
+                }
                 header("Content-Type: text/plain");
-                echo "Indexing complete. Found and indexed {$count} pages.";
+                echo "Indexing complete. Found and indexed {$count} pages.{$sqlite_msg}";
                 exit;
 
             case 'list_spaces':

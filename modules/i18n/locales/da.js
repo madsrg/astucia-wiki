@@ -59,7 +59,7 @@ export default {
     'search.find-ph': 'Find', 'search.replace-ph': 'Erstat',
     'search.replace-btn': 'Erstat', 'search.replace-all': 'Erstat alle',
     'search.results': 'Søgeresultater for "{query}"',
-    'search.no-results': 'Ingen sider fundet.', 'search.tag-results': 'Sider tagget med "{tag}"',
+    'search.no-results': 'Ingen sider fundet.', 'search.tag-results': 'Sider tagget med "{tag}"', 'search.all-spaces': 'Alle rum',
 
     'chat.send': 'Send', 'chat.placeholder': 'Skriv en besked… (Enter for at sende, Skift+Enter for ny linje, # for at nævne, / for kommandoer)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Svar til {name}',

@@ -59,7 +59,7 @@ export default {
     'search.find-ph': 'Rechercher', 'search.replace-ph': 'Remplacer',
     'search.replace-btn': 'Remplacer', 'search.replace-all': 'Tout remplacer',
     'search.results': 'Résultats de recherche pour « {query} »',
-    'search.no-results': 'Aucune page trouvée.', 'search.tag-results': 'Pages avec le tag « {tag} »',
+    'search.no-results': 'Aucune page trouvée.', 'search.tag-results': 'Pages avec le tag « {tag} »', 'search.all-spaces': 'Tous les espaces',
 
     'chat.send': 'Envoyer', 'chat.placeholder': 'Tapez un message… (Entrée pour envoyer, Maj+Entrée pour nouvelle ligne, # pour mentionner, / pour commandes)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Répondre à {name}',

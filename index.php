@@ -88,6 +88,12 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
                         <input type="text" id="search-query-input" data-i18n-placeholder="nav.search-ph" placeholder="Search pages…">
                         <button id="search-query-btn" class="btn btn-sm btn-secondary" data-i18n="nav.search-btn">Search</button>
                     </div>
+                    <div id="search-all-spaces-row" class="search-all-spaces-row hidden">
+                        <label class="search-all-spaces-label">
+                            <input type="checkbox" id="search-all-spaces-chk">
+                            <span data-i18n="search.all-spaces">All spaces</span>
+                        </label>
+                    </div>
                     <div id="tag-cloud"></div>
                 </div>
                 <div id="recent-pane" class="pane-content"></div>
@@ -1058,6 +1064,7 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
         window.WIKI_USER_FONT_SIZE = '<?php echo htmlspecialchars($userFontSize); ?>';
         window.WIKI_USER_SPACES  = <?php echo json_encode($_SESSION['user']['spaces'] ?? null); ?>; // null = all spaces
         window.WIKI_SESSION_TIMEOUT = <?php echo (AUTHENTICATION_ENABLED && defined('SESSION_TIMEOUT')) ? (int)SESSION_TIMEOUT : 0; ?>;
+        window.WIKI_SEARCH_ENGINE = '<?php echo defined('SEARCH_ENGINE') ? SEARCH_ENGINE : 'basic'; ?>';
     </script>
     <script src="script.js?v=<?php echo filemtime(__DIR__ . '/script.js'); ?>" type="module"></script>
 
