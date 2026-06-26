@@ -133,7 +133,86 @@ export const init = () => {
     newPageNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitNewPage(); });
 
     document.getElementById('dropdown-new-page').addEventListener('click', (e) => { e.preventDefault(); newItemDropdown.classList.add('hidden'); createPage(); });
-    document.getElementById('dropdown-new-diagram').addEventListener('click', (e) => { e.preventDefault(); newItemDropdown.classList.add('hidden'); createAndOpen('.drawio', 'create_diagram', 'new.diagram-prompt', 'new.untitled-diagram', 'new.diagram-created', icons.diagram); });
+    // New Diagram lightbox with optional template selection
+    const newDiagramLightbox      = document.getElementById('new-diagram-lightbox');
+    const newDiagramNameInput     = document.getElementById('new-diagram-name');
+    const newDiagramTemplateGroup = document.getElementById('new-diagram-template-group');
+    const newDiagramTemplateList  = document.getElementById('new-diagram-template-list');
+    const newDiagramCreateBtn     = document.getElementById('new-diagram-create-btn');
+    const newDiagramCancelBtn     = document.getElementById('new-diagram-cancel-btn');
+    const newDiagramCloseBtn      = document.getElementById('new-diagram-close-btn');
+
+    const closeNewDiagram = () => newDiagramLightbox.classList.add('hidden');
+
+    let _selectedDiagramTemplate = '';
+
+    const _selectDiagramTemplateItem = (el) => {
+        newDiagramTemplateList.querySelectorAll('.new-page-template-item').forEach(i => i.classList.remove('active'));
+        el.classList.add('active');
+        _selectedDiagramTemplate = el.dataset.template;
+    };
+
+    const submitNewDiagram = async () => {
+        let fileName = newDiagramNameInput.value.trim() || t('new.untitled-diagram');
+        if (!fileName.endsWith('.drawio')) fileName += '.drawio';
+        const path = getCreationPath() + fileName;
+        closeNewDiagram();
+        const params = _selectedDiagramTemplate ? { path, template: _selectedDiagramTemplate } : { path };
+        const res = await api.call('create_diagram', params, 'POST');
+        if (res.success) {
+            showToast(t('new.diagram-created'), 'success');
+            await refreshFileTree();
+            switchToTreePane();
+            const newFileEl = document.querySelector(`[data-path="${path}"]`);
+            if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
+        }
+    };
+
+    const createDiagram = async () => {
+        const res = await api.call('list_drawio_templates', {});
+        const templates = res.templates || [];
+        if (templates.length === 0) {
+            return createAndOpen('.drawio', 'create_diagram', 'new.diagram-prompt', 'new.untitled-diagram', 'new.diagram-created', icons.diagram);
+        }
+        if (templates.length === 1 && templates[0] === 'default') {
+            let fileName = await promptModal(t('new.diagram-prompt'), t('new.untitled-diagram'), '', icons.diagram);
+            if (!fileName) return;
+            if (!fileName.endsWith('.drawio')) fileName += '.drawio';
+            const path = getCreationPath() + fileName;
+            const r = await api.call('create_diagram', { path, template: 'default' }, 'POST');
+            if (r.success) {
+                showToast(t('new.diagram-created'), 'success');
+                await refreshFileTree();
+                switchToTreePane();
+                const newFileEl = document.querySelector(`[data-path="${path}"]`);
+                if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
+            }
+            return;
+        }
+        // Multiple templates — show lightbox with "Blank diagram" first
+        const options = [{ label: t('new.diagram-blank-template'), value: '' }, ...templates.map(n => ({ label: n, value: n }))];
+        newDiagramTemplateList.innerHTML = options.map(o =>
+            `<div class="new-page-template-item" data-template="${o.value}">${o.label}</div>`
+        ).join('');
+        const defaultEl = newDiagramTemplateList.querySelector('[data-template="default"]') ||
+                          newDiagramTemplateList.querySelector('.new-page-template-item');
+        if (defaultEl) _selectDiagramTemplateItem(defaultEl);
+        newDiagramTemplateList.querySelectorAll('.new-page-template-item').forEach(el => {
+            el.addEventListener('click', () => _selectDiagramTemplateItem(el));
+        });
+        newDiagramTemplateGroup.classList.remove('hidden');
+        newDiagramNameInput.value = '';
+        newDiagramLightbox.classList.remove('hidden');
+        newDiagramNameInput.focus();
+    };
+
+    newDiagramCreateBtn.addEventListener('click', submitNewDiagram);
+    newDiagramCancelBtn.addEventListener('click', closeNewDiagram);
+    newDiagramCloseBtn.addEventListener('click', closeNewDiagram);
+    newDiagramLightbox.addEventListener('click', (e) => { if (e.target === newDiagramLightbox) closeNewDiagram(); });
+    newDiagramNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitNewDiagram(); });
+
+    document.getElementById('dropdown-new-diagram').addEventListener('click', (e) => { e.preventDefault(); newItemDropdown.classList.add('hidden'); createDiagram(); });
     document.getElementById('dropdown-new-list').addEventListener('click', (e) => { e.preventDefault(); newItemDropdown.classList.add('hidden'); createAndOpen('.list', 'create_list', 'new.list-prompt', 'new.untitled-list', 'new.list-created', icons.list); });
     const newChatLightbox   = document.getElementById('new-chat-lightbox');
     const newChatNameInput  = document.getElementById('new-chat-name');

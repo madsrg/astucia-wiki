@@ -265,7 +265,7 @@ export const loadPage = async (path, id, tags) => {
     trackPageVisit(id, path, state.currentSpace);
     updateFavoriteBtn(id);
 
-    const titleText = path.replace(/\.(md|drawio|list|chat)$/, '');
+    const titleText = path.split('/').pop().replace(/\.(md|drawio|list|chat)$/, '');
     let titleIcon = icons.file;
     if (state.currentPageType === 'diagram') titleIcon = icons.diagram;
     else if (state.currentPageType === 'list') titleIcon = icons.list;
@@ -416,6 +416,7 @@ export const loadPage = async (path, id, tags) => {
 
     const isMarkdownPage = !isDiagram && !isList && !isChat;
     document.getElementById('page-chat-btn')?.classList.toggle('hidden', !isMarkdownPage);
+    document.getElementById('share-btn')?.classList.toggle('hidden', !isMarkdownPage);
     const pageChatMod = await import('../page_chat/index.js');
     pageChatMod.closePanel();
     document.getElementById('copy-btn').classList.remove('hidden');

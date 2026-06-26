@@ -17,7 +17,7 @@ export default {
     'header.select-page': 'Selecciona una página para empezar', 'header.copy': 'Copiar', 'header.move': 'Mover',
     'header.rename': 'Renombrar', 'header.delete': 'Eliminar', 'header.history': 'Historial de versiones',
     'header.search-replace': 'Buscar y reemplazar (Alt+F)', 'header.chat-topic': 'Editar tema',
-    'header.diagram-edit': 'Editar diagrama', 'header.edit': 'Editar (e)',
+    'header.diagram-edit': 'Editar diagrama', 'header.share': 'Compartir página', 'header.edit': 'Editar (e)',
     'header.cancel': 'Cancelar', 'header.save': 'Guardar (Alt+S)',
 
     'new.page-prompt': 'Nombre de la nueva página', 'new.diagram-prompt': 'Nombre del nuevo diagrama',
@@ -32,6 +32,7 @@ export default {
     'new.topic-prompt': 'Tema (opcional)', 'new.topic-ph': '¿De qué trata este chat?',
     'new.chat-dialog-title': 'Nuevo chat', 'new.chat-name-label': 'Nombre', 'new.chat-topic-label': 'Tema (opcional)',
     'new.page-dialog-title': 'Nueva página', 'new.page-name-label': 'Nombre', 'new.page-template-label': 'Plantilla', 'new.page-blank-template': 'Página en blanco',
+    'new.diagram-dialog-title': 'Nuevo diagrama', 'new.diagram-name-label': 'Nombre', 'new.diagram-template-label': 'Plantilla', 'new.diagram-blank-template': 'Diagrama en blanco',
 
     'edit.click-hint': 'Haz clic en cualquier párrafo para editarlo',
     'edit.hotkey-hint': 'Pulsa Alt+A para ver las opciones de atajos de teclado',

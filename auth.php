@@ -123,7 +123,9 @@ try {
             ];
             $_SESSION['id_token'] = $oidc->getIdToken();
             write_access_log('LOGIN_OK', $sub, $name, $u['role'] ?? 'editor');
-            header("Location: index.php");
+            $redirect = $_SESSION['login_redirect'] ?? 'index.php';
+            unset($_SESSION['login_redirect']);
+            header("Location: " . $redirect);
             exit;
         }
 

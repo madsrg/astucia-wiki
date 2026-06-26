@@ -17,7 +17,7 @@ export default {
     'header.select-page': 'Vælg en side for at starte', 'header.copy': 'Kopiér', 'header.move': 'Flyt',
     'header.rename': 'Omdøb', 'header.delete': 'Slet', 'header.history': 'Versionshistorik',
     'header.search-replace': 'Søg og erstat (Alt+F)', 'header.chat-topic': 'Rediger emne',
-    'header.diagram-edit': 'Rediger diagram', 'header.edit': 'Rediger (e)',
+    'header.diagram-edit': 'Rediger diagram', 'header.share': 'Del side', 'header.edit': 'Rediger (e)',
     'header.cancel': 'Annuller', 'header.save': 'Gem (Alt+S)',
 
     'new.page-prompt': 'Navn på ny side', 'new.diagram-prompt': 'Navn på nyt diagram',
@@ -30,8 +30,10 @@ export default {
     'new.folder-created': 'Mappe oprettet!', 'new.files-lib-created': 'Filbibliotek oprettet!',
     'new.files-lib-failed': 'Kunne ikke oprette filbibliotek',
     'new.topic-prompt': 'Emne (valgfrit)', 'new.topic-ph': 'Hvad handler denne chat om?',
+    'share.dialog-title': 'Del side', 'share.subject-label': 'Emne', 'share.to-label': 'Til', 'share.to-everyone': 'Alle', 'share.to-specific': 'Specifikke modtagere', 'share.include-self': 'Inkluder mig selv', 'share.message-label': 'Besked', 'share.send-btn': 'Send e-mail', 'share.sent': 'E-mail sendt til {n} modtager(e)', 'share.partial-fail': '{n} modtager(e) fejlede', 'share.no-recipients': 'Vælg mindst én modtager',
     'new.chat-dialog-title': 'Ny chat', 'new.chat-name-label': 'Navn', 'new.chat-topic-label': 'Emne (valgfrit)',
     'new.page-dialog-title': 'Ny side', 'new.page-name-label': 'Navn', 'new.page-template-label': 'Skabelon', 'new.page-blank-template': 'Tom side',
+    'new.diagram-dialog-title': 'Nyt diagram', 'new.diagram-name-label': 'Navn', 'new.diagram-template-label': 'Skabelon', 'new.diagram-blank-template': 'Tomt diagram',
 
     'edit.click-hint': 'Klik på et afsnit for at redigere det',
     'edit.hotkey-hint': 'Tryk Alt+A for at se genvejstaster',

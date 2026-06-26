@@ -37,6 +37,7 @@ import { init as initGit, checkSpaceGit } from './modules/git/index.js';
 import { init as initNav } from './modules/nav/index.js';
 import { init as initToc } from './modules/toc/index.js';
 import { init as initPageChat } from './modules/page_chat/index.js';
+import { init as initShare } from './modules/share/index.js';
 import { api } from './modules/core/api.js';
 import { state } from './modules/core/state.js';
 
@@ -102,6 +103,9 @@ const init = async () => {
     initSidebarToggle();
     initPaneTabs();
 
+    // Capture pageid before initSpaces wipes it from the URL
+    const _initialPageId = new URLSearchParams(window.location.search).get('pageid');
+
     // Initialise spaces first — sets state.currentSpace before any file/page loads
     await initSpaces({
         onSpaceChange: async () => {
@@ -141,6 +145,7 @@ const init = async () => {
     initSession();
     initToc();
     initPageChat();
+    initShare();
     initNav({
         onNavigate: async (id, space) => {
             if (space && space !== state.currentSpace) {
@@ -159,10 +164,8 @@ const init = async () => {
     startTreePolling(state.currentSpace);
 
     // Navigate to page from URL param, otherwise load the start page
-    const urlParams = new URLSearchParams(window.location.search);
-    const pageId = urlParams.get('pageid');
-    if (pageId) {
-        await navigateToPageId(pageId);
+    if (_initialPageId) {
+        await navigateToPageId(_initialPageId);
     } else {
         await loadStartPage();
     }

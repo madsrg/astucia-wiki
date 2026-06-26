@@ -17,7 +17,7 @@ export default {
     'header.select-page': 'Sélectionnez une page pour commencer', 'header.copy': 'Copier', 'header.move': 'Déplacer',
     'header.rename': 'Renommer', 'header.delete': 'Supprimer', 'header.history': 'Historique des versions',
     'header.search-replace': 'Rechercher et remplacer (Alt+F)', 'header.chat-topic': 'Modifier le sujet',
-    'header.diagram-edit': 'Modifier le diagramme', 'header.edit': 'Modifier (e)',
+    'header.diagram-edit': 'Modifier le diagramme', 'header.share': 'Partager la page', 'header.edit': 'Modifier (e)',
     'header.cancel': 'Annuler', 'header.save': 'Enregistrer (Alt+S)',
 
     'new.page-prompt': 'Nom de la nouvelle page', 'new.diagram-prompt': 'Nom du nouveau diagramme',
@@ -32,6 +32,7 @@ export default {
     'new.topic-prompt': 'Sujet (facultatif)', 'new.topic-ph': 'De quoi parle cette discussion ?',
     'new.chat-dialog-title': 'Nouvelle discussion', 'new.chat-name-label': 'Nom', 'new.chat-topic-label': 'Sujet (facultatif)',
     'new.page-dialog-title': 'Nouvelle page', 'new.page-name-label': 'Nom', 'new.page-template-label': 'Modèle', 'new.page-blank-template': 'Page vierge',
+    'new.diagram-dialog-title': 'Nouveau diagramme', 'new.diagram-name-label': 'Nom', 'new.diagram-template-label': 'Modèle', 'new.diagram-blank-template': 'Diagramme vierge',
 
     'edit.click-hint': 'Cliquez sur un paragraphe pour le modifier',
     'edit.hotkey-hint': 'Appuyez sur Alt+A pour voir les raccourcis clavier',

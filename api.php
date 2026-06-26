@@ -1119,8 +1119,12 @@ if (isset($_REQUEST['action'])) {
             case 'create_diagram':
                 $file_path_raw = $_POST['path'];
                 $file_path_sanitized = sanitize_path($file_path_raw);
-                $template_path = $space_dir . '/templates/default.drawio';
+                $tpl_name_dg   = isset($_POST['template']) ? basename($_POST['template']) : 'default';
+                $template_path = $space_dir . '/templates/' . $tpl_name_dg . '.drawio';
 
+                if (!file_exists($template_path)) {
+                    $template_path = $space_dir . '/templates/default.drawio';
+                }
                 if (!file_exists($template_path)) {
                     throw new Exception('Default diagram template not found.');
                 }
@@ -1421,9 +1425,10 @@ if (isset($_REQUEST['action'])) {
                 }
                 $all_users = json_decode(file_get_contents($users_file), true)['users'] ?? [];
                 $user_list = array_values(array_map(fn($u) => [
-                    'uid'   => $u['uid']  ?? 0,
-                    'name'  => $u['name'] ?? '',
-                    'is_ai' => !empty($u['is_ai']),
+                    'uid'       => $u['uid']  ?? 0,
+                    'name'      => $u['name'] ?? '',
+                    'is_ai'     => !empty($u['is_ai']),
+                    'is_system' => !empty($u['is_system']),
                 ], $all_users));
                 echo json_encode(['success' => true, 'data' => $user_list]);
                 break;
@@ -1757,6 +1762,94 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true, 'templates' => $tpl_names]);
                 break;
 
+            case 'list_drawio_templates':
+                $tpl_dir_dg = rtrim($space_dir, '/') . '/templates';
+                $tpl_names_dg = [];
+                if (is_dir($tpl_dir_dg)) {
+                    foreach (glob($tpl_dir_dg . '/*.drawio') as $f) {
+                        $tpl_names_dg[] = pathinfo($f, PATHINFO_FILENAME);
+                    }
+                    sort($tpl_names_dg);
+                    $di_dg = array_search('default', $tpl_names_dg);
+                    if ($di_dg !== false) {
+                        array_splice($tpl_names_dg, $di_dg, 1);
+                        array_unshift($tpl_names_dg, 'default');
+                    }
+                }
+                echo json_encode(['success' => true, 'templates' => $tpl_names_dg]);
+                break;
+
+            case 'share_page':
+                if (!is_mail_configured()) {
+                    echo json_encode(['success' => false, 'message' => 'Email is not configured.']);
+                    break;
+                }
+                if (AUTHENTICATION_ENABLED && !isset($_SESSION['user'])) {
+                    echo json_encode(['success' => false, 'message' => 'Authentication required.']);
+                    break;
+                }
+                $sh_subject     = trim($_POST['subject'] ?? '');
+                $sh_to          = $_POST['to'] ?? 'everyone';
+                $sh_include_self = !empty($_POST['include_self']) && $_POST['include_self'] === '1';
+                $sh_message     = trim($_POST['message'] ?? '');
+                $sh_page_id     = trim($_POST['page_id'] ?? '');
+                $sh_sender_name = $_SESSION['user']['name'] ?? 'Someone';
+                $sh_current_uid = (int)($_SESSION['user']['uid'] ?? 0);
+
+                $sh_users_file = defined('WIKI_SYSTEM_DATA') ? WIKI_SYSTEM_DATA . 'users.json' : '';
+                $sh_all_users  = ($sh_users_file && file_exists($sh_users_file))
+                    ? (json_decode(file_get_contents($sh_users_file), true)['users'] ?? [])
+                    : [];
+                $sh_human = array_values(array_filter($sh_all_users, fn($u) =>
+                    empty($u['is_ai']) && empty($u['is_system']) && !empty($u['email'])
+                ));
+
+                if ($sh_to === 'everyone') {
+                    $sh_recipients = $sh_human;
+                } else {
+                    $sh_uids = json_decode($sh_to, true) ?? [];
+                    $sh_recipients = array_values(array_filter($sh_human, fn($u) => in_array((int)($u['uid'] ?? 0), $sh_uids, true)));
+                }
+
+
+                $sh_scheme   = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+                $sh_base     = $sh_scheme . '://' . $_SERVER['HTTP_HOST'] . rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
+                $sh_space    = $_POST['space'] ?? '';
+                $sh_qs       = $sh_page_id ? 'pageid=' . urlencode($sh_page_id) : '';
+                if ($sh_space) $sh_qs .= ($sh_qs ? '&' : '') . 'space=' . urlencode($sh_space);
+                $sh_page_url = $sh_base . '/index.php' . ($sh_qs ? '?' . $sh_qs : '');
+
+                $sh_sender_html  = htmlspecialchars($sh_sender_name);
+                $sh_app_html     = htmlspecialchars(APP_TITLE);
+                $sh_msg_html = '';
+                if ($sh_message) {
+                    // Split on URLs before escaping so & in query strings isn't mangled
+                    $sh_parts  = preg_split('#(https?://\S+)#i', $sh_message, -1, PREG_SPLIT_DELIM_CAPTURE);
+                    $sh_linked = '';
+                    foreach ($sh_parts as $sh_i => $sh_part) {
+                        if ($sh_i % 2 === 0) {
+                            $sh_linked .= htmlspecialchars($sh_part, ENT_QUOTES, 'UTF-8');
+                        } else {
+                            $sh_href    = htmlspecialchars($sh_part, ENT_QUOTES, 'UTF-8');
+                            $sh_linked .= '<a href="' . $sh_href . '">' . $sh_href . '</a>';
+                        }
+                    }
+                    $sh_msg_html = '<p style="white-space:pre-wrap">' . $sh_linked . '</p>';
+                }
+                $sh_body         = "<p><strong>{$sh_sender_html}</strong> shared a page with you on <strong>{$sh_app_html}</strong>.</p>"
+                                 . $sh_msg_html;
+
+                $sh_sent = 0; $sh_failed = 0;
+                foreach ($sh_recipients as $sh_r) {
+                    if (send_email($sh_r['email'], $sh_r['name'] ?? '', $sh_subject, $sh_body)) {
+                        $sh_sent++;
+                    } else {
+                        $sh_failed++;
+                    }
+                }
+                echo json_encode(['success' => true, 'sent' => $sh_sent, 'failed' => $sh_failed]);
+                break;
+
             case 'create_file':
                 $file_path_raw = $_POST['path'];
                 $file_path_sanitized = sanitize_path($file_path_raw);
@@ -2088,7 +2181,10 @@ if (isset($_REQUEST['action'])) {
                 break;
 
             case 'delete_folder_file':
-                $file_path = sanitize_path($_POST['path']);
+                // path is PAGES_DIR-relative (includes space name), not space_dir-relative,
+                // so resolve against PAGES_DIR directly instead of sanitize_path().
+                $dff_rel  = ltrim(str_replace('..', '', $_POST['path'] ?? ''), '/');
+                $file_path = rtrim(PAGES_DIR, '/') . '/' . $dff_rel;
                 if (!is_file($file_path)) throw new Exception('File not found.');
                 unlink($file_path);
                 echo json_encode(['success' => true]);

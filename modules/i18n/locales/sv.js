@@ -17,7 +17,7 @@ export default {
     'header.select-page': 'Välj en sida för att börja', 'header.copy': 'Kopiera', 'header.move': 'Flytta',
     'header.rename': 'Byt namn', 'header.delete': 'Ta bort', 'header.history': 'Versionshistorik',
     'header.search-replace': 'Sök och ersätt (Alt+F)', 'header.chat-topic': 'Redigera ämne',
-    'header.diagram-edit': 'Redigera diagram', 'header.edit': 'Redigera (e)',
+    'header.diagram-edit': 'Redigera diagram', 'header.share': 'Dela sida', 'header.edit': 'Redigera (e)',
     'header.cancel': 'Avbryt', 'header.save': 'Spara (Alt+S)',
 
     'new.page-prompt': 'Namn på ny sida', 'new.diagram-prompt': 'Namn på nytt diagram',
@@ -32,6 +32,7 @@ export default {
     'new.topic-prompt': 'Ämne (valfritt)', 'new.topic-ph': 'Vad handlar den här chatten om?',
     'new.chat-dialog-title': 'Ny chatt', 'new.chat-name-label': 'Namn', 'new.chat-topic-label': 'Ämne (valfritt)',
     'new.page-dialog-title': 'Ny sida', 'new.page-name-label': 'Namn', 'new.page-template-label': 'Mall', 'new.page-blank-template': 'Tom sida',
+    'new.diagram-dialog-title': 'Nytt diagram', 'new.diagram-name-label': 'Namn', 'new.diagram-template-label': 'Mall', 'new.diagram-blank-template': 'Tomt diagram',
 
     'edit.click-hint': 'Klicka på ett stycke för att redigera det',
     'edit.hotkey-hint': 'Tryck Alt+A för att se tangentbordsgenvägar',

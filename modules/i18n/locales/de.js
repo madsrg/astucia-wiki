@@ -17,7 +17,7 @@ export default {
     'header.select-page': 'Wählen Sie eine Seite zum Starten', 'header.copy': 'Kopieren', 'header.move': 'Verschieben',
     'header.rename': 'Umbenennen', 'header.delete': 'Löschen', 'header.history': 'Versionsverlauf',
     'header.search-replace': 'Suchen und Ersetzen (Alt+F)', 'header.chat-topic': 'Thema bearbeiten',
-    'header.diagram-edit': 'Diagramm bearbeiten', 'header.edit': 'Bearbeiten (e)',
+    'header.diagram-edit': 'Diagramm bearbeiten', 'header.share': 'Seite teilen', 'header.edit': 'Bearbeiten (e)',
     'header.cancel': 'Abbrechen', 'header.save': 'Speichern (Alt+S)',
 
     'new.page-prompt': 'Name der neuen Seite', 'new.diagram-prompt': 'Name des neuen Diagramms',
@@ -32,6 +32,7 @@ export default {
     'new.topic-prompt': 'Thema (optional)', 'new.topic-ph': 'Worum geht es in diesem Chat?',
     'new.chat-dialog-title': 'Neuer Chat', 'new.chat-name-label': 'Name', 'new.chat-topic-label': 'Thema (optional)',
     'new.page-dialog-title': 'Neue Seite', 'new.page-name-label': 'Name', 'new.page-template-label': 'Vorlage', 'new.page-blank-template': 'Leere Seite',
+    'new.diagram-dialog-title': 'Neues Diagramm', 'new.diagram-name-label': 'Name', 'new.diagram-template-label': 'Vorlage', 'new.diagram-blank-template': 'Leeres Diagramm',
 
     'edit.click-hint': 'Klicken Sie auf einen Absatz, um ihn zu bearbeiten',
     'edit.hotkey-hint': 'Drücken Sie Alt+A, um Tastenkürzel anzuzeigen',

@@ -49,8 +49,8 @@ $loggedOut = isset($_GET['logged_out']);
             margin-bottom: 1.5rem;
         }
         .btn-login {
-            display: inline-flex; align-items: center; justify-content: center; gap: 0.6rem;
-            width: 100%; padding: 0.65rem 1rem;
+            display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+            width: 100%; padding: 0.65rem 1rem; box-sizing: border-box;
             background: var(--accent-blue); color: white;
             border: none; border-radius: 6px;
             font-size: 0.95rem; font-weight: 600; cursor: pointer;

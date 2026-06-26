@@ -1,11 +1,13 @@
 <?php
 require_once 'config.php';
+require_once 'mailer.php';
 session_start();
 
 // Anonymous access: allow unauthenticated visitors as readers when the option is enabled.
 $isAnonymous = AUTHENTICATION_ENABLED && defined('ANONYMOUS_ACCESS_ENABLED') && ANONYMOUS_ACCESS_ENABLED && !isset($_SESSION['user']);
 
 if (AUTHENTICATION_ENABLED && !$isAnonymous && !isset($_SESSION['user'])) {
+    $_SESSION['login_redirect'] = $_SERVER['REQUEST_URI'];
     header('Location: login.php');
     exit;
 }
@@ -15,6 +17,9 @@ $userFont     = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? ($_SESSIO
 $userFontSize = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? ($_SESSION['user']['fontSize']   ?? '11pt') : '11pt';
 if (!in_array($userFont,     ['sans','serif','mono']))                            $userFont     = 'sans';
 if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))               $userFontSize = '11pt';
+$mailConfigured = is_mail_configured() ? '1' : '0';
+$currentUserUid  = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? (int)($_SESSION['user']['uid'] ?? 0) : 0;
+$currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlspecialchars($_SESSION['user']['name'] ?? '') : '';
 ?>
 <!DOCTYPE html>
 <html lang="en" data-font="<?php echo htmlspecialchars($userFont); ?>" data-font-size="<?php echo htmlspecialchars($userFontSize); ?>">
@@ -26,7 +31,7 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="stylesheet" href="styles.css?v=<?php echo filemtime(__DIR__ . '/styles.css'); ?>">
 </head>
-<body class="role-<?php echo htmlspecialchars($userRole); ?>">
+<body class="role-<?php echo htmlspecialchars($userRole); ?>" data-mail-configured="<?php echo $mailConfigured; ?>" data-user-uid="<?php echo $currentUserUid; ?>" data-user-name="<?php echo $currentUserName; ?>">
 
     <?php if (defined('ENVIRONMENT') && ENVIRONMENT !== 'production'): ?>
     <div class="env-banner env-banner-<?php echo htmlspecialchars(ENVIRONMENT); ?>">
@@ -219,6 +224,11 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
                     <button id="toc-btn" class="btn btn-icon btn-secondary hidden" data-i18n-title="toc.show-btn" title="Table of Contents">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="5" x2="21" y2="5"/><line x1="7" y1="9" x2="21" y2="9"/><line x1="7" y1="13" x2="21" y2="13"/><line x1="3" y1="17" x2="21" y2="17"/><line x1="7" y1="21" x2="21" y2="21"/></svg>
                     </button>
+                    <?php if ($mailConfigured === '1'): ?>
+                    <button id="share-btn" class="btn btn-icon btn-secondary hidden" data-i18n-title="header.share" title="Share page">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                    <?php endif; ?>
                     <button id="edit-btn" class="btn btn-icon btn-blue" data-i18n-title="header.edit" title="Edit (e)" disabled>
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
                     </button>
@@ -835,6 +845,67 @@ if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))             
             <div class="lightbox-footer">
                 <button id="new-page-cancel-btn" class="btn btn-secondary" data-i18n="btn.cancel">Cancel</button>
                 <button id="new-page-create-btn" class="btn btn-green" data-i18n="btn.create">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <?php if ($mailConfigured === '1'): ?>
+    <div id="share-lightbox" class="lightbox-overlay hidden">
+        <div class="lightbox-content lightbox-content-sm">
+            <button id="share-close-btn" class="lightbox-close">&times;</button>
+            <h3 data-i18n="share.dialog-title">Share Page</h3>
+            <div class="share-form-grid">
+                <label class="share-grid-label" data-i18n="share.subject-label">Subject</label>
+                <input id="share-subject" type="text" class="form-control">
+
+                <label class="share-grid-label" data-i18n="share.to-label">To</label>
+                <div class="share-to-col">
+                    <div class="share-to-options">
+                        <label class="share-to-option">
+                            <input type="radio" name="share-to" value="everyone" checked>
+                            <span data-i18n="share.to-everyone">Everyone</span>
+                        </label>
+                        <label class="share-to-option">
+                            <input type="radio" name="share-to" value="specific">
+                            <span data-i18n="share.to-specific">Specific recipients</span>
+                        </label>
+                    </div>
+                    <div id="share-recipient-wrap" class="share-recipient-wrap hidden">
+                        <div id="share-chips-input" class="share-chips-input">
+                            <input id="share-typeahead" type="text" class="share-typeahead" placeholder="Type a name…" autocomplete="off">
+                        </div>
+                        <ul id="share-suggestions" class="share-suggestions hidden"></ul>
+                    </div>
+                </div>
+
+                <div class="share-message-section">
+                    <label class="form-label" data-i18n="share.message-label">Message</label>
+                    <textarea id="share-message" class="form-control share-message"></textarea>
+                </div>
+            </div>
+            <div class="lightbox-footer">
+                <button id="share-cancel-btn" class="btn btn-secondary" data-i18n="btn.cancel">Cancel</button>
+                <button id="share-send-btn" class="btn btn-green" data-i18n="share.send-btn">Send e-mail</button>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <div id="new-diagram-lightbox" class="lightbox-overlay hidden">
+        <div class="lightbox-content lightbox-content-sm">
+            <button id="new-diagram-close-btn" class="lightbox-close">&times;</button>
+            <h3 data-i18n="new.diagram-dialog-title">New Diagram</h3>
+            <div class="form-group">
+                <label class="form-label" data-i18n="new.diagram-name-label">Name</label>
+                <input id="new-diagram-name" type="text" class="form-control" data-i18n-placeholder="new.untitled-diagram" placeholder="Untitled Diagram">
+            </div>
+            <div id="new-diagram-template-group" class="form-group hidden">
+                <label class="form-label" data-i18n="new.diagram-template-label">Template</label>
+                <div id="new-diagram-template-list" class="new-page-template-list"></div>
+            </div>
+            <div class="lightbox-footer">
+                <button id="new-diagram-cancel-btn" class="btn btn-secondary" data-i18n="btn.cancel">Cancel</button>
+                <button id="new-diagram-create-btn" class="btn btn-green" data-i18n="btn.create">Create</button>
             </div>
         </div>
     </div>
