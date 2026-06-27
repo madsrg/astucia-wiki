@@ -199,7 +199,7 @@ const renderUsers = () => {
             inp.className = 'form-control admin-inline-input';
             inp.value = u.name || '';
             inp.placeholder = 'Name';
-            inp.addEventListener('input', () => { users[i] = { ...users[i], name: inp.value }; markDirty(); });
+            inp.addEventListener('input', () => { users[i] = { ...users[i], name: inp.value }; markDirty(); inp.style.borderColor = ''; });
             tdName.appendChild(inp);
         } else {
             tdName.textContent = u.name || '—';
@@ -219,7 +219,7 @@ const renderUsers = () => {
             inp.className = 'form-control admin-inline-input';
             inp.value = u.email || '';
             inp.placeholder = 'email@example.com';
-            inp.addEventListener('input', () => { users[i] = { ...users[i], email: inp.value }; markDirty(); });
+            inp.addEventListener('input', () => { users[i] = { ...users[i], email: inp.value }; markDirty(); inp.style.borderColor = ''; });
             tdEmail.appendChild(inp);
         } else {
             tdEmail.textContent = u.email || '—';
@@ -289,6 +289,17 @@ const loadUsers = async () => {
 };
 
 const saveUsers = async () => {
+    // Validate OTP users before sending
+    const invalid = users.filter(u => u.auth === 'otp' && (!u.name?.trim() || !u.email?.trim()));
+    if (invalid.length) {
+        showToast('OTP users require both a name and an email address.', 'error');
+        // Highlight the first offending row
+        document.querySelectorAll('#admin-users-table .admin-inline-input').forEach(inp => {
+            inp.style.borderColor = (!inp.value.trim()) ? '#fc8181' : '';
+        });
+        return;
+    }
+
     const btn = document.getElementById('admin-save-btn');
     btn.disabled = true;
     btn.textContent = t('admin.users.saving');

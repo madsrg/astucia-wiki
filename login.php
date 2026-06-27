@@ -62,8 +62,20 @@ function mask_email(string $email): string {
         .login-msg {
             border-radius: 6px; padding: 0.6rem 1rem; font-size: 0.85rem; margin-bottom: 1.25rem; text-align: left;
         }
-        .login-msg-error  { background: #fff5f5; border: 1px solid #fc8181; color: #c53030; }
-        .login-msg-success { background: #f0fff4; border: 1px solid #9ae6b4; color: #276749; }
+        .login-msg-error   { background: #fff5f5; border: 1px solid #fc8181; color: #c53030; }
+        .login-msg-success { background: #f0fff4; border: 1px solid #9ae6b4; color: #276749; text-align: center; margin-bottom: 2rem; }
+        .login-card-wide { max-width: 560px; }
+        .login-both { display: flex; align-items: stretch; gap: 0; margin-top: 0.25rem; }
+        .login-col { flex: 1; display: flex; flex-direction: column; }
+        .login-col-btn { margin-top: auto; }
+        .login-col-oidc { align-items: center; }
+        .login-col-oidc-center { flex: 1; display: flex; align-items: center; justify-content: center; }
+        .login-col-otp .login-label { text-align: center; }
+        .login-col-otp .login-input { text-align: center; }
+        .login-col-otp .login-form-group { margin-bottom: 0.45rem; }
+        .login-col-divider { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 1.5rem; color: #a0aec0; font-size: 0.8rem; gap: 0.5rem; }
+        .login-col-divider::before, .login-col-divider::after { content: ''; flex: 1; width: 1px; background: var(--border-color); }
+        .login-col-label { font-size: 0.75rem; font-weight: 600; color: #718096; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 0.75rem; text-align: center; }
         .login-or { display: flex; align-items: center; gap: 0.75rem; margin: 1.25rem 0; color: #a0aec0; font-size: 0.8rem; }
         .login-or::before, .login-or::after { content: ''; flex: 1; height: 1px; background: var(--border-color); }
         .login-form-group { text-align: left; margin-bottom: 0.9rem; }
@@ -79,6 +91,7 @@ function mask_email(string $email): string {
             text-decoration: none; transition: background 0.15s;
         }
         .btn-login:hover { background: var(--accent-blue-hover); }
+        .btn-login-square { width: 120px; height: 80px; flex-direction: column; gap: 0.35rem; font-size: 0.8rem; border-radius: 10px; padding: 0; }
         .btn-login-secondary {
             display: flex; align-items: center; justify-content: center;
             width: 100%; padding: 0.65rem 1rem; box-sizing: border-box;
@@ -102,7 +115,7 @@ function mask_email(string $email): string {
     </div>
     <?php endif; ?>
     <div class="login-center">
-    <div class="login-card">
+    <div class="login-card<?php echo ($showOidc && $showOtp && !$otpStep) ? ' login-card-wide' : ''; ?>">
         <img src="logo.png" alt="Logo" class="login-logo">
         <h1 class="login-title"><?php echo htmlspecialchars(APP_TITLE); ?></h1>
         <p class="login-subtitle">Sign in to continue</p>
@@ -119,27 +132,44 @@ function mask_email(string $email): string {
         <div class="login-msg login-msg-success"><?php echo htmlspecialchars($notice); ?></div>
         <?php endif; ?>
 
-        <?php if ($showOidc && !$otpStep): ?>
+        <?php if ($showOidc && $showOtp && !$otpStep): ?>
+        <div class="login-both">
+            <div class="login-col login-col-oidc">
+                <p class="login-col-label">Personal account</p>
+                <div class="login-col-oidc-center">
+                    <a href="auth.php" class="btn-login btn-login-square">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                        Sign In
+                    </a>
+                </div>
+            </div>
+            <div class="login-col-divider">or</div>
+            <div class="login-col login-col-otp">
+                <p class="login-col-label">Email code</p>
+                <form method="POST" action="auth.php?action=otp_send" style="display:flex;flex-direction:column;flex:1">
+                    <div class="login-form-group">
+                        <input class="login-input" type="email" id="otp-email" name="email" required placeholder="your@email.com">
+                    </div>
+                    <button type="submit" class="btn-login-secondary login-col-btn">Send code</button>
+                </form>
+            </div>
+        </div>
+        <?php elseif ($showOidc && !$otpStep): ?>
         <a href="auth.php" class="btn-login">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
             Sign In
         </a>
+        <?php elseif ($showOtp && !$otpStep): ?>
+        <form method="POST" action="auth.php?action=otp_send">
+            <div class="login-form-group">
+                <label class="login-label" for="otp-email">Email address</label>
+                <input class="login-input" type="email" id="otp-email" name="email" required autofocus placeholder="you@example.com">
+            </div>
+            <button type="submit" class="btn-login">Send code</button>
+        </form>
         <?php endif; ?>
 
-        <?php if ($showOidc && $showOtp && !$otpStep): ?>
-        <div class="login-or">or</div>
-        <?php endif; ?>
-
-        <?php if ($showOtp): ?>
-            <?php if (!$otpStep): ?>
-            <form method="POST" action="auth.php?action=otp_send">
-                <div class="login-form-group">
-                    <label class="login-label" for="otp-email">Email address</label>
-                    <input class="login-input" type="email" id="otp-email" name="email" required autofocus placeholder="you@example.com">
-                </div>
-                <button type="submit" class="<?php echo $showOidc ? 'btn-login-secondary' : 'btn-login'; ?>">Send code</button>
-            </form>
-            <?php else: ?>
+        <?php if ($showOtp && $otpStep): ?>
             <p class="login-otp-target">Enter the 6-digit code sent to<br><strong><?php echo htmlspecialchars(mask_email($otpEmail)); ?></strong></p>
             <form method="POST" action="auth.php?action=otp_verify">
                 <div class="login-form-group">
@@ -156,7 +186,6 @@ function mask_email(string $email): string {
             </a>
             <?php endif; ?>
             <a href="login.php?action=otp_cancel" class="login-back">← Use a different email</a>
-            <?php endif; ?>
         <?php endif; ?>
     </div>
     </div>

@@ -1100,8 +1100,8 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <!-- Footer (context-sensitive per tab) -->
             <div class="lightbox-footer">
                 <div id="admin-footer-users" class="admin-footer-pane">
-                    <button id="admin-otp-add-btn" class="btn btn-blue btn-sm hidden">+ Add OTP User</button>
                     <span id="admin-dirty-notice" class="admin-dirty-notice hidden" data-i18n="admin.unsaved">Unsaved changes</span>
+                    <button id="admin-otp-add-btn" class="btn btn-blue btn-sm hidden">+ Add OTP User</button>
                     <button id="admin-save-btn" class="btn btn-green" data-i18n="admin.save-btn" disabled>Save Changes</button>
                 </div>
                 <div id="admin-footer-requests" class="admin-footer-pane hidden">
