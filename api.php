@@ -2193,6 +2193,13 @@ if (isset($_REQUEST['action'])) {
             case 'admin_get_users':
                 $uf_data = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? []) : [];
                 $human_users = array_values(array_filter($uf_data['users'] ?? [], fn($u) => empty($u['is_ai']) && empty($u['is_system'])));
+                // Normalize auth field for legacy records that predate the auth field
+                $human_users = array_map(function($u) {
+                    if (!isset($u['auth'])) {
+                        $u['auth'] = (isset($u['sub']) && $u['sub']) ? 'oidc' : 'otp';
+                    }
+                    return $u;
+                }, $human_users);
                 echo json_encode(['success' => true, 'data' => $human_users]);
                 break;
 
@@ -2202,20 +2209,43 @@ if (isset($_REQUEST['action'])) {
                 $existing_uf = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? ['users' => []]) : ['users' => []];
                 $non_human_preserved = array_values(array_filter($existing_uf['users'] ?? [], fn($u) => !empty($u['is_ai']) || !empty($u['is_system'])));
                 $existing_by_sub = [];
+                $existing_by_uid = [];
+                $max_uid_sv = 0;
                 foreach ($existing_uf['users'] ?? [] as $eu) {
                     if (!empty($eu['is_ai']) || !empty($eu['is_system'])) continue;
                     if ($eu['sub'] ?? '') $existing_by_sub[$eu['sub']] = $eu;
+                    if ($eu['uid'] ?? '') $existing_by_uid[(int)$eu['uid']] = $eu;
+                    if ((int)($eu['uid'] ?? 0) > $max_uid_sv) $max_uid_sv = (int)$eu['uid'];
                 }
                 $merged = [];
                 foreach ($incoming_users as $u) {
-                    $sub = trim($u['sub'] ?? '');
-                    if (!$sub) continue;
+                    $auth = $u['auth'] ?? ((isset($u['sub']) && $u['sub']) ? 'oidc' : 'otp');
                     $role = in_array($u['role'] ?? '', ['admin', 'editor', 'reader']) ? $u['role'] : 'editor';
-                    $base = $existing_by_sub[$sub] ?? ['sub' => $sub, 'name' => $u['name'] ?? '', 'email' => $u['email'] ?? ''];
-                    $base['role'] = $role;
-                    // spaces: null = all spaces, [] = no access, [...] = specific spaces
-                    if (array_key_exists('spaces', $u)) {
-                        $base['spaces'] = is_array($u['spaces']) ? array_values(array_filter($u['spaces'], 'is_string')) : null;
+                    $sv_spaces = array_key_exists('spaces', $u)
+                        ? (is_array($u['spaces']) ? array_values(array_filter($u['spaces'], 'is_string')) : null)
+                        : null;
+                    if ($auth === 'oidc') {
+                        $sub = trim($u['sub'] ?? '');
+                        if (!$sub) continue;
+                        $base = $existing_by_sub[$sub] ?? ['sub' => $sub, 'name' => $u['name'] ?? '', 'email' => $u['email'] ?? ''];
+                        $base['role'] = $role;
+                        $base['auth'] = 'oidc';
+                        if (array_key_exists('spaces', $u)) $base['spaces'] = $sv_spaces;
+                    } else {
+                        $name  = trim($u['name'] ?? '');
+                        $email = trim($u['email'] ?? '');
+                        if (!$name || !$email) continue;
+                        $uid = (int)($u['uid'] ?? 0);
+                        $base = ($uid && isset($existing_by_uid[$uid])) ? $existing_by_uid[$uid] : [];
+                        if (!$uid || !$base) {
+                            $uid = ++$max_uid_sv;
+                        }
+                        $base['uid']   = $uid;
+                        $base['name']  = $name;
+                        $base['email'] = $email;
+                        $base['role']  = $role;
+                        $base['auth']  = 'otp';
+                        if (array_key_exists('spaces', $u)) $base['spaces'] = $sv_spaces;
                     }
                     $merged[] = $base;
                 }

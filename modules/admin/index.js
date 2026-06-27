@@ -183,27 +183,51 @@ const renderUsers = () => {
 
     const table = document.createElement('table');
     table.className = 'admin-table';
-    table.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Spaces</th><th></th></tr></thead>';
+    table.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Auth</th><th>Role</th><th>Spaces</th><th></th></tr></thead>';
     const tbody = document.createElement('tbody');
 
     users.forEach((u, i) => {
-        const isMe = u.sub === ME_SUB();
+        const isMe = !!(u.uid && u.uid === window.WIKI_USER_UID);
         const tr = document.createElement('tr');
         if (isMe) tr.classList.add('admin-row-self');
 
         const tdName = document.createElement('td');
         tdName.className = 'admin-td-name';
-        tdName.textContent = u.name || '—';
-        if (isMe) {
-            const badge = document.createElement('span');
-            badge.className = 'admin-you-badge';
-            badge.textContent = t('admin.users.you');
-            tdName.appendChild(badge);
+        if (u.auth === 'otp') {
+            const inp = document.createElement('input');
+            inp.type = 'text';
+            inp.className = 'form-control admin-inline-input';
+            inp.value = u.name || '';
+            inp.placeholder = 'Name';
+            inp.addEventListener('input', () => { users[i] = { ...users[i], name: inp.value }; markDirty(); });
+            tdName.appendChild(inp);
+        } else {
+            tdName.textContent = u.name || '—';
+            if (isMe) {
+                const badge = document.createElement('span');
+                badge.className = 'admin-you-badge';
+                badge.textContent = t('admin.users.you');
+                tdName.appendChild(badge);
+            }
         }
 
         const tdEmail = document.createElement('td');
         tdEmail.className = 'admin-td-email';
-        tdEmail.textContent = u.email || '—';
+        if (u.auth === 'otp') {
+            const inp = document.createElement('input');
+            inp.type = 'email';
+            inp.className = 'form-control admin-inline-input';
+            inp.value = u.email || '';
+            inp.placeholder = 'email@example.com';
+            inp.addEventListener('input', () => { users[i] = { ...users[i], email: inp.value }; markDirty(); });
+            tdEmail.appendChild(inp);
+        } else {
+            tdEmail.textContent = u.email || '—';
+        }
+
+        const tdAuth = document.createElement('td');
+        const authVal = u.auth || 'oidc';
+        tdAuth.innerHTML = `<span class="admin-auth-badge admin-auth-${authVal}">${authVal.toUpperCase()}</span>`;
 
         const tdRole = document.createElement('td');
         const sel = document.createElement('select');
@@ -237,7 +261,7 @@ const renderUsers = () => {
             tdDel.appendChild(delBtn);
         }
 
-        tr.append(tdName, tdEmail, tdRole, tdSpaces, tdDel);
+        tr.append(tdName, tdEmail, tdAuth, tdRole, tdSpaces, tdDel);
         tbody.appendChild(tr);
     });
 
@@ -1503,6 +1527,22 @@ export const init = () => {
     document.getElementById('admin-ai-add-btn')?.addEventListener('click', () => openAiUserForm(null));
     document.getElementById('admin-api-add-btn')?.addEventListener('click', () => openApiAccountForm(null));
     document.getElementById('admin-jobs-add-btn')?.addEventListener('click', () => openJobForm(null));
+
+    // OTP-specific UI
+    if (window.WIKI_AUTH_MODE === 'otp') {
+        document.querySelector('.admin-tab[data-tab="requests"]')?.classList.add('hidden');
+    }
+    if (window.WIKI_AUTH_MODE === 'otp' || window.WIKI_AUTH_MODE === 'both') {
+        document.getElementById('admin-otp-add-btn')?.classList.remove('hidden');
+    }
+    document.getElementById('admin-otp-add-btn')?.addEventListener('click', () => {
+        users.push({ uid: 0, name: '', email: '', role: 'editor', auth: 'otp', spaces: null });
+        markDirty();
+        renderUsers();
+        // Focus the last name input
+        const inputs = document.querySelectorAll('#admin-users-table .admin-inline-input');
+        if (inputs.length) inputs[inputs.length - 2]?.focus();
+    });
 
     // Close spaces dropdowns on outside click
     document.addEventListener('click', (e) => {

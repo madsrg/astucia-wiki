@@ -1012,7 +1012,11 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <div id="admin-pane-users" class="admin-pane">
                 <div id="admin-users-table" class="admin-scroll-area"></div>
                 <p class="admin-role-hint" data-i18n="admin.role-hint" style="margin-top:0.75rem">
+                    <?php if (in_array(AUTHENTICATION, ['otp', 'both'])): ?>
+                    Admin — full access · Editor — read and write · Reader — read only. Add OTP users with the button below.
+                    <?php else: ?>
                     Admin — full access including user management · Editor — read and write · Reader — read only. New users are added via the Requests tab after they sign in for the first time.
+                    <?php endif; ?>
                 </p>
             </div>
 
@@ -1096,6 +1100,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <!-- Footer (context-sensitive per tab) -->
             <div class="lightbox-footer">
                 <div id="admin-footer-users" class="admin-footer-pane">
+                    <button id="admin-otp-add-btn" class="btn btn-blue btn-sm hidden">+ Add OTP User</button>
                     <span id="admin-dirty-notice" class="admin-dirty-notice hidden" data-i18n="admin.unsaved">Unsaved changes</span>
                     <button id="admin-save-btn" class="btn btn-green" data-i18n="admin.save-btn" disabled>Save Changes</button>
                 </div>
@@ -1135,6 +1140,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
         window.WIKI_USER_FONT_SIZE = '<?php echo htmlspecialchars($userFontSize); ?>';
         window.WIKI_USER_SPACES  = <?php echo json_encode($_SESSION['user']['spaces'] ?? null); ?>; // null = all spaces
         window.WIKI_SESSION_TIMEOUT = <?php echo (AUTHENTICATION_ENABLED && defined('SESSION_TIMEOUT')) ? (int)SESSION_TIMEOUT : 0; ?>;
+        window.WIKI_AUTH_MODE = '<?php echo AUTHENTICATION; ?>';
         window.WIKI_SEARCH_ENGINE = '<?php echo defined('SEARCH_ENGINE') ? SEARCH_ENGINE : 'basic'; ?>';
     </script>
     <script src="script.js?v=<?php echo filemtime(__DIR__ . '/script.js'); ?>" type="module"></script>
