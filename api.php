@@ -686,7 +686,8 @@ if (isset($_REQUEST['action'])) {
                       'admin_get_api_accounts', 'admin_save_api_account',
                       'admin_delete_api_account', 'admin_regenerate_api_token',
                       'admin_get_agent_jobs', 'admin_save_agent_job', 'admin_delete_agent_job', 'admin_run_agent_job',
-                      'git_deleted_files', 'git_restore_deleted'];
+                      'git_deleted_files', 'git_restore_deleted',
+                      'admin_reindex'];
     $requested_action = $_REQUEST['action'];
     $current_role     = get_current_role();
 
@@ -2682,6 +2683,30 @@ if (isset($_REQUEST['action'])) {
                 header("Content-Type: text/plain");
                 echo "Indexing complete. Found and indexed {$count} pages.{$sqlite_msg}";
                 exit;
+
+            case 'admin_reindex':
+                $ri_count = $indexer->rebuildIndex($space_dir);
+                $ri_sqlite_msg = '';
+                $ri_sqlite_count = null;
+                if ($search_idx) {
+                    try {
+                        $sp_name = _sidx_space();
+                        if ($sp_name === basename(rtrim(PAGES_DIR, '/'))) {
+                            $ri_sqlite_count = $search_idx->rebuildAll();
+                        } else {
+                            $ri_sqlite_count = $search_idx->rebuildSpace($sp_name);
+                        }
+                    } catch (\Throwable $_e) {
+                        $ri_sqlite_msg = $_e->getMessage();
+                    }
+                }
+                echo json_encode([
+                    'success'      => true,
+                    'count'        => $ri_count,
+                    'sqlite_count' => $ri_sqlite_count,
+                    'sqlite_error' => $ri_sqlite_msg ?: null,
+                ]);
+                break;
 
             case 'list_spaces':
                 $spaces_list = [];

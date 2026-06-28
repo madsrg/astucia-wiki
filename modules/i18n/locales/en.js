@@ -13,6 +13,7 @@ export default {
     'btn.upload':     'Upload',
     'btn.discard':    'Discard',
     'btn.saving':     'Saving…',
+    'btn.close':      'Close',
 
     // Navigation / sidebar
     'nav.new-btn':        'New …',
@@ -344,6 +345,21 @@ export default {
     'admin.tab.api':      'API Accounts',
     'admin.tab.jobs':          'Agent Jobs',
     'admin.tab.deleted':       'Deleted Pages',
+    'admin.tab.reindex':       'Index Pages',
+
+    'admin.reindex.desc':          'The page index maps each page to a stable ID and tracks tags. It is rebuilt automatically when pages are created or renamed through the wiki. If you manually add, remove, or rename files on the filesystem, the index may become out of sync — rebuild it here to fix missing pages, broken links, or stale search results.',
+    'admin.reindex.space-label':   'Space to reindex',
+    'admin.reindex.all-spaces':    'All spaces',
+    'admin.reindex.btn':           'Rebuild Index',
+    'admin.reindex.modal-title':   'Rebuilding Index…',
+    'admin.reindex.progress':      (p) => `${p.done} of ${p.total} space${p.total === 1 ? '' : 's'}`,
+    'admin.reindex.space-ok':      (p) => `${p.n} page${p.n === 1 ? '' : 's'} indexed`,
+    'admin.reindex.space-err':     (p) => `Failed: ${p.error}`,
+    'admin.reindex.modal-done':    (p) => `Done — ${p.n} page${p.n === 1 ? '' : 's'} indexed across ${p.spaces} space${p.spaces === 1 ? '' : 's'}.`,
+    'admin.reindex.modal-done-one': (p) => `Done — ${p.n} page${p.n === 1 ? '' : 's'} indexed.`,
+    'admin.reindex.fts-ok':        (p) => `FTS index updated (${p.n} page${p.n === 1 ? '' : 's'}).`,
+    'admin.reindex.fts-error':     'FTS index failed',
+    'admin.reindex.failed':        'Reindex failed.',
 
     'admin.deleted.loading':          'Loading deleted pages…',
     'admin.deleted.failed':           'Could not load deleted pages. Is git enabled for this space?',

@@ -42,9 +42,9 @@ const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
     ai:         ['ai', 'jobs'],
     monitoring: ['logs', 'errorlog', 'diagnostics'],
-    content:    ['deleted'],
+    content:    ['reindex', 'deleted'],
 };
-const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 'deleted' };
+const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 'reindex' };
 
 const switchGroup = (groupName) => {
     document.querySelectorAll('.admin-group').forEach(g =>
@@ -68,6 +68,7 @@ const switchTab = (name) => {
     document.getElementById('admin-footer-api')?.classList.toggle('hidden',           name !== 'api');
     document.getElementById('admin-footer-jobs')?.classList.toggle('hidden',         name !== 'jobs');
     document.getElementById('admin-footer-deleted')?.classList.toggle('hidden',      name !== 'deleted');
+    document.getElementById('admin-footer-reindex')?.classList.toggle('hidden',      name !== 'reindex');
     const activeTab = document.querySelector(`.admin-tab[data-tab="${name}"]`);
     if (activeTab?.dataset.group) lastTabInGroup[activeTab.dataset.group] = name;
     if (name === 'logs')        loadLogFiles();
@@ -78,6 +79,7 @@ const switchTab = (name) => {
     if (name === 'api')         loadApiAccounts();
     if (name === 'jobs')        loadAgentJobs();
     if (name === 'deleted')     loadDeletedPages();
+    if (name === 'reindex')     loadReindexPane();
 };
 
 // ── Users tab ─────────────────────────────────────────────────────────────────
@@ -1504,6 +1506,113 @@ const loadDeletedPages = async () => {
     container.appendChild(table);
 };
 
+// ── Index Pages tab ───────────────────────────────────────────────────────────
+
+const loadReindexPane = () => {
+    const sel = document.getElementById('admin-reindex-space');
+    if (!sel) return;
+    sel.innerHTML = `<option value="">${t('admin.reindex.all-spaces')}</option>`;
+    allSpaces.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = s;
+        sel.appendChild(opt);
+    });
+};
+
+const runReindex = async () => {
+    const btn         = document.getElementById('admin-reindex-btn');
+    const selectedSpace = document.getElementById('admin-reindex-space')?.value || '';
+    const spacesToRun = selectedSpace ? [selectedSpace] : (allSpaces.length ? allSpaces : ['']);
+
+    btn.disabled = true;
+
+    // Build and show the progress modal
+    const overlay = document.createElement('div');
+    overlay.className = 'reindex-modal-overlay';
+    overlay.innerHTML = `
+        <div class="reindex-modal">
+            <div class="reindex-modal-header">
+                <span class="reindex-modal-title">${t('admin.reindex.modal-title')}</span>
+                <span id="reindex-progress-text" class="reindex-progress-text">${t('admin.reindex.progress', { done: 0, total: spacesToRun.length })}</span>
+            </div>
+            <div class="reindex-progress-bar-wrap">
+                <div id="reindex-progress-fill" class="reindex-progress-fill" style="width:0%"></div>
+            </div>
+            <div id="reindex-log" class="reindex-log"></div>
+            <div id="reindex-footer" class="reindex-modal-footer hidden">
+                <span id="reindex-summary" class="reindex-summary"></span>
+                <button id="reindex-close-btn" class="btn btn-secondary">${t('btn.close')}</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+
+    const logEl      = overlay.querySelector('#reindex-log');
+    const fillEl     = overlay.querySelector('#reindex-progress-fill');
+    const progressEl = overlay.querySelector('#reindex-progress-text');
+    const footer     = overlay.querySelector('#reindex-footer');
+    const summary    = overlay.querySelector('#reindex-summary');
+    overlay.querySelector('#reindex-close-btn').addEventListener('click', () => overlay.remove());
+
+    const addLogRow = (space, status, detail, isErr = false) => {
+        const row = document.createElement('div');
+        row.className = 'reindex-log-row' + (isErr ? ' reindex-log-err' : '');
+        row.innerHTML = `<span class="reindex-log-icon">${isErr ? '✗' : '✓'}</span>
+            <span class="reindex-log-space">${escHtml(space || '(root)')}</span>
+            <span class="reindex-log-detail">${escHtml(detail)}</span>`;
+        logEl.appendChild(row);
+        logEl.scrollTop = logEl.scrollHeight;
+    };
+
+    const addSpinner = (space) => {
+        const row = document.createElement('div');
+        row.className = 'reindex-log-row reindex-log-active';
+        row.id = 'reindex-current-row';
+        row.innerHTML = `<span class="reindex-log-spinner"></span>
+            <span class="reindex-log-space">${escHtml(space || '(root)')}</span>
+            <span class="reindex-log-detail reindex-log-muted">indexing…</span>`;
+        logEl.appendChild(row);
+        logEl.scrollTop = logEl.scrollHeight;
+        return row;
+    };
+
+    let totalPages = 0;
+    let errorCount = 0;
+
+    for (let i = 0; i < spacesToRun.length; i++) {
+        const s = spacesToRun[i];
+        progressEl.textContent = t('admin.reindex.progress', { done: i, total: spacesToRun.length });
+        fillEl.style.width = `${Math.round((i / spacesToRun.length) * 100)}%`;
+
+        const spinnerRow = addSpinner(s);
+        const params = s ? { space: s } : {};
+        const res = await api.call('admin_reindex', params);
+        spinnerRow.remove();
+
+        if (res.success) {
+            let detail = t('admin.reindex.space-ok', { n: res.count });
+            if (res.sqlite_error) detail += ` · ${t('admin.reindex.fts-error')}: ${res.sqlite_error}`;
+            else if (res.sqlite_count !== null) detail += ` · ${t('admin.reindex.fts-ok', { n: res.sqlite_count })}`;
+            addLogRow(s, 'ok', detail);
+            totalPages += res.count;
+        } else {
+            addLogRow(s, 'err', t('admin.reindex.space-err', { error: res.message || '?' }), true);
+            errorCount++;
+        }
+    }
+
+    fillEl.style.width = '100%';
+    progressEl.textContent = t('admin.reindex.progress', { done: spacesToRun.length, total: spacesToRun.length });
+
+    const summaryText = spacesToRun.length > 1
+        ? t('admin.reindex.modal-done', { n: totalPages, spaces: spacesToRun.length })
+        : t('admin.reindex.modal-done-one', { n: totalPages });
+    summary.textContent = summaryText;
+    footer.classList.remove('hidden');
+
+    btn.disabled = false;
+};
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 export const init = () => {
@@ -1588,6 +1697,8 @@ export const init = () => {
         btn.addEventListener('click', () =>
             loadDiagLog(btn.dataset.logType, btn.dataset.output));
     });
+
+    document.getElementById('admin-reindex-btn')?.addEventListener('click', runReindex);
 
     document.getElementById('admin-diag-error-log-select')?.addEventListener('change', e => {
         if (e.target.value) loadErrorLogContent(e.target.value);

@@ -18,9 +18,10 @@ export const SUPPORTED_LANGUAGES = {
 
 let _lang = 'en';
 
-// Translate a key. Supports {placeholder} substitution.
+// Translate a key. Function values are called with vars; strings support {placeholder} substitution.
 export const t = (key, vars = {}) => {
     const str = LOCALES[_lang]?.[key] ?? LOCALES.en[key] ?? key;
+    if (typeof str === 'function') return str(vars);
     if (!vars || !Object.keys(vars).length) return str;
     return str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] !== undefined ? vars[k] : `{${k}}`));
 };

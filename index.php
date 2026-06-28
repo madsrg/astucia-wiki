@@ -1005,6 +1005,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab hidden" data-tab="logs" data-group="monitoring" data-i18n="admin.tab.logs">Access Log</button>
                 <button class="admin-tab hidden" data-tab="errorlog" data-group="monitoring" data-i18n="admin.tab.errorlog">Error Log</button>
                 <button class="admin-tab hidden" data-tab="diagnostics" data-group="monitoring" data-i18n="admin.tab.diag">Diagnostics</button>
+                <button class="admin-tab hidden" data-tab="reindex" data-group="content" data-i18n="admin.tab.reindex">Index Pages</button>
                 <button class="admin-tab hidden" data-tab="deleted" data-group="content" data-i18n="admin.tab.deleted">Deleted Pages</button>
             </div>
 
@@ -1061,6 +1062,20 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <!-- Deleted Pages pane -->
             <div id="admin-pane-deleted" class="admin-pane hidden">
                 <div id="admin-deleted-list" class="admin-scroll-area"></div>
+            </div>
+
+            <!-- Index Pages pane -->
+            <div id="admin-pane-reindex" class="admin-pane hidden">
+                <div class="admin-scroll-area">
+                    <div class="admin-reindex-body">
+                        <p class="admin-reindex-desc" data-i18n="admin.reindex.desc"></p>
+                        <div class="admin-reindex-controls">
+                            <label class="admin-reindex-label" data-i18n="admin.reindex.space-label"></label>
+                            <select id="admin-reindex-space" class="form-control admin-reindex-select"></select>
+                            <button id="admin-reindex-btn" class="btn btn-blue" data-i18n="admin.reindex.btn">Rebuild Index</button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Diagnostics pane -->
@@ -1124,6 +1139,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <div id="admin-footer-deleted" class="admin-footer-pane hidden">
                     <span id="admin-deleted-count" class="admin-log-count"></span>
                 </div>
+                <div id="admin-footer-reindex" class="admin-footer-pane hidden"></div>
             </div>
         </div>
     </div>
