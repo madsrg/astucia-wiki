@@ -30,11 +30,11 @@ import { init as initFilesFolder } from './modules/files_folder/index.js';
 import { init as initAdmin } from './modules/admin/index.js';
 import { init as initPreferences } from './modules/preferences/index.js';
 import { init as initChat } from './modules/chat/index.js';
-import { initSpaces, switchSpaceSilently } from './modules/spaces/index.js';
+import { initSpaces, switchSpaceSilently, getAllSpaces } from './modules/spaces/index.js';
 import { init as initMentions } from './modules/mentions/index.js';
 import { init as initSession } from './modules/session/index.js';
 import { init as initGit, checkSpaceGit } from './modules/git/index.js';
-import { init as initNav } from './modules/nav/index.js';
+import { init as initNav, removeStaleRecentEntry } from './modules/nav/index.js';
 import { init as initToc } from './modules/toc/index.js';
 import { init as initPageChat } from './modules/page_chat/index.js';
 import { init as initShare } from './modules/share/index.js';
@@ -147,14 +147,19 @@ const init = async () => {
     initPageChat();
     initShare();
     initNav({
-        onNavigate: async (id, space) => {
-            if (space && space !== state.currentSpace) {
+        onNavigate: async (id, space, path) => {
+            const spaceIsValid = !space || getAllSpaces().includes(space);
+            if (space && space !== state.currentSpace && spaceIsValid) {
                 switchSpaceSilently(space);
                 await checkSpaceGit();
                 await refreshFileTree();
                 startTreePolling(state.currentSpace);
+            } else if (space && !spaceIsValid && path) {
+                // Space name is stale (e.g. renamed before client-side fix existed);
+                // remove it from recents so it doesn't confuse future sessions.
+                removeStaleRecentEntry(path, space);
             }
-            await navigateToPageId(id);
+            await navigateToPageId(id, path);
         },
         onRoot: loadStartPage,
     });
@@ -194,7 +199,15 @@ const init = async () => {
     document.getElementById('logo-btn').addEventListener('click', loadStartPage);
 };
 
-const navigateToPageId = async (pageId) => {
+const findItemByPath = (items, path) => {
+    for (const item of items) {
+        if (item.path === path) return item;
+        if (item.children) { const found = findItemByPath(item.children, path); if (found) return found; }
+    }
+    return null;
+};
+
+const navigateToPageId = async (pageId, fallbackPath = null) => {
     const result = await api.call('get_path_from_id', { pageid: pageId });
     if (result.success && result.path) {
         // Backend found the page in a different space — switch there first.
@@ -205,16 +218,20 @@ const navigateToPageId = async (pageId) => {
             startTreePolling(state.currentSpace);
         }
         const listResult = await api.call('list');
-        const findItem = (items, path) => {
-            for (const item of items) {
-                if (item.path === path) return item;
-                if (item.children) { const found = findItem(item.children, path); if (found) return found; }
-            }
-            return null;
-        };
-        const item = findItem(listResult.data || [], result.path);
+        const item = findItemByPath(listResult.data || [], result.path);
         await loadPage(result.path, pageId, item?.tags || []);
         revealAndSelectFile(result.path);
+    } else if (fallbackPath) {
+        // Stale ID (e.g. after a reindex) — try loading by the stored path instead.
+        const listResult = await api.call('list');
+        const item = findItemByPath(listResult.data || [], fallbackPath);
+        if (item) {
+            await loadPage(item.path, item.id, item.tags || []);
+            revealAndSelectFile(item.path);
+        } else {
+            const { showToast } = await import('./modules/core/utils.js');
+            showToast('Could not find the linked page.', 'error');
+        }
     } else {
         const { showToast } = await import('./modules/core/utils.js');
         showToast('Could not find the linked page.', 'error');

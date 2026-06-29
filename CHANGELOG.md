@@ -6,6 +6,21 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.6.2] — 2026-06-29
+
+### Added
+- **Tag type-ahead** — typing in the tag input suggests existing tags from all accessible Spaces, with substring matching, keyboard navigation (↑ ↓ Enter Tab Esc), and a per-session cache
+- **Cross-Space tag cloud** — the Search pane tag cloud now shows tags from all accessible Spaces with total page counts; clicking a tag returns results across all Spaces with Space badges
+
+### Fixed
+- Stale space name in Recent/Favorites no longer triggers a broken space switch; the navigation guard validates against the live spaces list and self-heals the bad entry
+- Space badge hidden in Recent/Favorites when the stored space name no longer exists (renamed or deleted)
+- Tag type-ahead dropdown was transparent (CSS variable `--bg-primary` undefined); now solid white
+- Tag type-ahead dropdown appeared below the input and outside the viewport; now opens upward
+- Tag type-ahead cache could get permanently stuck as empty on any transient error; now only cached on a clean successful response
+- Search pane layout: "All spaces" checkbox moved closer to the search input; more space added above the tag cloud
+- Login page OIDC column label changed from "Personal account" to "Single Sign-On"
+
 ## [2026.6.1] — 2026-06-28
 
 ### Added

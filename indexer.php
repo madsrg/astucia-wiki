@@ -145,6 +145,7 @@ class PageIndexer {
     }
 
     public function rebuildIndex($directory) {
+        $directory = rtrim($directory, '/');
         $allFiles = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory));
         $markdownFiles = new RegexIterator($allFiles, '/\.(md|drawio|list)$/');
         $foundPaths = [];

@@ -159,6 +159,15 @@ class SearchIndex {
         } catch (\Throwable $e) {}
     }
 
+    // Rename a space — updates all rows in that space to the new space name.
+    public function renameSpace(string $oldSpace, string $newSpace): void {
+        try {
+            $this->pdo->prepare(
+                "UPDATE pages SET space=? WHERE space=?"
+            )->execute([$newSpace, $oldSpace]);
+        } catch (\Throwable $e) {}
+    }
+
     // Batch-update paths when a folder is renamed (same space).
     public function moveFolderPaths(string $space, string $oldPrefix, string $newPrefix): void {
         try {

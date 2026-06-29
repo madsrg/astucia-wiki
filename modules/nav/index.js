@@ -16,6 +16,8 @@ const RECENTS_KEY   = 'wiki_recents';
 const FAVORITES_KEY = 'wiki_favorites';
 const MAX_RECENTS   = 20;
 
+let _availableSpaces = null; // null = not yet loaded; array = known valid spaces
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const iconForPath = (path) => {
@@ -49,6 +51,29 @@ const loadFavorites = () => {
 
 const saveFavorites = (items) => {
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(items));
+};
+
+/**
+ * Called by the spaces module after the spaces list is fetched.
+ * Enables hiding badges for entries whose stored space no longer exists.
+ */
+export const setAvailableSpaces = (spaces) => {
+    _availableSpaces = Array.isArray(spaces) ? spaces : null;
+    renderRecentPane();
+    renderSavedPane();
+};
+
+/**
+ * Remove a recent entry identified by path + space (used to evict stale-space
+ * entries after a successful stale-space navigation or on explicit cleanup).
+ */
+export const removeStaleRecentEntry = (path, space) => {
+    try {
+        let items = loadRecents();
+        items = items.filter(e => !(e.path === path && e.space === space));
+        saveRecents(items);
+        renderRecentPane();
+    } catch {}
 };
 
 // ── Callbacks (set by init) ───────────────────────────────────────────────────
@@ -135,11 +160,12 @@ export const updateBreadcrumb = (path, space) => {
  */
 export const trackPageVisit = (id, path, space) => {
     if (!id || !path) return;
-    const idStr = String(id); // normalize: API returns integers, dataset returns strings
-    const title = pageTitle(path);
+    const idStr    = String(id); // normalize: API returns integers, dataset returns strings
+    const spaceStr = space || '';
+    const title    = pageTitle(path);
     let recents = loadRecents();
-    // Remove existing entry for this id
-    recents = recents.filter(r => String(r.id) !== idStr);
+    // Remove existing entry for this id or for the same (path, space) pair (handles reindex ID changes)
+    recents = recents.filter(r => String(r.id) !== idStr && !(r.path === path && r.space === spaceStr));
     // Prepend new entry
     recents.unshift({ id: idStr, path, space: space || '', title });
     // Trim to max
@@ -173,8 +199,9 @@ const renderRecentPane = () => {
         nameEl.textContent = entry.title;
         li.appendChild(nameEl);
 
-        // Show space badge when in a different space
-        if (entry.space && entry.space !== state.currentSpace) {
+        // Show space badge when in a different space that is known to be valid
+        const spaceKnownValid = _availableSpaces === null || _availableSpaces.includes(entry.space);
+        if (entry.space && entry.space !== state.currentSpace && spaceKnownValid) {
             const badge = document.createElement('span');
             badge.className = 'nav-pane-item-space';
             badge.textContent = entry.space;
@@ -182,7 +209,7 @@ const renderRecentPane = () => {
         }
 
         li.addEventListener('click', () => {
-            if (_onNavigate) _onNavigate(entry.id, entry.space);
+            if (_onNavigate) _onNavigate(entry.id, entry.space, entry.path);
         });
 
         ul.appendChild(li);
@@ -265,8 +292,9 @@ const renderSavedPane = () => {
         nameEl.textContent = entry.title;
         li.appendChild(nameEl);
 
-        // Show space badge when different space
-        if (entry.space && entry.space !== state.currentSpace) {
+        // Show space badge when in a different space that is known to be valid
+        const favSpaceKnownValid = _availableSpaces === null || _availableSpaces.includes(entry.space);
+        if (entry.space && entry.space !== state.currentSpace && favSpaceKnownValid) {
             const badge = document.createElement('span');
             badge.className = 'nav-pane-item-space';
             badge.textContent = entry.space;
@@ -292,13 +320,37 @@ const renderSavedPane = () => {
         li.appendChild(removeBtn);
 
         li.addEventListener('click', () => {
-            if (_onNavigate) _onNavigate(entry.id, entry.space);
+            if (_onNavigate) _onNavigate(entry.id, entry.space, entry.path);
         });
 
         ul.appendChild(li);
     });
     pane.innerHTML = '';
     pane.appendChild(ul);
+};
+
+// ── Space rename helper ───────────────────────────────────────────────────────
+
+/**
+ * Updates all recents and favorites entries that reference oldSpace to use newSpace.
+ * Call this immediately after a successful space rename for the current user's browser.
+ */
+export const renameSpaceInStorage = (oldSpace, newSpace) => {
+    const update = (key) => {
+        try {
+            const items = JSON.parse(localStorage.getItem(key) || '[]');
+            const updated = items.map(e => {
+                if (e.space !== oldSpace) return e;
+                const newPath = e.path && e.path.startsWith(oldSpace + '/')
+                    ? newSpace + e.path.slice(oldSpace.length)
+                    : e.path;
+                return { ...e, space: newSpace, path: newPath };
+            });
+            localStorage.setItem(key, JSON.stringify(updated));
+        } catch {}
+    };
+    update(RECENTS_KEY);
+    update(FAVORITES_KEY);
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────

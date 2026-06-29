@@ -255,7 +255,9 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                         </div>
                         <div id="tags-container" class="tags-section">
                             <div id="tags-display"></div>
-                            <input type="text" id="tag-input" data-i18n-placeholder="tags.placeholder" placeholder="Add a tag…" />
+                            <div class="tag-input-wrap">
+                                <input type="text" id="tag-input" data-i18n-placeholder="tags.placeholder" placeholder="Add a tag…" />
+                            </div>
                         </div>
                     </div>
                     <div id="pc-page-input-area" class="chat-input-area hidden">

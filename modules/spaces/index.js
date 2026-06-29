@@ -3,9 +3,13 @@ import { state } from '../core/state.js';
 import { showToast, promptModal } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { t } from '../i18n/index.js';
+import { renameSpaceInStorage, setAvailableSpaces } from '../nav/index.js';
 
 const STORAGE_KEY = 'wiki_currentSpace';
 let _onSpaceChange = null;
+let _allSpaces = [];
+
+export const getAllSpaces = () => _allSpaces;
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -14,6 +18,8 @@ export const initSpaces = async ({ onSpaceChange }) => {
 
     const result = await api.call('list_spaces');
     const spaces = result.data || [];
+    _allSpaces = spaces;
+    setAvailableSpaces(spaces);
 
     // Determine active space: URL param → localStorage → first available
     const urlParams = new URLSearchParams(window.location.search);
@@ -131,6 +137,7 @@ const _render = (spaces, active) => {
                 const res = await api.call('rename_space', { old_name: name, new_name: newName }, 'POST');
                 if (res.success) {
                     showToast(t('spaces.renamed', { name: newName }), 'success');
+                    renameSpaceInStorage(name, newName);
                     const refreshed = await api.call('list_spaces');
                     const newSpaces = refreshed.data || [];
                     container.innerHTML = '';

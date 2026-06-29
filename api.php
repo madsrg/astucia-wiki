@@ -57,7 +57,7 @@ if (isset($_REQUEST['action'])) {
     $_sp = trim($_REQUEST['space'] ?? '');
     if ($_sp !== '') {
         $_sp_safe = basename($_sp);
-        $_sp_candidate = PAGES_DIR . '/' . $_sp_safe;
+        $_sp_candidate = rtrim(PAGES_DIR, '/') . '/' . $_sp_safe;
         if (is_dir($_sp_candidate) && $_sp_safe[0] !== '.') {
             // ACL: non-admins can only access spaces they are granted.
             if (AUTHENTICATION_ENABLED) {
@@ -1484,31 +1484,64 @@ if (isset($_REQUEST['action'])) {
                 break;
 
             case 'get_pages_by_tag':
-                $tag = $_GET['tag'];
-                $all_pages = $indexer->getAllPages();
-                $results = [];
-                foreach ($all_pages as $id => $data) {
-                    if (isset($data['tags']) && is_array($data['tags']) && in_array($tag, $data['tags'])) {
-                        $content = file_get_contents(sanitize_path($data['path']));
-                        $lines = explode("\n", $content);
-                        $header = '';
-                        $preview_lines = [];
-                        foreach ($lines as $line) {
-                            if (substr(trim($line), 0, 1) === '#' && empty($header)) {
-                                $header = trim($line);
-                            } elseif (!empty($header) && count($preview_lines) < 3 && trim($line) !== '') {
-                                $preview_lines[] = trim($line);
-                            }
+                $tag = $_GET['tag'] ?? '';
+                $_gpt_all = !empty($_GET['all_spaces']);
+
+                // Helper: extract header + preview lines from page content.
+                $extract_preview = function(string $content): array {
+                    $lines   = explode("\n", $content);
+                    $header  = '';
+                    $preview = [];
+                    foreach ($lines as $line) {
+                        if ($header === '' && substr(trim($line), 0, 1) === '#') {
+                            $header = trim($line);
+                        } elseif ($header !== '' && count($preview) < 3 && trim($line) !== '') {
+                            $preview[] = trim($line);
                         }
-                        $results[] = array_merge([
-                            'id'      => $id,
-                            'path'    => $data['path'],
-                            'header'  => $header,
-                            'preview' => implode(' ', $preview_lines),
-                        ], page_meta($data));
                     }
+                    return [$header, implode(' ', $preview)];
+                };
+
+                if (!$_gpt_all) {
+                    // Current space only.
+                    $results = [];
+                    foreach ($indexer->getAllPages() as $id => $data) {
+                        if (!isset($data['tags']) || !in_array($tag, $data['tags'])) continue;
+                        $abs = sanitize_path($data['path']);
+                        if (!file_exists($abs)) continue;
+                        [$hdr, $prv] = $extract_preview(file_get_contents($abs));
+                        $results[] = array_merge(['id' => $id, 'path' => $data['path'], 'header' => $hdr, 'preview' => $prv], page_meta($data));
+                    }
+                    echo json_encode(['success' => true, 'data' => $results]);
+                } else {
+                    // All accessible spaces.
+                    $_gpt_spaces = [];
+                    foreach (scandir(PAGES_DIR) as $_sf) {
+                        if ($_sf === '.' || $_sf === '..' || $_sf[0] === '.') continue;
+                        if (is_dir(rtrim(PAGES_DIR, '/') . '/' . $_sf)) $_gpt_spaces[] = $_sf;
+                    }
+                    if (AUTHENTICATION_ENABLED) {
+                        $_gpt_role    = $_SESSION['user']['role']   ?? 'reader';
+                        $_gpt_allowed = $_SESSION['user']['spaces'] ?? null;
+                        if ($_gpt_role !== 'admin' && $_gpt_allowed !== null) {
+                            $_gpt_spaces = array_values(array_filter($_gpt_spaces, fn($s) => in_array($s, $_gpt_allowed, true)));
+                        }
+                    }
+                    $results = [];
+                    foreach ($_gpt_spaces as $_gpt_sp) {
+                        $_gpt_dir = rtrim(PAGES_DIR, '/') . '/' . $_gpt_sp;
+                        if (!file_exists($_gpt_dir . '/index.json')) continue;
+                        $_gpt_idx = new PageIndexer($_gpt_dir);
+                        foreach ($_gpt_idx->getAllPages() as $id => $data) {
+                            if (!isset($data['tags']) || !in_array($tag, $data['tags'])) continue;
+                            $abs = rtrim($_gpt_dir, '/') . '/' . ltrim($data['path'], '/');
+                            if (!file_exists($abs)) continue;
+                            [$hdr, $prv] = $extract_preview(file_get_contents($abs));
+                            $results[] = array_merge(['id' => $id, 'path' => $data['path'], 'space' => $_gpt_sp, 'header' => $hdr, 'preview' => $prv], page_meta($data));
+                        }
+                    }
+                    echo json_encode(['success' => true, 'data' => $results, 'cross_space' => true]);
                 }
-                echo json_encode(['success' => true, 'data' => $results]);
                 break;
 
             case 'search':
@@ -2685,26 +2718,50 @@ if (isset($_REQUEST['action'])) {
                 exit;
 
             case 'admin_reindex':
+                if (rtrim($space_dir, '/') === rtrim(PAGES_DIR, '/')) {
+                    throw new Exception('A space name is required for reindex.');
+                }
                 $ri_count = $indexer->rebuildIndex($space_dir);
                 $ri_sqlite_msg = '';
                 $ri_sqlite_count = null;
+                $ri_users_cleaned = 0;
+                $sp_name = _sidx_space();
                 if ($search_idx) {
                     try {
-                        $sp_name = _sidx_space();
-                        if ($sp_name === basename(rtrim(PAGES_DIR, '/'))) {
-                            $ri_sqlite_count = $search_idx->rebuildAll();
-                        } else {
-                            $ri_sqlite_count = $search_idx->rebuildSpace($sp_name);
-                        }
+                        $ri_sqlite_count = $search_idx->rebuildSpace($sp_name);
                     } catch (\Throwable $_e) {
                         $ri_sqlite_msg = $_e->getMessage();
                     }
                 }
+                // Remove stale space references from users.json on every reindex.
+                if (defined('WIKI_SYSTEM_DATA') && file_exists(WIKI_SYSTEM_DATA . 'users.json')) {
+                    $ri_actual = [];
+                    foreach (scandir(PAGES_DIR) as $_rd) {
+                        if ($_rd === '.' || $_rd === '..' || $_rd[0] === '.') continue;
+                        if (is_dir(rtrim(PAGES_DIR, '/') . '/' . $_rd)) $ri_actual[] = $_rd;
+                    }
+                    $ri_uf = json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? ['users' => []];
+                    $ri_changed = false;
+                    foreach ($ri_uf['users'] as &$ri_user) {
+                        if (!isset($ri_user['spaces']) || !is_array($ri_user['spaces'])) continue;
+                        $ri_before = $ri_user['spaces'];
+                        $ri_user['spaces'] = array_values(array_intersect($ri_user['spaces'], $ri_actual));
+                        if ($ri_user['spaces'] !== $ri_before) {
+                            $ri_users_cleaned += count($ri_before) - count($ri_user['spaces']);
+                            $ri_changed = true;
+                        }
+                    }
+                    unset($ri_user);
+                    if ($ri_changed) {
+                        file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($ri_uf, JSON_PRETTY_PRINT));
+                    }
+                }
                 echo json_encode([
-                    'success'      => true,
-                    'count'        => $ri_count,
-                    'sqlite_count' => $ri_sqlite_count,
-                    'sqlite_error' => $ri_sqlite_msg ?: null,
+                    'success'       => true,
+                    'count'         => $ri_count,
+                    'sqlite_count'  => $ri_sqlite_count,
+                    'sqlite_error'  => $ri_sqlite_msg ?: null,
+                    'users_cleaned' => $ri_users_cleaned,
                 ]);
                 break;
 
@@ -2724,6 +2781,73 @@ if (isset($_REQUEST['action'])) {
                     }
                 }
                 echo json_encode(['success' => true, 'data' => $spaces_list]);
+                break;
+
+            case 'get_all_tags':
+                // Scan index.json across all accessible spaces and return the union of all tags.
+                $_gt_spaces = [];
+                foreach (scandir(PAGES_DIR) as $_gt_sf) {
+                    if ($_gt_sf === '.' || $_gt_sf === '..' || $_gt_sf[0] === '.') continue;
+                    if (is_dir(rtrim(PAGES_DIR, '/') . '/' . $_gt_sf)) $_gt_spaces[] = $_gt_sf;
+                }
+                if (AUTHENTICATION_ENABLED) {
+                    $_gt_role   = $_SESSION['user']['role']   ?? 'reader';
+                    $_gt_allowed = $_SESSION['user']['spaces'] ?? null;
+                    if ($_gt_role !== 'admin' && $_gt_allowed !== null) {
+                        $_gt_spaces = array_filter($_gt_spaces, fn($s) => in_array($s, $_gt_allowed, true));
+                    }
+                }
+                $_gt_tags = [];
+                foreach ($_gt_spaces as $_gt_sp) {
+                    $_gt_idx = rtrim(PAGES_DIR, '/') . '/' . $_gt_sp . '/index.json';
+                    if (!file_exists($_gt_idx)) continue;
+                    $_gt_data = json_decode(file_get_contents($_gt_idx), true) ?? [];
+                    foreach ($_gt_data as $_gt_entry) {
+                        if (!empty($_gt_entry['tags']) && is_array($_gt_entry['tags'])) {
+                            foreach ($_gt_entry['tags'] as $_gt_tag) {
+                                $_gt_tags[$_gt_tag] = true;
+                            }
+                        }
+                    }
+                }
+                $_gt_list = array_keys($_gt_tags);
+                sort($_gt_list, SORT_STRING | SORT_FLAG_CASE);
+                echo json_encode(['success' => true, 'data' => $_gt_list]);
+                break;
+
+            case 'get_tag_cloud':
+                // Like get_all_tags but returns [{tag, count}] sorted by tag name.
+                $_tc_spaces = [];
+                foreach (scandir(PAGES_DIR) as $_tc_sf) {
+                    if ($_tc_sf === '.' || $_tc_sf === '..' || $_tc_sf[0] === '.') continue;
+                    if (is_dir(rtrim(PAGES_DIR, '/') . '/' . $_tc_sf)) $_tc_spaces[] = $_tc_sf;
+                }
+                if (AUTHENTICATION_ENABLED) {
+                    $_tc_role    = $_SESSION['user']['role']   ?? 'reader';
+                    $_tc_allowed = $_SESSION['user']['spaces'] ?? null;
+                    if ($_tc_role !== 'admin' && $_tc_allowed !== null) {
+                        $_tc_spaces = array_values(array_filter($_tc_spaces, fn($s) => in_array($s, $_tc_allowed, true)));
+                    }
+                }
+                $_tc_counts = [];
+                foreach ($_tc_spaces as $_tc_sp) {
+                    $_tc_idx = rtrim(PAGES_DIR, '/') . '/' . $_tc_sp . '/index.json';
+                    if (!file_exists($_tc_idx)) continue;
+                    $_tc_data = json_decode(file_get_contents($_tc_idx), true) ?? [];
+                    foreach ($_tc_data as $_tc_entry) {
+                        if (!empty($_tc_entry['tags']) && is_array($_tc_entry['tags'])) {
+                            foreach ($_tc_entry['tags'] as $_tc_tag) {
+                                $_tc_counts[$_tc_tag] = ($_tc_counts[$_tc_tag] ?? 0) + 1;
+                            }
+                        }
+                    }
+                }
+                ksort($_tc_counts, SORT_STRING | SORT_FLAG_CASE);
+                $_tc_result = [];
+                foreach ($_tc_counts as $_tc_tag => $_tc_n) {
+                    $_tc_result[] = ['tag' => $_tc_tag, 'count' => $_tc_n];
+                }
+                echo json_encode(['success' => true, 'data' => $_tc_result]);
                 break;
 
             case 'rename_space':
@@ -2756,6 +2880,9 @@ if (isset($_REQUEST['action'])) {
                     if ($rs_changed) {
                         file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($rs_uf, JSON_PRETTY_PRINT));
                     }
+                }
+                if ($search_idx) {
+                    try { $search_idx->renameSpace($rs_safe_old, $rs_safe_new); } catch (\Throwable $_e) {}
                 }
                 echo json_encode(['success' => true]);
                 break;

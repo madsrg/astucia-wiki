@@ -1593,6 +1593,7 @@ const runReindex = async () => {
             let detail = t('admin.reindex.space-ok', { n: res.count });
             if (res.sqlite_error) detail += ` · ${t('admin.reindex.fts-error')}: ${res.sqlite_error}`;
             else if (res.sqlite_count !== null) detail += ` · ${t('admin.reindex.fts-ok', { n: res.sqlite_count })}`;
+            if (res.users_cleaned) detail += ` · ${t('admin.reindex.users-cleaned', { n: res.users_cleaned })}`;
             addLogRow(s, 'ok', detail);
             totalPages += res.count;
         } else {

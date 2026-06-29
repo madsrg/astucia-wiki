@@ -359,6 +359,7 @@ export default {
     'admin.reindex.modal-done-one': (p) => `Done — ${p.n} page${p.n === 1 ? '' : 's'} indexed.`,
     'admin.reindex.fts-ok':        (p) => `FTS index updated (${p.n} page${p.n === 1 ? '' : 's'}).`,
     'admin.reindex.fts-error':     'FTS index failed',
+    'admin.reindex.users-cleaned': (p) => `Removed ${p.n} stale space reference${p.n === 1 ? '' : 's'} from user permissions.`,
     'admin.reindex.failed':        'Reindex failed.',
 
     'admin.deleted.loading':          'Loading deleted pages…',

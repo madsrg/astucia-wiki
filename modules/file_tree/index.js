@@ -142,7 +142,7 @@ export const refreshFileTree = async () => {
         fileNavigator.innerHTML = '';
         renderTree(state.fullFileTree, fileNavigator);
         renderBrowsePane(state.fullFileTree, '');
-        if (_onGenerateTagCloud) _onGenerateTagCloud(state.fullFileTree);
+        if (_onGenerateTagCloud) _onGenerateTagCloud();
     }
 };
 

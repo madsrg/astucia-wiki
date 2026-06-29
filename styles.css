@@ -337,14 +337,19 @@ body {
 #tags-display { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
 .tag { background-color: var(--accent-blue); color: white; padding: 4px 8px; border-radius: 12px; font-size: 0.8rem; display: flex; align-items: center; }
 .tag button { background: none; border: none; color: white; margin-left: 6px; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0; }
+.tag-input-wrap { position: relative; display: inline-block; }
 #tag-input { border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 8px; width: 200px; font-family: 'JetBrains Mono', monospace; }
 #tag-input:focus { outline: 2px solid var(--accent-blue); border-color: var(--accent-blue); }
+.tag-suggestions { position: absolute; bottom: calc(100% + 2px); left: 0; z-index: 200; background: #fff; border: 1px solid var(--border-color); border-radius: 4px; box-shadow: 0 -4px 12px rgba(0,0,0,.1); list-style: none; margin: 0; padding: 4px 0; min-width: 200px; max-height: 220px; overflow-y: auto; }
+.tag-suggestions.hidden { display: none; }
+.tag-suggestion-item { padding: 5px 10px; cursor: pointer; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag-suggestion-item:hover, .tag-suggestion-item.active { background: var(--accent-blue); color: #fff; }
 
 /* Search Pane Styles */
 #tags-pane .search-form {
     display: flex;
     gap: 0.5rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0.3rem;
 }
 
 #tags-pane #search-query-input {
@@ -364,7 +369,7 @@ body {
 }
 
 /* Tag Cloud Styles */
-#tag-cloud { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+#tag-cloud { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem; }
 .tag-cloud-item { background-color: var(--accent-gray); color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; font-size: 0.85rem; }
 .tag-cloud-item:hover { background-color: var(--accent-blue); }
 
@@ -398,7 +403,7 @@ body {
 
 .sr-space-badge { font-size: 0.68rem; font-weight: 600; padding: 0.15em 0.55em; border-radius: 4px; background: #e6fffa; color: #234e52; flex-shrink: 0; }
 
-.search-all-spaces-row { padding: 0.2rem 0.1rem 0.4rem; }
+.search-all-spaces-row { padding: 0.2rem 0.1rem 0; }
 .search-all-spaces-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #718096; cursor: pointer; user-select: none; }
 .search-all-spaces-label input[type="checkbox"] { cursor: pointer; }
 

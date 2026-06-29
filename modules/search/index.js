@@ -4,22 +4,14 @@ import { loadPage } from '../page_view/index.js';
 import { revealAndSelectFile, refreshFileTree } from '../file_tree/index.js';
 import { t } from '../i18n/index.js';
 
-export const generateTagCloud = (fileTree) => {
-    const allTags = {};
-    const collectTags = (items) => {
-        items.forEach(item => {
-            if (item.tags) item.tags.forEach(tag => { allTags[tag] = (allTags[tag] || 0) + 1; });
-            if (item.children) collectTags(item.children);
-        });
-    };
-    collectTags(fileTree);
-
+export const generateTagCloud = async () => {
+    const result = await api.call('get_tag_cloud');
     const tagCloud = document.getElementById('tag-cloud');
     tagCloud.innerHTML = '';
-    Object.keys(allTags).sort().forEach(tag => {
+    (result.data || []).forEach(({ tag, count }) => {
         const tagEl = document.createElement('span');
         tagEl.className = 'tag-cloud-item';
-        tagEl.textContent = `${tag} (${allTags[tag]})`;
+        tagEl.textContent = `${tag} (${count})`;
         tagEl.dataset.tag = tag;
         tagCloud.appendChild(tagEl);
     });
@@ -173,8 +165,8 @@ export const init = () => {
     tagCloud.addEventListener('click', async (e) => {
         if (e.target.classList.contains('tag-cloud-item')) {
             const tag = e.target.dataset.tag;
-            const result = await api.call('get_pages_by_tag', { tag });
-            if (result.success) displaySearchResults(t('search.tag-results', { tag }), result.data);
+            const result = await api.call('get_pages_by_tag', { tag, all_spaces: '1' });
+            if (result.success) displaySearchResults(t('search.tag-results', { tag }), result.data, !!result.cross_space);
         }
     });
 
