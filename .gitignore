@@ -1,3 +1,4 @@
 vendor/
 CLAUDE.md
 config.php
+.claude/
