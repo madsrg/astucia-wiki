@@ -6,6 +6,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.6.3] — 2026-06-30
+
+### Fixed
+- Release workflow updated to `actions/checkout@v5` for Node.js 24 compatibility
+
 ## [2026.6.2] — 2026-06-29
 
 ### Added
