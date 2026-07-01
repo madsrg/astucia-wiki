@@ -146,7 +146,7 @@ export default {
 
     'admin.title': 'Admin', 'admin.tab.users': 'Benutzer', 'admin.tab.requests': 'Anfragen',
     'admin.tab.logs': 'Zugriffsprotokoll', 'admin.tab.errorlog': 'Fehlerprotokoll',
-    'admin.tab.diag': 'Diagnose', 'admin.tab.ai': 'KI-Benutzer', 'admin.tab.api': 'API-Konten',
+    'admin.tab.diag': 'Diagnose', 'admin.tab.ai': 'KI-Benutzer', 'admin.tab.api': 'API-Konten', 'admin.tab.mcp': 'MCP-Server',
     'admin.role-hint': 'Admin — vollständiger Zugriff einschließlich Benutzerverwaltung · Editor — Lesen und Schreiben · Leser — nur Lesen. Neue Benutzer werden über die Registerkarte „Anfragen" hinzugefügt, nachdem sie sich zum ersten Mal angemeldet haben.',
     'admin.unsaved': 'Nicht gespeicherte Änderungen', 'admin.save-btn': 'Änderungen speichern',
     'admin.new-ai-btn': '+ Neuer KI-Benutzer', 'admin.new-api-btn': '+ Neues API-Konto',

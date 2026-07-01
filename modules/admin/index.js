@@ -40,7 +40,7 @@ const updateRequestsBadge = () => {
 
 const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
-    ai:         ['ai', 'jobs'],
+    ai:         ['ai', 'jobs', 'mcp'],
     monitoring: ['logs', 'errorlog', 'diagnostics'],
     content:    ['reindex', 'deleted'],
 };
@@ -67,6 +67,7 @@ const switchTab = (name) => {
     document.getElementById('admin-footer-ai')?.classList.toggle('hidden',           name !== 'ai');
     document.getElementById('admin-footer-api')?.classList.toggle('hidden',           name !== 'api');
     document.getElementById('admin-footer-jobs')?.classList.toggle('hidden',         name !== 'jobs');
+    document.getElementById('admin-footer-mcp')?.classList.toggle('hidden',          name !== 'mcp');
     document.getElementById('admin-footer-deleted')?.classList.toggle('hidden',      name !== 'deleted');
     document.getElementById('admin-footer-reindex')?.classList.toggle('hidden',      name !== 'reindex');
     const activeTab = document.querySelector(`.admin-tab[data-tab="${name}"]`);
@@ -80,6 +81,7 @@ const switchTab = (name) => {
     if (name === 'jobs')        loadAgentJobs();
     if (name === 'deleted')     loadDeletedPages();
     if (name === 'reindex')     loadReindexPane();
+    if (name === 'mcp')         loadMcpServers();
 };
 
 // ── Users tab ─────────────────────────────────────────────────────────────────
@@ -823,6 +825,7 @@ const openAiUserForm = (u) => {
                     <textarea id="ai-f-prompt" class="form-control admin-ai-prompt" rows="10" placeholder="${t('admin.ai.prompt-ph')}">${escHtml(cfg.system_prompt || '')}</textarea>
                 </div>
             </div>
+            <div id="ai-f-mcp-section"></div>
             ${!isNew ? `
             <div class="admin-ai-form-section-header">${t('admin.ai.svc-token')}</div>
             <div class="admin-ai-form-section">
@@ -845,6 +848,42 @@ const openAiUserForm = (u) => {
     document.getElementById('ai-f-temperature').addEventListener('input', (e) => {
         document.getElementById('ai-f-temperature-display').textContent = parseFloat(e.target.value).toFixed(2).replace(/\.?0+$/, '') || '0';
     });
+
+    // Async: load MCP server checkboxes
+    (async () => {
+        const mcpRes = await api.call('admin_get_mcp_servers');
+        const servers = mcpRes.data || [];
+        const section = document.getElementById('ai-f-mcp-section');
+        if (!section) return;
+        if (!servers.length) return;
+        const activeMcpIds    = cfg.mcp_server_ids   ?? [];
+        const activeMcpInstrs = cfg.mcp_instructions ?? {};
+        section.innerHTML = `
+            <div class="admin-ai-form-section-header">MCP Servers</div>
+            <div class="admin-ai-form-section">
+                <p class="form-hint" style="margin-bottom:0.75rem">Select which MCP servers this AI user can call as tools. Add instructions to guide the AI on when and how to use each server's tools.</p>
+                ${servers.map(s => {
+                    const active = activeMcpIds.includes(s.id);
+                    return `<div class="ai-f-mcp-row" style="margin-bottom:0.6rem">
+                        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+                            <input type="checkbox" class="ai-f-mcp-cb" value="${escHtml(s.id)}" ${active ? 'checked' : ''}>
+                            <span style="font-weight:600">${escHtml(s.name)}</span>
+                            <span style="font-size:0.78rem;color:var(--text-muted)">${escHtml(s.url)}</span>
+                        </label>
+                        <div class="ai-f-mcp-instr-wrap" style="margin-top:0.35rem;padding-left:1.4rem;${active ? '' : 'display:none'}">
+                            <textarea class="form-control ai-f-mcp-instr" data-mcp-id="${escHtml(s.id)}" rows="2"
+                                placeholder="When should the AI use this server? E.g. &quot;Search Microsoft Learn whenever the user asks about Azure, .NET, or any Microsoft technology.&quot;"
+                                style="font-size:0.82rem">${escHtml(activeMcpInstrs[s.id] || '')}</textarea>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>`;
+        section.querySelectorAll('.ai-f-mcp-cb').forEach(cb => {
+            cb.addEventListener('change', () => {
+                cb.closest('.ai-f-mcp-row').querySelector('.ai-f-mcp-instr-wrap').style.display = cb.checked ? '' : 'none';
+            });
+        });
+    })();
 
     document.getElementById('ai-f-cancel-btn').addEventListener('click', () => {
         renderAiUserList();
@@ -884,8 +923,15 @@ const saveAiUser = async (uid) => {
     const context_messages = parseInt(document.getElementById('ai-f-context')?.value || '10', 10);
     const temperature      = parseFloat(document.getElementById('ai-f-temperature')?.value || '0.7');
     const max_tokens       = parseInt(document.getElementById('ai-f-tokens')?.value || '4096', 10);
+    const mcp_server_ids   = [...document.querySelectorAll('.ai-f-mcp-cb:checked')].map(cb => cb.value);
+    const mcp_instructions = {};
+    document.querySelectorAll('.ai-f-mcp-instr').forEach(ta => {
+        const v = ta.value.trim();
+        if (v) mcp_instructions[ta.dataset.mcpId] = v;
+    });
 
-    if (!name) { showToast(t('admin.ai.name-req'), 'error'); return; }
+    if (!name)    { showToast(t('admin.ai.name-req'), 'error'); return; }
+    if (!api_url) { showToast('API URL is required.', 'error'); return; }
 
     const saveBtn = document.getElementById('ai-f-save-btn');
     saveBtn.disabled = true;
@@ -896,7 +942,7 @@ const saveAiUser = async (uid) => {
         uid: uid !== null ? String(uid) : '',
         source_uid,
         name, role,
-        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, context_messages, temperature, max_tokens }),
+        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, context_messages, temperature, max_tokens, mcp_server_ids, mcp_instructions }),
     }, 'POST');
 
     saveBtn.disabled = false;
@@ -1436,6 +1482,208 @@ const deleteJob = async (job) => {
     }
 };
 
+// ── MCP Servers tab ───────────────────────────────────────────────────────────
+
+let mcpServers = [];
+
+const loadMcpServers = async () => {
+    const container = document.getElementById('admin-mcp-list');
+    if (container) container.innerHTML = `<p class="admin-loading">${t('admin.users.loading')}</p>`;
+    const result = await api.call('admin_get_mcp_servers');
+    if (result.success) {
+        mcpServers = result.data || [];
+        renderMcpServerList();
+    } else {
+        if (container) container.innerHTML = `<p class="admin-empty">${t('admin.users.failed')}</p>`;
+    }
+};
+
+const renderMcpServerList = () => {
+    const container = document.getElementById('admin-mcp-list');
+    if (!container) return;
+
+    if (!mcpServers.length) {
+        container.innerHTML = '<p class="admin-empty">No MCP servers configured. Add one to give AI users access to external tools.</p>';
+        return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'admin-table';
+    table.innerHTML = '<thead><tr><th>Name</th><th>URL</th><th>Auth</th><th></th></tr></thead>';
+    const tbody = document.createElement('tbody');
+
+    mcpServers.forEach(s => {
+        const tr = document.createElement('tr');
+
+        const tdName = document.createElement('td');
+        tdName.className = 'admin-td-name';
+        tdName.textContent = s.name;
+
+        const tdUrl = document.createElement('td');
+        tdUrl.className = 'admin-td-email';
+        tdUrl.textContent = s.url.length > 50 ? s.url.slice(0, 50) + '…' : s.url;
+        tdUrl.title = s.url;
+
+        const tdAuth = document.createElement('td');
+        tdAuth.innerHTML = s.auth_token_set
+            ? '<span class="admin-auth-badge" style="background:#667eea;color:#fff">TOKEN</span>'
+            : '<span style="color:var(--text-muted);font-size:0.8rem">none</span>';
+
+        const tdActions = document.createElement('td');
+        tdActions.style.cssText = 'white-space:nowrap;display:flex;gap:4px;align-items:center;';
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-sm btn-secondary';
+        editBtn.textContent = 'Edit';
+        editBtn.addEventListener('click', () => openMcpServerForm(s));
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-sm btn-danger admin-del-btn';
+        delBtn.title = 'Delete';
+        delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+        delBtn.addEventListener('click', () => deleteMcpServer(s));
+
+        tdActions.append(editBtn, delBtn);
+        tr.append(tdName, tdUrl, tdAuth, tdActions);
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.innerHTML = '';
+    container.appendChild(table);
+};
+
+const openMcpServerForm = (s) => {
+    const container = document.getElementById('admin-mcp-list');
+    if (!container) return;
+    const isNew = !s;
+
+    container.innerHTML = `
+        <div class="admin-ai-form">
+            <div class="admin-ai-form-section">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="mcp-f-name" class="form-control" value="${escHtml(s?.name || '')}" placeholder="e.g. My Tool Server">
+                </div>
+                <div class="form-group">
+                    <label>URL</label>
+                    <input type="url" id="mcp-f-url" class="form-control" value="${escHtml(s?.url || '')}" placeholder="https://mcp.example.com">
+                    <p class="form-hint">Base URL of the MCP server. Must support HTTP transport with <code>/tools/list</code> and <code>/tools/call</code> endpoints.</p>
+                </div>
+                <div class="form-group">
+                    <label>Auth Token ${s?.auth_token_set ? '<span class="admin-ai-key-set">(set)</span>' : ''}</label>
+                    <input type="password" id="mcp-f-token" class="form-control" placeholder="${isNew ? 'Optional Bearer token' : 'Leave blank to keep existing'}">
+                </div>
+            </div>
+            <div id="mcp-f-test-result" style="margin-bottom:0.5rem"></div>
+            <div class="admin-ai-form-actions">
+                <button type="button" id="mcp-f-cancel-btn" class="btn btn-secondary">Cancel</button>
+                <button type="button" id="mcp-f-test-btn" class="btn btn-secondary">Test Connection</button>
+                <button type="button" id="mcp-f-save-btn" class="btn btn-green">Save</button>
+            </div>
+        </div>`;
+
+    document.getElementById('mcp-f-cancel-btn').addEventListener('click', () => {
+        renderMcpServerList();
+        document.getElementById('admin-mcp-add-btn').classList.remove('hidden');
+    });
+
+    document.getElementById('mcp-f-test-btn').addEventListener('click', async () => {
+        const url   = document.getElementById('mcp-f-url')?.value.trim();
+        const token = document.getElementById('mcp-f-token')?.value;
+        const btn   = document.getElementById('mcp-f-test-btn');
+        const out   = document.getElementById('mcp-f-test-result');
+        if (!url) { showToast('Enter a URL first.', 'error'); return; }
+        btn.disabled = true;
+        btn.textContent = 'Testing…';
+        const params = { url };
+        if (token) params.auth_token = token;
+        else if (s?.id) params.id = s.id;
+        const res = await api.call('admin_test_mcp_server', params, 'POST');
+        btn.disabled = false;
+        btn.textContent = 'Test Connection';
+        if (res.success) {
+            const tools = res.tools || [];
+            const rows  = tools.map(t =>
+                `<tr><td style="font-weight:600;vertical-align:top;width:30%;word-break:break-all">${escHtml(t.name)}</td><td style="color:var(--text-muted)">${escHtml(t.description)}</td></tr>`
+            ).join('');
+            out.innerHTML = `<p style="color:#48bb78;font-size:0.85rem;margin-bottom:${tools.length ? '0.5rem' : '0'}">✓ Connected — ${res.tool_count} tool${res.tool_count !== 1 ? 's' : ''} found</p>`
+                + (tools.length ? `<div style="max-height:220px;overflow-y:auto"><table class="admin-table">${rows}</table></div>` : '');
+        } else {
+            out.innerHTML = `<p style="color:#fc8181;font-size:0.85rem">✗ ${escHtml(res.message || 'Connection failed')}</p>`;
+        }
+    });
+
+    document.getElementById('mcp-f-save-btn').addEventListener('click', () => saveMcpServer(s?.id ?? null));
+
+    document.getElementById('admin-mcp-add-btn').classList.add('hidden');
+};
+
+const saveMcpServer = async (id) => {
+    const name  = document.getElementById('mcp-f-name')?.value.trim();
+    const url   = document.getElementById('mcp-f-url')?.value.trim();
+    const token = document.getElementById('mcp-f-token')?.value || '';
+    if (!name) { showToast('Name is required.', 'error'); return; }
+    if (!url)  { showToast('URL is required.', 'error'); return; }
+
+    const saveBtn = document.getElementById('mcp-f-save-btn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+
+    const result = await api.call('admin_save_mcp_server', { id: id || '', name, url, auth_token: token }, 'POST');
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+
+    if (result.success) {
+        showToast('MCP server saved.', 'success');
+        document.getElementById('admin-mcp-add-btn').classList.remove('hidden');
+        await loadMcpServers();
+    } else {
+        showToast(result.message || 'Failed to save.', 'error');
+    }
+};
+
+const deleteMcpServer = async (s) => {
+    const ok = await confirmModal(`Delete MCP server "${s.name}"?`, { confirmLabel: 'Delete', dangerous: true });
+    if (!ok) return;
+    const result = await api.call('admin_delete_mcp_server', { id: s.id }, 'POST');
+    if (result.success) {
+        showToast('MCP server deleted.', 'success');
+        await loadMcpServers();
+    } else {
+        showToast(result.message || 'Failed to delete.', 'error');
+    }
+};
+
+const testMcpServer = async (s, btn) => {
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '…';
+    const res = await api.call('admin_test_mcp_server', { id: s.id }, 'POST');
+    btn.disabled = false;
+    btn.textContent = orig;
+
+    const existing = btn.parentElement.querySelector('.mcp-test-result');
+    if (existing) existing.remove();
+
+    const panel = document.createElement('div');
+    panel.className = 'mcp-test-result';
+    panel.style.cssText = 'margin-top:6px;font-size:0.8rem;';
+
+    if (res.success) {
+        const tools = res.tools || [];
+        const rows  = tools.map(t =>
+            `<tr><td style="font-weight:600;vertical-align:top;width:30%;word-break:break-all">${escHtml(t.name)}</td><td style="color:var(--text-muted)">${escHtml(t.description)}</td></tr>`
+        ).join('');
+        panel.innerHTML = `<span style="color:#48bb78">✓ ${res.tool_count} tool${res.tool_count !== 1 ? 's' : ''} found</span>`
+            + (tools.length ? `<div style="max-height:180px;overflow-y:auto;margin-top:6px"><table class="admin-table">${rows}</table></div>` : '');
+    } else {
+        panel.innerHTML = `<span style="color:#fc8181">✗ ${escHtml(res.message || 'Connection failed')}</span>`;
+    }
+
+    btn.parentElement.appendChild(panel);
+};
+
 // ── Deleted Pages tab ─────────────────────────────────────────────────────────
 
 const loadDeletedPages = async () => {
@@ -1648,6 +1896,7 @@ export const init = () => {
     document.getElementById('admin-ai-add-btn')?.addEventListener('click', () => openAiUserForm(null));
     document.getElementById('admin-api-add-btn')?.addEventListener('click', () => openApiAccountForm(null));
     document.getElementById('admin-jobs-add-btn')?.addEventListener('click', () => openJobForm(null));
+    document.getElementById('admin-mcp-add-btn')?.addEventListener('click', () => openMcpServerForm(null));
 
     // OTP-specific UI
     if (window.WIKI_AUTH_MODE === 'otp') {

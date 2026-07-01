@@ -146,7 +146,7 @@ export default {
 
     'admin.title': 'Admin', 'admin.tab.users': 'Utilisateurs', 'admin.tab.requests': 'Demandes',
     'admin.tab.logs': 'Journal d\'accès', 'admin.tab.errorlog': 'Journal d\'erreurs',
-    'admin.tab.diag': 'Diagnostics', 'admin.tab.ai': 'Utilisateurs IA', 'admin.tab.api': 'Comptes API',
+    'admin.tab.diag': 'Diagnostics', 'admin.tab.ai': 'Utilisateurs IA', 'admin.tab.api': 'Comptes API', 'admin.tab.mcp': 'Serveurs MCP',
     'admin.role-hint': 'Admin — accès complet incluant la gestion des utilisateurs · Éditeur — lecture et écriture · Lecteur — lecture seule. Les nouveaux utilisateurs sont ajoutés via l\'onglet Demandes après leur première connexion.',
     'admin.unsaved': 'Modifications non enregistrées', 'admin.save-btn': 'Enregistrer les modifications',
     'admin.new-ai-btn': '+ Nouvel utilisateur IA', 'admin.new-api-btn': '+ Nouveau compte API',

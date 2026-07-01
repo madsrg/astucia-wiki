@@ -6,6 +6,19 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.1] — 2026-07-01
+
+### Added
+- **MCP server integration** — Admin → AI → MCP Servers tab to register HTTP/SSE MCP servers; AI Users can enable per-server tool access for both agent jobs and page chat
+- **MCP tool guidance** — per-MCP-server instruction field on AI User form to steer the LLM on when and how to use each server's tools, injected into the system prompt at runtime
+- **MCP tool visibility** — AI replies append a `MCP tools used: …` footer whenever an MCP tool is called, in both agent jobs and chat
+
+### Fixed
+- MCP tool calls returning a boolean instead of a string to the LLM (PHP `&&` operator does not return the right-hand value unlike JavaScript)
+- MCP servers using JSON-RPC 2.0 / Streamable HTTP transport (e.g. Microsoft Learn) returned HTTP 400 — now POSTs JSON-RPC envelopes to the base URL instead of REST-style `/tools/list` paths
+- Toasts displayed behind modal lightboxes — now always on top via `z-index: 9999`
+- AI User could be saved without an API URL
+
 ## [2026.6.3] — 2026-06-30
 
 ### Fixed

@@ -147,7 +147,7 @@ export default {
 
     'admin.title': 'Admin', 'admin.tab.users': 'Brugere', 'admin.tab.requests': 'Anmodninger',
     'admin.tab.logs': 'Adgangslog', 'admin.tab.errorlog': 'Fejllog',
-    'admin.tab.diag': 'Diagnostik', 'admin.tab.ai': 'AI-brugere', 'admin.tab.api': 'API-konti',
+    'admin.tab.diag': 'Diagnostik', 'admin.tab.ai': 'AI-brugere', 'admin.tab.api': 'API-konti', 'admin.tab.mcp': 'MCP-servere',
     'admin.role-hint': 'Admin — fuld adgang inkl. brugeradministration · Editor — læs og skriv · Læser — kun læsning. Nye brugere tilføjes via fanen Anmodninger, efter de har logget ind første gang.',
     'admin.unsaved': 'Ikke-gemte ændringer', 'admin.save-btn': 'Gem ændringer',
     'admin.new-ai-btn': '+ Ny AI-bruger', 'admin.new-api-btn': '+ Ny API-konto',

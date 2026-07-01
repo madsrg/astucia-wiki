@@ -227,6 +227,51 @@ if (isset($_REQUEST['action'])) {
         return 'wk_sys_' . bin2hex(random_bytes(24));
     }
 
+    function _load_mcp_servers(): array {
+        if (!defined('WIKI_SYSTEM_DATA')) return [];
+        $file = WIKI_SYSTEM_DATA . 'mcp_servers.json';
+        return file_exists($file) ? (json_decode(file_get_contents($file), true) ?? []) : [];
+    }
+
+    function _save_mcp_servers(array $servers): void {
+        if (!defined('WIKI_SYSTEM_DATA')) return;
+        file_put_contents(WIKI_SYSTEM_DATA . 'mcp_servers.json', json_encode($servers, JSON_PRETTY_PRINT));
+    }
+
+    function _mcp_jsonrpc_test(string $base_url, string $auth_token, string $method, array $params = []): array {
+        if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'curl not available', 'data' => null];
+        $headers = [
+            'Content-Type: application/json',
+            'Accept: application/json, text/event-stream',
+        ];
+        if ($auth_token) $headers[] = 'Authorization: Bearer ' . $auth_token;
+        $body = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => $method, 'params' => $params ?: (object)[]]);
+        $ch = curl_init(rtrim($base_url, '/'));
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $body,
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_TIMEOUT        => 15,
+        ]);
+        $raw  = curl_exec($ch);
+        $err  = curl_error($ch);
+        $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if (!$raw) return ['ok' => false, 'error' => $err ?: 'No response', 'data' => null];
+        if (str_contains($raw, 'data:')) {
+            foreach (explode("\n", $raw) as $line) {
+                $line = trim($line);
+                if (str_starts_with($line, 'data:')) { $raw = trim(substr($line, 5)); break; }
+            }
+        }
+        $data = json_decode($raw, true);
+        if (!$data) return ['ok' => false, 'error' => "HTTP {$http}: invalid JSON", 'data' => null];
+        if (isset($data['error'])) return ['ok' => false, 'error' => $data['error']['message'] ?? 'JSON-RPC error', 'data' => null];
+        if ($http >= 400) return ['ok' => false, 'error' => "HTTP {$http}", 'data' => $data];
+        return ['ok' => true, 'error' => null, 'data' => $data['result'] ?? []];
+    }
+
     function wiki_error_log_dir() {
         if (!defined('LOG_DIR') || !LOG_DIR) return null;
         return rtrim(LOG_DIR, '/') . '/';
@@ -462,7 +507,35 @@ if (isset($_REQUEST['action'])) {
 
         $full_system = $wiki_ctx . $system_prompt;
 
-        $tools  = get_wiki_tools($provider);
+        $tools          = get_wiki_tools($provider);
+        $mcp_tool_map_c    = [];
+        $mcp_calls_c       = [];
+        $mcp_server_ids_c  = $config['mcp_server_ids']   ?? [];
+        $mcp_instructions_c = $config['mcp_instructions'] ?? [];
+        if ($mcp_server_ids_c && defined('WIKI_SYSTEM_DATA')) {
+            $mcp_file_c = WIKI_SYSTEM_DATA . 'mcp_servers.json';
+            if (file_exists($mcp_file_c)) {
+                $all_mcp_c   = json_decode(file_get_contents($mcp_file_c), true) ?? [];
+                $built_in    = array_column(array_map(fn($t) => ($t['function'] ?? $t), $tools), 'name');
+                $mcp_guidance_c = '';
+                foreach ($all_mcp_c as $mcp_srv_c) {
+                    if (!in_array($mcp_srv_c['id'] ?? '', $mcp_server_ids_c, true)) continue;
+                    foreach (_mcp_fetch_tools($mcp_srv_c) as $mt) {
+                        if (in_array($mt['name'], $built_in, true) || isset($mcp_tool_map_c[$mt['name']])) continue;
+                        $mcp_tool_map_c[$mt['name']] = $mcp_srv_c;
+                        if ($provider === 'anthropic') {
+                            $tools[] = ['name' => $mt['name'], 'description' => $mt['description'], 'input_schema' => $mt['params']];
+                        } else {
+                            $tools[] = ['type' => 'function', 'function' => ['name' => $mt['name'], 'description' => $mt['description'], 'parameters' => $mt['params']]];
+                        }
+                    }
+                    $instr_c = trim($mcp_instructions_c[$mcp_srv_c['id'] ?? ''] ?? '');
+                    if ($instr_c) $mcp_guidance_c .= "\n[" . $mcp_srv_c['name'] . '] ' . $instr_c;
+                }
+                if ($mcp_guidance_c) $full_system .= "\n\nMCP tool guidance:" . $mcp_guidance_c;
+            }
+        }
+
         // Respect /newTopic sentinels: only include messages after the last one
         $all_msgs = array_values(array_filter($chat_data['messages'], fn($m) => empty($m['pending'])));
         $nt_sentinel = null;
@@ -582,10 +655,16 @@ if (isset($_REQUEST['action'])) {
                         $_tname = $tu['name'] ?? 'unknown';
                         $tools_log[] = $_tname;
                         $write_status('executing_tool', ['tool' => $_tname, 'iteration' => $iter + 1]);
+                        if (isset($mcp_tool_map_c[$_tname])) {
+                            $mcp_calls_c[] = $_tname;
+                            $_tool_result = _mcp_call_tool($mcp_tool_map_c[$_tname], $_tname, $tu['input'] ?? []);
+                        } else {
+                            $_tool_result = execute_ai_tool($_tname, $tu['input'] ?? [], $ai_user, $indexer, $space_dir);
+                        }
                         $results[] = [
                             'type'        => 'tool_result',
                             'tool_use_id' => $tu['id'],
-                            'content'     => execute_ai_tool($_tname, $tu['input'] ?? [], $ai_user, $indexer, $space_dir),
+                            'content'     => $_tool_result,
                         ];
                     }
                     $messages[] = ['role' => 'user', 'content' => $results];
@@ -614,10 +693,16 @@ if (isset($_REQUEST['action'])) {
                         $tools_log[] = $_tname;
                         $write_status('executing_tool', ['tool' => $_tname, 'iteration' => $iter + 1]);
                         $fn_args = json_decode($tc['function']['arguments'] ?? '{}', true) ?? [];
+                        if (isset($mcp_tool_map_c[$_tname])) {
+                            $mcp_calls_c[] = $_tname;
+                            $_tool_result = _mcp_call_tool($mcp_tool_map_c[$_tname], $_tname, $fn_args);
+                        } else {
+                            $_tool_result = execute_ai_tool($_tname, $fn_args, $ai_user, $indexer, $space_dir);
+                        }
                         $messages[] = [
                             'role'         => 'tool',
                             'tool_call_id' => $tc['id'] ?? '',
-                            'content'      => execute_ai_tool($_tname, $fn_args, $ai_user, $indexer, $space_dir),
+                            'content'      => $_tool_result,
                         ];
                     }
                     continue;
@@ -625,6 +710,10 @@ if (isset($_REQUEST['action'])) {
                 $reply = trim($choice['message']['content'] ?? '');
                 break;
             }
+        }
+
+        if ($reply && $mcp_calls_c) {
+            $reply .= "\n\n---\n*MCP tools used: " . implode(', ', array_unique($mcp_calls_c)) . '*';
         }
 
         // If no reply was produced, post a visible error message so the user is not left waiting
@@ -687,7 +776,8 @@ if (isset($_REQUEST['action'])) {
                       'admin_delete_api_account', 'admin_regenerate_api_token',
                       'admin_get_agent_jobs', 'admin_save_agent_job', 'admin_delete_agent_job', 'admin_run_agent_job',
                       'git_deleted_files', 'git_restore_deleted',
-                      'admin_reindex'];
+                      'admin_reindex',
+                      'admin_get_mcp_servers', 'admin_save_mcp_server', 'admin_delete_mcp_server', 'admin_test_mcp_server'];
     $requested_action = $_REQUEST['action'];
     $current_role     = get_current_role();
 
@@ -2966,6 +3056,8 @@ if (isset($_REQUEST['action'])) {
                             'context_messages' => (int)( $ai_cfg_in['context_messages'] ?? $ec['context_messages'] ?? 10),
                             'max_tokens'       => (int)( $ai_cfg_in['max_tokens']       ?? $ec['max_tokens']       ?? 4096),
                             'temperature'      => (float)($ai_cfg_in['temperature']      ?? $ec['temperature']      ?? 0.7),
+                            'mcp_server_ids'    => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? $ec['mcp_server_ids'] ?? []))),
+                            'mcp_instructions'  => (array)($ai_cfg_in['mcp_instructions'] ?? $ec['mcp_instructions'] ?? []),
                         ];
                         if (!empty($ai_cfg_in['api_key'])) $nc['api_key'] = $ai_cfg_in['api_key'];
                         elseif (!empty($ec['api_key']))     $nc['api_key'] = $ec['api_key'];
@@ -3003,6 +3095,8 @@ if (isset($_REQUEST['action'])) {
                             'context_messages' => (int)( $ai_cfg_in['context_messages'] ?? 10),
                             'max_tokens'       => (int)( $ai_cfg_in['max_tokens']       ?? 4096),
                             'temperature'      => (float)($ai_cfg_in['temperature']      ?? 0.7),
+                            'mcp_server_ids'   => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? []))),
+                            'mcp_instructions' => (array)($ai_cfg_in['mcp_instructions'] ?? []),
                         ],
                     ];
                 }
@@ -3221,6 +3315,84 @@ if (isset($_REQUEST['action'])) {
                 $aj_data4['jobs'][$run_job_idx]['last_log_file'] = $log_file2;
                 file_put_contents($aj_file4, json_encode($aj_data4, JSON_PRETTY_PRINT));
                 echo json_encode(['success' => true, 'status' => $run_status, 'reply' => $run_result['reply'] ?? '', 'error' => $run_result['error'] ?? null, 'log_file' => $log_file2]);
+                break;
+
+            case 'admin_get_mcp_servers':
+                $mcp_out = array_map(fn($s) => [
+                    'id'             => $s['id']        ?? '',
+                    'name'           => $s['name']       ?? '',
+                    'url'            => $s['url']        ?? '',
+                    'auth_token_set' => !empty($s['auth_token']),
+                    'created_at'     => $s['created_at'] ?? '',
+                ], _load_mcp_servers());
+                echo json_encode(['success' => true, 'data' => $mcp_out]);
+                break;
+
+            case 'admin_save_mcp_server':
+                $mcp_id    = trim($_POST['id']         ?? '');
+                $mcp_name  = trim($_POST['name']       ?? '');
+                $mcp_url   = trim($_POST['url']        ?? '');
+                $mcp_token = $_POST['auth_token']      ?? '';
+                if (!$mcp_name) throw new Exception('MCP server name is required.');
+                if (!$mcp_url)  throw new Exception('MCP server URL is required.');
+                $mcp_servers = _load_mcp_servers();
+                if ($mcp_id !== '') {
+                    $found_mcp = false;
+                    foreach ($mcp_servers as &$_ms) {
+                        if (($_ms['id'] ?? '') !== $mcp_id) continue;
+                        $_ms['name'] = $mcp_name;
+                        $_ms['url']  = $mcp_url;
+                        if ($mcp_token !== '') $_ms['auth_token'] = $mcp_token;
+                        $found_mcp = true;
+                        break;
+                    }
+                    unset($_ms);
+                    if (!$found_mcp) throw new Exception('MCP server not found.');
+                } else {
+                    $mcp_servers[] = [
+                        'id'         => bin2hex(random_bytes(16)),
+                        'name'       => $mcp_name,
+                        'url'        => $mcp_url,
+                        'auth_token' => $mcp_token,
+                        'created_at' => date('c'),
+                    ];
+                }
+                _save_mcp_servers($mcp_servers);
+                echo json_encode(['success' => true]);
+                break;
+
+            case 'admin_delete_mcp_server':
+                $del_mcp_id = trim($_POST['id'] ?? '');
+                if (!$del_mcp_id) throw new Exception('Missing id.');
+                _save_mcp_servers(array_values(array_filter(_load_mcp_servers(), fn($s) => ($s['id'] ?? '') !== $del_mcp_id)));
+                echo json_encode(['success' => true]);
+                break;
+
+            case 'admin_test_mcp_server':
+                $test_mcp_id    = trim($_POST['id']         ?? '');
+                $test_mcp_url   = trim($_POST['url']        ?? '');
+                $test_mcp_token = $_POST['auth_token']      ?? '';
+                if ($test_mcp_id !== '') {
+                    $found_test = null;
+                    foreach (_load_mcp_servers() as $_ts) {
+                        if (($_ts['id'] ?? '') === $test_mcp_id) { $found_test = $_ts; break; }
+                    }
+                    if (!$found_test) throw new Exception('MCP server not found.');
+                    $test_mcp_url   = $found_test['url'];
+                    $test_mcp_token = $found_test['auth_token'] ?? '';
+                }
+                if (!$test_mcp_url) throw new Exception('URL is required.');
+                $test_res = _mcp_jsonrpc_test($test_mcp_url, $test_mcp_token, 'tools/list');
+                if (!$test_res['ok']) {
+                    echo json_encode(['success' => false, 'message' => 'Connection failed: ' . $test_res['error']]);
+                    break;
+                }
+                $raw_tools  = $test_res['data']['tools'] ?? [];
+                $tools_out  = array_map(fn($t) => [
+                    'name'        => $t['name']        ?? '',
+                    'description' => $t['description'] ?? '',
+                ], $raw_tools);
+                echo json_encode(['success' => true, 'tool_count' => count($tools_out), 'tools' => $tools_out]);
                 break;
 
             default:

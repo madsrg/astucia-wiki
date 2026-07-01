@@ -346,6 +346,7 @@ export default {
     'admin.tab.jobs':          'Agent Jobs',
     'admin.tab.deleted':       'Deleted Pages',
     'admin.tab.reindex':       'Index Pages',
+    'admin.tab.mcp':           'MCP Servers',
 
     'admin.reindex.desc':          'The page index maps each page to a stable ID and tracks tags. It is rebuilt automatically when pages are created or renamed through the wiki. If you manually add, remove, or rename files on the filesystem, the index may become out of sync — rebuild it here to fix missing pages, broken links, or stale search results.',
     'admin.reindex.space-label':   'Space to reindex',

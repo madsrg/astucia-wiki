@@ -57,6 +57,74 @@ function _ai_git_commit(string $abs_path, string $git_name, string $git_email, s
     ], $git_root['root']);
 }
 
+function _mcp_jsonrpc(string $base_url, string $auth_token, string $method, array $params, int $timeout = 15): array {
+    $headers = [
+        'Content-Type: application/json',
+        'Accept: application/json, text/event-stream',
+    ];
+    if ($auth_token) $headers[] = 'Authorization: Bearer ' . $auth_token;
+    $body = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => $method, 'params' => $params ?: (object)[]]);
+    $ch = curl_init(rtrim($base_url, '/'));
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $body,
+        CURLOPT_HTTPHEADER     => $headers,
+        CURLOPT_TIMEOUT        => $timeout,
+    ]);
+    $raw  = curl_exec($ch);
+    $err  = curl_error($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if (!$raw) return ['error' => $err ?: 'no response'];
+    // SSE stream: grab the first data: line
+    if (str_contains($raw, 'data:')) {
+        foreach (explode("\n", $raw) as $line) {
+            $line = trim($line);
+            if (str_starts_with($line, 'data:')) { $raw = trim(substr($line, 5)); break; }
+        }
+    }
+    $data = json_decode($raw, true);
+    if (!$data) return ['error' => "HTTP {$code}: invalid JSON response"];
+    if (isset($data['error'])) return ['error' => $data['error']['message'] ?? 'JSON-RPC error'];
+    return ['result' => $data['result'] ?? []];
+}
+
+function _mcp_fetch_tools(array $server): array {
+    $res = _mcp_jsonrpc($server['url'] ?? '', $server['auth_token'] ?? '', 'tools/list', []);
+    if (isset($res['error'])) return [];
+    $tools = $res['result']['tools'] ?? [];
+    $result = [];
+    foreach ($tools as $t) {
+        if (empty($t['name'])) continue;
+        $result[] = [
+            'name'        => $t['name'],
+            'description' => $t['description'] ?? '',
+            'params'      => $t['inputSchema'] ?? ['type' => 'object', 'properties' => (object)[], 'required' => []],
+        ];
+    }
+    return $result;
+}
+
+function _mcp_call_tool(array $server, string $name, array $input): string {
+    $res = _mcp_jsonrpc(
+        $server['url'] ?? '',
+        $server['auth_token'] ?? '',
+        'tools/call',
+        ['name' => $name, 'arguments' => $input ?: (object)[]]
+    , 30);
+    if (isset($res['error'])) return 'Error: MCP call failed — ' . $res['error'];
+    $result = $res['result'];
+    if (!empty($result['isError'])) {
+        return 'Error: ' . (implode("\n", array_column($result['content'] ?? [], 'text')) ?: 'MCP tool returned an error.');
+    }
+    $parts = [];
+    foreach ($result['content'] ?? [] as $block) {
+        if (($block['type'] ?? '') === 'text') $parts[] = $block['text'] ?? '';
+    }
+    return implode("\n", $parts) ?: 'Done.';
+}
+
 /**
  * Run a single agent job.
  *
@@ -92,7 +160,13 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
         . $sys_prompt;
 
     // --- Tool executor closure ---
-    $exec_tool = function(string $tool_name, array $tool_input) use ($ai_user, $indexer, $space_dir): string {
+    $mcp_tool_map  = []; // populated below after $tools_def is built
+    $mcp_calls_log = [];
+    $exec_tool = function(string $tool_name, array $tool_input) use ($ai_user, $indexer, $space_dir, &$mcp_tool_map, &$mcp_calls_log): string {
+        if (isset($mcp_tool_map[$tool_name])) {
+            $mcp_calls_log[] = $tool_name;
+            return _mcp_call_tool($mcp_tool_map[$tool_name], $tool_name, $tool_input);
+        }
         switch ($tool_name) {
             case 'wiki_list_pages':
                 $pages = $indexer->getAllPages();
@@ -168,6 +242,27 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
             ],
         ],
     ];
+
+    $mcp_server_ids    = $config['mcp_server_ids']   ?? [];
+    $mcp_instructions  = $config['mcp_instructions'] ?? [];
+    if ($mcp_server_ids && defined('WIKI_SYSTEM_DATA')) {
+        $mcp_file = WIKI_SYSTEM_DATA . 'mcp_servers.json';
+        if (file_exists($mcp_file)) {
+            $all_mcp = json_decode(file_get_contents($mcp_file), true) ?? [];
+            $mcp_guidance = '';
+            foreach ($all_mcp as $mcp_srv) {
+                if (!in_array($mcp_srv['id'] ?? '', $mcp_server_ids, true)) continue;
+                foreach (_mcp_fetch_tools($mcp_srv) as $tool) {
+                    if (isset($mcp_tool_map[$tool['name']])) continue;
+                    $mcp_tool_map[$tool['name']] = $mcp_srv;
+                    $tools_def[] = $tool;
+                }
+                $instr = trim($mcp_instructions[$mcp_srv['id'] ?? ''] ?? '');
+                if ($instr) $mcp_guidance .= "\n[" . $mcp_srv['name'] . '] ' . $instr;
+            }
+            if ($mcp_guidance) $full_system .= "\n\nMCP tool guidance:" . $mcp_guidance;
+        }
+    }
 
     if ($provider === 'anthropic') {
         $tools = array_map(fn($t) => [
@@ -326,6 +421,11 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
             return ['reply' => null, 'error' => 'Stopped after too many tool calls without producing a response.'];
         }
         return ['reply' => null, 'error' => 'No response was generated.'];
+    }
+
+    if ($mcp_calls_log) {
+        $unique = array_unique($mcp_calls_log);
+        $reply .= "\n\n---\n*MCP tools used: " . implode(', ', $unique) . '*';
     }
 
     return ['reply' => $reply, 'error' => null];

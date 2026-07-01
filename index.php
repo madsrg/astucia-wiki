@@ -1004,6 +1004,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab" data-tab="api" data-group="users" data-i18n="admin.tab.api">API Accounts</button>
                 <button class="admin-tab hidden" data-tab="ai" data-group="ai" data-i18n="admin.tab.ai">AI Users</button>
                 <button class="admin-tab hidden" data-tab="jobs" data-group="ai" data-i18n="admin.tab.jobs">Agent Jobs</button>
+                <button class="admin-tab hidden" data-tab="mcp" data-group="ai" data-i18n="admin.tab.mcp">MCP Servers</button>
                 <button class="admin-tab hidden" data-tab="logs" data-group="monitoring" data-i18n="admin.tab.logs">Access Log</button>
                 <button class="admin-tab hidden" data-tab="errorlog" data-group="monitoring" data-i18n="admin.tab.errorlog">Error Log</button>
                 <button class="admin-tab hidden" data-tab="diagnostics" data-group="monitoring" data-i18n="admin.tab.diag">Diagnostics</button>
@@ -1059,6 +1060,11 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <!-- Agent Jobs pane -->
             <div id="admin-pane-jobs" class="admin-pane hidden">
                 <div id="admin-jobs-list" class="admin-scroll-area"></div>
+            </div>
+
+            <!-- MCP Servers pane -->
+            <div id="admin-pane-mcp" class="admin-pane hidden">
+                <div id="admin-mcp-list" class="admin-scroll-area"></div>
             </div>
 
             <!-- Deleted Pages pane -->
@@ -1137,6 +1143,9 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 </div>
                 <div id="admin-footer-jobs" class="admin-footer-pane hidden">
                     <button id="admin-jobs-add-btn" class="btn btn-blue btn-sm" data-i18n="admin.jobs.add-btn">+ New Agent Job</button>
+                </div>
+                <div id="admin-footer-mcp" class="admin-footer-pane hidden">
+                    <button id="admin-mcp-add-btn" class="btn btn-blue btn-sm">+ New MCP Server</button>
                 </div>
                 <div id="admin-footer-deleted" class="admin-footer-pane hidden">
                     <span id="admin-deleted-count" class="admin-log-count"></span>

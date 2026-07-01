@@ -146,7 +146,7 @@ export default {
 
     'admin.title': 'Admin', 'admin.tab.users': 'Användare', 'admin.tab.requests': 'Förfrågningar',
     'admin.tab.logs': 'Åtkomstlogg', 'admin.tab.errorlog': 'Fellogg',
-    'admin.tab.diag': 'Diagnostik', 'admin.tab.ai': 'AI-användare', 'admin.tab.api': 'API-konton',
+    'admin.tab.diag': 'Diagnostik', 'admin.tab.ai': 'AI-användare', 'admin.tab.api': 'API-konton', 'admin.tab.mcp': 'MCP-servrar',
     'admin.role-hint': 'Admin — fullständig åtkomst inklusive användarhantering · Redaktör — läs och skriv · Läsare — enbart läsning. Nya användare läggs till via fliken Förfrågningar efter att de loggat in för första gången.',
     'admin.unsaved': 'Osparade ändringar', 'admin.save-btn': 'Spara ändringar',
     'admin.new-ai-btn': '+ Ny AI-användare', 'admin.new-api-btn': '+ Nytt API-konto',
