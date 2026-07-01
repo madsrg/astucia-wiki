@@ -273,7 +273,7 @@ body {
 .toolbar-icon-btn { min-width: 28px; padding: 4px 5px !important; display: inline-flex; align-items: center; justify-content: center; }
 .toolbar-btn-danger { color: #e53e3e !important; border-color: #fed7d7 !important; }
 .toolbar-btn-danger:hover { background: #fff5f5 !important; color: #c53030 !important; border-color: #fc8181 !important; }
-.editor-help-dropdown { min-width: 210px !important; }
+.editor-help-dropdown { min-width: 210px !important; right: 0; left: auto; }
 .editor-help-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.18rem 0.75rem; }
 .editor-help-row kbd { background: #fafafa; border: 1px solid #ccc; border-bottom: 2px solid #ccc; padding: 1px 5px; border-radius: 3px; font-family: 'JetBrains Mono', monospace; font-size: 0.73rem; white-space: nowrap; flex-shrink: 0; }
 .editor-help-row span { font-size: 0.82rem; color: #333; }
@@ -1218,7 +1218,7 @@ body {
 /* ── AI Users admin tab ─────────────────────────────────────────────────────── */
 .admin-ai-badge  { display: inline-block; font-size: 0.65rem; font-weight: 700; background: #dbeafe; color: #1d4ed8; border-radius: 99px; padding: 1px 6px; margin-left: 4px; vertical-align: middle; letter-spacing: 0.03em; }
 .admin-api-badge { display: inline-block; font-size: 0.65rem; font-weight: 700; background: #d1fae5; color: #065f46; border-radius: 99px; padding: 1px 6px; margin-left: 4px; vertical-align: middle; letter-spacing: 0.03em; }
-.admin-ai-form { display: flex; flex-direction: column; gap: 0; padding: 0 0 1rem; }
+.admin-ai-form { display: flex; flex-direction: column; gap: 0; padding: 0 15px 1rem 0; }
 .admin-ai-form-section { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.75rem 0; }
 .admin-ai-form-section-header { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-gray); border-bottom: 1px solid var(--border-color); padding-bottom: 0.35rem; margin-top: 0.25rem; }
 .admin-ai-form-row { display: flex; gap: 1rem; }

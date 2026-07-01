@@ -210,6 +210,7 @@ const renderRecentPane = () => {
 
         li.addEventListener('click', () => {
             if (_onNavigate) _onNavigate(entry.id, entry.space, entry.path);
+            document.querySelector('.pane-tab[data-pane="pages"]')?.click();
         });
 
         ul.appendChild(li);
@@ -321,6 +322,7 @@ const renderSavedPane = () => {
 
         li.addEventListener('click', () => {
             if (_onNavigate) _onNavigate(entry.id, entry.space, entry.path);
+            document.querySelector('.pane-tab[data-pane="pages"]')?.click();
         });
 
         ul.appendChild(li);
