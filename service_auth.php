@@ -21,3 +21,12 @@ function resolve_service_token_auth(): ?array {
     }
     return null;
 }
+
+// Returns the Space allowlist for the current actor, or null if unrestricted
+// (admin role, or no restriction configured). Used to gate the ?space= param
+// consistently for session users, AI Users, and API Accounts alike.
+function actor_spaces_filter(string $role, ?array $service_user): ?array {
+    if ($role === 'admin') return null;
+    if ($service_user) return $service_user['spaces'] ?? null;
+    return $_SESSION['user']['spaces'] ?? null;
+}

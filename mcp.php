@@ -65,13 +65,20 @@ $method          = $body['method'] ?? '';
 $params          = $body['params'] ?? [];
 $is_notification = !array_key_exists('id', $body);
 
-// Resolve the wiki space (mirrors api.php's ?space= convention).
+// Resolve the wiki space (mirrors api.php's ?space= convention), gated by the
+// same per-Space ACL as session users: null = unrestricted, else an allowlist.
 $space_dir = rtrim(PAGES_DIR, '/');
 $_sp = trim($_GET['space'] ?? '');
 if ($_sp !== '') {
     $_sp_safe = basename($_sp);
     $_sp_candidate = $space_dir . '/' . $_sp_safe;
     if ($_sp_safe !== '' && $_sp_safe[0] !== '.' && is_dir($_sp_candidate)) {
+        $allowed_spaces = actor_spaces_filter($ai_auth_user['role'] ?? 'reader', $ai_auth_user);
+        if ($allowed_spaces !== null && !in_array($_sp_safe, $allowed_spaces, true)) {
+            header('HTTP/1.1 403 Forbidden');
+            echo json_encode(['jsonrpc' => '2.0', 'id' => $id, 'error' => ['code' => -32001, 'message' => 'Access denied to this space.']]);
+            exit;
+        }
         $space_dir = $_sp_candidate;
     }
 }

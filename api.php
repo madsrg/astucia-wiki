@@ -14,6 +14,21 @@ session_start();
 // --- Service Token auth (AI users: wk_ai_…, API Accounts: wk_sys_…) ---
 $ai_auth_user = resolve_service_token_auth();
 
+// --- Role-based access control ---
+function get_current_role() {
+    global $ai_auth_user;
+    if (!AUTHENTICATION_ENABLED) return 'admin';
+    if ($ai_auth_user) return $ai_auth_user['role'] ?? 'editor';
+    return $_SESSION['user']['role'] ?? 'reader';
+}
+
+function get_current_actor() {
+    global $ai_auth_user;
+    if (!AUTHENTICATION_ENABLED || (!isset($_SESSION['user']) && !$ai_auth_user)) return ['uid' => null, 'name' => null];
+    if ($ai_auth_user) return ['uid' => $ai_auth_user['uid'] ?? null, 'name' => $ai_auth_user['name'] ?? null];
+    return ['uid' => $_SESSION['user']['uid'] ?? null, 'name' => $_SESSION['user']['name'] ?? null];
+}
+
 // Allow unauthenticated visitors as readers when anonymous access is enabled.
 $_anonymous_reader = AUTHENTICATION_ENABLED
     && defined('ANONYMOUS_ACCESS_ENABLED') && ANONYMOUS_ACCESS_ENABLED
@@ -45,11 +60,11 @@ if (isset($_REQUEST['action'])) {
         $_sp_safe = basename($_sp);
         $_sp_candidate = rtrim(PAGES_DIR, '/') . '/' . $_sp_safe;
         if (is_dir($_sp_candidate) && $_sp_safe[0] !== '.') {
-            // ACL: non-admins can only access spaces they are granted.
+            // ACL: non-admins (session users, AI Users, and API Accounts alike)
+            // can only access spaces they are granted. null = all spaces.
             if (AUTHENTICATION_ENABLED) {
-                $session_role   = $_SESSION['user']['role']   ?? 'reader';
-                $session_spaces = $_SESSION['user']['spaces'] ?? null; // null = all spaces
-                if ($session_role !== 'admin' && $session_spaces !== null && !in_array($_sp_safe, $session_spaces, true)) {
+                $allowed_spaces = actor_spaces_filter(get_current_role(), $ai_auth_user);
+                if ($allowed_spaces !== null && !in_array($_sp_safe, $allowed_spaces, true)) {
                     header('HTTP/1.1 403 Forbidden');
                     echo json_encode(['success' => false, 'message' => 'Access denied to this space.']);
                     exit;
@@ -102,9 +117,9 @@ if (isset($_REQUEST['action'])) {
             $target_base = rtrim(PAGES_DIR, '/') . '/' . $safe;
             if (!is_dir($target_base)) throw new Exception('Target space does not exist.');
             if (AUTHENTICATION_ENABLED) {
-                $role   = $_SESSION['user']['role']   ?? 'reader';
-                $spaces = $_SESSION['user']['spaces'] ?? null;
-                if ($role !== 'admin' && $spaces !== null && !in_array($safe, $spaces, true))
+                global $ai_auth_user;
+                $allowed = actor_spaces_filter(get_current_role(), $ai_auth_user);
+                if ($allowed !== null && !in_array($safe, $allowed, true))
                     throw new Exception('Access denied to target space.');
             }
             $clean = ltrim(str_replace('..', '', $new_path_raw), '/');
@@ -115,21 +130,6 @@ if (isset($_REQUEST['action'])) {
 
     // --- Git helpers ---
     require_once __DIR__ . '/git_helpers.php';
-
-    // --- Role-based access control ---
-    function get_current_role() {
-        global $ai_auth_user;
-        if (!AUTHENTICATION_ENABLED) return 'admin';
-        if ($ai_auth_user) return $ai_auth_user['role'] ?? 'editor';
-        return $_SESSION['user']['role'] ?? 'reader';
-    }
-
-    function get_current_actor() {
-        global $ai_auth_user;
-        if (!AUTHENTICATION_ENABLED || (!isset($_SESSION['user']) && !$ai_auth_user)) return ['uid' => null, 'name' => null];
-        if ($ai_auth_user) return ['uid' => $ai_auth_user['uid'] ?? null, 'name' => $ai_auth_user['name'] ?? null];
-        return ['uid' => $_SESSION['user']['uid'] ?? null, 'name' => $_SESSION['user']['name'] ?? null];
-    }
 
     function page_meta($data) {
         return [
@@ -1307,11 +1307,13 @@ if (isset($_REQUEST['action'])) {
                 if ($path) {
                     echo json_encode(['success' => true, 'path' => $path, 'id' => $id]);
                 } else {
-                    // Fallback: search all other spaces so cross-space links work.
+                    // Fallback: search all other accessible spaces so cross-space links work.
+                    $_gpfi_allowed = AUTHENTICATION_ENABLED ? actor_spaces_filter(get_current_role(), $ai_auth_user) : null;
                     $found_path  = null;
                     $found_space = null;
                     foreach (scandir(PAGES_DIR) as $_sf) {
                         if ($_sf === '.' || $_sf === '..' || $_sf[0] === '.') continue;
+                        if ($_gpfi_allowed !== null && !in_array($_sf, $_gpfi_allowed, true)) continue;
                         $candidate = PAGES_DIR . '/' . $_sf;
                         if (!is_dir($candidate) || rtrim($candidate, '/') === rtrim($space_dir, '/')) continue;
                         $other_idx = new PageIndexer($candidate);
@@ -1388,9 +1390,8 @@ if (isset($_REQUEST['action'])) {
                         if (is_dir(rtrim(PAGES_DIR, '/') . '/' . $_sf)) $_gpt_spaces[] = $_sf;
                     }
                     if (AUTHENTICATION_ENABLED) {
-                        $_gpt_role    = $_SESSION['user']['role']   ?? 'reader';
-                        $_gpt_allowed = $_SESSION['user']['spaces'] ?? null;
-                        if ($_gpt_role !== 'admin' && $_gpt_allowed !== null) {
+                        $_gpt_allowed = actor_spaces_filter(get_current_role(), $ai_auth_user);
+                        if ($_gpt_allowed !== null) {
                             $_gpt_spaces = array_values(array_filter($_gpt_spaces, fn($s) => in_array($s, $_gpt_allowed, true)));
                         }
                     }
@@ -1423,14 +1424,7 @@ if (isset($_REQUEST['action'])) {
                     $all_spaces_req = !empty($_GET['all_spaces']);
 
                     // Determine which spaces the user may access.
-                    $allowed_spaces = null; // null = no restriction (admin)
-                    if (AUTHENTICATION_ENABLED && !$ai_auth_user) {
-                        $s_role   = $_SESSION['user']['role']   ?? 'reader';
-                        $s_spaces = $_SESSION['user']['spaces'] ?? null;
-                        if ($s_role !== 'admin' && $s_spaces !== null) {
-                            $allowed_spaces = $s_spaces;
-                        }
-                    }
+                    $allowed_spaces = AUTHENTICATION_ENABLED ? actor_spaces_filter(get_current_role(), $ai_auth_user) : null;
 
                     if (!$all_spaces_req) {
                         // Single-space mode: restrict to the current space.
@@ -2641,10 +2635,9 @@ if (isset($_REQUEST['action'])) {
                 sort($spaces_list);
                 // Filter by user's allowed spaces (admins see all).
                 if (AUTHENTICATION_ENABLED) {
-                    $_ls_role   = $_SESSION['user']['role']   ?? 'reader';
-                    $_ls_spaces = $_SESSION['user']['spaces'] ?? null;
-                    if ($_ls_role !== 'admin' && $_ls_spaces !== null) {
-                        $spaces_list = array_values(array_filter($spaces_list, fn($s) => in_array($s, $_ls_spaces, true)));
+                    $_ls_allowed = actor_spaces_filter(get_current_role(), $ai_auth_user);
+                    if ($_ls_allowed !== null) {
+                        $spaces_list = array_values(array_filter($spaces_list, fn($s) => in_array($s, $_ls_allowed, true)));
                     }
                 }
                 echo json_encode(['success' => true, 'data' => $spaces_list]);
@@ -2658,9 +2651,8 @@ if (isset($_REQUEST['action'])) {
                     if (is_dir(rtrim(PAGES_DIR, '/') . '/' . $_gt_sf)) $_gt_spaces[] = $_gt_sf;
                 }
                 if (AUTHENTICATION_ENABLED) {
-                    $_gt_role   = $_SESSION['user']['role']   ?? 'reader';
-                    $_gt_allowed = $_SESSION['user']['spaces'] ?? null;
-                    if ($_gt_role !== 'admin' && $_gt_allowed !== null) {
+                    $_gt_allowed = actor_spaces_filter(get_current_role(), $ai_auth_user);
+                    if ($_gt_allowed !== null) {
                         $_gt_spaces = array_filter($_gt_spaces, fn($s) => in_array($s, $_gt_allowed, true));
                     }
                 }
@@ -2690,9 +2682,8 @@ if (isset($_REQUEST['action'])) {
                     if (is_dir(rtrim(PAGES_DIR, '/') . '/' . $_tc_sf)) $_tc_spaces[] = $_tc_sf;
                 }
                 if (AUTHENTICATION_ENABLED) {
-                    $_tc_role    = $_SESSION['user']['role']   ?? 'reader';
-                    $_tc_allowed = $_SESSION['user']['spaces'] ?? null;
-                    if ($_tc_role !== 'admin' && $_tc_allowed !== null) {
+                    $_tc_allowed = actor_spaces_filter(get_current_role(), $ai_auth_user);
+                    if ($_tc_allowed !== null) {
                         $_tc_spaces = array_values(array_filter($_tc_spaces, fn($s) => in_array($s, $_tc_allowed, true)));
                     }
                 }
@@ -2804,6 +2795,7 @@ if (isset($_REQUEST['action'])) {
                         'name'          => $u['name']          ?? '',
                         'role'          => $u['role']          ?? 'editor',
                         'service_token' => $u['service_token'] ?? '',
+                        'spaces'        => array_key_exists('spaces', $u) ? $u['spaces'] : null,
                         'ai_config'     => array_merge($cfg, ['api_key_set' => $has_key]),
                     ];
                 }
@@ -2816,14 +2808,17 @@ if (isset($_REQUEST['action'])) {
                 $ai_uid       = isset($_POST['uid']) && $_POST['uid'] !== '' ? (int)$_POST['uid'] : null;
                 $ai_source_uid = isset($_POST['source_uid']) && $_POST['source_uid'] !== '' ? (int)$_POST['source_uid'] : null;
                 $ai_cfg_in    = json_decode($_POST['ai_config'] ?? '{}', true) ?? [];
+                $ai_spaces_raw = json_decode($_POST['spaces'] ?? 'null', true);
+                $ai_spaces_in  = is_array($ai_spaces_raw) ? array_values(array_filter(array_map('strval', $ai_spaces_raw))) : null;
                 if (!$ai_name) throw new Exception('AI user name is required.');
                 $uf_sai = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? ['users' => []]) : ['users' => []];
                 if ($ai_uid !== null) {
                     $found_ai = false;
                     foreach ($uf_sai['users'] as &$u) {
                         if (empty($u['is_ai']) || (int)($u['uid'] ?? -1) !== $ai_uid) continue;
-                        $u['name'] = $ai_name;
-                        $u['role'] = $ai_role;
+                        $u['name']   = $ai_name;
+                        $u['role']   = $ai_role;
+                        $u['spaces'] = $ai_spaces_in;
                         $ec = $u['ai_config'] ?? [];
                         $nc = [
                             'provider'         =>        $ai_cfg_in['provider']         ?? $ec['provider']         ?? 'openai',
@@ -2862,6 +2857,7 @@ if (isset($_REQUEST['action'])) {
                         'name'          => $ai_name,
                         'role'          => $ai_role,
                         'is_ai'         => true,
+                        'spaces'        => $ai_spaces_in,
                         'service_token' => generate_ai_service_token(),
                         'ai_config'     => [
                             'provider'         =>        $ai_cfg_in['provider']         ?? 'openai',
@@ -2914,7 +2910,13 @@ if (isset($_REQUEST['action'])) {
                 $sys_out = [];
                 foreach ($uf_sys['users'] ?? [] as $u) {
                     if (empty($u['is_system'])) continue;
-                    $sys_out[] = ['uid' => $u['uid'] ?? null, 'name' => $u['name'] ?? '', 'role' => $u['role'] ?? 'editor', 'service_token' => $u['service_token'] ?? ''];
+                    $sys_out[] = [
+                        'uid'           => $u['uid']           ?? null,
+                        'name'          => $u['name']          ?? '',
+                        'role'          => $u['role']          ?? 'editor',
+                        'service_token' => $u['service_token'] ?? '',
+                        'spaces'        => array_key_exists('spaces', $u) ? $u['spaces'] : null,
+                    ];
                 }
                 echo json_encode(['success' => true, 'data' => $sys_out]);
                 break;
@@ -2923,14 +2925,17 @@ if (isset($_REQUEST['action'])) {
                 $sys_name = trim($_POST['name'] ?? '');
                 $sys_role = in_array($_POST['role'] ?? '', ['editor', 'reader']) ? $_POST['role'] : 'editor';
                 $sys_uid  = isset($_POST['uid']) && $_POST['uid'] !== '' ? (int)$_POST['uid'] : null;
+                $sys_spaces_raw = json_decode($_POST['spaces'] ?? 'null', true);
+                $sys_spaces_in  = is_array($sys_spaces_raw) ? array_values(array_filter(array_map('strval', $sys_spaces_raw))) : null;
                 if (!$sys_name) throw new Exception('System user name is required.');
                 $uf_ssys = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? ['users' => []]) : ['users' => []];
                 if ($sys_uid !== null) {
                     $found_ssys = false;
                     foreach ($uf_ssys['users'] as &$u) {
                         if (empty($u['is_system']) || (int)($u['uid'] ?? -1) !== $sys_uid) continue;
-                        $u['name'] = $sys_name;
-                        $u['role'] = $sys_role;
+                        $u['name']   = $sys_name;
+                        $u['role']   = $sys_role;
+                        $u['spaces'] = $sys_spaces_in;
                         $found_ssys = true;
                         break;
                     }
@@ -2939,7 +2944,7 @@ if (isset($_REQUEST['action'])) {
                 } else {
                     $max_uid_sys = 0;
                     foreach ($uf_ssys['users'] as $eu) { if (isset($eu['uid']) && $eu['uid'] > $max_uid_sys) $max_uid_sys = $eu['uid']; }
-                    $uf_ssys['users'][] = ['uid' => $max_uid_sys + 1, 'name' => $sys_name, 'role' => $sys_role, 'is_system' => true, 'service_token' => generate_api_service_token()];
+                    $uf_ssys['users'][] = ['uid' => $max_uid_sys + 1, 'name' => $sys_name, 'role' => $sys_role, 'is_system' => true, 'spaces' => $sys_spaces_in, 'service_token' => generate_api_service_token()];
                 }
                 file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($uf_ssys, JSON_PRETTY_PRINT));
                 echo json_encode(['success' => true]);

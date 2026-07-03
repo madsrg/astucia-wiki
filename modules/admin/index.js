@@ -92,6 +92,57 @@ const spacesLabel = (spaces) => {
     return spaces.join(', ');
 };
 
+// Standalone Spaces dropdown for the AI User / API Account forms (as opposed to
+// makeSpacesCell below, which is bound to a row in the human Users table).
+// Renders HTML via spacesFieldHtml(prefix, current), then wireSpacesField(prefix)
+// wires it up after insertion, and readSpacesField(prefix) reads the selection
+// back out of the DOM at save time — matching how the MCP-server checkboxes on
+// the AI User form are read (see .ai-f-mcp-cb), rather than tracking JS state.
+const spacesFieldHtml = (prefix, current) => {
+    if (!allSpaces.length) return `<span class="admin-spaces-all">${t('admin.users.all-spaces')}</span>`;
+    const isAll = current === null || current === undefined;
+    return `
+        <div class="admin-spaces-wrap">
+            <button type="button" id="${prefix}-spaces-btn" class="admin-spaces-btn">${escHtml(spacesLabel(current ?? null))}</button>
+            <div id="${prefix}-spaces-dropdown" class="admin-spaces-dropdown hidden">
+                <label class="admin-spaces-option">
+                    <input type="checkbox" id="${prefix}-spaces-all" ${isAll ? 'checked' : ''}>
+                    <span>${t('admin.users.all-spaces')}</span>
+                </label>
+                <div class="admin-spaces-sep"></div>
+                ${allSpaces.map(sp => `
+                    <label class="admin-spaces-option">
+                        <input type="checkbox" class="${prefix}-spaces-cb" value="${escHtml(sp)}" ${!isAll && current.includes(sp) ? 'checked' : ''} ${isAll ? 'disabled' : ''}>
+                        <span>${escHtml(sp)}</span>
+                    </label>`).join('')}
+            </div>
+        </div>`;
+};
+
+const wireSpacesField = (prefix) => {
+    const btn      = document.getElementById(`${prefix}-spaces-btn`);
+    const dropdown = document.getElementById(`${prefix}-spaces-dropdown`);
+    const allCb    = document.getElementById(`${prefix}-spaces-all`);
+    if (!btn || !dropdown || !allCb) return;
+    const updateLabel = () => {
+        const selected = [...dropdown.querySelectorAll(`.${prefix}-spaces-cb:checked`)].map(c => c.value);
+        btn.textContent = spacesLabel(allCb.checked ? null : selected);
+    };
+    btn.addEventListener('click', (e) => { e.stopPropagation(); dropdown.classList.toggle('hidden'); });
+    allCb.addEventListener('change', () => {
+        dropdown.querySelectorAll(`.${prefix}-spaces-cb`).forEach(cb => { cb.checked = false; cb.disabled = allCb.checked; });
+        updateLabel();
+    });
+    dropdown.querySelectorAll(`.${prefix}-spaces-cb`).forEach(cb => cb.addEventListener('change', updateLabel));
+};
+
+// Returns null (all spaces) or a string[] of selected space names.
+const readSpacesField = (prefix) => {
+    const allCb = document.getElementById(`${prefix}-spaces-all`);
+    if (!allCb || allCb.checked) return null;
+    return [...document.querySelectorAll(`.${prefix}-spaces-cb:checked`)].map(cb => cb.value);
+};
+
 const makeSpacesCell = (u, i) => {
     const isAdmin = u.role === 'admin';
     const td = document.createElement('td');
@@ -683,7 +734,7 @@ const renderAiUserList = () => {
 
     const table = document.createElement('table');
     table.className = 'admin-table';
-    table.innerHTML = `<thead><tr><th>${t('admin.ai.name')}</th><th>${t('admin.ai.role')}</th><th>Model</th><th>API URL</th><th></th></tr></thead>`;
+    table.innerHTML = `<thead><tr><th>${t('admin.ai.name')}</th><th>${t('admin.ai.role')}</th><th>Spaces</th><th>Model</th><th>API URL</th><th></th></tr></thead>`;
     const tbody = document.createElement('tbody');
 
     aiUsers.forEach(u => {
@@ -696,6 +747,10 @@ const renderAiUserList = () => {
 
         const tdRole = document.createElement('td');
         tdRole.textContent = u.role || 'editor';
+
+        const tdSpaces = document.createElement('td');
+        tdSpaces.className = 'admin-spaces-all';
+        tdSpaces.textContent = spacesLabel(u.spaces ?? null);
 
         const tdModel = document.createElement('td');
         tdModel.className = 'admin-log-source';
@@ -723,7 +778,7 @@ const renderAiUserList = () => {
         delBtn.addEventListener('click', () => deleteAiUser(u));
 
         tdActions.append(editBtn, delBtn);
-        tr.append(tdName, tdRole, tdModel, tdUrl, tdActions);
+        tr.append(tdName, tdRole, tdSpaces, tdModel, tdUrl, tdActions);
         tbody.appendChild(tr);
     });
 
@@ -773,6 +828,11 @@ const openAiUserForm = (u) => {
                             ${AI_ROLES.map(r => `<option value="${r}" ${(u?.role || 'editor') === r ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join('')}
                         </select>
                     </div>
+                </div>
+                <div class="form-group">
+                    <label>Spaces</label>
+                    ${spacesFieldHtml('ai-f', u?.spaces ?? null)}
+                    <p class="form-hint">Which Spaces this AI user can access (chat @mentions, Page Chat, Agent Jobs, and MCP all respect this). Defaults to all Spaces.</p>
                 </div>
             </div>
             <div class="admin-ai-form-section-header">${t('admin.ai.api-cfg')}</div>
@@ -848,6 +908,7 @@ const openAiUserForm = (u) => {
     document.getElementById('ai-f-temperature').addEventListener('input', (e) => {
         document.getElementById('ai-f-temperature-display').textContent = parseFloat(e.target.value).toFixed(2).replace(/\.?0+$/, '') || '0';
     });
+    wireSpacesField('ai-f');
 
     // Async: load MCP server checkboxes
     (async () => {
@@ -929,6 +990,7 @@ const saveAiUser = async (uid) => {
         const v = ta.value.trim();
         if (v) mcp_instructions[ta.dataset.mcpId] = v;
     });
+    const spaces = readSpacesField('ai-f');
 
     if (!name)    { showToast(t('admin.ai.name-req'), 'error'); return; }
     if (!api_url) { showToast('API URL is required.', 'error'); return; }
@@ -942,6 +1004,7 @@ const saveAiUser = async (uid) => {
         uid: uid !== null ? String(uid) : '',
         source_uid,
         name, role,
+        spaces: JSON.stringify(spaces),
         ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, context_messages, temperature, max_tokens, mcp_server_ids, mcp_instructions }),
     }, 'POST');
 
@@ -1037,7 +1100,7 @@ const renderApiAccountList = () => {
 
     const table = document.createElement('table');
     table.className = 'admin-table';
-    table.innerHTML = `<thead><tr><th>Name</th><th>Role</th><th>${t('admin.api.token-col')}</th><th></th></tr></thead>`;
+    table.innerHTML = `<thead><tr><th>Name</th><th>Role</th><th>Spaces</th><th>${t('admin.api.token-col')}</th><th></th></tr></thead>`;
     const tbody = document.createElement('tbody');
 
     apiAccounts.forEach(u => {
@@ -1049,6 +1112,10 @@ const renderApiAccountList = () => {
 
         const tdRole = document.createElement('td');
         tdRole.textContent = u.role || 'editor';
+
+        const tdSpaces = document.createElement('td');
+        tdSpaces.className = 'admin-spaces-all';
+        tdSpaces.textContent = spacesLabel(u.spaces ?? null);
 
         const tdToken = document.createElement('td');
         tdToken.className = 'admin-log-source';
@@ -1071,7 +1138,7 @@ const renderApiAccountList = () => {
         delBtn.addEventListener('click', () => deleteApiAccount(u));
 
         tdActions.append(editBtn, delBtn);
-        tr.append(tdName, tdRole, tdToken, tdActions);
+        tr.append(tdName, tdRole, tdSpaces, tdToken, tdActions);
         tbody.appendChild(tr);
     });
 
@@ -1123,6 +1190,11 @@ const openApiAccountForm = (u) => {
                         ${AI_ROLES.map(r => `<option value="${r}" ${(u?.role || 'editor') === r ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join('')}
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Spaces</label>
+                    ${spacesFieldHtml('api-f', u?.spaces ?? null)}
+                    <p class="form-hint">Which Spaces this API account can access. Defaults to all Spaces.</p>
+                </div>
             </div>
             ${!isNew ? `
             <div class="admin-ai-form-section-header">${t('admin.api.token-section')}</div>
@@ -1148,12 +1220,14 @@ const openApiAccountForm = (u) => {
     if (!isNew) {
         document.getElementById('api-f-regen-btn').addEventListener('click', () => regenerateApiToken(u.uid));
     }
+    wireSpacesField('api-f');
     document.getElementById('admin-api-add-btn').classList.add('hidden');
 };
 
 const saveApiAccount = async (uid) => {
     const name = document.getElementById('api-f-name')?.value.trim() || '';
     const role = document.getElementById('api-f-role')?.value || 'editor';
+    const spaces = readSpacesField('api-f');
     if (!name) { showToast(t('admin.ai.name-req'), 'error'); return; }
 
     const saveBtn = document.getElementById('api-f-save-btn');
@@ -1163,6 +1237,7 @@ const saveApiAccount = async (uid) => {
     const result = await api.call('admin_save_api_account', {
         uid: uid !== null ? String(uid) : '',
         name, role,
+        spaces: JSON.stringify(spaces),
     }, 'POST');
 
     saveBtn.disabled = false;
