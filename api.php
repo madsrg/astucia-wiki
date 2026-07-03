@@ -7,26 +7,12 @@ require_once 'config.php';
 require_once 'logger.php';
 require_once 'mailer.php';
 require_once __DIR__ . '/ai_core.php';
+require_once __DIR__ . '/service_auth.php';
 
 session_start();
 
 // --- Service Token auth (AI users: wk_ai_…, API Accounts: wk_sys_…) ---
-$ai_auth_user = null;
-$_ai_auth_hdr = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
-if (!$_ai_auth_hdr && function_exists('getallheaders')) {
-    $_hdrs = getallheaders();
-    $_ai_auth_hdr = $_hdrs['Authorization'] ?? $_hdrs['authorization'] ?? '';
-}
-if (str_starts_with($_ai_auth_hdr, 'Bearer wk_')
-    && defined('WIKI_SYSTEM_DATA') && file_exists(WIKI_SYSTEM_DATA . 'users.json')) {
-    $_ai_token = substr($_ai_auth_hdr, 7);
-    foreach ((json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? []) as $_aiu) {
-        if ((!empty($_aiu['is_ai']) || !empty($_aiu['is_system'])) && ($_aiu['service_token'] ?? '') === $_ai_token) {
-            $ai_auth_user = $_aiu;
-            break;
-        }
-    }
-}
+$ai_auth_user = resolve_service_token_auth();
 
 // Allow unauthenticated visitors as readers when anonymous access is enabled.
 $_anonymous_reader = AUTHENTICATION_ENABLED
@@ -128,71 +114,7 @@ if (isset($_REQUEST['action'])) {
     }
 
     // --- Git helpers ---
-    // Returns ['root' => $dir, 'prefix' => $relpath_prefix] or null if no git repo found.
-    // Checks $space_dir first, then PAGES_DIR — stops there (never climbs higher).
-    function find_git_root(): ?array {
-        global $space_dir;
-        $space = rtrim($space_dir, '/');
-        if (is_dir($space . '/.git')) {
-            return ['root' => $space, 'prefix' => ''];
-        }
-        $pages = rtrim(PAGES_DIR, '/');
-        if (is_dir($pages . '/.git')) {
-            return ['root' => $pages, 'prefix' => basename($space) . '/'];
-        }
-        return null;
-    }
-
-    function git_run(array $args, string $cwd): array {
-        $parts = array_map('escapeshellarg', $args);
-        $cmd   = 'git ' . implode(' ', $parts);
-        $desc  = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-        $env   = [
-            'PATH'                => '/usr/local/bin:/usr/bin:/bin:' . (getenv('PATH') ?: ''),
-            'HOME'                => getenv('HOME') ?: sys_get_temp_dir(),
-            'GIT_TERMINAL_PROMPT' => '0',
-        ];
-        $proc = proc_open($cmd, $desc, $pipes, $cwd, $env);
-        if (!is_resource($proc)) return ['output' => '', 'code' => -1];
-        $out = stream_get_contents($pipes[1]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        return ['output' => trim($out), 'code' => proc_close($proc)];
-    }
-
-    function git_auto_commit(string $abs_path, string $git_name, string $git_email, string $commit_msg): void {
-        global $space_dir;
-        $git_root = find_git_root();
-        if (!$git_root) return;
-        $rel         = ltrim(str_replace(rtrim($space_dir, '/') . '/', '', $abs_path), '/');
-        $git_relpath = $git_root['prefix'] . $rel;
-        git_run(['add', $git_relpath], $git_root['root']);
-        git_run([
-            '-c', 'user.name=' . $git_name,
-            '-c', 'user.email=' . $git_email,
-            'commit', '-m', $commit_msg,
-        ], $git_root['root']);
-    }
-
-    function git_move_commit(string $old_abs, string $new_abs, string $git_name, string $git_email): void {
-        $git_root = find_git_root();
-        if (!$git_root) return;
-        $root_prefix = rtrim($git_root['root'], '/') . '/';
-        // Compute paths relative to git root; only stage paths that live inside it
-        $old_rel = strpos($old_abs, $root_prefix) === 0 ? substr($old_abs, strlen($root_prefix)) : null;
-        $new_rel = strpos($new_abs, $root_prefix) === 0 ? substr($new_abs, strlen($root_prefix)) : null;
-        if ($old_rel === null) return;
-        $to_stage = array_values(array_filter([$old_rel, $new_rel]));
-        git_run(array_merge(['add'], $to_stage), $git_root['root']);
-        $old_name = basename($old_abs);
-        $new_name = basename($new_abs);
-        $msg = $old_name === $new_name ? "Move $old_name" : "Rename $old_name → $new_name";
-        git_run([
-            '-c', 'user.name=' . $git_name,
-            '-c', 'user.email=' . $git_email,
-            'commit', '-m', $msg,
-        ], $git_root['root']);
-    }
+    require_once __DIR__ . '/git_helpers.php';
 
     // --- Role-based access control ---
     function get_current_role() {
@@ -286,152 +208,7 @@ if (isset($_REQUEST['action'])) {
         @file_put_contents($file, $line . "\n", FILE_APPEND | LOCK_EX);
     }
 
-    function get_wiki_tools($provider) {
-        $tools_def = [
-            [
-                'name'        => 'wiki_list_pages',
-                'description' => 'List all pages in the current wiki space. Returns a JSON array of objects with "id", "path", "space", and "tags" (array, only present when non-empty) fields. Use this to find pages by tag or to discover what content exists before reading.',
-                'params'      => ['type' => 'object', 'properties' => (object)[], 'required' => []],
-            ],
-            [
-                'name'        => 'wiki_read_page',
-                'description' => 'Read the full content of a wiki page by its relative path.',
-                'params'      => [
-                    'type'       => 'object',
-                    'properties' => ['path' => ['type' => 'string', 'description' => 'Relative path to the page, e.g. Notes/Meeting.md']],
-                    'required'   => ['path'],
-                ],
-            ],
-            [
-                'name'        => 'wiki_write_page',
-                'description' => 'Create a new wiki page or overwrite an existing one with markdown content. Path must end in .md. Both "path" and "content" are required — you MUST supply the complete markdown text in "content"; omitting it or passing an empty string is an error. Only available when the AI user has editor role.',
-                'params'      => [
-                    'type'       => 'object',
-                    'properties' => [
-                        'path'    => ['type' => 'string', 'description' => 'Relative path ending in .md, e.g. Notes/Summary.md'],
-                        'content' => ['type' => 'string', 'description' => 'REQUIRED: the complete markdown content of the page. Must not be omitted or empty.'],
-                    ],
-                    'required'   => ['path', 'content'],
-                ],
-            ],
-            [
-                'name'        => 'wiki_add_tags',
-                'description' => 'Add one or more tags to an existing wiki page without removing its current tags. Use this when you want to tag a page without affecting tags already on it. Only available when the AI user has editor role.',
-                'params'      => [
-                    'type'       => 'object',
-                    'properties' => [
-                        'path' => ['type' => 'string', 'description' => 'Relative path to the page, e.g. Notes/Meeting.md'],
-                        'tags' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Array of tag strings to add to the page. Existing tags are kept.'],
-                    ],
-                    'required'   => ['path', 'tags'],
-                ],
-            ],
-            [
-                'name'        => 'wiki_set_tags',
-                'description' => 'Replace ALL tags on an existing wiki page with the provided list. Use wiki_add_tags instead if you only want to add tags without removing existing ones. Pass an empty array to clear all tags. Only available when the AI user has editor role.',
-                'params'      => [
-                    'type'       => 'object',
-                    'properties' => [
-                        'path' => ['type' => 'string', 'description' => 'Relative path to the page, e.g. Notes/Meeting.md'],
-                        'tags' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Array of tag strings. Completely replaces existing tags.'],
-                    ],
-                    'required'   => ['path', 'tags'],
-                ],
-            ],
-        ];
-
-        if ($provider === 'anthropic') {
-            return array_map(fn($t) => [
-                'name'         => $t['name'],
-                'description'  => $t['description'],
-                'input_schema' => $t['params'],
-            ], $tools_def);
-        }
-        // OpenAI-compatible
-        return array_map(fn($t) => [
-            'type'     => 'function',
-            'function' => ['name' => $t['name'], 'description' => $t['description'], 'parameters' => $t['params']],
-        ], $tools_def);
-    }
-
-    function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir) {
-        switch ($tool_name) {
-            case 'wiki_list_pages':
-                $pages = $indexer->getAllPages();
-                $space_name_lp = basename($space_dir);
-                $result_lp = [];
-                foreach ($pages as $id => $data) {
-                    if (empty($data['path'])) continue;
-                    $entry_lp = ['id' => (string)$id, 'path' => $data['path'], 'space' => $space_name_lp];
-                    if (!empty($data['tags'])) $entry_lp['tags'] = $data['tags'];
-                    $result_lp[] = $entry_lp;
-                }
-                usort($result_lp, fn($a, $b) => strcmp($a['path'], $b['path']));
-                return json_encode($result_lp);
-
-            case 'wiki_read_page':
-                $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
-                if (!$rel) return 'Error: path is required.';
-                $ext = pathinfo($rel, PATHINFO_EXTENSION);
-                if (!in_array($ext, ['md', 'list', 'chat'], true)) return 'Error: only .md, .list and .chat files can be read.';
-                $abs = rtrim($space_dir, '/') . '/' . $rel;
-                if (!file_exists($abs) || !is_file($abs)) return 'Error: page not found.';
-                return file_get_contents($abs);
-
-            case 'wiki_write_page':
-                if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot write pages.';
-                $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
-                if (!$rel) return 'Error: path is required.';
-                if (pathinfo($rel, PATHINFO_EXTENSION) !== 'md') return 'Error: only .md files can be written.';
-                if (!isset($tool_input['content']) || $tool_input['content'] === '') {
-                    return 'Error: content parameter is required and must not be empty. Call wiki_write_page again and include the full markdown content in the "content" field.';
-                }
-                $content = $tool_input['content'];
-                $abs     = rtrim($space_dir, '/') . '/' . $rel;
-                $dir     = dirname($abs);
-                if (!is_dir($dir)) mkdir($dir, 0755, true);
-                $is_new  = !file_exists($abs);
-                if (file_put_contents($abs, $content) === false) return 'Error: could not write file.';
-                $ai_git_name  = $ai_user['name'] ?? 'AI';
-                $ai_git_email = !empty($ai_user['email']) ? $ai_user['email'] : 'ai@wiki.localhost';
-                if ($is_new) {
-                    $indexer->addPage($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
-                    git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Create ' . basename($rel));
-                    return "Page created: {$rel}";
-                }
-                $indexer->updateModified($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
-                git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Update ' . basename($rel));
-                return "Page updated: {$rel}";
-
-            case 'wiki_add_tags':
-                if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot set tags.';
-                $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
-                if (!$rel) return 'Error: path is required.';
-                $tags_input = $tool_input['tags'] ?? [];
-                if (!is_array($tags_input)) return 'Error: tags must be an array.';
-                $page_id = $indexer->getId($rel);
-                if ($page_id === null) return 'Error: page not found in index — make sure the path matches exactly what wiki_list_pages returns.';
-                $existing_tags = $indexer->getTags($page_id);
-                $merged_tags = array_values(array_unique(array_merge($existing_tags, array_filter(array_map('trim', $tags_input)))));
-                $indexer->updateTags($page_id, $merged_tags);
-                return "Tags on {$rel}: " . implode(', ', $merged_tags);
-
-            case 'wiki_set_tags':
-                if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot set tags.';
-                $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
-                if (!$rel) return 'Error: path is required.';
-                $tags_input = $tool_input['tags'] ?? [];
-                if (!is_array($tags_input)) return 'Error: tags must be an array.';
-                $page_id = $indexer->getId($rel);
-                if ($page_id === null) return 'Error: page not found in index — make sure the path matches exactly what wiki_list_pages returns.';
-                $indexer->updateTags($page_id, $tags_input);
-                $set_count = count(array_filter(array_map('trim', $tags_input)));
-                return $set_count > 0 ? "Tags set on {$rel}: " . implode(', ', array_filter(array_map('trim', $tags_input))) : "Tags cleared on {$rel}.";
-
-            default:
-                return 'Error: unknown tool.';
-        }
-    }
+    require_once __DIR__ . '/wiki_ai_tools.php';
 
     function trigger_ai_mentions($chat_file, $message_text, $chat_data) {
         global $indexer, $space_dir;
@@ -2454,7 +2231,7 @@ if (isset($_REQUEST['action'])) {
                             'name'       => $pu['name']       ?? '',
                             'email'      => $pu['email']      ?? '',
                             'fontFamily' => $pu['fontFamily'] ?? 'sans',
-                            'fontSize'   => $pu['fontSize']   ?? 'normal',
+                            'fontSize'   => $pu['fontSize']   ?? '11pt',
                         ]]);
                         break 2;
                     }
@@ -2467,8 +2244,8 @@ if (isset($_REQUEST['action'])) {
                 $new_email      = trim($_POST['email']      ?? '');
                 $new_font       = trim($_POST['fontFamily'] ?? 'sans');
                 $new_font_size  = trim($_POST['fontSize']   ?? 'normal');
-                if (!in_array($new_font,      ['sans','serif','mono']))         $new_font      = 'sans';
-                if (!in_array($new_font_size, ['compact','normal','large']))    $new_font_size = 'normal';
+                if (!in_array($new_font,      ['sans','serif','mono']))                          $new_font      = 'sans';
+                if (!in_array($new_font_size, ['10pt','11pt','12pt','14pt','16pt']))          $new_font_size = '11pt';
                 if ($new_email && !filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
                     throw new Exception('Please enter a valid email address.');
                 }
