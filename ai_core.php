@@ -164,7 +164,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     $mcp_calls_log = [];
     $exec_tool = function(string $tool_name, array $tool_input) use ($ai_user, $indexer, $space_dir, &$mcp_tool_map, &$mcp_calls_log): string {
         if (isset($mcp_tool_map[$tool_name])) {
-            $mcp_calls_log[] = $tool_name;
+            $mcp_calls_log[] = ($mcp_tool_map[$tool_name]['name'] ?? '?') . ':' . $tool_name;
             return _mcp_call_tool($mcp_tool_map[$tool_name], $tool_name, $tool_input);
         }
         switch ($tool_name) {

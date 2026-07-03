@@ -429,11 +429,13 @@ if (isset($_REQUEST['action'])) {
                     $messages[] = ['role' => 'assistant', 'content' => $assistant_content];
                     $results = [];
                     foreach ($tool_uses as $tu) {
-                        $_tname = $tu['name'] ?? 'unknown';
-                        $tools_log[] = $_tname;
-                        $write_status('executing_tool', ['tool' => $_tname, 'iteration' => $iter + 1]);
-                        if (isset($mcp_tool_map_c[$_tname])) {
-                            $mcp_calls_c[] = $_tname;
+                        $_tname   = $tu['name'] ?? 'unknown';
+                        $_is_mcp  = isset($mcp_tool_map_c[$_tname]);
+                        $_tdisplay = $_is_mcp ? ($mcp_tool_map_c[$_tname]['name'] ?? '?') . ':' . $_tname : $_tname;
+                        $tools_log[] = $_tdisplay;
+                        $write_status('executing_tool', ['tool' => $_tdisplay, 'iteration' => $iter + 1]);
+                        if ($_is_mcp) {
+                            $mcp_calls_c[] = $_tdisplay;
                             $_tool_result = _mcp_call_tool($mcp_tool_map_c[$_tname], $_tname, $tu['input'] ?? []);
                         } else {
                             $_tool_result = execute_ai_tool($_tname, $tu['input'] ?? [], $ai_user, $indexer, $space_dir);
@@ -466,12 +468,14 @@ if (isset($_REQUEST['action'])) {
                     if (!$tool_calls) break;
                     $messages[] = $choice['message'];
                     foreach ($tool_calls as $tc) {
-                        $_tname = $tc['function']['name'] ?? 'unknown';
-                        $tools_log[] = $_tname;
-                        $write_status('executing_tool', ['tool' => $_tname, 'iteration' => $iter + 1]);
+                        $_tname    = $tc['function']['name'] ?? 'unknown';
+                        $_is_mcp   = isset($mcp_tool_map_c[$_tname]);
+                        $_tdisplay = $_is_mcp ? ($mcp_tool_map_c[$_tname]['name'] ?? '?') . ':' . $_tname : $_tname;
+                        $tools_log[] = $_tdisplay;
+                        $write_status('executing_tool', ['tool' => $_tdisplay, 'iteration' => $iter + 1]);
                         $fn_args = json_decode($tc['function']['arguments'] ?? '{}', true) ?? [];
-                        if (isset($mcp_tool_map_c[$_tname])) {
-                            $mcp_calls_c[] = $_tname;
+                        if ($_is_mcp) {
+                            $mcp_calls_c[] = $_tdisplay;
                             $_tool_result = _mcp_call_tool($mcp_tool_map_c[$_tname], $_tname, $fn_args);
                         } else {
                             $_tool_result = execute_ai_tool($_tname, $fn_args, $ai_user, $indexer, $space_dir);
