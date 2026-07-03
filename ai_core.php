@@ -97,13 +97,30 @@ function _mcp_fetch_tools(array $server): array {
     $result = [];
     foreach ($tools as $t) {
         if (empty($t['name'])) continue;
+        $schema = $t['inputSchema'] ?? ['type' => 'object', 'properties' => (object)[], 'required' => []];
+        // json_decode(..., true) turns a tool with no parameters (JSON "properties":{})
+        // into an empty PHP array, which json_encode later re-emits as [] instead of {} —
+        // Anthropic/OpenAI both reject that ("input_schema.properties: Input should be an object").
+        if (isset($schema['properties']) && $schema['properties'] === []) {
+            $schema['properties'] = (object)[];
+        }
         $result[] = [
             'name'        => $t['name'],
             'description' => $t['description'] ?? '',
-            'params'      => $t['inputSchema'] ?? ['type' => 'object', 'properties' => (object)[], 'required' => []],
+            'params'      => $schema,
         ];
     }
     return $result;
+}
+
+// Namespaces a remote MCP tool name under its server so it can never collide with
+// a built-in wiki_* tool (or another server's tool of the same name) — e.g. an
+// AstuciaWiki instance connecting to another AstuciaWiki's mcp.php would otherwise
+// see identically-named wiki_list_pages/wiki_write_page/etc. tools from both sides.
+function _mcp_tool_alias(string $server_name, string $tool_name): string {
+    $slug = strtolower(trim(preg_replace('/[^a-zA-Z0-9]+/', '_', $server_name), '_'));
+    if ($slug === '') $slug = 'mcp';
+    return substr($slug . '__' . $tool_name, 0, 64);
 }
 
 function _mcp_call_tool(array $server, string $name, array $input): string {
@@ -164,8 +181,8 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     $mcp_calls_log = [];
     $exec_tool = function(string $tool_name, array $tool_input) use ($ai_user, $indexer, $space_dir, &$mcp_tool_map, &$mcp_calls_log): string {
         if (isset($mcp_tool_map[$tool_name])) {
-            $mcp_calls_log[] = ($mcp_tool_map[$tool_name]['name'] ?? '?') . ':' . $tool_name;
-            return _mcp_call_tool($mcp_tool_map[$tool_name], $tool_name, $tool_input);
+            $mcp_calls_log[] = ($mcp_tool_map[$tool_name]['server']['name'] ?? '?') . ':' . $mcp_tool_map[$tool_name]['real_name'];
+            return _mcp_call_tool($mcp_tool_map[$tool_name]['server'], $mcp_tool_map[$tool_name]['real_name'], $tool_input);
         }
         switch ($tool_name) {
             case 'wiki_list_pages':
@@ -253,9 +270,10 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
             foreach ($all_mcp as $mcp_srv) {
                 if (!in_array($mcp_srv['id'] ?? '', $mcp_server_ids, true)) continue;
                 foreach (_mcp_fetch_tools($mcp_srv) as $tool) {
-                    if (isset($mcp_tool_map[$tool['name']])) continue;
-                    $mcp_tool_map[$tool['name']] = $mcp_srv;
-                    $tools_def[] = $tool;
+                    $alias = _mcp_tool_alias($mcp_srv['name'] ?? 'mcp', $tool['name']);
+                    if (isset($mcp_tool_map[$alias])) continue;
+                    $mcp_tool_map[$alias] = ['server' => $mcp_srv, 'real_name' => $tool['name']];
+                    $tools_def[] = ['name' => $alias, 'description' => $tool['description'], 'params' => $tool['params']];
                 }
                 $instr = trim($mcp_instructions[$mcp_srv['id'] ?? ''] ?? '');
                 if ($instr) $mcp_guidance .= "\n[" . $mcp_srv['name'] . '] ' . $instr;

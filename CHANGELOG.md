@@ -19,6 +19,8 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 - Editor toolbar `?` help popup could overflow off-screen; now right-aligned
 - Admin AI User form scroll area missing right padding
 - `get_path_from_id`'s cross-space fallback search had no Space ACL check at all (for any actor, not just service tokens) — it now respects the caller's Space restrictions
+- MCP tools with a name identical to a built-in `wiki_*` tool (e.g. connecting one AstuciaWiki's MCP server to another's) were silently dropped in chat/Page Chat, and would have silently hijacked the built-in tool's calls in Agent Jobs — every external MCP tool is now namespaced under its server (e.g. `astucia_projects__wiki_list_pages`) so it can never collide
+- MCP tools with no parameters (empty `inputSchema.properties`) caused the LLM API to reject the whole request with `input_schema.properties: Input should be an object` — `json_decode`'s empty-array-vs-object ambiguity is now corrected before the schema is sent
 
 ## [2026.7.1] — 2026-07-01
 

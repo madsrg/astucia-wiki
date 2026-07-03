@@ -293,17 +293,20 @@ if (isset($_REQUEST['action'])) {
             $mcp_file_c = WIKI_SYSTEM_DATA . 'mcp_servers.json';
             if (file_exists($mcp_file_c)) {
                 $all_mcp_c   = json_decode(file_get_contents($mcp_file_c), true) ?? [];
-                $built_in    = array_column(array_map(fn($t) => ($t['function'] ?? $t), $tools), 'name');
                 $mcp_guidance_c = '';
                 foreach ($all_mcp_c as $mcp_srv_c) {
                     if (!in_array($mcp_srv_c['id'] ?? '', $mcp_server_ids_c, true)) continue;
                     foreach (_mcp_fetch_tools($mcp_srv_c) as $mt) {
-                        if (in_array($mt['name'], $built_in, true) || isset($mcp_tool_map_c[$mt['name']])) continue;
-                        $mcp_tool_map_c[$mt['name']] = $mcp_srv_c;
+                        // Namespaced alias — a remote server (e.g. another AstuciaWiki's
+                        // mcp.php) can expose tools named identically to our own
+                        // built-ins, so the raw name can't be used directly.
+                        $alias = _mcp_tool_alias($mcp_srv_c['name'] ?? 'mcp', $mt['name']);
+                        if (isset($mcp_tool_map_c[$alias])) continue;
+                        $mcp_tool_map_c[$alias] = ['server' => $mcp_srv_c, 'real_name' => $mt['name']];
                         if ($provider === 'anthropic') {
-                            $tools[] = ['name' => $mt['name'], 'description' => $mt['description'], 'input_schema' => $mt['params']];
+                            $tools[] = ['name' => $alias, 'description' => $mt['description'], 'input_schema' => $mt['params']];
                         } else {
-                            $tools[] = ['type' => 'function', 'function' => ['name' => $mt['name'], 'description' => $mt['description'], 'parameters' => $mt['params']]];
+                            $tools[] = ['type' => 'function', 'function' => ['name' => $alias, 'description' => $mt['description'], 'parameters' => $mt['params']]];
                         }
                     }
                     $instr_c = trim($mcp_instructions_c[$mcp_srv_c['id'] ?? ''] ?? '');
@@ -429,14 +432,14 @@ if (isset($_REQUEST['action'])) {
                     $messages[] = ['role' => 'assistant', 'content' => $assistant_content];
                     $results = [];
                     foreach ($tool_uses as $tu) {
-                        $_tname   = $tu['name'] ?? 'unknown';
-                        $_is_mcp  = isset($mcp_tool_map_c[$_tname]);
-                        $_tdisplay = $_is_mcp ? ($mcp_tool_map_c[$_tname]['name'] ?? '?') . ':' . $_tname : $_tname;
+                        $_tname    = $tu['name'] ?? 'unknown';
+                        $_is_mcp   = isset($mcp_tool_map_c[$_tname]);
+                        $_tdisplay = $_is_mcp ? ($mcp_tool_map_c[$_tname]['server']['name'] ?? '?') . ':' . $mcp_tool_map_c[$_tname]['real_name'] : $_tname;
                         $tools_log[] = $_tdisplay;
                         $write_status('executing_tool', ['tool' => $_tdisplay, 'iteration' => $iter + 1]);
                         if ($_is_mcp) {
                             $mcp_calls_c[] = $_tdisplay;
-                            $_tool_result = _mcp_call_tool($mcp_tool_map_c[$_tname], $_tname, $tu['input'] ?? []);
+                            $_tool_result = _mcp_call_tool($mcp_tool_map_c[$_tname]['server'], $mcp_tool_map_c[$_tname]['real_name'], $tu['input'] ?? []);
                         } else {
                             $_tool_result = execute_ai_tool($_tname, $tu['input'] ?? [], $ai_user, $indexer, $space_dir);
                         }
@@ -470,13 +473,13 @@ if (isset($_REQUEST['action'])) {
                     foreach ($tool_calls as $tc) {
                         $_tname    = $tc['function']['name'] ?? 'unknown';
                         $_is_mcp   = isset($mcp_tool_map_c[$_tname]);
-                        $_tdisplay = $_is_mcp ? ($mcp_tool_map_c[$_tname]['name'] ?? '?') . ':' . $_tname : $_tname;
+                        $_tdisplay = $_is_mcp ? ($mcp_tool_map_c[$_tname]['server']['name'] ?? '?') . ':' . $mcp_tool_map_c[$_tname]['real_name'] : $_tname;
                         $tools_log[] = $_tdisplay;
                         $write_status('executing_tool', ['tool' => $_tdisplay, 'iteration' => $iter + 1]);
                         $fn_args = json_decode($tc['function']['arguments'] ?? '{}', true) ?? [];
                         if ($_is_mcp) {
                             $mcp_calls_c[] = $_tdisplay;
-                            $_tool_result = _mcp_call_tool($mcp_tool_map_c[$_tname], $_tname, $fn_args);
+                            $_tool_result = _mcp_call_tool($mcp_tool_map_c[$_tname]['server'], $mcp_tool_map_c[$_tname]['real_name'], $fn_args);
                         } else {
                             $_tool_result = execute_ai_tool($_tname, $fn_args, $ai_user, $indexer, $space_dir);
                         }
