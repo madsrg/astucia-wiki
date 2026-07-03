@@ -5,6 +5,7 @@
 // =================================================================
 
 require_once __DIR__ . '/git_helpers.php';
+require_once __DIR__ . '/search_index.php';
 
 function wiki_tool_definitions(): array {
     return [
@@ -12,6 +13,15 @@ function wiki_tool_definitions(): array {
             'name'        => 'wiki_list_pages',
             'description' => 'List all pages in the current wiki space. Returns a JSON array of objects with "id", "path", "space", and "tags" (array, only present when non-empty) fields. Use this to find pages by tag or to discover what content exists before reading.',
             'params'      => ['type' => 'object', 'properties' => (object)[], 'required' => []],
+        ],
+        [
+            'name'        => 'wiki_search_pages',
+            'description' => 'Full-text search across all Markdown pages in the current wiki space. Returns a JSON array of matching pages with "id", "path", "space", "header" (the page\'s first heading), and "preview" (a snippet around the match). Use this instead of wiki_list_pages when looking for pages about a specific topic in a large space.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => ['query' => ['type' => 'string', 'description' => 'Search string, e.g. "onboarding checklist"']],
+                'required'   => ['query'],
+            ],
         ],
         [
             'name'        => 'wiki_read_page',
@@ -77,6 +87,53 @@ function get_wiki_tools($provider) {
     ], $tools_def);
 }
 
+// Single-space full-text search, mirroring the REST `search` action: SQLite FTS5
+// when SEARCH_ENGINE is configured for it, otherwise a plain per-file stripos scan.
+function wiki_search_pages(string $query, $indexer, $space_dir): array {
+    $space_name = basename($space_dir);
+    $results    = [];
+
+    if (defined('SEARCH_ENGINE') && SEARCH_ENGINE === 'sqlite') {
+        try {
+            $search_idx = new SearchIndex();
+            foreach ($search_idx->search($query, [$space_name], false) as $row) {
+                $page_id = $indexer->getId($row['path']);
+                if ($page_id === null) continue;
+                $results[] = [
+                    'id'      => (string)$page_id,
+                    'path'    => $row['path'],
+                    'space'   => $space_name,
+                    'header'  => $row['title'] ?? '',
+                    'preview' => ($row['snippet'] ?? '…') !== '…' ? $row['snippet'] : ($row['preview'] ?? ''),
+                ];
+            }
+            return $results;
+        } catch (\Throwable $e) {
+            // Fall through to the basic scan below.
+        }
+    }
+
+    foreach ($indexer->getAllPages() as $id => $data) {
+        if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') continue;
+        $abs = rtrim($space_dir, '/') . '/' . $data['path'];
+        if (!file_exists($abs)) continue;
+        $content = file_get_contents($abs);
+        $pos = stripos($content, $query);
+        if ($pos === false && stripos($data['path'], $query) === false) continue;
+
+        $header = '';
+        foreach (explode("\n", $content) as $line) {
+            if (substr(trim($line), 0, 1) === '#') { $header = trim($line); break; }
+        }
+        $preview = $pos !== false
+            ? '...' . trim(preg_replace('/\s+/', ' ', substr($content, max(0, $pos - 50), strlen($query) + 100))) . '...'
+            : $header;
+
+        $results[] = ['id' => (string)$id, 'path' => $data['path'], 'space' => $space_name, 'header' => $header, 'preview' => $preview];
+    }
+    return $results;
+}
+
 function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir) {
     switch ($tool_name) {
         case 'wiki_list_pages':
@@ -91,6 +148,11 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
             }
             usort($result_lp, fn($a, $b) => strcmp($a['path'], $b['path']));
             return json_encode($result_lp);
+
+        case 'wiki_search_pages':
+            $query = trim($tool_input['query'] ?? '');
+            if (!$query) return 'Error: query is required.';
+            return json_encode(wiki_search_pages($query, $indexer, $space_dir));
 
         case 'wiki_read_page':
             $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');

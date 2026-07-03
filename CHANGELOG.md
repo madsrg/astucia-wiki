@@ -9,7 +9,8 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 ## [2026.7.2] — 2026-07-03
 
 ### Added
-- **MCP server (`mcp.php`)** — the wiki now exposes its own MCP endpoint (JSON-RPC 2.0 / Streamable HTTP) so any MCP client (Claude Desktop, Claude Code, custom agents) can connect directly and call `wiki_list_pages`, `wiki_read_page`, `wiki_write_page`, `wiki_add_tags`, and `wiki_set_tags` using existing AI User / API Account bearer tokens
+- **MCP server (`mcp.php`)** — the wiki now exposes its own MCP endpoint (JSON-RPC 2.0 / Streamable HTTP) so any MCP client (Claude Desktop, Claude Code, custom agents) can connect directly and call `wiki_list_pages`, `wiki_search_pages`, `wiki_read_page`, `wiki_write_page`, `wiki_add_tags`, and `wiki_set_tags` using existing AI User / API Account bearer tokens
+- **`wiki_search_pages` tool** — full-text search across all Markdown pages in the current Space, available to chat/Page Chat AI Users and MCP clients alike (uses SQLite FTS5 when configured, with a plain-text fallback)
 
 ### Fixed
 - Clicking a Recent or Favorites item did not switch the sidebar to the Tree tab
