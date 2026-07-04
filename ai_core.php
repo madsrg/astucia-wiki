@@ -113,14 +113,28 @@ function _mcp_fetch_tools(array $server): array {
     return $result;
 }
 
+// Slugifies a name for use in identifiers: MCP tool aliases (below) and the
+// "src:<slug>" explicit-source reference a user can type in a chat message.
+function _mcp_slug(string $name): string {
+    $slug = strtolower(trim(preg_replace('/[^a-zA-Z0-9]+/', '_', $name), '_'));
+    return $slug !== '' ? $slug : 'mcp';
+}
+
 // Namespaces a remote MCP tool name under its server so it can never collide with
 // a built-in wiki_* tool (or another server's tool of the same name) — e.g. an
 // AstuciaWiki instance connecting to another AstuciaWiki's mcp.php would otherwise
 // see identically-named wiki_list_pages/wiki_write_page/etc. tools from both sides.
 function _mcp_tool_alias(string $server_name, string $tool_name): string {
-    $slug = strtolower(trim(preg_replace('/[^a-zA-Z0-9]+/', '_', $server_name), '_'));
-    if ($slug === '') $slug = 'mcp';
-    return substr($slug . '__' . $tool_name, 0, 64);
+    return substr(_mcp_slug($server_name) . '__' . $tool_name, 0, 64);
+}
+
+// Extracts "src:<slug>" references from a message/prompt — an explicit,
+// deterministic way for a human (or an Agent Job prompt) to force a reply to use
+// only a specific MCP server's tools, as an alternative to the free-text
+// per-server "instructions" field which only *hints* at when to use a server.
+function _mcp_extract_forced_slugs(string $text): array {
+    preg_match_all('/\bsrc:([a-zA-Z0-9_]+)/i', $text, $m);
+    return array_unique(array_map('strtolower', $m[1] ?? []));
 }
 
 function _mcp_call_tool(array $server, string $name, array $input): string {
@@ -262,23 +276,38 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
 
     $mcp_server_ids    = $config['mcp_server_ids']   ?? [];
     $mcp_instructions  = $config['mcp_instructions'] ?? [];
+    // Explicit "src:<slug>" in the prompt forces this run to use ONLY that MCP
+    // server's tools (no built-ins, no other enabled servers) — a deterministic
+    // alternative to the free-text per-server instructions below.
+    $forced_slugs = _mcp_extract_forced_slugs($job['prompt'] ?? '');
+    $add_mcp_server_tools = function(array $mcp_srv) use (&$mcp_tool_map, &$tools_def) {
+        foreach (_mcp_fetch_tools($mcp_srv) as $tool) {
+            $alias = _mcp_tool_alias($mcp_srv['name'] ?? 'mcp', $tool['name']);
+            if (isset($mcp_tool_map[$alias])) continue;
+            $mcp_tool_map[$alias] = ['server' => $mcp_srv, 'real_name' => $tool['name']];
+            $tools_def[] = ['name' => $alias, 'description' => $tool['description'], 'params' => $tool['params']];
+        }
+    };
     if ($mcp_server_ids && defined('WIKI_SYSTEM_DATA')) {
         $mcp_file = WIKI_SYSTEM_DATA . 'mcp_servers.json';
         if (file_exists($mcp_file)) {
             $all_mcp = json_decode(file_get_contents($mcp_file), true) ?? [];
-            $mcp_guidance = '';
-            foreach ($all_mcp as $mcp_srv) {
-                if (!in_array($mcp_srv['id'] ?? '', $mcp_server_ids, true)) continue;
-                foreach (_mcp_fetch_tools($mcp_srv) as $tool) {
-                    $alias = _mcp_tool_alias($mcp_srv['name'] ?? 'mcp', $tool['name']);
-                    if (isset($mcp_tool_map[$alias])) continue;
-                    $mcp_tool_map[$alias] = ['server' => $mcp_srv, 'real_name' => $tool['name']];
-                    $tools_def[] = ['name' => $alias, 'description' => $tool['description'], 'params' => $tool['params']];
+            $enabled = array_values(array_filter($all_mcp, fn($s) => in_array($s['id'] ?? '', $mcp_server_ids, true)));
+            $forced  = $forced_slugs ? array_values(array_filter($enabled, fn($s) => in_array(_mcp_slug($s['name'] ?? ''), $forced_slugs, true))) : [];
+            if ($forced) {
+                $tools_def = []; // explicit source(s) referenced — built-ins and other servers excluded
+                foreach ($forced as $mcp_srv) $add_mcp_server_tools($mcp_srv);
+                $full_system .= "\n\nThe prompt explicitly requested " . implode(' and ', array_column($forced, 'name'))
+                    . " via src: — use only the tools available to you for this run.";
+            } else {
+                $mcp_guidance = '';
+                foreach ($enabled as $mcp_srv) {
+                    $add_mcp_server_tools($mcp_srv);
+                    $instr = trim($mcp_instructions[$mcp_srv['id'] ?? ''] ?? '');
+                    if ($instr) $mcp_guidance .= "\n[" . $mcp_srv['name'] . '] ' . $instr;
                 }
-                $instr = trim($mcp_instructions[$mcp_srv['id'] ?? ''] ?? '');
-                if ($instr) $mcp_guidance .= "\n[" . $mcp_srv['name'] . '] ' . $instr;
+                if ($mcp_guidance) $full_system .= "\n\nMCP tool guidance:" . $mcp_guidance;
             }
-            if ($mcp_guidance) $full_system .= "\n\nMCP tool guidance:" . $mcp_guidance;
         }
     }
 

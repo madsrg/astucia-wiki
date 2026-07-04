@@ -2,6 +2,7 @@ import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { getUsers } from '../core/users.js';
+import { getMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
 import { openAiModal, closeAiModal, checkAiModal, startStatusPoll } from '../core/ai_modal.js';
 
@@ -372,6 +373,47 @@ const setupInput = () => {
     textarea.addEventListener('input', async () => {
         autoResize(textarea);
         const val = textarea.value, pos = textarea.selectionStart;
+
+        // "src:<slug>" is a word-prefix trigger (unlike the single-char # / triggers
+        // below) — explicitly forces an AI reply to use only that MCP server's tools.
+        let wordStart = pos - 1;
+        while (wordStart >= 0 && val[wordStart] !== ' ' && val[wordStart] !== '\n') wordStart--;
+        wordStart++;
+        const word = val.slice(wordStart, pos);
+        if (/^src:/i.test(word)) {
+            triggerStart = wordStart; triggerChar = 'src:';
+            const query = word.slice(4).toLowerCase();
+            selectedIdx = -1;
+            mentionPop.innerHTML = '';
+            mentionPop.classList.add('chat-mention-popup-cmd');
+            const servers = (await getMcpServers())
+                .filter(s => s.slug.startsWith(query) || s.name.toLowerCase().startsWith(query))
+                .slice(0, 6);
+            if (!servers.length) { closePop(); return; }
+            servers.forEach(s => {
+                const item = document.createElement('div');
+                item.className = 'chat-mention-item';
+                const nameEl = document.createElement('span');
+                nameEl.className = 'chat-cmd-name';
+                nameEl.textContent = 'src:' + s.slug;
+                const descEl = document.createElement('span');
+                descEl.className = 'chat-cmd-desc';
+                descEl.textContent = s.name;
+                item.append(nameEl, descEl);
+                item.addEventListener('mousedown', e => {
+                    e.preventDefault();
+                    const curPos = textarea.selectionStart;
+                    const insert = 'src:' + s.slug + ' ';
+                    textarea.value = textarea.value.slice(0, triggerStart) + insert + textarea.value.slice(curPos);
+                    textarea.selectionStart = textarea.selectionEnd = triggerStart + insert.length;
+                    closePop();
+                });
+                mentionPop.appendChild(item);
+            });
+            mentionPop.classList.remove('hidden');
+            return;
+        }
+
         let start = pos - 1;
         while (start >= 0 && val[start] !== '#' && val[start] !== '/' && val[start] !== ' ' && val[start] !== '\n') start--;
         if (start < 0 || (val[start] !== '#' && val[start] !== '/')) { closePop(); return; }

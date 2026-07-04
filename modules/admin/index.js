@@ -1,6 +1,7 @@
 import { api } from '../core/api.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { invalidateUsers } from '../core/users.js';
+import { invalidateMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -1712,6 +1713,7 @@ const saveMcpServer = async (id) => {
     if (result.success) {
         showToast('MCP server saved.', 'success');
         document.getElementById('admin-mcp-add-btn').classList.remove('hidden');
+        invalidateMcpServers();
         await loadMcpServers();
     } else {
         showToast(result.message || 'Failed to save.', 'error');
@@ -1724,6 +1726,7 @@ const deleteMcpServer = async (s) => {
     const result = await api.call('admin_delete_mcp_server', { id: s.id }, 'POST');
     if (result.success) {
         showToast('MCP server deleted.', 'success');
+        invalidateMcpServers();
         await loadMcpServers();
     } else {
         showToast(result.message || 'Failed to delete.', 'error');

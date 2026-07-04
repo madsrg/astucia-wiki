@@ -289,30 +289,51 @@ if (isset($_REQUEST['action'])) {
         $mcp_calls_c       = [];
         $mcp_server_ids_c  = $config['mcp_server_ids']   ?? [];
         $mcp_instructions_c = $config['mcp_instructions'] ?? [];
+
+        // Explicit "src:<slug>" in the triggering message forces this reply to use
+        // ONLY that MCP server's tools (no built-ins, no other enabled servers) —
+        // a deterministic alternative to the free-text per-server instructions
+        // below. The type-ahead for this lives in chat.js / page_chat.js.
+        $_trig_msgs_c   = array_values(array_filter($chat_data['messages'], fn($m) => empty($m['pending'])));
+        $forced_slugs_c = _mcp_extract_forced_slugs(end($_trig_msgs_c)['text'] ?? '');
+
+        $_add_mcp_server_tools_c = function(array $mcp_srv_c) use (&$tools, &$mcp_tool_map_c, $provider) {
+            foreach (_mcp_fetch_tools($mcp_srv_c) as $mt) {
+                // Namespaced alias — a remote server (e.g. another AstuciaWiki's
+                // mcp.php) can expose tools named identically to our own
+                // built-ins, so the raw name can't be used directly.
+                $alias = _mcp_tool_alias($mcp_srv_c['name'] ?? 'mcp', $mt['name']);
+                if (isset($mcp_tool_map_c[$alias])) continue;
+                $mcp_tool_map_c[$alias] = ['server' => $mcp_srv_c, 'real_name' => $mt['name']];
+                if ($provider === 'anthropic') {
+                    $tools[] = ['name' => $alias, 'description' => $mt['description'], 'input_schema' => $mt['params']];
+                } else {
+                    $tools[] = ['type' => 'function', 'function' => ['name' => $alias, 'description' => $mt['description'], 'parameters' => $mt['params']]];
+                }
+            }
+        };
+
         if ($mcp_server_ids_c && defined('WIKI_SYSTEM_DATA')) {
             $mcp_file_c = WIKI_SYSTEM_DATA . 'mcp_servers.json';
             if (file_exists($mcp_file_c)) {
-                $all_mcp_c   = json_decode(file_get_contents($mcp_file_c), true) ?? [];
-                $mcp_guidance_c = '';
-                foreach ($all_mcp_c as $mcp_srv_c) {
-                    if (!in_array($mcp_srv_c['id'] ?? '', $mcp_server_ids_c, true)) continue;
-                    foreach (_mcp_fetch_tools($mcp_srv_c) as $mt) {
-                        // Namespaced alias — a remote server (e.g. another AstuciaWiki's
-                        // mcp.php) can expose tools named identically to our own
-                        // built-ins, so the raw name can't be used directly.
-                        $alias = _mcp_tool_alias($mcp_srv_c['name'] ?? 'mcp', $mt['name']);
-                        if (isset($mcp_tool_map_c[$alias])) continue;
-                        $mcp_tool_map_c[$alias] = ['server' => $mcp_srv_c, 'real_name' => $mt['name']];
-                        if ($provider === 'anthropic') {
-                            $tools[] = ['name' => $alias, 'description' => $mt['description'], 'input_schema' => $mt['params']];
-                        } else {
-                            $tools[] = ['type' => 'function', 'function' => ['name' => $alias, 'description' => $mt['description'], 'parameters' => $mt['params']]];
-                        }
+                $all_mcp_c = json_decode(file_get_contents($mcp_file_c), true) ?? [];
+                $enabled_c = array_values(array_filter($all_mcp_c, fn($s) => in_array($s['id'] ?? '', $mcp_server_ids_c, true)));
+                $forced_c  = $forced_slugs_c ? array_values(array_filter($enabled_c, fn($s) => in_array(_mcp_slug($s['name'] ?? ''), $forced_slugs_c, true))) : [];
+
+                if ($forced_c) {
+                    $tools = []; // explicit source(s) referenced — built-ins and other servers excluded
+                    foreach ($forced_c as $mcp_srv_c) $_add_mcp_server_tools_c($mcp_srv_c);
+                    $full_system .= "\n\nThe user explicitly requested " . implode(' and ', array_column($forced_c, 'name'))
+                        . " via src: — use only the tools available to you for this reply.";
+                } else {
+                    $mcp_guidance_c = '';
+                    foreach ($enabled_c as $mcp_srv_c) {
+                        $_add_mcp_server_tools_c($mcp_srv_c);
+                        $instr_c = trim($mcp_instructions_c[$mcp_srv_c['id'] ?? ''] ?? '');
+                        if ($instr_c) $mcp_guidance_c .= "\n[" . $mcp_srv_c['name'] . '] ' . $instr_c;
                     }
-                    $instr_c = trim($mcp_instructions_c[$mcp_srv_c['id'] ?? ''] ?? '');
-                    if ($instr_c) $mcp_guidance_c .= "\n[" . $mcp_srv_c['name'] . '] ' . $instr_c;
+                    if ($mcp_guidance_c) $full_system .= "\n\nMCP tool guidance:" . $mcp_guidance_c;
                 }
-                if ($mcp_guidance_c) $full_system .= "\n\nMCP tool guidance:" . $mcp_guidance_c;
             }
         }
 
@@ -336,7 +357,7 @@ if (isset($_REQUEST['action'])) {
             $messages = [];
             foreach ($recent as $msg) {
                 $role = ((int)($msg['uid'] ?? -1) === $ai_uid) ? 'assistant' : 'user';
-                $messages[] = ['role' => $role, 'content' => ($msg['name'] ?? '') . ': ' . ($msg['text'] ?? '')];
+                $messages[] = ['role' => $role, 'content' => ($msg['name'] ?? '') . ': ' . preg_replace('/\bsrc:[a-zA-Z0-9_]+\s*/i', '', $msg['text'] ?? '')];
             }
             // Anthropic requires strictly alternating roles — merge consecutive same-role messages
             $merged = [];
@@ -354,7 +375,7 @@ if (isset($_REQUEST['action'])) {
             $messages = [['role' => 'system', 'content' => $full_system]];
             foreach ($recent as $msg) {
                 $role = ((int)($msg['uid'] ?? -1) === $ai_uid) ? 'assistant' : 'user';
-                $messages[] = ['role' => $role, 'content' => ($msg['name'] ?? '') . ': ' . ($msg['text'] ?? '')];
+                $messages[] = ['role' => $role, 'content' => ($msg['name'] ?? '') . ': ' . preg_replace('/\bsrc:[a-zA-Z0-9_]+\s*/i', '', $msg['text'] ?? '')];
             }
         }
 
@@ -1306,6 +1327,17 @@ if (isset($_REQUEST['action'])) {
                     'is_system' => !empty($u['is_system']),
                 ], $all_users));
                 echo json_encode(['success' => true, 'data' => $user_list]);
+                break;
+
+            case 'list_mcp_servers':
+                // Non-admin, read-only: name + slug only (no url/token) — used by the
+                // src: type-ahead in chat/Page Chat. Whether a given AI User can
+                // actually use a server is still gated by its own mcp_server_ids.
+                $mcp_list_out = array_map(fn($s) => [
+                    'name' => $s['name'] ?? '',
+                    'slug' => _mcp_slug($s['name'] ?? ''),
+                ], _load_mcp_servers());
+                echo json_encode(['success' => true, 'data' => array_values($mcp_list_out)]);
                 break;
 
             case 'get_path_from_id':
