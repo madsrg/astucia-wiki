@@ -417,6 +417,40 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
         </div>
     </div>
 
+    <div id="adv-remote-lightbox" class="lightbox-overlay hidden">
+        <div class="lightbox-content adv-remote-content">
+            <button id="adv-remote-close" class="lightbox-close">&times;</button>
+            <div class="adv-remote-header">
+                <span id="adv-remote-source" class="adv-turn-source"></span>
+                <h3 id="adv-remote-title" style="margin:0"></h3>
+            </div>
+            <div id="adv-remote-body" class="adv-remote-body"></div>
+            <div class="lightbox-footer">
+                <button id="adv-remote-save" class="btn btn-blue" data-i18n="asearch.save-copy">Save local copy</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="save-page-picker" class="lightbox-overlay hidden">
+        <div class="lightbox-content input-modal-content">
+            <div class="input-modal-header">
+                <h3 id="save-page-picker-title" data-i18n="savepage.title">Save local copy</h3>
+            </div>
+            <div class="form-group">
+                <label class="mcp-save-label" for="save-page-picker-folder" data-i18n="savepage.folder">Folder</label>
+                <select id="save-page-picker-folder" class="form-control"></select>
+            </div>
+            <div class="form-group">
+                <label class="mcp-save-label" for="save-page-picker-name" data-i18n="savepage.name">Page name</label>
+                <input type="text" id="save-page-picker-name" class="form-control" autocomplete="off">
+            </div>
+            <div class="lightbox-footer">
+                <button id="save-page-picker-cancel" class="btn btn-secondary" data-i18n="btn.cancel">Cancel</button>
+                <button id="save-page-picker-ok" class="btn btn-blue" data-i18n="savepage.save">Save</button>
+            </div>
+        </div>
+    </div>
+
     <div id="page-chat-confirm-lightbox" class="lightbox-overlay hidden">
         <div class="lightbox-content lightbox-content-sm" style="padding:1.5rem">
             <button id="pcl-close-btn" class="lightbox-close">&times;</button>

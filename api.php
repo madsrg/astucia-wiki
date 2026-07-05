@@ -1495,6 +1495,7 @@ if (isset($_REQUEST['action'])) {
                     $space_indexers = []; // lazy cache
                     $results = [];
                     foreach ($fts_rows as $row) {
+                        if (wiki_is_template_path($row['path'])) continue;
                         $sp = $row['space'];
                         if (!isset($space_indexers[$sp])) {
                             $sp_dir = rtrim(PAGES_DIR, '/') . '/' . $sp;
@@ -1530,6 +1531,7 @@ if (isset($_REQUEST['action'])) {
                         if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') {
                             continue;
                         }
+                        if (wiki_is_template_path($data['path'])) continue;
                         $full_path = sanitize_path($data['path']);
                         if (!file_exists($full_path)) continue;
                         $content = file_get_contents($full_path);
@@ -1679,6 +1681,40 @@ if (isset($_REQUEST['action'])) {
                 // ── Current wiki path ───────────────────────────────────────
                 $adv_data = wiki_search_pages($adv_parsed['text'], $indexer, $space_dir, $adv_parsed['days'], $adv_parsed['tags']);
                 echo json_encode(['success' => true, 'mode' => 'wiki', 'source' => _sidx_space(), 'data' => $adv_data]);
+                break;
+
+            case 'advanced_search_read':
+                // Fetch a single remote page from a wiki-native MCP source (for the
+                // Advanced Search result lightbox). Editor+, like remote searching.
+                if (get_current_role() === 'reader') {
+                    echo json_encode(['success' => false, 'message' => 'Reading remote pages requires editor access.']);
+                    break;
+                }
+                $asr_slug  = strtolower(trim($_REQUEST['src'] ?? ''));
+                $asr_path  = ltrim(str_replace('..', '', $_REQUEST['path'] ?? ''), '/');
+                $asr_space = trim($_REQUEST['remote_space'] ?? '');
+                if ($asr_path === '') {
+                    echo json_encode(['success' => false, 'message' => 'Missing page path.']);
+                    break;
+                }
+                $asr_srv = null;
+                foreach (_load_mcp_servers() as $_rs) {
+                    if (_mcp_slug($_rs['name'] ?? '') === $asr_slug) { $asr_srv = $_rs; break; }
+                }
+                if (!$asr_srv) {
+                    echo json_encode(['success' => false, 'message' => "Unknown MCP source '{$asr_slug}'."]);
+                    break;
+                }
+                if (empty($asr_srv['wiki_native'])) {
+                    echo json_encode(['success' => false, 'message' => "\"{$asr_srv['name']}\" is not an Astucia Wiki source."]);
+                    break;
+                }
+                $asr_txt = _mcp_call_tool($asr_srv, 'wiki_read_page', ['path' => $asr_path], $asr_space);
+                if (str_starts_with($asr_txt, 'Error:')) {
+                    echo json_encode(['success' => false, 'message' => $asr_txt]);
+                    break;
+                }
+                echo json_encode(['success' => true, 'content' => $asr_txt, 'path' => $asr_path, 'source' => $asr_srv['name']]);
                 break;
 
             case 'mcp_list_tools':

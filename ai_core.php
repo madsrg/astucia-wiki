@@ -137,9 +137,16 @@ function _mcp_extract_forced_slugs(string $text): array {
     return array_unique(array_map('strtolower', $m[1] ?? []));
 }
 
-function _mcp_call_tool(array $server, string $name, array $input): string {
+// $space, when non-empty, targets a specific space on the remote wiki by
+// appending ?space= to its MCP URL (mirrors mcp.php's ?space= convention). The
+// remote falls back to its default space if the name isn't a valid space there.
+function _mcp_call_tool(array $server, string $name, array $input, string $space = ''): string {
+    $url = $server['url'] ?? '';
+    if ($space !== '') {
+        $url .= (strpos($url, '?') !== false ? '&' : '?') . 'space=' . rawurlencode($space);
+    }
     $res = _mcp_jsonrpc(
-        $server['url'] ?? '',
+        $url,
         $server['auth_token'] ?? '',
         'tools/call',
         ['name' => $name, 'arguments' => $input ?: (object)[]]

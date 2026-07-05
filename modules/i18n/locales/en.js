@@ -180,6 +180,16 @@ export default {
     'asearch.this-wiki':      'This wiki',
     'asearch.no-results':     'No results.',
     'asearch.last-run':       'Last run:',
+    'asearch.save-copy':      'Save local copy',
+    'asearch.saved':          'Saved a local copy.',
+    'asearch.save-failed':    'Could not save a local copy.',
+
+    // Save-page picker (shared folder + name modal)
+    'savepage.title':         'Save local copy',
+    'savepage.folder':        'Folder',
+    'savepage.name':          'Page name',
+    'savepage.root':          '(root)',
+    'savepage.save':          'Save',
     'asearch.help-heading':   'Query syntax',
     'asearch.help-text':      'free-text search of page content',
     'asearch.help-tag':       'pages with this exact tag (repeatable, all must match)',

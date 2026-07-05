@@ -7,6 +7,13 @@
 require_once __DIR__ . '/git_helpers.php';
 require_once __DIR__ . '/search_index.php';
 
+// Pages under a space's top-level templates/ folder are page templates, not
+// content — excluded from every search result (REST search, SQLite FTS, and the
+// wiki_search_pages tool used by AI/MCP/advanced search).
+function wiki_is_template_path(?string $path): bool {
+    return $path !== null && str_starts_with(ltrim($path, '/'), 'templates/');
+}
+
 function wiki_tool_definitions(): array {
     return [
         [
@@ -121,6 +128,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
         $rows = [];
         foreach ($all as $id => $data) {
             if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') continue;
+            if (wiki_is_template_path($data['path'])) continue;
             $upd = (int)($data['updated'] ?? 0);
             if ($cutoff && $upd < $cutoff) continue;
             if (!$has_all_tags($data['tags'] ?? [])) continue;
@@ -142,6 +150,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
         try {
             $search_idx = new SearchIndex();
             foreach ($search_idx->search($query, [$space_name], false) as $row) {
+                if (wiki_is_template_path($row['path'])) continue;
                 $page_id = $indexer->getId($row['path']);
                 if ($page_id === null) continue;
                 if ($cutoff && $updated_of($page_id) < $cutoff) continue;
@@ -163,6 +172,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
 
     foreach ($all as $id => $data) {
         if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') continue;
+        if (wiki_is_template_path($data['path'])) continue;
         if ($cutoff && (int)($data['updated'] ?? 0) < $cutoff) continue;
         if (!$has_all_tags($data['tags'] ?? [])) continue;
         $abs = rtrim($space_dir, '/') . '/' . $data['path'];
