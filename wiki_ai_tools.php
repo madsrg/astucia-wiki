@@ -16,12 +16,13 @@ function wiki_tool_definitions(): array {
         ],
         [
             'name'        => 'wiki_search_pages',
-            'description' => 'Search Markdown pages in the current wiki space by topic and/or recency. Returns a JSON array of matching pages with "id", "path", "space", "updated" (ISO 8601 last-modified timestamp), and — for text queries — "header" (first heading) and "preview" (a snippet). Provide "query" to search page text, "updated_within_days" to restrict to recently-updated pages (e.g. answer "pages updated in the last 7 days" with updated_within_days=7 and no query), or both together. At least one of the two is required.',
+            'description' => 'Search Markdown pages in the current wiki space by topic, recency, and/or tags. Returns a JSON array of matching pages with "id", "path", "space", "updated" (ISO 8601 last-modified timestamp), and — for text queries — "header" (first heading) and "preview" (a snippet). Provide "query" to search page text, "updated_within_days" to restrict to recently-updated pages (e.g. answer "pages updated in the last 7 days" with updated_within_days=7 and no query), and/or "tags" to require exact tags. At least one of the three is required.',
             'params'      => [
                 'type'       => 'object',
                 'properties' => [
-                    'query'               => ['type' => 'string',  'description' => 'Search string, e.g. "onboarding checklist". Omit to list purely by recency.'],
+                    'query'               => ['type' => 'string',  'description' => 'Search string, e.g. "onboarding checklist". Omit to list purely by recency and/or tags.'],
                     'updated_within_days' => ['type' => 'integer', 'description' => 'Only return pages updated within this many days. E.g. 7 for the last week. Omit for no date restriction.'],
+                    'tags'                => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Only return pages carrying ALL of these exact tags (case-insensitive). Omit for no tag restriction.'],
                 ],
                 'required'   => [],
             ],
@@ -97,21 +98,32 @@ function get_wiki_tools($provider) {
 //     set on real edits and preserved across reindex, unlike SQLite's `updated`
 //     which is reset to now on every rebuild), so it works with or without SQLite.
 // $updated_within_days > 0 restricts to pages updated within that many days.
-// An empty $query returns a pure recency listing (requires a date filter).
-function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_within_days = 0): array {
+// $tags (exact, case-insensitive, AND) restricts to pages carrying all of them.
+// An empty $query returns a listing filtered by date/tags (requires at least one filter).
+function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_within_days = 0, array $tags = []): array {
     $space_name = basename($space_dir);
     $cutoff     = $updated_within_days > 0 ? time() - $updated_within_days * 86400 : 0;
     $all        = $indexer->getAllPages();
     $updated_of = fn($id) => isset($all[$id]['updated']) ? (int)$all[$id]['updated'] : 0;
     $iso        = fn($ts) => $ts ? date('c', $ts) : null;
 
-    // Pure recency listing — no text query, so no file reads needed.
+    // Exact tag match (case-insensitive); page must carry every requested tag.
+    $want_tags = array_map('strtolower', array_filter(array_map('trim', $tags)));
+    $has_all_tags = function($page_tags) use ($want_tags) {
+        if (!$want_tags) return true;
+        $have = array_map('strtolower', is_array($page_tags) ? $page_tags : []);
+        foreach ($want_tags as $wt) if (!in_array($wt, $have, true)) return false;
+        return true;
+    };
+
+    // Pure listing — no text query, so no file reads needed.
     if ($query === '') {
         $rows = [];
         foreach ($all as $id => $data) {
             if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') continue;
             $upd = (int)($data['updated'] ?? 0);
             if ($cutoff && $upd < $cutoff) continue;
+            if (!$has_all_tags($data['tags'] ?? [])) continue;
             $rows[] = [
                 'id'        => (string)$id,
                 'path'      => $data['path'],
@@ -133,6 +145,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
                 $page_id = $indexer->getId($row['path']);
                 if ($page_id === null) continue;
                 if ($cutoff && $updated_of($page_id) < $cutoff) continue;
+                if (!$has_all_tags($all[$page_id]['tags'] ?? [])) continue;
                 $results[] = [
                     'id'      => (string)$page_id,
                     'path'    => $row['path'],
@@ -151,6 +164,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
     foreach ($all as $id => $data) {
         if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') continue;
         if ($cutoff && (int)($data['updated'] ?? 0) < $cutoff) continue;
+        if (!$has_all_tags($data['tags'] ?? [])) continue;
         $abs = rtrim($space_dir, '/') . '/' . $data['path'];
         if (!file_exists($abs)) continue;
         $content = file_get_contents($abs);
@@ -168,6 +182,38 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
         $results[] = ['id' => (string)$id, 'path' => $data['path'], 'space' => $space_name, 'updated' => $iso((int)($data['updated'] ?? 0)), 'header' => $header, 'preview' => $preview];
     }
     return $results;
+}
+
+// Parses the compact Advanced Search query language into structured parts:
+//   src:<slug>     route to a registered MCP source (0 or 1; first wins)
+//   tag:<value>    exact tag filter (0+, AND); tag:"multi word" is honored
+//   updated:<Nd>   pages updated within N days (also accepts updated:N or updated:<Nd)
+//   <bare words>   free-text search
+// Returns ['src'=>?string, 'tags'=>string[], 'days'=>int, 'text'=>string,
+//          'filters'=>bool (any tag/date filter present)].
+function parse_search_query(string $raw): array {
+    $src = null; $tags = []; $days = 0; $words = [];
+    // Tokenize respecting quotes so tag:"multi word" stays one token.
+    preg_match_all('/(?:[^\s"]+"[^"]*")|"[^"]*"|\S+/', trim($raw), $m);
+    foreach ($m[0] as $tok) {
+        if (preg_match('/^src:(.+)$/i', $tok, $mm)) {
+            if ($src === null) $src = strtolower(trim($mm[1], '"'));
+        } elseif (preg_match('/^tag:(.+)$/i', $tok, $mm)) {
+            $v = trim($mm[1], '"');
+            if ($v !== '') $tags[] = $v;
+        } elseif (preg_match('/^updated:<?(\d+)d?$/i', $tok, $mm)) {
+            $days = (int)$mm[1];
+        } else {
+            $words[] = $tok;
+        }
+    }
+    return [
+        'src'     => $src,
+        'tags'    => $tags,
+        'days'    => $days,
+        'text'    => implode(' ', $words),
+        'filters' => (!empty($tags) || $days > 0),
+    ];
 }
 
 function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir) {
@@ -188,8 +234,10 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
         case 'wiki_search_pages':
             $query = trim($tool_input['query'] ?? '');
             $days  = (int)($tool_input['updated_within_days'] ?? 0);
-            if ($query === '' && $days <= 0) return 'Error: provide "query", "updated_within_days", or both.';
-            return json_encode(wiki_search_pages($query, $indexer, $space_dir, $days));
+            $tags  = $tool_input['tags'] ?? [];
+            if (!is_array($tags)) $tags = [];
+            if ($query === '' && $days <= 0 && !$tags) return 'Error: provide "query", "updated_within_days", "tags", or a combination.';
+            return json_encode(wiki_search_pages($query, $indexer, $space_dir, $days, $tags));
 
         case 'wiki_read_page':
             $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');

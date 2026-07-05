@@ -1410,3 +1410,46 @@ body {
     .print-lightbox-bar { display: none !important; }
     .print-lightbox-body { overflow: visible !important; padding: 0 !important; }
 }
+
+/* ── Advanced Search (.search content type) ─────────────────────────────────── */
+.adv-search-results { flex: 1; overflow-y: auto; padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+.adv-search-input-area { position: relative; border-top: 1px solid var(--border-color); background: white; padding: 0.75rem 1rem; flex-shrink: 0; }
+.adv-search-controls { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.5rem; }
+.adv-search-sources { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
+.adv-source-opt { display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; cursor: pointer; }
+.adv-source-generic { color: var(--accent-gray); font-style: italic; font-size: 0.78rem; }
+.adv-search-input-row { display: flex; align-items: flex-end; gap: 0.5rem; }
+.adv-search-input-row .chat-input { flex: 1; }
+.adv-search-help { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.75rem 0.9rem; margin-bottom: 0.6rem; font-size: 0.85rem; }
+.adv-help-inner ul { margin: 0.4rem 0; padding-left: 1.1rem; }
+.adv-help-inner li { margin-bottom: 0.2rem; }
+.adv-help-inner code { background: var(--code-bg, #f1f5f9); border-radius: 3px; padding: 0.05em 0.35em; }
+
+.adv-turn-query { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+.adv-turn-source { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--accent-purple); background: var(--bg-secondary); border-radius: 4px; padding: 0.1rem 0.4rem; }
+.adv-turn-query code { font-size: 0.9rem; color: var(--primary-color); }
+.adv-result-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+.adv-result-item { border: 1px solid var(--border-color); border-radius: 6px; padding: 0.6rem 0.8rem; }
+.adv-result-clickable { cursor: pointer; transition: background 0.12s, border-color 0.12s; }
+.adv-result-clickable:hover { background: var(--bg-hover, #f7fafc); border-color: var(--accent-blue); }
+.adv-result-title { font-weight: 600; }
+.adv-result-path { font-size: 0.76rem; color: var(--accent-gray); font-family: var(--font-mono, monospace); margin-top: 0.1rem; }
+.adv-result-preview { font-size: 0.83rem; color: var(--accent-gray); margin-top: 0.3rem; }
+.adv-result-preview mark { background: #fef08a; }
+.adv-result-meta { font-size: 0.74rem; color: var(--accent-gray); margin-top: 0.3rem; }
+.adv-text-result pre { white-space: pre-wrap; word-break: break-word; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.75rem; font-size: 0.82rem; max-height: 420px; overflow-y: auto; }
+.adv-error { color: var(--accent-danger); font-size: 0.87rem; }
+.adv-empty { color: var(--accent-gray); font-size: 0.87rem; }
+
+/* ── MCP Tool Explorer ──────────────────────────────────────────────────────── */
+.mcp-explorer-content { max-width: 760px; height: 80vh; max-height: 80vh; }
+.mcp-explorer-results { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0.25rem; }
+.mcp-explorer-input-area { border-top: 1px solid var(--border-color); padding-top: 0.75rem; flex-shrink: 0; }
+.mcp-explorer-input-area .adv-search-controls select { flex: 1; }
+.mcp-explorer-help { height: 110px; overflow-y: auto; margin: 0.5rem 0; padding: 0.6rem 0.75rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.82rem; }
+.mcp-help-desc { margin: 0; }
+.mcp-explorer-args { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.5rem 0; max-height: 32vh; overflow-y: auto; }
+.mcp-arg-row { display: flex; flex-direction: column; gap: 0.2rem; }
+.mcp-arg-row label { font-size: 0.82rem; font-weight: 600; }
+.mcp-arg-req { color: var(--accent-danger); }
+.mcp-arg-type { font-weight: 400; color: var(--accent-gray); font-size: 0.75rem; }

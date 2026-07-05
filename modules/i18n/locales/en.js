@@ -23,6 +23,7 @@ export default {
     'nav.new-diagram':    'New Diagram',
     'nav.new-list':       'New List',
     'nav.new-chat':       'New Chat',
+    'nav.new-search':     'New Search',
     'nav.pane-tree':      'Tree',
     'nav.pane-folder':    'Folder',
     'nav.pane-search':    'Search',
@@ -81,6 +82,9 @@ export default {
     'new.diagram-created':  'Diagram created!',
     'new.list-created':     'List created!',
     'new.chat-created':     'Chat created!',
+    'new.search-prompt':    'Name for the saved search:',
+    'new.search-created':   'Search created!',
+    'new.search-failed':    'Could not create search.',
     'new.folder-created':   'Folder created!',
     'new.files-lib-created':'Files library created!',
     'new.files-lib-failed': 'Failed to create files library',
@@ -168,6 +172,29 @@ export default {
     'search.prev':        '← Previous',
     'search.next':        'Next →',
     'search.page-of':     'Page {page} of {total}',
+
+    // Advanced Search (.search content type)
+    'asearch.run':            'Search',
+    'asearch.placeholder':    'Search… e.g. onboarding tag:hr updated:30d',
+    'asearch.help-title':     'Query syntax help',
+    'asearch.this-wiki':      'This wiki',
+    'asearch.no-results':     'No results.',
+    'asearch.help-heading':   'Query syntax',
+    'asearch.help-text':      'free-text search of page content',
+    'asearch.help-tag':       'pages with this exact tag (repeatable, all must match)',
+    'asearch.help-tag-quoted':'quote tags containing spaces',
+    'asearch.help-updated':   'pages updated within N days (e.g. 7d, 30d)',
+    'asearch.help-src':       'search a registered MCP source instead of this wiki',
+    'asearch.help-note':      'Combine freely, e.g. onboarding tag:hr updated:30d. tag:/updated: apply to this wiki and MCP sources marked as an Astucia Wiki.',
+
+    // MCP Tool Explorer
+    'explorer.title':         'MCP Tool Explorer',
+    'explorer.subtitle':      'Browse and invoke tools on a registered MCP server.',
+    'explorer.btn-title':     'MCP Tool Explorer',
+    'explorer.invoke':        'Invoke',
+    'explorer.no-args':       'This tool takes no arguments.',
+    'explorer.no-desc':       'No description provided for this tool.',
+    'explorer.no-servers':    'No MCP servers configured. Add one in Admin → AI → MCP Servers.',
 
     // Chat
     'chat.send':          'Send',

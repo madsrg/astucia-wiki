@@ -38,6 +38,8 @@ import { init as initNav, removeStaleRecentEntry } from './modules/nav/index.js'
 import { init as initToc } from './modules/toc/index.js';
 import { init as initPageChat } from './modules/page_chat/index.js';
 import { init as initShare } from './modules/share/index.js';
+import { init as initAdvancedSearch } from './modules/advanced_search/index.js';
+import { init as initMcpExplorer } from './modules/mcp_explorer/index.js';
 import { api } from './modules/core/api.js';
 import { state } from './modules/core/state.js';
 
@@ -93,6 +95,7 @@ const populateDropdownIcons = () => {
     document.getElementById('dropdown-new-diagram').innerHTML = icons.diagram + ' ' + t('nav.new-diagram');
     document.getElementById('dropdown-new-list').innerHTML = icons.list + ' ' + t('nav.new-list');
     document.getElementById('dropdown-new-chat').innerHTML = icons.chat + ' ' + t('nav.new-chat');
+    document.getElementById('dropdown-new-search').innerHTML = icons.search + ' ' + t('nav.new-search');
 };
 
 // --- Boot ---
@@ -146,6 +149,8 @@ const init = async () => {
     initToc();
     initPageChat();
     initShare();
+    initAdvancedSearch();
+    initMcpExplorer();
     initNav({
         onNavigate: async (id, space, path) => {
             const spaceIsValid = !space || getAllSpaces().includes(space);

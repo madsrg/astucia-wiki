@@ -565,7 +565,7 @@ if (isset($_REQUEST['action'])) {
         @unlink($status_file);
     }
 
-    $edit_actions  = ['save', 'create_file', 'create_folder', 'create_diagram', 'create_list', 'create_chat',
+    $edit_actions  = ['save', 'create_file', 'create_folder', 'create_diagram', 'create_list', 'create_chat', 'create_search',
                       'post_chat_message', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'purge_chat_messages', 'toggle_sticky',
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags',
@@ -886,7 +886,7 @@ if (isset($_REQUEST['action'])) {
                         $is_dir = is_dir($path);
                         $extension = pathinfo($path, PATHINFO_EXTENSION);
 
-                        if (!$is_dir && !in_array($extension, ['md', 'drawio', 'list', 'chat'])) {
+                        if (!$is_dir && !in_array($extension, ['md', 'drawio', 'list', 'chat', 'search'])) {
                             continue;
                         }
 
@@ -1088,6 +1088,23 @@ if (isset($_REQUEST['action'])) {
                 } else {
                     throw new Exception('A file with that name already exists.');
                 }
+                break;
+
+            case 'create_search':
+                $search_path_raw = $_POST['path'];
+                $search_path_san = sanitize_path($search_path_raw);
+                $default_search  = [
+                    'query'  => trim($_POST['query'] ?? ''),
+                    'source' => trim($_POST['source'] ?? 'wiki'),
+                    'title'  => trim($_POST['title'] ?? ''),
+                ];
+                if (file_exists($search_path_san)) throw new Exception('A file with that name already exists.');
+                if (file_put_contents($search_path_san, json_encode($default_search, JSON_PRETTY_PRINT)) === false) {
+                    throw new Exception('Could not create search file.');
+                }
+                $actor = get_current_actor();
+                $indexer->addPage($search_path_raw, $actor['uid'], $actor['name']);
+                echo json_encode(['success' => true, 'message' => 'Search created.']);
                 break;
 
             case 'post_chat_message':
@@ -1334,8 +1351,9 @@ if (isset($_REQUEST['action'])) {
                 // src: type-ahead in chat/Page Chat. Whether a given AI User can
                 // actually use a server is still gated by its own mcp_server_ids.
                 $mcp_list_out = array_map(fn($s) => [
-                    'name' => $s['name'] ?? '',
-                    'slug' => _mcp_slug($s['name'] ?? ''),
+                    'name'        => $s['name'] ?? '',
+                    'slug'        => _mcp_slug($s['name'] ?? ''),
+                    'wiki_native' => !empty($s['wiki_native']),
                 ], _load_mcp_servers());
                 echo json_encode(['success' => true, 'data' => array_values($mcp_list_out)]);
                 break;
@@ -1555,6 +1573,129 @@ if (isset($_REQUEST['action'])) {
                     }
                     echo json_encode(['success' => true, 'data' => $results]);
                 }
+                break;
+
+            case 'advanced_search':
+                // Deterministic advanced search powering .search content files.
+                // Compact query language (see parse_search_query): free text +
+                // tag:<v> + updated:<Nd> + src:<slug>. No LLM.
+                $adv_raw    = trim($_REQUEST['q'] ?? '');
+                $adv_parsed = parse_search_query($adv_raw);
+                if ($adv_parsed['src'] === null && $adv_parsed['text'] === '' && !$adv_parsed['filters']) {
+                    echo json_encode(['success' => false, 'message' => 'Empty query. Enter text, tag:<name>, updated:<days>, or src:<source>.']);
+                    break;
+                }
+
+                // ── MCP source path ─────────────────────────────────────────
+                if ($adv_parsed['src'] !== null) {
+                    if (get_current_role() === 'reader') {
+                        echo json_encode(['success' => false, 'message' => 'Searching MCP sources requires editor access.']);
+                        break;
+                    }
+                    $adv_srv = null;
+                    foreach (_load_mcp_servers() as $_asrv) {
+                        if (_mcp_slug($_asrv['name'] ?? '') === $adv_parsed['src']) { $adv_srv = $_asrv; break; }
+                    }
+                    if (!$adv_srv) {
+                        echo json_encode(['success' => false, 'message' => "Unknown MCP source '{$adv_parsed['src']}'."]);
+                        break;
+                    }
+                    $adv_native = !empty($adv_srv['wiki_native']);
+
+                    // Structured filters only work against an Astucia Wiki source.
+                    if ($adv_parsed['filters'] && !$adv_native) {
+                        echo json_encode(['success' => false, 'message' => "The MCP source \"{$adv_srv['name']}\" doesn't support tag: or updated: filters. Remove them, or mark the server as an Astucia Wiki in Admin → AI → MCP Servers."]);
+                        break;
+                    }
+
+                    if ($adv_native) {
+                        // Speak our own dialect: call wiki_search_pages directly.
+                        $adv_args = [];
+                        if ($adv_parsed['text'] !== '') $adv_args['query'] = $adv_parsed['text'];
+                        if ($adv_parsed['days'] > 0)     $adv_args['updated_within_days'] = $adv_parsed['days'];
+                        if ($adv_parsed['tags'])         $adv_args['tags'] = $adv_parsed['tags'];
+                        $adv_txt = _mcp_call_tool($adv_srv, 'wiki_search_pages', $adv_args);
+                        if (str_starts_with($adv_txt, 'Error:')) {
+                            echo json_encode(['success' => false, 'message' => $adv_txt]);
+                            break;
+                        }
+                        $adv_rows = json_decode($adv_txt, true);
+                        if (is_array($adv_rows)) {
+                            echo json_encode(['success' => true, 'mode' => 'wiki', 'source' => $adv_srv['name'], 'data' => $adv_rows]);
+                        } else {
+                            echo json_encode(['success' => true, 'mode' => 'text', 'source' => $adv_srv['name'], 'text' => $adv_txt]);
+                        }
+                        break;
+                    }
+
+                    // Generic MCP: text-only against a search-like tool.
+                    $adv_tools = _mcp_fetch_tools($adv_srv);
+                    $adv_tool  = null;
+                    foreach ($adv_tools as $_at) {
+                        if (stripos($_at['name'], 'search') !== false) { $adv_tool = $_at; break; }
+                    }
+                    if (!$adv_tool) {
+                        echo json_encode(['success' => false, 'message' => "No search tool found on \"{$adv_srv['name']}\"."]);
+                        break;
+                    }
+                    // Pick the argument to receive the text: prefer "query", else first string prop.
+                    $adv_props = $adv_tool['params']['properties'] ?? [];
+                    if (is_object($adv_props)) $adv_props = (array)$adv_props;
+                    $adv_argname = isset($adv_props['query']) ? 'query' : (array_key_first($adv_props) ?: 'query');
+                    $adv_txt = _mcp_call_tool($adv_srv, $adv_tool['name'], [$adv_argname => $adv_parsed['text']]);
+                    echo json_encode([
+                        'success' => !str_starts_with($adv_txt, 'Error:'),
+                        'mode'    => 'text',
+                        'source'  => $adv_srv['name'],
+                        'tool'    => $adv_tool['name'],
+                        'text'    => $adv_txt,
+                        'message' => str_starts_with($adv_txt, 'Error:') ? $adv_txt : null,
+                    ]);
+                    break;
+                }
+
+                // ── Current wiki path ───────────────────────────────────────
+                $adv_data = wiki_search_pages($adv_parsed['text'], $indexer, $space_dir, $adv_parsed['days'], $adv_parsed['tags']);
+                echo json_encode(['success' => true, 'mode' => 'wiki', 'source' => _sidx_space(), 'data' => $adv_data]);
+                break;
+
+            case 'mcp_list_tools':
+                // Editor+ MCP Tool Explorer: list a server's tools with schemas.
+                if (get_current_role() === 'reader') {
+                    echo json_encode(['success' => false, 'message' => 'MCP Tool Explorer requires editor access.']);
+                    break;
+                }
+                $mlt_slug = strtolower(trim($_REQUEST['source'] ?? ''));
+                $mlt_srv  = null;
+                foreach (_load_mcp_servers() as $_ms) {
+                    if (_mcp_slug($_ms['name'] ?? '') === $mlt_slug) { $mlt_srv = $_ms; break; }
+                }
+                if (!$mlt_srv) { echo json_encode(['success' => false, 'message' => 'Unknown MCP source.']); break; }
+                echo json_encode(['success' => true, 'source' => $mlt_srv['name'], 'tools' => _mcp_fetch_tools($mlt_srv)]);
+                break;
+
+            case 'mcp_invoke_tool':
+                // Editor+ MCP Tool Explorer: call one tool with JSON arguments.
+                if (get_current_role() === 'reader') {
+                    echo json_encode(['success' => false, 'message' => 'MCP Tool Explorer requires editor access.']);
+                    break;
+                }
+                $mit_slug = strtolower(trim($_POST['source'] ?? ''));
+                $mit_tool = trim($_POST['tool'] ?? '');
+                $mit_args = json_decode($_POST['arguments'] ?? '{}', true);
+                if (!is_array($mit_args)) $mit_args = [];
+                if (!$mit_tool) { echo json_encode(['success' => false, 'message' => 'Tool name is required.']); break; }
+                $mit_srv = null;
+                foreach (_load_mcp_servers() as $_ms) {
+                    if (_mcp_slug($_ms['name'] ?? '') === $mit_slug) { $mit_srv = $_ms; break; }
+                }
+                if (!$mit_srv) { echo json_encode(['success' => false, 'message' => 'Unknown MCP source.']); break; }
+                $mit_txt = _mcp_call_tool($mit_srv, $mit_tool, $mit_args);
+                echo json_encode([
+                    'success' => !str_starts_with($mit_txt, 'Error:'),
+                    'text'    => $mit_txt,
+                    'message' => str_starts_with($mit_txt, 'Error:') ? $mit_txt : null,
+                ]);
                 break;
 
             case 'get_mentions':
@@ -3144,6 +3285,7 @@ if (isset($_REQUEST['action'])) {
                     'name'           => $s['name']       ?? '',
                     'url'            => $s['url']        ?? '',
                     'auth_token_set' => !empty($s['auth_token']),
+                    'wiki_native'    => !empty($s['wiki_native']),
                     'created_at'     => $s['created_at'] ?? '',
                 ], _load_mcp_servers());
                 echo json_encode(['success' => true, 'data' => $mcp_out]);
@@ -3154,6 +3296,7 @@ if (isset($_REQUEST['action'])) {
                 $mcp_name  = trim($_POST['name']       ?? '');
                 $mcp_url   = trim($_POST['url']        ?? '');
                 $mcp_token = $_POST['auth_token']      ?? '';
+                $mcp_native = !empty($_POST['wiki_native']) && $_POST['wiki_native'] !== '0' && $_POST['wiki_native'] !== 'false';
                 if (!$mcp_name) throw new Exception('MCP server name is required.');
                 if (!$mcp_url)  throw new Exception('MCP server URL is required.');
                 $mcp_servers = _load_mcp_servers();
@@ -3163,6 +3306,7 @@ if (isset($_REQUEST['action'])) {
                         if (($_ms['id'] ?? '') !== $mcp_id) continue;
                         $_ms['name'] = $mcp_name;
                         $_ms['url']  = $mcp_url;
+                        $_ms['wiki_native'] = $mcp_native;
                         if ($mcp_token !== '') $_ms['auth_token'] = $mcp_token;
                         $found_mcp = true;
                         break;
@@ -3171,11 +3315,12 @@ if (isset($_REQUEST['action'])) {
                     if (!$found_mcp) throw new Exception('MCP server not found.');
                 } else {
                     $mcp_servers[] = [
-                        'id'         => bin2hex(random_bytes(16)),
-                        'name'       => $mcp_name,
-                        'url'        => $mcp_url,
-                        'auth_token' => $mcp_token,
-                        'created_at' => date('c'),
+                        'id'          => bin2hex(random_bytes(16)),
+                        'name'        => $mcp_name,
+                        'url'         => $mcp_url,
+                        'auth_token'  => $mcp_token,
+                        'wiki_native' => $mcp_native,
+                        'created_at'  => date('c'),
                     ];
                 }
                 _save_mcp_servers($mcp_servers);

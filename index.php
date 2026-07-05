@@ -73,6 +73,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <a href="#" id="dropdown-new-diagram"></a>
                             <a href="#" id="dropdown-new-list"></a>
                             <a href="#" id="dropdown-new-chat"></a>
+                            <a href="#" id="dropdown-new-search"></a>
                         </div>
                     </div>
                 </div>
@@ -129,6 +130,11 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     </button>
                     <button id="my-comments-btn" class="sidebar-icon-btn" data-i18n-title="nav.comments-title" title="My Comments — pages I commented on">
                         <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    </button>
+                    <?php endif; ?>
+                    <?php if ($userRole === 'admin' || $userRole === 'editor'): ?>
+                    <button id="mcp-explorer-btn" class="sidebar-icon-btn" data-i18n-title="explorer.btn-title" title="MCP Tool Explorer">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="9" y="14" width="6" height="6" rx="1"/><path d="M7 10v2a2 2 0 0 0 2 2h1"/><path d="M17 10v2a2 2 0 0 1-2 2h-1"/></svg>
                     </button>
                     <?php endif; ?>
                     <?php if ($userRole === 'admin'): ?>
@@ -348,8 +354,45 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                         <button id="chat-send-btn" class="btn btn-blue chat-send-btn" data-i18n="chat.send">Send</button>
                     </div>
                 </div>
+                <div id="search-view-container" class="viewer-wrapper hidden">
+                    <div id="adv-search-results" class="adv-search-results"></div>
+                    <div class="adv-search-input-area">
+                        <div id="adv-search-help" class="adv-search-help hidden"></div>
+                        <div id="adv-search-mention-popup" class="chat-mention-popup hidden"></div>
+                        <div class="adv-search-controls">
+                            <div id="adv-search-sources" class="adv-search-sources"></div>
+                            <button id="adv-search-help-btn" class="btn btn-icon btn-secondary" data-i18n-title="asearch.help-title" title="Query syntax help">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17" stroke-width="3"/></svg>
+                            </button>
+                        </div>
+                        <div class="adv-search-input-row">
+                            <textarea id="adv-search-input" class="chat-input" data-i18n-placeholder="asearch.placeholder" placeholder="Search… e.g. onboarding tag:hr updated:30d" rows="1"></textarea>
+                            <button id="adv-search-run-btn" class="btn btn-blue" data-i18n="asearch.run">Search</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
+    </div>
+
+    <div id="mcp-explorer-lightbox" class="lightbox-overlay hidden">
+        <div class="lightbox-content mcp-explorer-content">
+            <button id="mcp-explorer-close" class="lightbox-close">&times;</button>
+            <h3 style="margin:0 0 .25rem"><span data-i18n="explorer.title">MCP Tool Explorer</span></h3>
+            <p class="form-hint" style="margin:0 0 .75rem" data-i18n="explorer.subtitle">Browse and invoke tools on a registered MCP server.</p>
+            <div id="mcp-explorer-results" class="mcp-explorer-results"></div>
+            <div class="mcp-explorer-input-area">
+                <div class="adv-search-controls">
+                    <select id="mcp-explorer-server" class="form-control"></select>
+                    <select id="mcp-explorer-tool" class="form-control"></select>
+                </div>
+                <div id="mcp-explorer-help" class="mcp-explorer-help"></div>
+                <div id="mcp-explorer-args" class="mcp-explorer-args"></div>
+                <div class="adv-search-input-row" style="justify-content:flex-end">
+                    <button id="mcp-explorer-run" class="btn btn-blue" data-i18n="explorer.invoke">Invoke</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div id="page-chat-confirm-lightbox" class="lightbox-overlay hidden">

@@ -11,7 +11,8 @@ export const renderTree = (items, parentElement) => {
         const isDiagram = item.name.endsWith('.drawio');
         const isList    = item.name.endsWith('.list');
         const isChat    = item.name.endsWith('.chat');
-        const displayName = item.name.replace(/\.(md|drawio|list|chat)$/, '');
+        const isSearch  = item.name.endsWith('.search');
+        const displayName = item.name.replace(/\.(md|drawio|list|chat|search)$/, '');
 
         let icon = icons.file;
         if (item.type === 'folder') icon = icons.folder;
@@ -19,8 +20,9 @@ export const renderTree = (items, parentElement) => {
         if (isDiagram) icon = icons.diagram;
         if (isList)    icon = icons.list;
         if (isChat)    icon = icons.chat;
+        if (isSearch)  icon = icons.search;
 
-        const itemType = isDiagram ? 'diagram' : (isList ? 'list' : (isChat ? 'chat' : item.type));
+        const itemType = isDiagram ? 'diagram' : (isList ? 'list' : (isChat ? 'chat' : (isSearch ? 'search' : item.type)));
         li.innerHTML = `
             <div class="file-item-content" data-path="${item.path}" data-type="${itemType}" data-id="${item.id || ''}" data-tags='${JSON.stringify(item.tags || [])}'>
                 <span class="file-item-name">
@@ -79,7 +81,8 @@ export const renderBrowsePane = (items, currentPath) => {
         const isDiagram = item.name.endsWith('.drawio');
         const isList    = item.name.endsWith('.list');
         const isChat    = item.name.endsWith('.chat');
-        const displayName = item.name.replace(/\.(md|drawio|list|chat)$/, '');
+        const isSearch  = item.name.endsWith('.search');
+        const displayName = item.name.replace(/\.(md|drawio|list|chat|search)$/, '');
         const isActive = state.currentPagePath && item.path === state.currentPagePath;
 
         let icon = icons.file;
@@ -88,8 +91,9 @@ export const renderBrowsePane = (items, currentPath) => {
         if (isDiagram) icon = icons.diagram;
         if (isList)    icon = icons.list;
         if (isChat)    icon = icons.chat;
+        if (isSearch)  icon = icons.search;
 
-        const bType = isDiagram ? 'diagram' : (isList ? 'list' : (isChat ? 'chat' : item.type));
+        const bType = isDiagram ? 'diagram' : (isList ? 'list' : (isChat ? 'chat' : (isSearch ? 'search' : item.type)));
         li.innerHTML = `
             <div class="browse-item-content ${isActive ? 'active' : ''}" data-path="${item.path}" data-type="${bType}" data-id="${item.id || ''}" data-tags='${JSON.stringify(item.tags || [])}'>
                 <span class="file-item-name">
@@ -232,7 +236,7 @@ export const init = ({ onLoadPage, onGenerateTagCloud }) => {
         document.querySelectorAll('#file-navigator .file-item.active').forEach(el => el.classList.remove('active'));
         contentTarget.closest('.file-item').classList.add('active');
 
-        if (type === 'file' || type === 'diagram' || type === 'list' || type === 'chat') {
+        if (type === 'file' || type === 'diagram' || type === 'list' || type === 'chat' || type === 'search') {
             _onLoadPage(path, id, tags);
         } else if (type === 'filesfolder') {
             loadFilesFolder(path);

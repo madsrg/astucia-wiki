@@ -253,6 +253,25 @@ export const init = () => {
     newChatLightbox.addEventListener('click', (e) => { if (e.target === newChatLightbox) closeNewChat(); });
     newChatNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitNewChat(); });
 
+    document.getElementById('dropdown-new-search').addEventListener('click', async (e) => {
+        e.preventDefault();
+        newItemDropdown.classList.add('hidden');
+        let fileName = await promptModal(t('new.search-prompt'), '', '', icons.search);
+        if (!fileName) return;
+        if (!fileName.endsWith('.search')) fileName += '.search';
+        const path = getCreationPath() + fileName;
+        const res = await api.call('create_search', { path, source: 'wiki', query: '' }, 'POST');
+        if (res.success) {
+            showToast(t('new.search-created'), 'success');
+            await refreshFileTree();
+            switchToTreePane();
+            const newFileEl = document.querySelector(`[data-path="${path}"]`);
+            if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
+        } else {
+            showToast(res.message || t('new.search-failed'), 'error');
+        }
+    });
+
     document.getElementById('dropdown-new-folder').addEventListener('click', async (e) => {
         e.preventDefault();
         newItemDropdown.classList.add('hidden');
