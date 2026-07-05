@@ -10,27 +10,29 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ### Added
 - **Saved searches (`.search` content type)** — a new content file that stores a query and runs it deterministically (no LLM). Create one from the New menu; opening it auto-runs the saved query in a chat-like results view, and running persists the query back to the file. Supports a compact token language: free text for full-text search plus `tag:<name>` (repeatable, exact-match, quote for spaces), `updated:<N>d` for recency, and `src:<slug>` to route the search at a registered MCP source instead of this wiki.
-- **MCP Tool Explorer** — an admin/editor lightbox (sidebar toolbar) to browse and invoke tools on any registered MCP server directly. Pick a server and tool, fill in typed argument fields derived from the tool's input schema, and invoke it (deterministic `tools/list` + `tools/call`, no LLM) — useful for testing and exploring an MCP server's capabilities.
+- **`wiki_search_pages` tool** — full-text search across all Markdown pages in the current Space, available to chat/Page Chat AI Users and MCP clients alike (uses SQLite FTS5 when configured, with a plain-text fallback)
+- **Date filtering in `wiki_search_pages`** — an `updated_within_days` parameter (with `query` now optional) lets AI Users answer prose like "pages updated in the last 7 days"; filtering uses the authoritative `index.json` timestamps, so it works with or without SQLite
 - **Tag filtering in `wiki_search_pages`** — a `tags` parameter (all must match, exact) lets AI Users and MCP clients narrow searches to specific tags, combinable with `query` and `updated_within_days`.
+- **MCP Tool Explorer** — an admin/editor lightbox (sidebar toolbar) to browse and invoke tools on any registered MCP server directly. Pick a server and tool, fill in typed argument fields derived from the tool's input schema, and invoke it (deterministic `tools/list` + `tools/call`, no LLM) — useful for testing and exploring an MCP server's capabilities.
+- **MCP tool attribution** — the `MCP tools used: …` footer and the live AI status modal now prefix external MCP tool calls with their server name (e.g. `Microsoft Learn:search_docs`) instead of just the bare tool name, in chat, Page Chat, and Agent Jobs alike
+- **Explicit MCP source invocation (`src:`)** — type `src:` in a chat or Page Chat message for a type-ahead of registered MCP servers (e.g. `src:astucia_projects`). When the addressed AI User has that server enabled, its reply is restricted to *only* that server's tools — no built-ins, no other MCP servers — as a deterministic alternative to the free-text per-server instructions. Also honored in Agent Job prompts.
+- **Per-Space ACL for AI Users and API Accounts** — service tokens (`wk_ai_…`/`wk_sys_…`) can now be restricted to specific Spaces from their admin form, matching the existing restriction available to human users. Enforced everywhere a Space is resolved, including `mcp.php`.
+- **Test Connection for AI Users** — a button on the AI User admin form sends a minimal completion request to verify the provider/URL/model/key actually work together before saving; shows the model's reply or the exact API error inline
+
+### Fixed
+- `get_path_from_id`'s cross-space fallback search had no Space ACL check at all (for any actor, not just service tokens) — it now respects the caller's Space restrictions
+- MCP tools with a name identical to a built-in `wiki_*` tool (e.g. connecting one AstuciaWiki's MCP server to another's) were silently dropped in chat/Page Chat, and would have silently hijacked the built-in tool's calls in Agent Jobs — every external MCP tool is now namespaced under its server (e.g. `astucia_projects__wiki_list_pages`) so it can never collide
+- MCP tools with no parameters (empty `inputSchema.properties`) caused the LLM API to reject the whole request with `input_schema.properties: Input should be an object` — `json_decode`'s empty-array-vs-object ambiguity is now corrected before the schema is sent
 
 ## [2026.7.2] — 2026-07-03
 
 ### Added
-- **MCP server (`mcp.php`)** — the wiki now exposes its own MCP endpoint (JSON-RPC 2.0 / Streamable HTTP) so any MCP client (Claude Desktop, Claude Code, custom agents) can connect directly and call `wiki_list_pages`, `wiki_search_pages`, `wiki_read_page`, `wiki_write_page`, `wiki_add_tags`, and `wiki_set_tags` using existing AI User / API Account bearer tokens
-- **`wiki_search_pages` tool** — full-text search across all Markdown pages in the current Space, available to chat/Page Chat AI Users and MCP clients alike (uses SQLite FTS5 when configured, with a plain-text fallback)
-- **Date filtering in `wiki_search_pages`** — an `updated_within_days` parameter (with `query` now optional) lets AI Users answer prose like "pages updated in the last 7 days"; filtering uses the authoritative `index.json` timestamps, so it works with or without SQLite
-- **Per-Space ACL for AI Users and API Accounts** — service tokens (`wk_ai_…`/`wk_sys_…`) can now be restricted to specific Spaces from their admin form, matching the existing restriction available to human users. Enforced everywhere a Space is resolved, including `mcp.php`.
-- **MCP tool attribution** — the `MCP tools used: …` footer and the live AI status modal now prefix external MCP tool calls with their server name (e.g. `Microsoft Learn:search_docs`) instead of just the bare tool name, in chat, Page Chat, and Agent Jobs alike
-- **Explicit MCP source invocation (`src:`)** — type `src:` in a chat or Page Chat message for a type-ahead of registered MCP servers (e.g. `src:astucia_projects`). When the addressed AI User has that server enabled, its reply is restricted to *only* that server's tools — no built-ins, no other MCP servers — as a deterministic alternative to the free-text per-server instructions. Also honored in Agent Job prompts.
-- **Test Connection for AI Users** — a button on the AI User admin form sends a minimal completion request to verify the provider/URL/model/key actually work together before saving; shows the model's reply or the exact API error inline
+- **MCP server (`mcp.php`)** — the wiki now exposes its own MCP endpoint (JSON-RPC 2.0 / Streamable HTTP) so any MCP client (Claude Desktop, Claude Code, custom agents) can connect directly and call `wiki_list_pages`, `wiki_read_page`, `wiki_write_page`, `wiki_add_tags`, and `wiki_set_tags` using existing AI User / API Account bearer tokens
 
 ### Fixed
 - Clicking a Recent or Favorites item did not switch the sidebar to the Tree tab
 - Editor toolbar `?` help popup could overflow off-screen; now right-aligned
 - Admin AI User form scroll area missing right padding
-- `get_path_from_id`'s cross-space fallback search had no Space ACL check at all (for any actor, not just service tokens) — it now respects the caller's Space restrictions
-- MCP tools with a name identical to a built-in `wiki_*` tool (e.g. connecting one AstuciaWiki's MCP server to another's) were silently dropped in chat/Page Chat, and would have silently hijacked the built-in tool's calls in Agent Jobs — every external MCP tool is now namespaced under its server (e.g. `astucia_projects__wiki_list_pages`) so it can never collide
-- MCP tools with no parameters (empty `inputSchema.properties`) caused the LLM API to reject the whole request with `input_schema.properties: Input should be an object` — `json_decode`'s empty-array-vs-object ambiguity is now corrected before the schema is sent
 
 ## [2026.7.1] — 2026-07-01
 
