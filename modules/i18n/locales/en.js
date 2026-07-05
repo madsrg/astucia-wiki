@@ -179,6 +179,7 @@ export default {
     'asearch.help-title':     'Query syntax help',
     'asearch.this-wiki':      'This wiki',
     'asearch.no-results':     'No results.',
+    'asearch.last-run':       'Last run:',
     'asearch.help-heading':   'Query syntax',
     'asearch.help-text':      'free-text search of page content',
     'asearch.help-tag':       'pages with this exact tag (repeatable, all must match)',

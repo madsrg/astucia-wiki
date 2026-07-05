@@ -5,8 +5,10 @@
  * the compact token language parsed server-side by the `advanced_search` action
  * (free text + tag:<v> + updated:<Nd> + src:<slug>). Deterministic, no LLM.
  *
- * A `.search` file stores { query, source, title }. Opening it auto-runs the
- * saved query; running persists the current query + source back to the file.
+ * A `.search` file stores { query, source, title, lastRun, lastResult }.
+ * Opening it restores the saved query/source (without executing) and, if a
+ * previous run was saved, shows that result under a "Last run:" label. Running
+ * replaces the stored result and timestamp.
  */
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
@@ -17,8 +19,11 @@ const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 const canMcp = () => (window.WIKI_ROLE === 'admin' || window.WIKI_ROLE === 'editor');
 
 let _path       = null;   // current .search file path
-let _savedQuery = '';     // last-persisted query (to avoid redundant saves)
+let _savedQuery = '';     // last-run query
 let _savedSource = 'wiki';
+let _title      = '';
+let _lastRun    = null;   // ISO timestamp of the last executed search
+let _lastResult = null;   // { displayQuery, sourceLabel, isLocal, res }
 let _sources    = [];     // cached MCP servers [{name, slug, wiki_native}]
 
 const resultsEl = () => document.getElementById('adv-search-results');
@@ -93,15 +98,19 @@ const appendResultTurn = (res, isLocal) => {
     scrollDown();
 };
 
+const renderLastRun = (iso) => {
+    const div = document.createElement('div');
+    div.className = 'adv-lastrun';
+    div.textContent = `${t('asearch.last-run')} ${new Date(iso).toLocaleString()}`;
+    resultsEl().appendChild(div);
+};
+
 // ── Run + persist ────────────────────────────────────────────────────────────────
-const persist = async () => {
-    const q = inputEl().value.trim();
-    const src = selectedSource();
-    if (q === _savedQuery && src === _savedSource) return;
-    _savedQuery = q; _savedSource = src;
-    const body = JSON.stringify({ query: q, source: src, title: '' });
+// Write the whole .search config (query, source, title, last run + result) back
+// to the file. Mirrors page_edit: the `save` action reads the raw php://input.
+const saveFile = async (cfg) => {
+    const body = JSON.stringify(cfg);
     const spaceQs = state.currentSpace ? `&space=${encodeURIComponent(state.currentSpace)}` : '';
-    // Raw-body save (mirrors page_edit): the `save` action reads php://input.
     try {
         await fetch(`api.php?action=save&file=${encodeURIComponent(_path)}${spaceQs}`, {
             method: 'POST', headers: { 'Content-Type': 'text/plain' }, body,
@@ -118,16 +127,24 @@ const runSearch = async () => {
     let q = raw;
     if (src !== 'wiki' && !/\bsrc:/i.test(raw)) q = `src:${src} ${raw}`.trim();
 
-    const srcMeta = _sources.find(s => s.slug === src);
-    const isLocal = src === 'wiki' && !/\bsrc:/i.test(raw);
-    appendQueryTurn(raw || '(all)', src === 'wiki' ? t('asearch.this-wiki') : (srcMeta?.name || src));
+    const srcMeta      = _sources.find(s => s.slug === src);
+    const isLocal      = src === 'wiki' && !/\bsrc:/i.test(raw);
+    const displayQuery = raw || '(all)';
+    const sourceLabel  = src === 'wiki' ? t('asearch.this-wiki') : (srcMeta?.name || src);
+
+    resultsEl().innerHTML = '';   // a new run replaces the previous result
+    appendQueryTurn(displayQuery, sourceLabel);
 
     const btn = document.getElementById('adv-search-run-btn');
     if (btn) { btn.disabled = true; btn.textContent = '…'; }
     const res = await api.call('advanced_search', { q });
     if (btn) { btn.disabled = false; btn.textContent = t('asearch.run'); }
     appendResultTurn(res, isLocal);
-    persist();
+
+    _savedQuery = raw; _savedSource = src;
+    _lastRun    = new Date().toISOString();
+    _lastResult = { displayQuery, sourceLabel, isLocal, res };
+    saveFile({ query: raw, source: src, title: _title, lastRun: _lastRun, lastResult: _lastResult });
 };
 
 // ── Public: render a .search file ────────────────────────────────────────────────
@@ -135,16 +152,24 @@ export const renderSearchView = async (fileData, path) => {
     _path = path;
     let cfg = {};
     try { cfg = JSON.parse(fileData || '{}') || {}; } catch { cfg = {}; }
-    _savedQuery = cfg.query || '';
+    _savedQuery  = cfg.query || '';
     _savedSource = cfg.source || 'wiki';
+    _title       = cfg.title || '';
+    _lastRun     = cfg.lastRun || null;
+    _lastResult  = cfg.lastResult || null;
 
     _sources = canMcp() ? await getMcpServers() : [];
     renderSources(_savedSource);
     inputEl().value = _savedQuery;
     resultsEl().innerHTML = '';
 
-    // Auto-run the saved query on open.
-    if (_savedQuery || _savedSource !== 'wiki') runSearch();
+    // Restore (but do not execute) the saved query/source. If a previous run
+    // was saved, show its result under a "Last run:" label; running replaces it.
+    if (_lastRun && _lastResult) {
+        renderLastRun(_lastRun);
+        appendQueryTurn(_lastResult.displayQuery, _lastResult.sourceLabel);
+        appendResultTurn(_lastResult.res, _lastResult.isLocal);
+    }
 };
 
 // ── Help text ────────────────────────────────────────────────────────────────────
