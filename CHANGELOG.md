@@ -6,6 +6,17 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.4] — 2026-07-05
+
+### Added
+- **MCP Tool Explorer — richer result view** — each invocation result now carries a toolbar: a metadata line (latency · size · line count), a **Raw ⇄ JSON** toggle (shown only when the payload parses as JSON, defaulting to formatted), and **Copy** / **Download** actions. A **Clear** button empties the results pane, and a tool-filter box appears once a server exposes more than 10 tools.
+- **MCP Tool Explorer — save result as a page** — save any result as a Markdown page, choosing the destination folder (from the space's folder tree) and page name. The page is written with a metadata header (server, tool, arguments, timestamp) followed by the payload in a fenced block.
+- **MCP Tool Explorer — re-run and recall** — past invocations are clickable to restore their server, tool, and arguments for tweaking; the last-used server and tool are remembered across opens; Enter in an argument field invokes and Esc closes the explorer.
+- **Configurable search tool per MCP server** — saved searches (`.search`) against a generic (non-Astucia-Wiki) MCP source now resolve the tool to call using a hybrid strategy: the server's optionally-configured **Search tool** / **Query argument** (set in Admin → AI → MCP Servers) win, otherwise a name heuristic picks an exact `search` tool, then any tool named like `search`/`find`/`query`/`lookup`/`retrieve`, and routes the text to the configured argument, else `query`, else the tool's first parameter. Still fully deterministic — no LLM.
+
+### Fixed
+- The MCP server admin form had no "This server is an Astucia Wiki" toggle, so saving/editing a server silently reset its `wiki_native` flag to false — making `tag:`/`updated:` filters and native page results in saved searches unreachable. The toggle is now present and persisted.
+
 ## [2026.7.3] — 2026-07-05
 
 ### Added
