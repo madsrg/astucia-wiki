@@ -6,6 +6,14 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.6] — 2026-07-05
+
+### Added
+- **Open remote pages from a saved search** — clicking a result from a wiki-native MCP source now fetches that page and shows it in a lightbox with rendered Markdown and a **Save local copy** button (which writes it to a folder you choose in this wiki). Previously only this-wiki results were clickable.
+
+### Changed
+- **All wiki searches now ignore the `templates/` folder** — page templates no longer appear in the search pane, AI User / Page Chat searches, MCP `wiki_search_pages` results, or saved searches.
+
 ## [2026.7.5] — 2026-07-05
 
 ### Changed
