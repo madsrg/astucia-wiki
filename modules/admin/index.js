@@ -1677,6 +1677,20 @@ const openMcpServerForm = (s) => {
                     <label>Auth Token ${s?.auth_token_set ? '<span class="admin-ai-key-set">(set)</span>' : ''}</label>
                     <input type="password" id="mcp-f-token" class="form-control" placeholder="${isNew ? 'Optional Bearer token' : 'Leave blank to keep existing'}">
                 </div>
+                <div class="form-group">
+                    <label style="display:flex;align-items:center;gap:0.45rem;font-weight:600;cursor:pointer">
+                        <input type="checkbox" id="mcp-f-native" ${s?.wiki_native ? 'checked' : ''} style="width:auto"> This server is an Astucia Wiki
+                    </label>
+                    <p class="form-hint">Enables <code>tag:</code> / <code>updated:</code> filters and native page results in saved searches. Leave off for generic MCP servers.</p>
+                </div>
+                <div class="form-group" id="mcp-f-search-group">
+                    <label>Search tool <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                    <input type="text" id="mcp-f-search-tool" class="form-control" value="${escHtml(s?.search_tool || '')}" placeholder="e.g. search_docs">
+                    <p class="form-hint">Which tool a <code>.search</code> saved search invokes on this server. Blank = auto-detect (a tool named like search/find/query). Ignored for Astucia Wiki servers.</p>
+                    <label style="margin-top:0.5rem">Query argument <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                    <input type="text" id="mcp-f-search-arg" class="form-control" value="${escHtml(s?.search_arg || '')}" placeholder="e.g. query">
+                    <p class="form-hint">The argument that receives the search text. Blank = auto-detect (<code>query</code>, else the tool's first parameter).</p>
+                </div>
             </div>
             <div id="mcp-f-test-result" style="margin-bottom:0.5rem"></div>
             <div class="admin-ai-form-actions">
@@ -1717,15 +1731,28 @@ const openMcpServerForm = (s) => {
         }
     });
 
+    // The per-server search tool/arg only apply to generic (non-wiki) servers.
+    const nativeCb    = document.getElementById('mcp-f-native');
+    const searchGroup = document.getElementById('mcp-f-search-group');
+    const syncSearchGroup = () => {
+        searchGroup.style.opacity = nativeCb.checked ? '0.45' : '';
+        searchGroup.querySelectorAll('input').forEach(i => { i.disabled = nativeCb.checked; });
+    };
+    nativeCb.addEventListener('change', syncSearchGroup);
+    syncSearchGroup();
+
     document.getElementById('mcp-f-save-btn').addEventListener('click', () => saveMcpServer(s?.id ?? null));
 
     document.getElementById('admin-mcp-add-btn').classList.add('hidden');
 };
 
 const saveMcpServer = async (id) => {
-    const name  = document.getElementById('mcp-f-name')?.value.trim();
-    const url   = document.getElementById('mcp-f-url')?.value.trim();
-    const token = document.getElementById('mcp-f-token')?.value || '';
+    const name   = document.getElementById('mcp-f-name')?.value.trim();
+    const url    = document.getElementById('mcp-f-url')?.value.trim();
+    const token  = document.getElementById('mcp-f-token')?.value || '';
+    const native = document.getElementById('mcp-f-native')?.checked ? '1' : '0';
+    const searchTool = document.getElementById('mcp-f-search-tool')?.value.trim() || '';
+    const searchArg  = document.getElementById('mcp-f-search-arg')?.value.trim() || '';
     if (!name) { showToast('Name is required.', 'error'); return; }
     if (!url)  { showToast('URL is required.', 'error'); return; }
 
@@ -1733,7 +1760,8 @@ const saveMcpServer = async (id) => {
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving…';
 
-    const result = await api.call('admin_save_mcp_server', { id: id || '', name, url, auth_token: token }, 'POST');
+    const result = await api.call('admin_save_mcp_server',
+        { id: id || '', name, url, auth_token: token, wiki_native: native, search_tool: searchTool, search_arg: searchArg }, 'POST');
     saveBtn.disabled = false;
     saveBtn.textContent = 'Save';
 

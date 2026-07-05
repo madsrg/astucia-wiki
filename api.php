@@ -1629,19 +1629,41 @@ if (isset($_REQUEST['action'])) {
                     }
 
                     // Generic MCP: text-only against a search-like tool.
-                    $adv_tools = _mcp_fetch_tools($adv_srv);
-                    $adv_tool  = null;
-                    foreach ($adv_tools as $_at) {
-                        if (stripos($_at['name'], 'search') !== false) { $adv_tool = $_at; break; }
+                    // Hybrid tool selection — use the server's configured search
+                    // tool if set, else a name heuristic (exact "search" wins,
+                    // then any name matching search/find/query/lookup/retrieve).
+                    $adv_tools    = _mcp_fetch_tools($adv_srv);
+                    $adv_cfg_tool = trim($adv_srv['search_tool'] ?? '');
+                    $adv_cfg_arg  = trim($adv_srv['search_arg'] ?? '');
+                    $adv_tool     = null;
+                    if ($adv_cfg_tool !== '') {
+                        foreach ($adv_tools as $_at) {
+                            if (strcasecmp($_at['name'], $adv_cfg_tool) === 0) { $adv_tool = $_at; break; }
+                        }
+                        if (!$adv_tool) {
+                            echo json_encode(['success' => false, 'message' => "Configured search tool \"{$adv_cfg_tool}\" not found on \"{$adv_srv['name']}\"."]);
+                            break;
+                        }
+                    } else {
+                        foreach ($adv_tools as $_at) {
+                            if (strcasecmp($_at['name'], 'search') === 0) { $adv_tool = $_at; break; }
+                        }
+                        if (!$adv_tool) {
+                            foreach ($adv_tools as $_at) {
+                                if (preg_match('/search|find|query|lookup|retrieve/i', $_at['name'])) { $adv_tool = $_at; break; }
+                            }
+                        }
+                        if (!$adv_tool) {
+                            echo json_encode(['success' => false, 'message' => "No search tool found on \"{$adv_srv['name']}\". Set one under this server in Admin → AI → MCP Servers."]);
+                            break;
+                        }
                     }
-                    if (!$adv_tool) {
-                        echo json_encode(['success' => false, 'message' => "No search tool found on \"{$adv_srv['name']}\"."]);
-                        break;
-                    }
-                    // Pick the argument to receive the text: prefer "query", else first string prop.
+                    // Pick the argument to receive the text: configured arg wins,
+                    // else "query", else the tool's first property.
                     $adv_props = $adv_tool['params']['properties'] ?? [];
                     if (is_object($adv_props)) $adv_props = (array)$adv_props;
-                    $adv_argname = isset($adv_props['query']) ? 'query' : (array_key_first($adv_props) ?: 'query');
+                    $adv_argname = $adv_cfg_arg !== '' ? $adv_cfg_arg
+                        : (isset($adv_props['query']) ? 'query' : (array_key_first($adv_props) ?: 'query'));
                     $adv_txt = _mcp_call_tool($adv_srv, $adv_tool['name'], [$adv_argname => $adv_parsed['text']]);
                     echo json_encode([
                         'success' => !str_starts_with($adv_txt, 'Error:'),
@@ -3286,6 +3308,8 @@ if (isset($_REQUEST['action'])) {
                     'url'            => $s['url']        ?? '',
                     'auth_token_set' => !empty($s['auth_token']),
                     'wiki_native'    => !empty($s['wiki_native']),
+                    'search_tool'    => $s['search_tool'] ?? '',
+                    'search_arg'     => $s['search_arg']  ?? '',
                     'created_at'     => $s['created_at'] ?? '',
                 ], _load_mcp_servers());
                 echo json_encode(['success' => true, 'data' => $mcp_out]);
@@ -3297,6 +3321,8 @@ if (isset($_REQUEST['action'])) {
                 $mcp_url   = trim($_POST['url']        ?? '');
                 $mcp_token = $_POST['auth_token']      ?? '';
                 $mcp_native = !empty($_POST['wiki_native']) && $_POST['wiki_native'] !== '0' && $_POST['wiki_native'] !== 'false';
+                $mcp_search_tool = trim($_POST['search_tool'] ?? '');
+                $mcp_search_arg  = trim($_POST['search_arg']  ?? '');
                 if (!$mcp_name) throw new Exception('MCP server name is required.');
                 if (!$mcp_url)  throw new Exception('MCP server URL is required.');
                 $mcp_servers = _load_mcp_servers();
@@ -3307,6 +3333,8 @@ if (isset($_REQUEST['action'])) {
                         $_ms['name'] = $mcp_name;
                         $_ms['url']  = $mcp_url;
                         $_ms['wiki_native'] = $mcp_native;
+                        $_ms['search_tool'] = $mcp_search_tool;
+                        $_ms['search_arg']  = $mcp_search_arg;
                         if ($mcp_token !== '') $_ms['auth_token'] = $mcp_token;
                         $found_mcp = true;
                         break;
@@ -3320,6 +3348,8 @@ if (isset($_REQUEST['action'])) {
                         'url'         => $mcp_url,
                         'auth_token'  => $mcp_token,
                         'wiki_native' => $mcp_native,
+                        'search_tool' => $mcp_search_tool,
+                        'search_arg'  => $mcp_search_arg,
                         'created_at'  => date('c'),
                     ];
                 }
