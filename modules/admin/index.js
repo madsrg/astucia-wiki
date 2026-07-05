@@ -862,6 +862,10 @@ const openAiUserForm = (u) => {
                         <input type="text" id="ai-f-model" class="form-control" value="${escHtml(cfg.model || '')}" placeholder="gpt-4o">
                     </div>
                 </div>
+                <div class="admin-ai-form-row" style="align-items:center;gap:0.75rem">
+                    <button type="button" id="ai-f-test-btn" class="btn btn-secondary btn-sm">${t('admin.ai.test-btn')}</button>
+                    <div id="ai-f-test-result"></div>
+                </div>
                 <div class="form-group">
                     <label>${t('admin.ai.context')} — <span id="ai-f-context-display" class="admin-ai-temp-val">${cfg.context_messages ?? 10}</span></label>
                     <input type="range" id="ai-f-context" class="admin-ai-temp-slider" value="${cfg.context_messages ?? 10}" min="0" max="20" step="1">
@@ -910,6 +914,29 @@ const openAiUserForm = (u) => {
         document.getElementById('ai-f-temperature-display').textContent = parseFloat(e.target.value).toFixed(2).replace(/\.?0+$/, '') || '0';
     });
     wireSpacesField('ai-f');
+
+    document.getElementById('ai-f-test-btn').addEventListener('click', async () => {
+        const provider = document.getElementById('ai-f-provider')?.value || 'openai';
+        const api_url  = document.getElementById('ai-f-url')?.value.trim() || '';
+        const api_key  = document.getElementById('ai-f-key')?.value || '';
+        const model    = document.getElementById('ai-f-model')?.value.trim() || '';
+        const btn = document.getElementById('ai-f-test-btn');
+        const out = document.getElementById('ai-f-test-result');
+        if (!api_url) { showToast('Enter an API URL first.', 'error'); return; }
+        if (!model)   { showToast('Enter a model first.', 'error'); return; }
+        if (!api_key && !cfg.api_key_set) { showToast('Enter an API key first.', 'error'); return; }
+        btn.disabled = true;
+        btn.textContent = 'Testing…';
+        const params = { provider, api_url, model };
+        if (api_key) params.api_key = api_key;
+        else if (u?.uid) params.uid = String(u.uid);
+        const res = await api.call('admin_test_ai_user', params, 'POST');
+        btn.disabled = false;
+        btn.textContent = t('admin.ai.test-btn');
+        out.innerHTML = res.success
+            ? `<p style="color:#48bb78;font-size:0.85rem">✓ Connected — reply: "${escHtml(res.reply)}"</p>`
+            : `<p style="color:#fc8181;font-size:0.85rem">✗ ${escHtml(res.message || 'Connection failed')}</p>`;
+    });
 
     // Async: load MCP server checkboxes
     (async () => {

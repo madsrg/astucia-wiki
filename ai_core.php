@@ -156,6 +156,56 @@ function _mcp_call_tool(array $server, string $name, array $input): string {
     return implode("\n", $parts) ?: 'Done.';
 }
 
+// Sends a minimal completion request to verify a provider/api_url/api_key/model
+// combination actually works together, without the full agentic tool loop — used
+// by the "Test Connection" button on the AI User admin form.
+function _test_ai_connection(string $provider, string $api_url, string $api_key, string $model): array {
+    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'curl is not available on this server.'];
+
+    $payload = [
+        'model'      => $model,
+        'max_tokens' => 16,
+        'messages'   => [['role' => 'user', 'content' => 'Reply with the single word: OK']],
+    ];
+    if ($provider === 'anthropic') {
+        $headers = ['Content-Type: application/json', 'x-api-key: ' . $api_key, 'anthropic-version: 2023-06-01'];
+    } else {
+        $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key];
+    }
+
+    $ch = curl_init($api_url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => json_encode($payload),
+        CURLOPT_HTTPHEADER     => $headers,
+        CURLOPT_TIMEOUT        => 20,
+    ]);
+    $raw      = curl_exec($ch);
+    $curl_err = curl_error($ch);
+    $http     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if (!$raw) return ['ok' => false, 'error' => $curl_err ?: 'No response (connection failed or timed out).'];
+    $data = json_decode($raw, true);
+    if (!$data) return ['ok' => false, 'error' => "HTTP {$http}: unreadable response."];
+    if (isset($data['error'])) return ['ok' => false, 'error' => $data['error']['message'] ?? 'API returned an error.'];
+    if (($data['type'] ?? '') === 'error') return ['ok' => false, 'error' => $data['error']['message'] ?? 'API returned an error.'];
+    // Some OpenAI-compatible providers (e.g. Mistral) use {"detail": "..."} instead.
+    if ($http >= 400 && isset($data['detail'])) {
+        return ['ok' => false, 'error' => is_string($data['detail']) ? $data['detail'] : json_encode($data['detail'])];
+    }
+
+    if ($provider === 'anthropic') {
+        $text_blocks = array_filter($data['content'] ?? [], fn($b) => ($b['type'] ?? '') === 'text');
+        $text = trim(implode(' ', array_column(array_values($text_blocks), 'text')));
+    } else {
+        $text = trim($data['choices'][0]['message']['content'] ?? '');
+    }
+    if ($text === '' && $http >= 400) return ['ok' => false, 'error' => "HTTP {$http}: empty response."];
+    return ['ok' => true, 'reply' => $text !== '' ? $text : '(empty reply)'];
+}
+
 /**
  * Run a single agent job.
  *

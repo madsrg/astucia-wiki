@@ -483,6 +483,7 @@ export default {
     'admin.ai.regen-btn': 'Regenerate',
     'admin.ai.token-hint':'Use this token as Authorization: Bearer <token> when calling the API as this AI user.',
     'admin.ai.save-btn':  'Save AI User',
+    'admin.ai.test-btn':  'Test Connection',
     'admin.ai.name-req':  'Name is required',
     'admin.ai.saved':     'AI user saved',
     'admin.ai.del-confirm':'Delete AI user "{name}"? This cannot be undone.',

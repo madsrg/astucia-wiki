@@ -575,7 +575,7 @@ if (isset($_REQUEST['action'])) {
                       'admin_get_logs', 'admin_get_log_content',
                       'admin_get_error_logs', 'admin_get_error_log_content',
                       'admin_send_test_email', 'admin_get_diag_log',
-                      'admin_get_ai_users', 'admin_save_ai_user',
+                      'admin_get_ai_users', 'admin_save_ai_user', 'admin_test_ai_user',
                       'admin_delete_ai_user', 'admin_regenerate_ai_token',
                       'admin_get_api_accounts', 'admin_save_api_account',
                       'admin_delete_api_account', 'admin_regenerate_api_token',
@@ -3214,6 +3214,34 @@ if (isset($_REQUEST['action'])) {
                     'description' => $t['description'] ?? '',
                 ], $raw_tools);
                 echo json_encode(['success' => true, 'tool_count' => count($tools_out), 'tools' => $tools_out]);
+                break;
+
+            case 'admin_test_ai_user':
+                $test_ai_provider = trim($_POST['provider'] ?? 'openai');
+                $test_ai_url      = trim($_POST['api_url']  ?? '');
+                $test_ai_key      = $_POST['api_key'] ?? '';
+                $test_ai_model    = trim($_POST['model'] ?? '');
+                $test_ai_uid      = isset($_POST['uid']) && $_POST['uid'] !== '' ? (int)$_POST['uid'] : null;
+                if (!$test_ai_url)   throw new Exception('API URL is required.');
+                if (!$test_ai_model) throw new Exception('Model is required.');
+                if (!$test_ai_key && $test_ai_uid !== null) {
+                    // Key field left blank ("keep existing") — resolve the stored key
+                    // server-side; it is never sent back to the browser.
+                    $uf_test_ai = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? []) : [];
+                    foreach ($uf_test_ai['users'] ?? [] as $_tu) {
+                        if (!empty($_tu['is_ai']) && (int)($_tu['uid'] ?? -1) === $test_ai_uid) {
+                            $test_ai_key = $_tu['ai_config']['api_key'] ?? '';
+                            break;
+                        }
+                    }
+                }
+                if (!$test_ai_key) throw new Exception('API key is required.');
+                $test_ai_res = _test_ai_connection($test_ai_provider, $test_ai_url, $test_ai_key, $test_ai_model);
+                if (!$test_ai_res['ok']) {
+                    echo json_encode(['success' => false, 'message' => $test_ai_res['error']]);
+                    break;
+                }
+                echo json_encode(['success' => true, 'reply' => $test_ai_res['reply']]);
                 break;
 
             default:

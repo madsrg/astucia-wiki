@@ -14,6 +14,7 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 - **Per-Space ACL for AI Users and API Accounts** — service tokens (`wk_ai_…`/`wk_sys_…`) can now be restricted to specific Spaces from their admin form, matching the existing restriction available to human users. Enforced everywhere a Space is resolved, including `mcp.php`.
 - **MCP tool attribution** — the `MCP tools used: …` footer and the live AI status modal now prefix external MCP tool calls with their server name (e.g. `Microsoft Learn:search_docs`) instead of just the bare tool name, in chat, Page Chat, and Agent Jobs alike
 - **Explicit MCP source invocation (`src:`)** — type `src:` in a chat or Page Chat message for a type-ahead of registered MCP servers (e.g. `src:astucia_projects`). When the addressed AI User has that server enabled, its reply is restricted to *only* that server's tools — no built-ins, no other MCP servers — as a deterministic alternative to the free-text per-server instructions. Also honored in Agent Job prompts.
+- **Test Connection for AI Users** — a button on the AI User admin form sends a minimal completion request to verify the provider/URL/model/key actually work together before saving; shows the model's reply or the exact API error inline
 
 ### Fixed
 - Clicking a Recent or Favorites item did not switch the sidebar to the Tree tab
