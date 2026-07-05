@@ -6,6 +6,13 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.3] — 2026-07-05
+
+### Added
+- **Saved searches (`.search` content type)** — a new content file that stores a query and runs it deterministically (no LLM). Create one from the New menu; opening it auto-runs the saved query in a chat-like results view, and running persists the query back to the file. Supports a compact token language: free text for full-text search plus `tag:<name>` (repeatable, exact-match, quote for spaces), `updated:<N>d` for recency, and `src:<slug>` to route the search at a registered MCP source instead of this wiki.
+- **MCP Tool Explorer** — an admin/editor lightbox (sidebar toolbar) to browse and invoke tools on any registered MCP server directly. Pick a server and tool, fill in typed argument fields derived from the tool's input schema, and invoke it (deterministic `tools/list` + `tools/call`, no LLM) — useful for testing and exploring an MCP server's capabilities.
+- **Tag filtering in `wiki_search_pages`** — a `tags` parameter (all must match, exact) lets AI Users and MCP clients narrow searches to specific tags, combinable with `query` and `updated_within_days`.
+
 ## [2026.7.2] — 2026-07-03
 
 ### Added
