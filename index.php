@@ -384,13 +384,35 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <div class="mcp-explorer-input-area">
                 <div class="adv-search-controls">
                     <select id="mcp-explorer-server" class="form-control"></select>
+                    <input id="mcp-explorer-tool-filter" class="form-control mcp-tool-filter" type="text" data-i18n-placeholder="explorer.filter-placeholder" placeholder="Filter tools…">
                     <select id="mcp-explorer-tool" class="form-control"></select>
                 </div>
                 <div id="mcp-explorer-help" class="mcp-explorer-help"></div>
                 <div id="mcp-explorer-args" class="mcp-explorer-args"></div>
                 <div class="adv-search-input-row" style="justify-content:flex-end">
+                    <button id="mcp-explorer-clear" class="btn btn-secondary" data-i18n="explorer.clear">Clear</button>
                     <button id="mcp-explorer-run" class="btn btn-blue" data-i18n="explorer.invoke">Invoke</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="mcp-save-lightbox" class="lightbox-overlay hidden">
+        <div class="lightbox-content input-modal-content">
+            <div class="input-modal-header">
+                <h3 data-i18n="explorer.save-title">Save result as page</h3>
+            </div>
+            <div class="form-group">
+                <label class="mcp-save-label" for="mcp-save-folder" data-i18n="explorer.save-folder">Folder</label>
+                <select id="mcp-save-folder" class="form-control"></select>
+            </div>
+            <div class="form-group">
+                <label class="mcp-save-label" for="mcp-save-name" data-i18n="explorer.save-name">Page name</label>
+                <input type="text" id="mcp-save-name" class="form-control" autocomplete="off">
+            </div>
+            <div class="lightbox-footer">
+                <button id="mcp-save-close" class="btn btn-secondary" data-i18n="btn.cancel">Cancel</button>
+                <button id="mcp-save-confirm" class="btn btn-blue" data-i18n="explorer.save-confirm">Save</button>
             </div>
         </div>
     </div>

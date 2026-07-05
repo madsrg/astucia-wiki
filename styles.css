@@ -1453,3 +1453,11 @@ body {
 .mcp-arg-row label { font-size: 0.82rem; font-weight: 600; }
 .mcp-arg-req { color: var(--accent-danger); }
 .mcp-arg-type { font-weight: 400; color: var(--accent-gray); font-size: 0.75rem; }
+.mcp-result-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; margin-bottom: 0.35rem; }
+.mcp-result-meta { font-size: 0.72rem; color: var(--accent-gray); white-space: nowrap; }
+.mcp-result-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; justify-content: flex-end; }
+.mcp-result-btn { font-size: 0.72rem; padding: 0.15rem 0.55rem; line-height: 1.4; }
+.mcp-tool-filter { flex: 1; min-width: 0; }
+.mcp-turn-clickable { cursor: pointer; }
+.mcp-turn-clickable:hover { background: var(--bg-secondary); border-radius: 6px; }
+.mcp-save-label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 0.3rem; }
