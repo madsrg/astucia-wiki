@@ -6,6 +6,12 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.5] — 2026-07-05
+
+### Changed
+- **Saved searches (`.search`) no longer run automatically on open** — opening a saved search restores its query and source but waits for you to run it (Search button or Enter), instead of firing the query every time the page is viewed.
+- **Saved searches remember their last result** — running a search now stores the result and a timestamp in the `.search` file. Reopening the page shows that result under a **"Last run: ‹date/time›"** label (local page links still clickable); running again replaces the stored result.
+
 ## [2026.7.4] — 2026-07-05
 
 ### Added
