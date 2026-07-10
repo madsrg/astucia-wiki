@@ -6,6 +6,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.12] — 2026-07-10
+
+### Fixed
+- **Mobile editing keeps the header and toolbar fixed** — when editing a Markdown page on mobile, the page header and formatting toolbar now stay in place and only the textarea contents scroll (bounded the editor's flex height chain and pinned the header).
+
 ## [2026.7.11] — 2026-07-10
 
 ### Added
