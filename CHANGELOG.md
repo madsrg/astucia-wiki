@@ -6,6 +6,14 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.8] — 2026-07-10
+
+### Added
+- **General Chat in the mobile view** — opening a `.chat` page on mobile now gives a fully usable chat: the topic control is available and per-message actions (reply, reaction, pin, save-as-page, append-to-page) are always shown instead of hidden behind hover, so they're reachable on touch.
+
+### Changed
+- **Mobile dialogs fit the screen** — lightboxes (save/append a message, copy, share, help, search results, etc.) are now near-full-width and content-height with internal scrolling on phones; full-screen dialogs go edge-to-edge.
+
 ## [2026.7.7] — 2026-07-10
 
 ### Added
