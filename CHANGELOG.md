@@ -6,6 +6,12 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.9] — 2026-07-10
+
+### Changed
+- **Mobile drawer stays open when tapping a folder** — the navigation drawer now closes only when an actual page is opened; folders (and the folder-browse "up" row) keep it open so you can browse. Also fixed the folder-browse pane not closing the drawer on page selection.
+- **More desktop-only chrome hidden in mobile view** — the Classic/Inline editor-mode toggle, Version History button, the `ID: <pageid>` badge, the page attachments + labels row, and the Administration and MCP Tool Explorer buttons are now hidden on mobile.
+
 ## [2026.7.8] — 2026-07-10
 
 ### Added
