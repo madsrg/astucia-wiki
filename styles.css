@@ -1456,7 +1456,6 @@ body.mobile #delete-btn,
 body.mobile #share-btn,
 body.mobile #page-chat-btn,
 body.mobile #diagram-edit-btn,
-body.mobile #chat-topic-btn,
 body.mobile #file-actions-menu-btn,
 body.mobile #git-commit-toggle-btn,
 body.mobile #git-snapshot-btn,
@@ -1464,6 +1463,20 @@ body.mobile #add-column-btn,
 body.mobile #list-props-btn,
 body.mobile .view-tab-new,
 body.mobile .tag-input-wrap { display: none !important; }
+
+/* Lightboxes: near-full-width, content-height, scrollable on small screens */
+body.mobile .lightbox-content { width: 94vw; max-width: 94vw; height: auto; max-height: 90vh; overflow-y: auto; padding: 1.25rem; }
+body.mobile .lightbox-content.full-screen { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; padding: 0; }
+
+/* General Chat is part of the mobile cut. Its message actions live behind
+   :hover, which doesn't exist on touch — reveal them so they're reachable. */
+body.mobile .chat-reply-btn,
+body.mobile .chat-save-btn,
+body.mobile .chat-reaction-add-btn,
+body.mobile .chat-pin-btn { display: inline-flex; align-items: center; }
+body.mobile .chat-del-btn { display: block; }
+/* Full-width bubbles read better on a phone */
+body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 
 @media print {
     body > *:not(#print-lightbox) { display: none !important; }
