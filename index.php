@@ -30,6 +30,24 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
     
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="stylesheet" href="styles.css?v=<?php echo filemtime(__DIR__ . '/styles.css'); ?>">
+
+    <?php
+    // Cache-busting for ES modules: build an import map that versions every JS
+    // file under modules/ by its mtime. script.js gets ?v via its <script src>,
+    // but its imports (and their nested imports) are hardcoded relative paths
+    // with no version — so edited modules would otherwise be served stale.
+    // Import-map matching resolves specifiers to absolute URLs before comparing,
+    // so both './modules/...' (from script.js) and '../core/...' (nested) match
+    // these keys. Static and dynamic import() are both covered.
+    $moduleImports = [];
+    $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(__DIR__ . '/modules', FilesystemIterator::SKIP_DOTS));
+    foreach ($rii as $file) {
+        if (!$file->isFile() || $file->getExtension() !== 'js') continue;
+        $rel = str_replace('\\', '/', substr($file->getPathname(), strlen(__DIR__) + 1)); // modules/core/icons.js
+        $moduleImports['./' . $rel] = './' . $rel . '?v=' . $file->getMTime();
+    }
+    ?>
+    <script type="importmap"><?php echo json_encode(['imports' => $moduleImports], JSON_UNESCAPED_SLASHES); ?></script>
 </head>
 <body class="role-<?php echo htmlspecialchars($userRole); ?>" data-mail-configured="<?php echo $mailConfigured; ?>" data-user-uid="<?php echo $currentUserUid; ?>" data-user-name="<?php echo $currentUserName; ?>">
 
