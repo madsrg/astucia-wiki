@@ -6,6 +6,17 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.7] — 2026-07-10
+
+### Added
+- **Mobile view (view-focused)** — a responsive layout for phones: the sidebar becomes an off-canvas drawer opened from a header menu button, content goes full-width with larger type and horizontally-scrollable tables/code, and authoring controls (edit, new item, copy/move, chat, etc.) are hidden. A display-mode toggle in the sidebar footer cycles **Automatic → Desktop → Mobile** and is remembered, so a phone user can force the full desktop UI and a desktop user can preview mobile. Detection is viewport-based (no user-agent sniffing).
+- **Chat focus mode** — after you `@mention` an AI User (or click its avatar/name), the chat "focuses" on it: a chip above the input shows who you're talking to and every following message is routed to that AI without re-mentioning. Exit with the chip's ✕, Esc on an empty input, `/newTopic`, or by mentioning someone else. Per-chat and remembered across reloads. Works in both General Chat and Page Chat.
+- **Save a chat message as a page** — each chat message gains two actions: **Save as markdown page** (create a new page, choosing Space, folder, and filename) and **Append to markdown page** (pick an existing page from a tree and append the message to it). Both work across spaces and keep the page index, search index, and git history in sync.
+
+### Fixed
+- **Page scroll now resets to the top when switching pages** — scrolling down a long page and opening another no longer leaves you partway down the new one (Markdown, list, and saved-search views).
+- **Space switcher — clicks near a row's top/bottom edge were ignored** — the whole space row is now clickable, not just the label text.
+
 ## [2026.7.6] — 2026-07-05
 
 ### Added
