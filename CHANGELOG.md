@@ -6,6 +6,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.10] — 2026-07-10
+
+### Changed
+- **Mobile header is a single aligned row** — on a phone the page icon, title, and favorite button now line up vertically with the menu button; the folder breadcrumb is hidden on mobile (navigation is available from the drawer).
+
 ## [2026.7.9] — 2026-07-10
 
 ### Changed
