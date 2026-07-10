@@ -1459,10 +1459,16 @@ body.mobile #diagram-edit-btn,
 body.mobile #file-actions-menu-btn,
 body.mobile #git-commit-toggle-btn,
 body.mobile #git-snapshot-btn,
+body.mobile #git-history-btn,
+body.mobile #editor-mode-group,
+body.mobile #page-id-display,
 body.mobile #add-column-btn,
 body.mobile #list-props-btn,
 body.mobile .view-tab-new,
-body.mobile .tag-input-wrap { display: none !important; }
+body.mobile .tag-input-wrap,
+body.mobile #page-meta-row,
+body.mobile #admin-btn,
+body.mobile #mcp-explorer-btn { display: none !important; }
 
 /* Lightboxes: near-full-width, content-height, scrollable on small screens */
 body.mobile .lightbox-content { width: 94vw; max-width: 94vw; height: auto; max-height: 90vh; overflow-y: auto; padding: 1.25rem; }

@@ -60,12 +60,17 @@ export const init = () => {
     const backdrop    = document.getElementById('mobile-sidebar-backdrop');
     menuBtn?.addEventListener('click', () => container?.classList.toggle('sidebar-mobile-open'));
     backdrop?.addEventListener('click', closeDrawer);
-    document.getElementById('file-navigator')?.addEventListener('click', (e) => {
-        if (state.isMobile && e.target.closest('.file-item-content')) closeDrawer();
-    });
-    document.getElementById('file-browser')?.addEventListener('click', (e) => {
-        if (state.isMobile && e.target.closest('.file-item-content')) closeDrawer();
-    });
+
+    // Close the drawer only when an actual page is opened — folders (and the
+    // folder-browse "up" row) just expand/navigate, so keep the menu open.
+    const FOLDER_TYPES = new Set(['folder', 'filesfolder', 'up']);
+    const closeOnPageSelect = (e) => {
+        if (!state.isMobile) return;
+        const item = e.target.closest('.file-item-content, .browse-item-content');
+        if (item && !FOLDER_TYPES.has(item.dataset.type)) closeDrawer();
+    };
+    document.getElementById('file-navigator')?.addEventListener('click', closeOnPageSelect);
+    document.getElementById('file-browser')?.addEventListener('click', closeOnPageSelect);
 
     // Display-mode toggle: cycles auto → desktop → mobile → auto.
     document.getElementById('display-mode-btn')?.addEventListener('click', () => {
