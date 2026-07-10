@@ -1426,6 +1426,9 @@ body {
 
 body.mobile .mobile-menu-btn { display: inline-flex; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); }
 body.mobile .main-header { position: relative; padding-left: 56px; padding-right: 1rem; }
+/* Drop the breadcrumb row so the header is a single line — the page icon,
+   title and favorite button then vertically align with the menu button. */
+body.mobile .page-breadcrumb { display: none; }
 
 /* Sidebar → off-canvas drawer */
 body.mobile .sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 1000; width: 82%; max-width: 320px; min-width: 0; transform: translateX(-100%); transition: transform 0.2s ease; box-shadow: 2px 0 14px rgba(0,0,0,0.25); }
