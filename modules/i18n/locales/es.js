@@ -11,7 +11,7 @@ export default {
     'nav.search-ph': 'Buscar páginas…', 'nav.search-btn': 'Buscar', 'nav.logout': 'Cerrar sesión',
     'nav.prefs-title': 'Mis preferencias', 'nav.mentions-title': 'Mis menciones — páginas donde se me menciona',
     'nav.comments-title': 'Mis comentarios — páginas en las que he comentado', 'nav.admin-title': 'Administración',
-    'nav.help-title': 'Ayuda', 'nav.lang-title': 'Idioma',
+    'nav.help-title': 'Ayuda', 'nav.lang-title': 'Idioma', 'mobile.menu': 'Menú', 'mobile.toggle-title': 'Cambiar vista (auto / escritorio / móvil)', 'mobile.mode-auto': 'Vista: Automática', 'mobile.mode-desktop': 'Vista: Escritorio', 'mobile.mode-mobile': 'Vista: Móvil',
     'nav.collapse': 'Ocultar barra lateral', 'nav.expand': 'Mostrar barra lateral',
 
     'header.select-page': 'Selecciona una página para empezar', 'header.copy': 'Copiar', 'header.move': 'Mover',
@@ -71,6 +71,8 @@ export default {
     'chat.empty': 'Aún no hay mensajes — ¡sé el primero en decir algo!',
     'chat.working': 'Procesando…', 'chat.timeout': '⚠️ No se recibió respuesta — es posible que la solicitud haya expirado.', 'chat.new-topic': 'Nuevo tema',
     'chat.load-older': 'Cargar mensajes anteriores', 'chat.loading-older': 'Cargando…', 'chat.ai-working': 'La IA está pensando…',
+    'chat.focus.active': '🤖 Chateando con {name} — los mensajes van a ella', 'chat.focus.placeholder': 'Mensaje para {name}…', 'chat.focus.exit': 'Dejar de chatear con esta IA', 'chat.focus.start': 'Chatear con {name}',
+    'chat.save.action-save': 'Guardar como página markdown', 'chat.save.action-append': 'Añadir a página markdown', 'chat.save.title-save': 'Guardar como página markdown', 'chat.save.title-append': 'Añadir a página markdown', 'chat.save.name-label': 'Nombre de archivo:', 'chat.save.space-label': 'Espacio:', 'chat.save.folder-label': 'Carpeta:', 'chat.save.page-label': 'Página a la que añadir:', 'chat.save.no-page': 'Selecciona una página.', 'chat.save.confirm': 'Guardar página', 'chat.save.confirm-append': 'Añadir', 'chat.save.no-name': 'Introduce un nombre de archivo.', 'chat.save.saved': 'Mensaje guardado como página.', 'chat.save.appended': 'Mensaje añadido a la página.', 'chat.save.failed': 'No se pudo guardar la página.',
     'chat.cmd.new-topic':       'Restablecer contexto de IA — ignorar mensajes anteriores a este punto',
     'chat.cmd.me':              'Publicar un mensaje de acción — /me está revisando el borrador',
     'chat.cmd.topic':           'Actualizar el tema del chat — /topic Nuevo título aquí',

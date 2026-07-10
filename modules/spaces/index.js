@@ -112,11 +112,16 @@ const _render = (spaces, active) => {
         const label = document.createElement('span');
         label.className = 'space-item-label';
         label.textContent = name;
-        label.addEventListener('click', () => {
+        item.appendChild(label);
+
+        // Switch on a click anywhere in the row, not just on the label text — the
+        // row's vertical padding isn't covered by the label, so a label-only
+        // handler silently ignored clicks near a row's top/bottom edge. The
+        // rename button stops propagation, so it won't trigger a switch.
+        item.addEventListener('click', () => {
             dropdown.classList.add('hidden');
             switchSpace(name, spaces);
         });
-        item.appendChild(label);
 
         if (canCreate) {
             const renameBtn = document.createElement('button');

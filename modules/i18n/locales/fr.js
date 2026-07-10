@@ -11,7 +11,7 @@ export default {
     'nav.search-ph': 'Rechercher des pages…', 'nav.search-btn': 'Rechercher', 'nav.logout': 'Se déconnecter',
     'nav.prefs-title': 'Mes préférences', 'nav.mentions-title': 'Mes mentions — pages où je suis mentionné',
     'nav.comments-title': 'Mes commentaires — pages sur lesquelles j\'ai commenté', 'nav.admin-title': 'Administration',
-    'nav.help-title': 'Aide', 'nav.lang-title': 'Langue',
+    'nav.help-title': 'Aide', 'nav.lang-title': 'Langue', 'mobile.menu': 'Menu', 'mobile.toggle-title': 'Changer de vue (auto / bureau / mobile)', 'mobile.mode-auto': 'Vue : Automatique', 'mobile.mode-desktop': 'Vue : Bureau', 'mobile.mode-mobile': 'Vue : Mobile',
     'nav.collapse': 'Réduire la barre latérale', 'nav.expand': 'Développer la barre latérale',
 
     'header.select-page': 'Sélectionnez une page pour commencer', 'header.copy': 'Copier', 'header.move': 'Déplacer',
@@ -71,6 +71,8 @@ export default {
     'chat.empty': 'Aucun message pour l\'instant — soyez le premier à dire quelque chose !',
     'chat.working': 'En cours…', 'chat.timeout': '⚠️ Aucune réponse reçue — la requête a peut-être expiré.', 'chat.new-topic': 'Nouveau sujet',
     'chat.load-older': 'Charger les messages plus anciens', 'chat.loading-older': 'Chargement…', 'chat.ai-working': "L'IA réfléchit…",
+    'chat.focus.active': '🤖 Discussion avec {name} — les messages lui sont envoyés', 'chat.focus.placeholder': 'Message à {name}…', 'chat.focus.exit': 'Arrêter de discuter avec cette IA', 'chat.focus.start': 'Discuter avec {name}',
+    'chat.save.action-save': 'Enregistrer comme page markdown', 'chat.save.action-append': 'Ajouter à une page markdown', 'chat.save.title-save': 'Enregistrer comme page markdown', 'chat.save.title-append': 'Ajouter à une page markdown', 'chat.save.name-label': 'Nom du fichier :', 'chat.save.space-label': 'Espace :', 'chat.save.folder-label': 'Dossier :', 'chat.save.page-label': 'Page à compléter :', 'chat.save.no-page': 'Veuillez sélectionner une page.', 'chat.save.confirm': 'Enregistrer la page', 'chat.save.confirm-append': 'Ajouter', 'chat.save.no-name': 'Veuillez saisir un nom de fichier.', 'chat.save.saved': 'Message enregistré comme page.', 'chat.save.appended': 'Message ajouté à la page.', 'chat.save.failed': "Échec de l'enregistrement de la page.",
     'chat.cmd.new-topic':       'Réinitialiser le contexte IA — ignorer les messages précédents',
     'chat.cmd.me':              "Publier un message d'action — /me relit le brouillon",
     'chat.cmd.topic':           'Mettre à jour le sujet — /topic Nouveau titre ici',

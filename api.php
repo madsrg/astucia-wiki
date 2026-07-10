@@ -565,7 +565,7 @@ if (isset($_REQUEST['action'])) {
         @unlink($status_file);
     }
 
-    $edit_actions  = ['save', 'create_file', 'create_folder', 'create_diagram', 'create_list', 'create_chat', 'create_search',
+    $edit_actions  = ['save', 'create_file', 'save_message_page', 'create_folder', 'create_diagram', 'create_list', 'create_chat', 'create_search',
                       'post_chat_message', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'purge_chat_messages', 'toggle_sticky',
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags',
@@ -2011,6 +2011,53 @@ if (isset($_REQUEST['action'])) {
                 } else {
                     throw new Exception('File already exists.');
                 }
+                break;
+
+            case 'save_message_page':
+                // Save a chat message's text as a markdown page ('create') or
+                // append it to a page ('append'). Target space is resolved the
+                // usual way from the request's `space` param, so this works
+                // cross-space. The folder/filename come in via `path`.
+                $smp_path_raw = trim($_POST['path'] ?? '');
+                $smp_text     = (string)($_POST['text'] ?? '');
+                $smp_mode     = (($_POST['mode'] ?? 'create') === 'append') ? 'append' : 'create';
+                if ($smp_path_raw === '') { echo json_encode(['success' => false, 'message' => 'A filename is required.']); break; }
+                if (!preg_match('/\.md$/i', $smp_path_raw)) $smp_path_raw .= '.md';
+
+                $smp_abs    = sanitize_path($smp_path_raw);
+                $smp_exists = file_exists($smp_abs);
+
+                if ($smp_mode === 'create' && $smp_exists) {
+                    echo json_encode(['success' => false, 'message' => 'A page with that name already exists.']);
+                    break;
+                }
+
+                if ($smp_mode === 'append' && $smp_exists) {
+                    $smp_existing = (string)file_get_contents($smp_abs);
+                    $smp_content  = rtrim($smp_existing, "\n") . "\n\n" . $smp_text . "\n";
+                } else {
+                    // New page, or "append" to a page that doesn't exist yet.
+                    $smp_dir = dirname($smp_abs);
+                    if (!is_dir($smp_dir)) { echo json_encode(['success' => false, 'message' => 'Destination folder does not exist.']); break; }
+                    $smp_content = $smp_text . "\n";
+                }
+
+                if (file_put_contents($smp_abs, $smp_content) === false) {
+                    throw new Exception('Failed to save page.');
+                }
+
+                $actor = get_current_actor();
+                if ($smp_exists) $indexer->updateModified($smp_path_raw, $actor['uid'], $actor['name']);
+                else             $indexer->addPage($smp_path_raw, $actor['uid'], $actor['name']);
+
+                echo json_encode(['success' => true, 'message' => 'Saved.', 'path' => $smp_path_raw, 'created' => !$smp_exists]);
+
+                $smp_rel = ltrim(str_replace('..', '', $smp_path_raw), '/');
+                if ($search_idx) { try { $search_idx->upsertPage(_sidx_space(), $smp_rel, $smp_content); } catch (\Throwable $_e) {} }
+                if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+                $git_name  = $actor['name'] ?? 'Wiki';
+                $git_email = (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost';
+                git_auto_commit($smp_abs, $git_name, $git_email, ($smp_exists ? 'Append to ' : 'Create ') . basename($smp_path_raw));
                 break;
 
             case 'create_folder':

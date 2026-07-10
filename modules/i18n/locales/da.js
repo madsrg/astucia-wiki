@@ -11,7 +11,7 @@ export default {
     'nav.search-ph': 'Søg i sider…', 'nav.search-btn': 'Søg', 'nav.logout': 'Log ud',
     'nav.prefs-title': 'Mine indstillinger', 'nav.mentions-title': 'Mine omtaler — sider hvor du er omtalt',
     'nav.comments-title': 'Mine kommentarer — sider du har kommenteret på', 'nav.admin-title': 'Administration',
-    'nav.help-title': 'Hjælp', 'nav.lang-title': 'Sprog',
+    'nav.help-title': 'Hjælp', 'nav.lang-title': 'Sprog', 'mobile.menu': 'Menu', 'mobile.toggle-title': 'Skift visning (auto / desktop / mobil)', 'mobile.mode-auto': 'Visning: Automatisk', 'mobile.mode-desktop': 'Visning: Desktop', 'mobile.mode-mobile': 'Visning: Mobil',
     'nav.collapse': 'Skjul sidepanel', 'nav.expand': 'Vis sidepanel',
 
     'header.select-page': 'Vælg en side for at starte', 'header.copy': 'Kopiér', 'header.move': 'Flyt',
@@ -72,6 +72,8 @@ export default {
     'chat.empty': 'Ingen beskeder endnu — vær den første til at sige noget!',
     'chat.working': 'Arbejder…', 'chat.timeout': '⚠️ Ingen respons modtaget — anmodningen er muligvis udløbet.', 'chat.new-topic': 'Nyt emne',
     'chat.load-older': 'Indlæs ældre beskeder', 'chat.loading-older': 'Indlæser…', 'chat.ai-working': 'AI tænker…',
+    'chat.focus.active': '🤖 Chatter med {name} — beskeder sendes til den', 'chat.focus.placeholder': 'Besked til {name}…', 'chat.focus.exit': 'Stop med at chatte med denne AI', 'chat.focus.start': 'Chat med {name}',
+    'chat.save.action-save': 'Gem som markdown-side', 'chat.save.action-append': 'Føj til markdown-side', 'chat.save.title-save': 'Gem som markdown-side', 'chat.save.title-append': 'Føj til markdown-side', 'chat.save.name-label': 'Filnavn:', 'chat.save.space-label': 'Rum:', 'chat.save.folder-label': 'Mappe:', 'chat.save.page-label': 'Side at tilføje til:', 'chat.save.no-page': 'Vælg en side.', 'chat.save.confirm': 'Gem side', 'chat.save.confirm-append': 'Tilføj', 'chat.save.no-name': 'Angiv et filnavn.', 'chat.save.saved': 'Besked gemt som side.', 'chat.save.appended': 'Besked føjet til side.', 'chat.save.failed': 'Kunne ikke gemme siden.',
     'chat.cmd.new-topic':       'Nulstil AI-kontekst — ignorer beskeder før dette punkt',
     'chat.cmd.me':              'Post en handlingsbesked — /me gennemgår udkastet',
     'chat.cmd.topic':           'Opdater chattemnet — /topic Ny titel her',

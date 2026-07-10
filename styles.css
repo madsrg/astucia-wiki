@@ -592,7 +592,8 @@ body {
 .form-control { width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; }
 .lightbox-footer { margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border-color); text-align: right; display: flex; justify-content: flex-end; gap: 0.5rem; }
 #copy-file-tree .file-item-content.active,
-#move-file-tree .file-item-content.active { background-color: #dbeafe; }
+#move-file-tree .file-item-content.active,
+#save-msg-file-tree .file-item-content.active { background-color: #dbeafe; }
 .lightbox-content-sm { max-width: 420px; min-height: unset; height: auto; }
 .new-page-template-list { display: flex; flex-direction: column; gap: 0.15rem; max-height: 180px; overflow-y: auto; }
 .new-page-template-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.5rem; border-radius: 0.375rem; cursor: pointer; font-size: 0.875rem; user-select: none; }
@@ -632,7 +633,9 @@ body {
 #link-folder-group { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; margin-bottom: 0; }
 #copy-lightbox .link-file-tree,
 #move-lightbox .link-file-tree,
+#save-msg-lightbox .link-file-tree,
 #link-lightbox .link-file-tree { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 4px; padding: 0.25rem; }
+#save-msg-lightbox .link-file-tree { max-height: 45vh; }
 
 /* List View Styles */
 .list-actions { padding: 1rem 2rem 1rem 52px; border-bottom: 1px solid var(--border-color); display: flex; gap: 0.5rem; align-items: center; }
@@ -940,6 +943,7 @@ body {
 .role-reader .view-tab-new,
 .role-reader #list-props-btn,
 .role-reader .chat-input-area,
+.role-reader .chat-focus-chip,
 .role-reader #chat-topic-btn,
 .role-reader #add-column-btn,
 .role-reader #ff-upload-btn,
@@ -1102,6 +1106,9 @@ body {
 .chat-reply-btn { background: none; border: 1px solid transparent; border-radius: 12px; padding: 1px 5px; cursor: pointer; color: var(--accent-gray); line-height: 1.5; display: none; }
 .chat-col:hover .chat-reply-btn { display: inline-flex; align-items: center; }
 .chat-reply-btn:hover { background: #f0f4f8; border-color: #e2e8f0; color: var(--text-color); }
+.chat-save-btn { background: none; border: 1px solid transparent; border-radius: 12px; padding: 1px 5px; cursor: pointer; color: var(--accent-gray); line-height: 1.5; display: none; }
+.chat-col:hover .chat-save-btn { display: inline-flex; align-items: center; }
+.chat-save-btn:hover { background: #f0f4f8; border-color: #e2e8f0; color: var(--text-color); }
 
 /* Sticky bubble highlight */
 .chat-bubble-sticky { border-left: 2px solid #f6ad55; }
@@ -1148,6 +1155,13 @@ body {
 .chat-reaction-picker { position: fixed; background: white; border: 1px solid var(--border-color); border-radius: 8px; padding: 5px 7px; display: flex; gap: 2px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); z-index: 500; }
 .chat-reaction-pick-btn { background: none; border: none; cursor: pointer; font-size: 1.25rem; width: 32px; height: 32px; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
 .chat-reaction-pick-btn:hover { background: #f0f4f8; }
+
+/* Focus chip — "staying in the context" of one AI user */
+.chat-focus-chip { flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 1rem; background: #ebf8ff; border-top: 1px solid #bee3f8; font-size: 0.8rem; color: #2b6cb0; font-weight: 600; }
+.chat-focus-chip-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-focus-chip-close { flex-shrink: 0; background: none; border: none; cursor: pointer; color: #2b6cb0; font-size: 1.1rem; line-height: 1; padding: 0 0.2rem; border-radius: 4px; }
+.chat-focus-chip-close:hover { background: #bee3f8; }
+.chat-avatar-focusable { cursor: pointer; }
 
 /* Input area */
 .chat-input-area { position: relative; display: flex; align-items: flex-end; gap: 0.5rem; padding: 0.75rem 1rem; border-top: 1px solid var(--border-color); background: white; flex-shrink: 0; }
@@ -1403,6 +1417,53 @@ body {
 #pc-messages .chat-bubble { font-size: 0.79rem; padding: 0.3rem 0.5rem; }
 #pc-messages .chat-del-btn { font-size: 0.8rem; top: 0.1rem; right: 0.25rem; }
 #pc-messages .chat-empty { font-size: 0.79rem; }
+
+/* ── Mobile layout (view-focused) ─────────────────────────────────────────────
+   All mobile rules key off `body.mobile` (toggled by modules/mobile), NOT a bare
+   @media query, so the desktop/mobile override works on any screen size. */
+.mobile-menu-btn { display: none; background: none; border: 1px solid var(--border-color); border-radius: 6px; width: 36px; height: 36px; align-items: center; justify-content: center; cursor: pointer; color: var(--text-color); padding: 0; }
+.mobile-sidebar-backdrop { display: none; }
+
+body.mobile .mobile-menu-btn { display: inline-flex; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); }
+body.mobile .main-header { position: relative; padding-left: 56px; padding-right: 1rem; }
+
+/* Sidebar → off-canvas drawer */
+body.mobile .sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 1000; width: 82%; max-width: 320px; min-width: 0; transform: translateX(-100%); transition: transform 0.2s ease; box-shadow: 2px 0 14px rgba(0,0,0,0.25); }
+body.mobile .app-container.sidebar-mobile-open .sidebar { transform: translateX(0); }
+body.mobile .sidebar-toggle-btn { display: none; }
+body.mobile .app-container.sidebar-mobile-open .mobile-sidebar-backdrop { display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 999; }
+
+/* Content spans the full width (sidebar is out of flow) */
+body.mobile .main-content { width: 100%; }
+body.mobile #viewer-content { padding: 1rem; margin-left: 0; font-size: 16px; }
+body.mobile #viewer-content table { display: block; overflow-x: auto; }
+body.mobile #viewer-content pre { overflow-x: auto; }
+
+/* Keep the header tidy when space is tight */
+body.mobile #current-page-title { font-size: 1.15rem; max-width: 52vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.mobile .header-actions { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+
+/* View-only first cut: hide authoring / editing chrome */
+body.mobile #new-item-btn,
+body.mobile #edit-btn,
+body.mobile #save-btn,
+body.mobile #cancel-btn,
+body.mobile #search-btn,
+body.mobile #copy-btn,
+body.mobile #move-btn,
+body.mobile #rename-btn,
+body.mobile #delete-btn,
+body.mobile #share-btn,
+body.mobile #page-chat-btn,
+body.mobile #diagram-edit-btn,
+body.mobile #chat-topic-btn,
+body.mobile #file-actions-menu-btn,
+body.mobile #git-commit-toggle-btn,
+body.mobile #git-snapshot-btn,
+body.mobile #add-column-btn,
+body.mobile #list-props-btn,
+body.mobile .view-tab-new,
+body.mobile .tag-input-wrap { display: none !important; }
 
 @media print {
     body > *:not(#print-lightbox) { display: none !important; }

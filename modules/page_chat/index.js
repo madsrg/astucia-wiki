@@ -5,6 +5,7 @@ import { getUsers } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
 import { openAiModal, closeAiModal, checkAiModal, startStatusPoll } from '../core/ai_modal.js';
+import { getFocusAi, setFocusAi, applyFocus, createFocusChip } from '../core/chat_focus.js';
 
 const POLL_MS = 5000;
 const EMOJIS  = ['😀','😂','😍','🤔','😢','😮','😡','👍','👎','👋','🙏','❤️','🎉','🔥','✅','❌','⭐','💡','🚀','📝','🎯','👀','💬','🤝'];
@@ -22,6 +23,21 @@ let _linkedMdMtime  = 0;
 let _pcData         = null;
 let _pcPath         = null; // path currently loaded in the panel
 let _aiUids         = new Set();
+let _focusChip      = null;
+
+// ── Focus mode ──────────────────────────────────────────────────────────────
+
+const updateFocus = () => { if (_focusChip) _focusChip.update(getFocusAi(_pcPath)); };
+
+const setFocus = (name) => { setFocusAi(_pcPath, name); updateFocus(); };
+
+// Clicking an AI's avatar or name focuses the chat on it.
+const attachFocusClick = (el, msg) => {
+    if (!_aiUids.has(msg.uid)) return;
+    el.classList.add('chat-avatar-focusable');
+    el.title = t('chat.focus.start', { name: msg.name });
+    el.addEventListener('click', () => setFocus(msg.name));
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -90,6 +106,7 @@ const buildRow = (msg, grouped) => {
         avatarEl.className = 'chat-avatar pc-avatar';
         avatarEl.textContent = (msg.name || '?')[0].toUpperCase();
         avatarEl.style.background = avatarColor(msg.uid);
+        attachFocusClick(avatarEl, msg);
     } else {
         avatarEl.className = 'chat-avatar-gap';
     }
@@ -102,6 +119,7 @@ const buildRow = (msg, grouped) => {
         const meta = document.createElement('div');
         meta.className = 'chat-meta';
         meta.innerHTML = `<span class="chat-name">${esc(msg.name)}</span><span class="chat-time">${formatTime(msg.timestamp)}</span>`;
+        attachFocusClick(meta.querySelector('.chat-name'), msg);
         col.appendChild(meta);
     }
 
@@ -251,7 +269,7 @@ const doSend = async () => {
     const textarea = document.getElementById('pc-input');
     const sendBtn  = document.getElementById('pc-send-btn');
     if (!textarea || !sendBtn || !_pcPath) return;
-    const text = textarea.value.trim();
+    let text = textarea.value.trim();
     if (!text) return;
 
     if (text.startsWith('/')) {
@@ -288,13 +306,23 @@ const doSend = async () => {
             textarea.focus();
             return;
         }
-        // /me and /newTopic fall through to normal posting
+        // /me and /newTopic fall through to normal posting; a new topic ends
+        // the focused conversation.
+        if (cmd === '/newtopic') setFocus(null);
     }
 
     const users = await getUsers();
     const aiUsers = users.filter(u => u.is_ai);
     const mentions = (text.match(/#(\S+)/g) || []).map(m => m.slice(1).toLowerCase());
-    const mentionedAi = aiUsers.find(u => mentions.includes(u.name.toLowerCase()));
+    const explicitAi = aiUsers.find(u => mentions.includes(u.name.toLowerCase()));
+
+    // Explicitly mentioning an AI focuses the chat on it; focus mode then
+    // auto-routes later plain messages to the same AI without re-mentioning.
+    if (explicitAi) setFocus(explicitAi.name);
+
+    const focus = applyFocus(text, { chatPath: _pcPath, aiUsers, mentionedAi: explicitAi });
+    text = focus.text;
+    const mentionedAi = focus.mentionedAi;
 
     let abortCtrl = null;
     if (mentionedAi) {
@@ -336,6 +364,9 @@ const setupInput = () => {
     const emojiBtn   = document.getElementById('pc-emoji-btn');
     const emojiPicker = document.getElementById('pc-emoji-picker');
     if (!textarea || !sendBtn || !mentionPop) return;
+
+    const inputArea = textarea.closest('.chat-input-area');
+    if (inputArea) _focusChip = createFocusChip(inputArea, textarea, { onExit: () => setFocus(null) });
 
     if (emojiBtn && emojiPicker) {
         EMOJIS.forEach(e => {
@@ -484,6 +515,7 @@ const setupInput = () => {
             if (e.key === 'Escape') { closePop(); return; }
         }
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
+        else if (e.key === 'Escape' && !textarea.value && getFocusAi(_pcPath)) { e.preventDefault(); setFocus(null); }
     });
 
     sendBtn.addEventListener('click', doSend);
@@ -495,6 +527,7 @@ export const closePanel = () => {
     stopPoll();
     closeAiModal();
     _pcPath = null;
+    updateFocus();
     _linkedMdMtime = 0;
     state.pageChatPath = null;
     const panel = document.getElementById('page-chat-panel');
@@ -547,6 +580,7 @@ const loadAndOpen = async (chatPath) => {
     // Cache AI user UIDs so renderText can render their messages as Markdown
     const users = await getUsers();
     _aiUids = new Set(users.filter(u => u.is_ai).map(u => u.uid));
+    updateFocus();
 
     // Swap meta row (attachments/tags) for the page chat input
     document.getElementById('page-meta-row')?.classList.add('hidden');

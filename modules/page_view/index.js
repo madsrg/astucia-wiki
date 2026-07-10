@@ -317,6 +317,7 @@ export const loadPage = async (path, id, tags) => {
             loadedGitCommit = false;
             const { renderSearchView } = await import('../advanced_search/index.js');
             renderSearchView(result.data, path);
+            document.getElementById('adv-search-results').scrollTop = 0;
         }
     } else if (isChat) {
         viewerContainer.classList.add('hidden');
@@ -363,6 +364,7 @@ export const loadPage = async (path, id, tags) => {
                 const { refreshViewTabs } = await import('../list/index.js');
                 renderListView();
                 refreshViewTabs();
+                document.getElementById('list-items-table').scrollTop = 0;
             } catch (e) {
                 showToast(t('view.invalid-list'), 'error');
                 document.getElementById('list-items-table').innerHTML = `<p style="padding: 1rem;">${t('view.parse-error')}</p>`;
@@ -427,6 +429,9 @@ export const loadPage = async (path, id, tags) => {
                 }
 
                 viewerContent.innerHTML = renderedHTML;
+                // Start a freshly loaded page at the top — replacing innerHTML
+                // keeps the old scrollTop when the new page is also tall enough.
+                viewerContent.scrollTop = 0;
                 addHeadingIds(viewerContent, headings);
                 updateTocPanel(headings, viewerContent);
                 renderTags();

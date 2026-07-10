@@ -142,6 +142,9 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                         <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                     </button>
                     <?php endif; ?>
+                    <button id="display-mode-btn" class="sidebar-icon-btn" data-i18n-title="mobile.toggle-title" title="Desktop / mobile view">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="14" height="10" rx="1"/><line x1="2" y1="17" x2="12" y2="17"/><rect x="17" y="9" width="5" height="11" rx="1"/></svg>
+                    </button>
                     <div class="lang-selector-wrapper">
                         <button id="lang-btn" class="sidebar-icon-btn" data-i18n-title="nav.lang-title" title="Language">
                             <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -159,8 +162,13 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             </div>
         </aside>
 
+        <div id="mobile-sidebar-backdrop" class="mobile-sidebar-backdrop"></div>
+
         <main class="main-content">
             <header class="main-header">
+                <button id="mobile-menu-btn" class="mobile-menu-btn" data-i18n-title="mobile.menu" title="Menu" aria-label="Menu">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
                 <div class="page-title-wrapper">
                     <nav id="page-breadcrumb" class="page-breadcrumb hidden"></nav>
                     <div class="page-title-row">
@@ -558,7 +566,29 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             </div>
         </div>
     </div>
-    
+
+    <div id="save-msg-lightbox" class="lightbox-overlay hidden">
+        <div class="lightbox-content">
+            <button id="save-msg-close-btn" class="lightbox-close">&times;</button>
+            <h3 id="save-msg-title" data-i18n="chat.save.title-save">Save as Markdown Page</h3>
+            <div class="form-group" id="save-msg-name-group">
+                <label for="save-msg-name" data-i18n="chat.save.name-label">Filename:</label>
+                <input type="text" id="save-msg-name" class="form-control">
+            </div>
+            <div class="form-group">
+                <label for="save-msg-space-select" data-i18n="chat.save.space-label">Space:</label>
+                <select id="save-msg-space-select" class="form-control"></select>
+            </div>
+            <div class="form-group">
+                <label id="save-msg-tree-label" data-i18n="chat.save.folder-label">Folder:</label>
+                <div id="save-msg-file-tree" class="link-file-tree"></div>
+            </div>
+            <div class="lightbox-footer">
+                <button id="save-msg-confirm-btn" class="btn btn-green" data-i18n="chat.save.confirm">Save</button>
+            </div>
+        </div>
+    </div>
+
     <div id="diagram-editor-lightbox" class="lightbox-overlay hidden">
         <div class="lightbox-content full-screen">
             <button id="diagram-editor-close-btn" class="lightbox-close">&times;</button>

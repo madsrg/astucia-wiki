@@ -30,6 +30,8 @@ import { init as initFilesFolder } from './modules/files_folder/index.js';
 import { init as initAdmin } from './modules/admin/index.js';
 import { init as initPreferences } from './modules/preferences/index.js';
 import { init as initChat } from './modules/chat/index.js';
+import { init as initChatSave } from './modules/chat_save/index.js';
+import { init as initMobile } from './modules/mobile/index.js';
 import { initSpaces, switchSpaceSilently, getAllSpaces } from './modules/spaces/index.js';
 import { init as initMentions } from './modules/mentions/index.js';
 import { init as initSession } from './modules/session/index.js';
@@ -104,6 +106,7 @@ const init = async () => {
     window.addEventListener('wiki:languagechange', populateDropdownIcons);
     populateDropdownIcons();
     initSidebarToggle();
+    initMobile();
     initPaneTabs();
 
     // Capture pageid before initSpaces wipes it from the URL
@@ -143,6 +146,7 @@ const init = async () => {
     initAdmin();
     initPreferences();
     initChat();
+    initChatSave();
     initGit();
     initMentions();
     initSession();

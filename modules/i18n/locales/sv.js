@@ -11,7 +11,7 @@ export default {
     'nav.search-ph': 'Sök sidor…', 'nav.search-btn': 'Sök', 'nav.logout': 'Logga ut',
     'nav.prefs-title': 'Mina inställningar', 'nav.mentions-title': 'Mina omnämnanden — sidor där jag omnämns',
     'nav.comments-title': 'Mina kommentarer — sidor jag kommenterat', 'nav.admin-title': 'Administration',
-    'nav.help-title': 'Hjälp', 'nav.lang-title': 'Språk',
+    'nav.help-title': 'Hjälp', 'nav.lang-title': 'Språk', 'mobile.menu': 'Meny', 'mobile.toggle-title': 'Byt vy (auto / dator / mobil)', 'mobile.mode-auto': 'Vy: Automatisk', 'mobile.mode-desktop': 'Vy: Dator', 'mobile.mode-mobile': 'Vy: Mobil',
     'nav.collapse': 'Dölj sidopanel', 'nav.expand': 'Visa sidopanel',
 
     'header.select-page': 'Välj en sida för att börja', 'header.copy': 'Kopiera', 'header.move': 'Flytta',
@@ -71,6 +71,8 @@ export default {
     'chat.empty': 'Inga meddelanden än — var den första att säga något!',
     'chat.working': 'Arbetar…', 'chat.timeout': '⚠️ Inget svar mottogs — förfrågan kan ha tagit för lång tid.', 'chat.new-topic': 'Nytt ämne',
     'chat.load-older': 'Ladda äldre meddelanden', 'chat.loading-older': 'Laddar…', 'chat.ai-working': 'AI tänker…',
+    'chat.focus.active': '🤖 Chattar med {name} — meddelanden går till den', 'chat.focus.placeholder': 'Meddelande till {name}…', 'chat.focus.exit': 'Sluta chatta med denna AI', 'chat.focus.start': 'Chatta med {name}',
+    'chat.save.action-save': 'Spara som markdown-sida', 'chat.save.action-append': 'Lägg till på markdown-sida', 'chat.save.title-save': 'Spara som markdown-sida', 'chat.save.title-append': 'Lägg till på markdown-sida', 'chat.save.name-label': 'Filnamn:', 'chat.save.space-label': 'Utrymme:', 'chat.save.folder-label': 'Mapp:', 'chat.save.page-label': 'Sida att lägga till på:', 'chat.save.no-page': 'Välj en sida.', 'chat.save.confirm': 'Spara sida', 'chat.save.confirm-append': 'Lägg till', 'chat.save.no-name': 'Ange ett filnamn.', 'chat.save.saved': 'Meddelandet sparat som sida.', 'chat.save.appended': 'Meddelandet tillagt på sidan.', 'chat.save.failed': 'Det gick inte att spara sidan.',
     'chat.cmd.new-topic':       'Återställ AI-kontext — ignorera meddelanden före denna punkt',
     'chat.cmd.me':              'Posta ett aktionsmeddelande — /me granskar utkastet',
     'chat.cmd.topic':           'Uppdatera chattämnet — /topic Ny rubrik här',

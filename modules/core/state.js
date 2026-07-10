@@ -25,4 +25,6 @@ export const state = {
     lastApiCallTime: Date.now(),
     currentSpaceHasGit: false,
     pageChatPath: null,
+    isMobile: false, // effective mobile layout (from viewport + user override)
+    displayMode: localStorage.getItem('wiki_displayMode') || 'auto', // 'auto' | 'desktop' | 'mobile'
 };

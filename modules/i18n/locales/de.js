@@ -11,7 +11,7 @@ export default {
     'nav.search-ph': 'Seiten suchen…', 'nav.search-btn': 'Suchen', 'nav.logout': 'Abmelden',
     'nav.prefs-title': 'Meine Einstellungen', 'nav.mentions-title': 'Meine Erwähnungen — Seiten, auf denen ich erwähnt werde',
     'nav.comments-title': 'Meine Kommentare — Seiten, auf denen ich kommentiert habe', 'nav.admin-title': 'Administration',
-    'nav.help-title': 'Hilfe', 'nav.lang-title': 'Sprache',
+    'nav.help-title': 'Hilfe', 'nav.lang-title': 'Sprache', 'mobile.menu': 'Menü', 'mobile.toggle-title': 'Ansicht wechseln (auto / Desktop / mobil)', 'mobile.mode-auto': 'Ansicht: Automatisch', 'mobile.mode-desktop': 'Ansicht: Desktop', 'mobile.mode-mobile': 'Ansicht: Mobil',
     'nav.collapse': 'Seitenleiste einklappen', 'nav.expand': 'Seitenleiste ausklappen',
 
     'header.select-page': 'Wählen Sie eine Seite zum Starten', 'header.copy': 'Kopieren', 'header.move': 'Verschieben',
@@ -71,6 +71,8 @@ export default {
     'chat.empty': 'Noch keine Nachrichten — seien Sie der Erste, der etwas sagt!',
     'chat.working': 'Verarbeitung…', 'chat.timeout': '⚠️ Keine Antwort erhalten — die Anfrage ist möglicherweise abgelaufen.', 'chat.new-topic': 'Neues Thema',
     'chat.load-older': 'Ältere Nachrichten laden', 'chat.loading-older': 'Wird geladen…', 'chat.ai-working': 'KI denkt nach…',
+    'chat.focus.active': '🤖 Chat mit {name} — Nachrichten gehen an sie', 'chat.focus.placeholder': 'Nachricht an {name}…', 'chat.focus.exit': 'Chat mit dieser KI beenden', 'chat.focus.start': 'Mit {name} chatten',
+    'chat.save.action-save': 'Als Markdown-Seite speichern', 'chat.save.action-append': 'An Markdown-Seite anhängen', 'chat.save.title-save': 'Als Markdown-Seite speichern', 'chat.save.title-append': 'An Markdown-Seite anhängen', 'chat.save.name-label': 'Dateiname:', 'chat.save.space-label': 'Bereich:', 'chat.save.folder-label': 'Ordner:', 'chat.save.page-label': 'Seite zum Anhängen:', 'chat.save.no-page': 'Bitte eine Seite auswählen.', 'chat.save.confirm': 'Seite speichern', 'chat.save.confirm-append': 'Anhängen', 'chat.save.no-name': 'Bitte einen Dateinamen eingeben.', 'chat.save.saved': 'Nachricht als Seite gespeichert.', 'chat.save.appended': 'Nachricht an Seite angehängt.', 'chat.save.failed': 'Seite konnte nicht gespeichert werden.',
     'chat.cmd.new-topic':       'KI-Kontext zurücksetzen — Nachrichten vor diesem Punkt ignorieren',
     'chat.cmd.me':              'Eine Aktionsnachricht posten — /me überprüft den Entwurf',
     'chat.cmd.topic':           'Chat-Thema aktualisieren — /topic Neuer Titel hier',
