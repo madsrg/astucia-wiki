@@ -17,6 +17,7 @@ import { init as initSearch } from './modules/page_edit/search.js';
 import { init as initLinkLightbox } from './modules/page_edit/link_lightbox.js';
 import { init as initHotkeys, loadHotkeys } from './modules/page_edit/hotkeys.js';
 import { createEditorToolbar } from './modules/page_edit/toolbar.js';
+import { createMobileEditorToolbar } from './modules/page_edit/mobile_toolbar.js';
 import { init as initList } from './modules/list/index.js';
 import { init as initTags } from './modules/tags/index.js';
 import { init as initAttachments } from './modules/attachments/index.js';
@@ -133,6 +134,7 @@ const init = async () => {
     await loadHotkeys();
     initHotkeys();
     createEditorToolbar();
+    createMobileEditorToolbar();
     initList();
     initTags();
     initAttachments();

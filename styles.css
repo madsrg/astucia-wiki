@@ -1423,6 +1423,7 @@ body {
    @media query, so the desktop/mobile override works on any screen size. */
 .mobile-menu-btn { display: none; background: none; border: 1px solid var(--border-color); border-radius: 6px; width: 36px; height: 36px; align-items: center; justify-content: center; cursor: pointer; color: var(--text-color); padding: 0; }
 .mobile-sidebar-backdrop { display: none; }
+.mobile-editor-toolbar { display: none; }
 
 body.mobile .mobile-menu-btn { display: inline-flex; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); }
 body.mobile .main-header { position: relative; padding-left: 56px; padding-right: 1rem; }
@@ -1446,11 +1447,18 @@ body.mobile #viewer-content pre { overflow-x: auto; }
 body.mobile #current-page-title { font-size: 1.15rem; max-width: 52vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 body.mobile .header-actions { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 
+/* Simple markdown editing on mobile: swap the full toolbar for the compact one,
+   drop the line-number gutter, and give the textarea a comfortable size. */
+body.mobile #editor-toolbar { display: none; }
+body.mobile .mobile-editor-toolbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border-color); background: #f8fafc; flex-shrink: 0; }
+body.mobile .med-btn { min-width: 38px; height: 34px; padding: 0 8px; border: 1px solid var(--border-color); border-radius: 6px; background: white; color: var(--text-color); font-size: 0.9rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+body.mobile .med-btn:active { background: #e2e8f0; }
+body.mobile .med-btn-danger { color: #e53e3e; margin-left: auto; }
+body.mobile #line-indicator { display: none !important; }
+body.mobile #editor-container { padding-left: 12px; font-size: 16px; }
+
 /* View-only first cut: hide authoring / editing chrome */
 body.mobile #new-item-btn,
-body.mobile #edit-btn,
-body.mobile #save-btn,
-body.mobile #cancel-btn,
 body.mobile #search-btn,
 body.mobile #copy-btn,
 body.mobile #move-btn,

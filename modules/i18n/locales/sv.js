@@ -11,7 +11,7 @@ export default {
     'nav.search-ph': 'Sök sidor…', 'nav.search-btn': 'Sök', 'nav.logout': 'Logga ut',
     'nav.prefs-title': 'Mina inställningar', 'nav.mentions-title': 'Mina omnämnanden — sidor där jag omnämns',
     'nav.comments-title': 'Mina kommentarer — sidor jag kommenterat', 'nav.admin-title': 'Administration',
-    'nav.help-title': 'Hjälp', 'nav.lang-title': 'Språk', 'mobile.menu': 'Meny', 'mobile.toggle-title': 'Byt vy (auto / dator / mobil)', 'mobile.mode-auto': 'Vy: Automatisk', 'mobile.mode-desktop': 'Vy: Dator', 'mobile.mode-mobile': 'Vy: Mobil',
+    'nav.help-title': 'Hjälp', 'nav.lang-title': 'Språk', 'mobile.menu': 'Meny', 'mobile.toggle-title': 'Byt vy (auto / dator / mobil)', 'mobile.mode-auto': 'Vy: Automatisk', 'mobile.mode-desktop': 'Vy: Dator', 'mobile.mode-mobile': 'Vy: Mobil', 'mobile.ed.h1': 'Rubrik 1', 'mobile.ed.h2': 'Rubrik 2', 'mobile.ed.h3': 'Rubrik 3', 'mobile.ed.bold': 'Fet', 'mobile.ed.italic': 'Kursiv', 'mobile.ed.ul': 'Punktlista', 'mobile.ed.ol': 'Numrerad lista', 'mobile.ed.delline': 'Ta bort aktuell rad',
     'nav.collapse': 'Dölj sidopanel', 'nav.expand': 'Visa sidopanel',
 
     'header.select-page': 'Välj en sida för att börja', 'header.copy': 'Kopiera', 'header.move': 'Flytta',

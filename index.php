@@ -286,6 +286,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 </div>
                 <div class="editor-container-wrapper hidden">
                     <div id="editor-toolbar"></div>
+                    <div id="mobile-editor-toolbar" class="mobile-editor-toolbar"></div>
                     <div class="editor-area">
                         <div id="line-indicator"></div><textarea id="editor-container"></textarea>
                     </div>

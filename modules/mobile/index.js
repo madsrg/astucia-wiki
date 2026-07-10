@@ -34,8 +34,13 @@ const apply = () => {
 
     if (isMobile) {
         container?.classList.remove('sidebar-collapsed');
+        // Mobile editing uses the classic textarea editor only (the inline
+        // block editor is desktop-oriented). Force classic in memory without
+        // touching the persisted desktop preference.
+        state.editMode = 'classic';
     } else {
         closeDrawer();
+        state.editMode = localStorage.getItem('wiki_editMode') || 'classic';
         if (localStorage.getItem('sidebarCollapsed') === 'true') {
             container?.classList.add('sidebar-collapsed');
         }

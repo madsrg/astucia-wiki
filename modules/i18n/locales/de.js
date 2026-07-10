@@ -11,7 +11,7 @@ export default {
     'nav.search-ph': 'Seiten suchen…', 'nav.search-btn': 'Suchen', 'nav.logout': 'Abmelden',
     'nav.prefs-title': 'Meine Einstellungen', 'nav.mentions-title': 'Meine Erwähnungen — Seiten, auf denen ich erwähnt werde',
     'nav.comments-title': 'Meine Kommentare — Seiten, auf denen ich kommentiert habe', 'nav.admin-title': 'Administration',
-    'nav.help-title': 'Hilfe', 'nav.lang-title': 'Sprache', 'mobile.menu': 'Menü', 'mobile.toggle-title': 'Ansicht wechseln (auto / Desktop / mobil)', 'mobile.mode-auto': 'Ansicht: Automatisch', 'mobile.mode-desktop': 'Ansicht: Desktop', 'mobile.mode-mobile': 'Ansicht: Mobil',
+    'nav.help-title': 'Hilfe', 'nav.lang-title': 'Sprache', 'mobile.menu': 'Menü', 'mobile.toggle-title': 'Ansicht wechseln (auto / Desktop / mobil)', 'mobile.mode-auto': 'Ansicht: Automatisch', 'mobile.mode-desktop': 'Ansicht: Desktop', 'mobile.mode-mobile': 'Ansicht: Mobil', 'mobile.ed.h1': 'Überschrift 1', 'mobile.ed.h2': 'Überschrift 2', 'mobile.ed.h3': 'Überschrift 3', 'mobile.ed.bold': 'Fett', 'mobile.ed.italic': 'Kursiv', 'mobile.ed.ul': 'Aufzählung', 'mobile.ed.ol': 'Nummerierte Liste', 'mobile.ed.delline': 'Aktuelle Zeile löschen',
     'nav.collapse': 'Seitenleiste einklappen', 'nav.expand': 'Seitenleiste ausklappen',
 
     'header.select-page': 'Wählen Sie eine Seite zum Starten', 'header.copy': 'Kopieren', 'header.move': 'Verschieben',

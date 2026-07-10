@@ -11,7 +11,7 @@ export default {
     'nav.search-ph': 'Buscar páginas…', 'nav.search-btn': 'Buscar', 'nav.logout': 'Cerrar sesión',
     'nav.prefs-title': 'Mis preferencias', 'nav.mentions-title': 'Mis menciones — páginas donde se me menciona',
     'nav.comments-title': 'Mis comentarios — páginas en las que he comentado', 'nav.admin-title': 'Administración',
-    'nav.help-title': 'Ayuda', 'nav.lang-title': 'Idioma', 'mobile.menu': 'Menú', 'mobile.toggle-title': 'Cambiar vista (auto / escritorio / móvil)', 'mobile.mode-auto': 'Vista: Automática', 'mobile.mode-desktop': 'Vista: Escritorio', 'mobile.mode-mobile': 'Vista: Móvil',
+    'nav.help-title': 'Ayuda', 'nav.lang-title': 'Idioma', 'mobile.menu': 'Menú', 'mobile.toggle-title': 'Cambiar vista (auto / escritorio / móvil)', 'mobile.mode-auto': 'Vista: Automática', 'mobile.mode-desktop': 'Vista: Escritorio', 'mobile.mode-mobile': 'Vista: Móvil', 'mobile.ed.h1': 'Encabezado 1', 'mobile.ed.h2': 'Encabezado 2', 'mobile.ed.h3': 'Encabezado 3', 'mobile.ed.bold': 'Negrita', 'mobile.ed.italic': 'Cursiva', 'mobile.ed.ul': 'Lista con viñetas', 'mobile.ed.ol': 'Lista numerada', 'mobile.ed.delline': 'Eliminar línea actual',
     'nav.collapse': 'Ocultar barra lateral', 'nav.expand': 'Mostrar barra lateral',
 
     'header.select-page': 'Selecciona una página para empezar', 'header.copy': 'Copiar', 'header.move': 'Mover',

@@ -11,7 +11,7 @@ export default {
     'nav.search-ph': 'Søg i sider…', 'nav.search-btn': 'Søg', 'nav.logout': 'Log ud',
     'nav.prefs-title': 'Mine indstillinger', 'nav.mentions-title': 'Mine omtaler — sider hvor du er omtalt',
     'nav.comments-title': 'Mine kommentarer — sider du har kommenteret på', 'nav.admin-title': 'Administration',
-    'nav.help-title': 'Hjælp', 'nav.lang-title': 'Sprog', 'mobile.menu': 'Menu', 'mobile.toggle-title': 'Skift visning (auto / desktop / mobil)', 'mobile.mode-auto': 'Visning: Automatisk', 'mobile.mode-desktop': 'Visning: Desktop', 'mobile.mode-mobile': 'Visning: Mobil',
+    'nav.help-title': 'Hjælp', 'nav.lang-title': 'Sprog', 'mobile.menu': 'Menu', 'mobile.toggle-title': 'Skift visning (auto / desktop / mobil)', 'mobile.mode-auto': 'Visning: Automatisk', 'mobile.mode-desktop': 'Visning: Desktop', 'mobile.mode-mobile': 'Visning: Mobil', 'mobile.ed.h1': 'Overskrift 1', 'mobile.ed.h2': 'Overskrift 2', 'mobile.ed.h3': 'Overskrift 3', 'mobile.ed.bold': 'Fed', 'mobile.ed.italic': 'Kursiv', 'mobile.ed.ul': 'Punktopstilling', 'mobile.ed.ol': 'Nummereret liste', 'mobile.ed.delline': 'Slet aktuel linje',
     'nav.collapse': 'Skjul sidepanel', 'nav.expand': 'Vis sidepanel',
 
     'header.select-page': 'Vælg en side for at starte', 'header.copy': 'Kopiér', 'header.move': 'Flyt',

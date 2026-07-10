@@ -1,5 +1,5 @@
 import { state } from '../core/state.js';
-import { insertMarkdown, insertHeading, prependLines } from './editor.js';
+import { insertMarkdown, insertHeading, prependLines, deleteCurrentLine } from './editor.js';
 import { openIncludeLightbox, openImageLightbox, openDiagramInsertLightbox, openListInsertLightbox } from './insert_media.js';
 import { openCommentLightbox } from './insert_comment.js';
 import { openLinkLightbox, openExternalLinkLightbox } from './link_lightbox.js';
@@ -110,22 +110,7 @@ export const createEditorToolbar = () => {
     const deleteBtn = addBtn(
         svg('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>'),
         'Delete current line',
-        () => {
-            const editor = document.getElementById('editor-container');
-            if (!editor) return;
-            const pos = editor.selectionStart;
-            const val = editor.value;
-            const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
-            const nextNewline = val.indexOf('\n', pos);
-            const isLastLine = nextNewline === -1;
-            // For the last line there is no trailing \n, so eat the preceding one instead
-            const start = isLastLine && lineStart > 0 ? lineStart - 1 : lineStart;
-            const end = isLastLine ? val.length : nextNewline + 1;
-            editor.value = val.substring(0, start) + val.substring(end);
-            editor.setSelectionRange(start, start);
-            editor.focus();
-            editor.dispatchEvent(new Event('input'));
-        }
+        deleteCurrentLine
     );
     deleteBtn.classList.add('toolbar-btn-danger');
 

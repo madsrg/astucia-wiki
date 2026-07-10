@@ -48,6 +48,24 @@ export const prependLines = (prefix) => {
     editor.dispatchEvent(new Event('input'));
 };
 
+// Removes the line the cursor is on (including its newline).
+export const deleteCurrentLine = () => {
+    const editor = getEditor();
+    if (!editor) return;
+    const pos = editor.selectionStart;
+    const val = editor.value;
+    const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+    const nextNewline = val.indexOf('\n', pos);
+    const isLastLine = nextNewline === -1;
+    // For the last line there is no trailing \n, so eat the preceding one instead
+    const start = isLastLine && lineStart > 0 ? lineStart - 1 : lineStart;
+    const end = isLastLine ? val.length : nextNewline + 1;
+    editor.value = val.substring(0, start) + val.substring(end);
+    editor.setSelectionRange(start, start);
+    editor.focus();
+    editor.dispatchEvent(new Event('input'));
+};
+
 // Core text-insertion helper used by toolbar, hotkeys, search/replace, and link lightbox.
 export const insertMarkdown = (prefix, suffix = '') => {
     const editor = getEditor();

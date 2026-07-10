@@ -11,7 +11,7 @@ export default {
     'nav.search-ph': 'Rechercher des pages…', 'nav.search-btn': 'Rechercher', 'nav.logout': 'Se déconnecter',
     'nav.prefs-title': 'Mes préférences', 'nav.mentions-title': 'Mes mentions — pages où je suis mentionné',
     'nav.comments-title': 'Mes commentaires — pages sur lesquelles j\'ai commenté', 'nav.admin-title': 'Administration',
-    'nav.help-title': 'Aide', 'nav.lang-title': 'Langue', 'mobile.menu': 'Menu', 'mobile.toggle-title': 'Changer de vue (auto / bureau / mobile)', 'mobile.mode-auto': 'Vue : Automatique', 'mobile.mode-desktop': 'Vue : Bureau', 'mobile.mode-mobile': 'Vue : Mobile',
+    'nav.help-title': 'Aide', 'nav.lang-title': 'Langue', 'mobile.menu': 'Menu', 'mobile.toggle-title': 'Changer de vue (auto / bureau / mobile)', 'mobile.mode-auto': 'Vue : Automatique', 'mobile.mode-desktop': 'Vue : Bureau', 'mobile.mode-mobile': 'Vue : Mobile', 'mobile.ed.h1': 'Titre 1', 'mobile.ed.h2': 'Titre 2', 'mobile.ed.h3': 'Titre 3', 'mobile.ed.bold': 'Gras', 'mobile.ed.italic': 'Italique', 'mobile.ed.ul': 'Liste à puces', 'mobile.ed.ol': 'Liste numérotée', 'mobile.ed.delline': 'Supprimer la ligne actuelle',
     'nav.collapse': 'Réduire la barre latérale', 'nav.expand': 'Développer la barre latérale',
 
     'header.select-page': 'Sélectionnez une page pour commencer', 'header.copy': 'Copier', 'header.move': 'Déplacer',
