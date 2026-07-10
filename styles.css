@@ -1456,6 +1456,16 @@ body.mobile .med-btn:active { background: #e2e8f0; }
 body.mobile .med-btn-danger { color: #e53e3e; margin-left: auto; }
 body.mobile #line-indicator { display: none !important; }
 body.mobile #editor-container { padding-left: 12px; font-size: 16px; }
+/* Keep the header + compact toolbar fixed while editing; only the textarea
+   scrolls. min-height:0 lets the flex chain bound the editor (so the textarea,
+   not the page, is the scroll region); the sticky header guards against mobile
+   keyboard scroll quirks. */
+body.mobile .main-content,
+body.mobile .editor-wrapper,
+body.mobile .editor-container-wrapper,
+body.mobile .editor-area { min-height: 0; }
+body.mobile #editor-container { overflow-y: auto; }
+body.mobile .main-header { position: sticky; top: 0; z-index: 20; }
 
 /* View-only first cut: hide authoring / editing chrome */
 body.mobile #new-item-btn,
