@@ -6,6 +6,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.11] — 2026-07-10
+
+### Added
+- **Simple Markdown editing on mobile** — Markdown pages can now be edited on a phone. A compact toolbar (H1/H2/H3, bold, italic, bulleted &amp; numbered lists, and delete-current-line) sits above the editor, reusing the classic textarea and the standard save flow. Mobile editing always uses the classic editor (the inline block editor stays desktop-only), and the line-number gutter is dropped for space.
+
 ## [2026.7.10] — 2026-07-10
 
 ### Changed
