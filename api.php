@@ -176,6 +176,7 @@ if (isset($_REQUEST['action'])) {
             CURLOPT_POSTFIELDS     => $body,
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_TIMEOUT        => 15,
+            CURLOPT_ENCODING       => '', // advertise gzip/deflate and auto-decode
         ]);
         $raw  = curl_exec($ch);
         $err  = curl_error($ch);
@@ -189,8 +190,8 @@ if (isset($_REQUEST['action'])) {
             }
         }
         $data = json_decode($raw, true);
-        if (!$data) return ['ok' => false, 'error' => "HTTP {$http}: invalid JSON", 'data' => null];
-        if (isset($data['error'])) return ['ok' => false, 'error' => $data['error']['message'] ?? 'JSON-RPC error', 'data' => null];
+        if (!$data) return ['ok' => false, 'error' => "HTTP {$http}: invalid JSON — " . substr(trim($raw), 0, 200), 'data' => null];
+        if (isset($data['error'])) return ['ok' => false, 'error' => _mcp_error_text($data['error']), 'data' => null];
         if ($http >= 400) return ['ok' => false, 'error' => "HTTP {$http}", 'data' => $data];
         return ['ok' => true, 'error' => null, 'data' => $data['result'] ?? []];
     }

@@ -1682,7 +1682,7 @@ const openMcpServerForm = (s) => {
                     <input type="text" id="mcp-f-auth-header" class="form-control" value="${escHtml(s?.auth_header || 'Authorization')}" placeholder="Authorization">
                     <label style="margin-top:0.5rem">Auth scheme <span style="font-weight:400;color:var(--text-muted)">(prefix)</span></label>
                     <input type="text" id="mcp-f-auth-prefix" class="form-control" value="${escHtml(s?.auth_prefix ?? 'Bearer')}" placeholder="Bearer">
-                    <p class="form-hint">How the token is sent: <code>&lt;header&gt;: &lt;scheme&gt; &lt;token&gt;</code>. Defaults to <code>Authorization: Bearer …</code>. For a server that uses a custom header (e.g. Brave), set the header to <code>X-Subscription-Token</code> and clear the scheme.</p>
+                    <p class="form-hint">How the token is sent: <code>&lt;header&gt;: &lt;scheme&gt; &lt;token&gt;</code>. Defaults to <code>Authorization: Bearer …</code>. For a server that authenticates with a custom header, set the header name (e.g. <code>X-API-Key</code>) and clear the scheme to send the raw token.</p>
                 </div>
                 <div class="form-group">
                     <label style="display:flex;align-items:center;gap:0.45rem;font-weight:600;cursor:pointer">

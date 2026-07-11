@@ -85,6 +85,7 @@ function _mcp_jsonrpc(string $base_url, ?string $auth_header_line, string $metho
         CURLOPT_POSTFIELDS     => $body,
         CURLOPT_HTTPHEADER     => $headers,
         CURLOPT_TIMEOUT        => $timeout,
+        CURLOPT_ENCODING       => '', // advertise gzip/deflate and auto-decode
     ]);
     $raw  = curl_exec($ch);
     $err  = curl_error($ch);
@@ -100,8 +101,25 @@ function _mcp_jsonrpc(string $base_url, ?string $auth_header_line, string $metho
     }
     $data = json_decode($raw, true);
     if (!$data) return ['error' => "HTTP {$code}: invalid JSON response"];
-    if (isset($data['error'])) return ['error' => $data['error']['message'] ?? 'JSON-RPC error'];
+    if (isset($data['error'])) return ['error' => _mcp_error_text($data['error'])];
     return ['result' => $data['result'] ?? []];
+}
+
+// Turn a JSON-RPC error field into a readable string. Servers vary: some send
+// {code, message, data}, some a bare string, some omit message — so surface the
+// code and any data rather than collapsing everything to "JSON-RPC error".
+function _mcp_error_text($error): string {
+    if (is_string($error)) return $error;
+    if (!is_array($error)) return 'JSON-RPC error';
+    // JSON-RPC uses "message"; REST-style APIs (which you hit if the URL points
+    // at a plain HTTP API rather than an MCP endpoint) use "detail".
+    $msg  = $error['message'] ?? $error['detail'] ?? '';
+    $code = isset($error['code']) ? 'code ' . $error['code'] : '';
+    // Extra context: JSON-RPC "data" or REST-style "meta".
+    $ctx   = $error['data'] ?? $error['meta'] ?? null;
+    $extra = $ctx === null ? '' : (is_string($ctx) ? $ctx : json_encode($ctx));
+    $parts = array_filter([$msg, $code, $extra]);
+    return $parts ? implode(' — ', $parts) : 'JSON-RPC error';
 }
 
 function _mcp_fetch_tools(array $server): array {
