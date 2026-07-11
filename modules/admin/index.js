@@ -1675,7 +1675,14 @@ const openMcpServerForm = (s) => {
                 </div>
                 <div class="form-group">
                     <label>Auth Token ${s?.auth_token_set ? '<span class="admin-ai-key-set">(set)</span>' : ''}</label>
-                    <input type="password" id="mcp-f-token" class="form-control" placeholder="${isNew ? 'Optional Bearer token' : 'Leave blank to keep existing'}">
+                    <input type="password" id="mcp-f-token" class="form-control" placeholder="${isNew ? 'Optional token' : 'Leave blank to keep existing'}">
+                </div>
+                <div class="form-group">
+                    <label>Auth header</label>
+                    <input type="text" id="mcp-f-auth-header" class="form-control" value="${escHtml(s?.auth_header || 'Authorization')}" placeholder="Authorization">
+                    <label style="margin-top:0.5rem">Auth scheme <span style="font-weight:400;color:var(--text-muted)">(prefix)</span></label>
+                    <input type="text" id="mcp-f-auth-prefix" class="form-control" value="${escHtml(s?.auth_prefix ?? 'Bearer')}" placeholder="Bearer">
+                    <p class="form-hint">How the token is sent: <code>&lt;header&gt;: &lt;scheme&gt; &lt;token&gt;</code>. Defaults to <code>Authorization: Bearer …</code>. For a server that uses a custom header (e.g. Brave), set the header to <code>X-Subscription-Token</code> and clear the scheme.</p>
                 </div>
                 <div class="form-group">
                     <label style="display:flex;align-items:center;gap:0.45rem;font-weight:600;cursor:pointer">
@@ -1713,7 +1720,11 @@ const openMcpServerForm = (s) => {
         if (!url) { showToast('Enter a URL first.', 'error'); return; }
         btn.disabled = true;
         btn.textContent = 'Testing…';
-        const params = { url };
+        const params = {
+            url,
+            auth_header: document.getElementById('mcp-f-auth-header')?.value.trim() || '',
+            auth_prefix: document.getElementById('mcp-f-auth-prefix')?.value ?? '',
+        };
         if (token) params.auth_token = token;
         else if (s?.id) params.id = s.id;
         const res = await api.call('admin_test_mcp_server', params, 'POST');
@@ -1750,6 +1761,8 @@ const saveMcpServer = async (id) => {
     const name   = document.getElementById('mcp-f-name')?.value.trim();
     const url    = document.getElementById('mcp-f-url')?.value.trim();
     const token  = document.getElementById('mcp-f-token')?.value || '';
+    const authHeader = document.getElementById('mcp-f-auth-header')?.value.trim() || '';
+    const authPrefix = document.getElementById('mcp-f-auth-prefix')?.value ?? '';
     const native = document.getElementById('mcp-f-native')?.checked ? '1' : '0';
     const searchTool = document.getElementById('mcp-f-search-tool')?.value.trim() || '';
     const searchArg  = document.getElementById('mcp-f-search-arg')?.value.trim() || '';
@@ -1761,7 +1774,8 @@ const saveMcpServer = async (id) => {
     saveBtn.textContent = 'Saving…';
 
     const result = await api.call('admin_save_mcp_server',
-        { id: id || '', name, url, auth_token: token, wiki_native: native, search_tool: searchTool, search_arg: searchArg }, 'POST');
+        { id: id || '', name, url, auth_token: token, auth_header: authHeader, auth_prefix: authPrefix,
+          wiki_native: native, search_tool: searchTool, search_arg: searchArg }, 'POST');
     saveBtn.disabled = false;
     saveBtn.textContent = 'Save';
 

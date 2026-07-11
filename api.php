@@ -161,13 +161,13 @@ if (isset($_REQUEST['action'])) {
         file_put_contents(WIKI_SYSTEM_DATA . 'mcp_servers.json', json_encode($servers, JSON_PRETTY_PRINT));
     }
 
-    function _mcp_jsonrpc_test(string $base_url, string $auth_token, string $method, array $params = []): array {
+    function _mcp_jsonrpc_test(string $base_url, ?string $auth_header_line, string $method, array $params = []): array {
         if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'curl not available', 'data' => null];
         $headers = [
             'Content-Type: application/json',
             'Accept: application/json, text/event-stream',
         ];
-        if ($auth_token) $headers[] = 'Authorization: Bearer ' . $auth_token;
+        if ($auth_header_line) $headers[] = $auth_header_line;
         $body = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => $method, 'params' => $params ?: (object)[]]);
         $ch = curl_init(rtrim($base_url, '/'));
         curl_setopt_array($ch, [
@@ -3431,6 +3431,8 @@ if (isset($_REQUEST['action'])) {
                     'name'           => $s['name']       ?? '',
                     'url'            => $s['url']        ?? '',
                     'auth_token_set' => !empty($s['auth_token']),
+                    'auth_header'    => $s['auth_header'] ?? 'Authorization',
+                    'auth_prefix'    => array_key_exists('auth_prefix', $s) ? $s['auth_prefix'] : 'Bearer',
                     'wiki_native'    => !empty($s['wiki_native']),
                     'search_tool'    => $s['search_tool'] ?? '',
                     'search_arg'     => $s['search_arg']  ?? '',
@@ -3444,6 +3446,8 @@ if (isset($_REQUEST['action'])) {
                 $mcp_name  = trim($_POST['name']       ?? '');
                 $mcp_url   = trim($_POST['url']        ?? '');
                 $mcp_token = $_POST['auth_token']      ?? '';
+                $mcp_auth_header = trim($_POST['auth_header'] ?? '');
+                $mcp_auth_prefix = array_key_exists('auth_prefix', $_POST) ? trim($_POST['auth_prefix']) : 'Bearer';
                 $mcp_native = !empty($_POST['wiki_native']) && $_POST['wiki_native'] !== '0' && $_POST['wiki_native'] !== 'false';
                 $mcp_search_tool = trim($_POST['search_tool'] ?? '');
                 $mcp_search_arg  = trim($_POST['search_arg']  ?? '');
@@ -3456,6 +3460,8 @@ if (isset($_REQUEST['action'])) {
                         if (($_ms['id'] ?? '') !== $mcp_id) continue;
                         $_ms['name'] = $mcp_name;
                         $_ms['url']  = $mcp_url;
+                        $_ms['auth_header'] = $mcp_auth_header;
+                        $_ms['auth_prefix'] = $mcp_auth_prefix;
                         $_ms['wiki_native'] = $mcp_native;
                         $_ms['search_tool'] = $mcp_search_tool;
                         $_ms['search_arg']  = $mcp_search_arg;
@@ -3471,6 +3477,8 @@ if (isset($_REQUEST['action'])) {
                         'name'        => $mcp_name,
                         'url'         => $mcp_url,
                         'auth_token'  => $mcp_token,
+                        'auth_header' => $mcp_auth_header,
+                        'auth_prefix' => $mcp_auth_prefix,
                         'wiki_native' => $mcp_native,
                         'search_tool' => $mcp_search_tool,
                         'search_arg'  => $mcp_search_arg,
@@ -3490,19 +3498,24 @@ if (isset($_REQUEST['action'])) {
 
             case 'admin_test_mcp_server':
                 $test_mcp_id    = trim($_POST['id']         ?? '');
-                $test_mcp_url   = trim($_POST['url']        ?? '');
-                $test_mcp_token = $_POST['auth_token']      ?? '';
                 if ($test_mcp_id !== '') {
-                    $found_test = null;
+                    $test_server = null;
                     foreach (_load_mcp_servers() as $_ts) {
-                        if (($_ts['id'] ?? '') === $test_mcp_id) { $found_test = $_ts; break; }
+                        if (($_ts['id'] ?? '') === $test_mcp_id) { $test_server = $_ts; break; }
                     }
-                    if (!$found_test) throw new Exception('MCP server not found.');
-                    $test_mcp_url   = $found_test['url'];
-                    $test_mcp_token = $found_test['auth_token'] ?? '';
+                    if (!$test_server) throw new Exception('MCP server not found.');
+                } else {
+                    // Unsaved server — test the form values as entered.
+                    $test_server = [
+                        'url'         => trim($_POST['url']        ?? ''),
+                        'auth_token'  => $_POST['auth_token']      ?? '',
+                        'auth_header' => trim($_POST['auth_header'] ?? ''),
+                        'auth_prefix' => array_key_exists('auth_prefix', $_POST) ? trim($_POST['auth_prefix']) : 'Bearer',
+                    ];
                 }
+                $test_mcp_url = $test_server['url'] ?? '';
                 if (!$test_mcp_url) throw new Exception('URL is required.');
-                $test_res = _mcp_jsonrpc_test($test_mcp_url, $test_mcp_token, 'tools/list');
+                $test_res = _mcp_jsonrpc_test($test_mcp_url, _mcp_auth_header($test_server), 'tools/list');
                 if (!$test_res['ok']) {
                     echo json_encode(['success' => false, 'message' => 'Connection failed: ' . $test_res['error']]);
                     break;

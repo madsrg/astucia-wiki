@@ -57,12 +57,26 @@ function _ai_git_commit(string $abs_path, string $git_name, string $git_email, s
     ], $git_root['root']);
 }
 
-function _mcp_jsonrpc(string $base_url, string $auth_token, string $method, array $params, int $timeout = 15): array {
+// Build the auth header line for an outbound MCP request from a server's
+// configured header name + value scheme. Defaults preserve the historical
+// "Authorization: Bearer <token>". A blank scheme sends the raw token (e.g.
+// "X-Subscription-Token: <token>"). Returns null when no token is set.
+function _mcp_auth_header(array $server): ?string {
+    $token = $server['auth_token'] ?? '';
+    if ($token === '') return null;
+    $header = trim($server['auth_header'] ?? '');
+    if ($header === '') $header = 'Authorization';
+    // array_key_exists so an explicitly-blank scheme isn't overridden by the default.
+    $scheme = trim(array_key_exists('auth_prefix', $server) ? (string)$server['auth_prefix'] : 'Bearer');
+    return $header . ': ' . ($scheme === '' ? $token : $scheme . ' ' . $token);
+}
+
+function _mcp_jsonrpc(string $base_url, ?string $auth_header_line, string $method, array $params, int $timeout = 15): array {
     $headers = [
         'Content-Type: application/json',
         'Accept: application/json, text/event-stream',
     ];
-    if ($auth_token) $headers[] = 'Authorization: Bearer ' . $auth_token;
+    if ($auth_header_line) $headers[] = $auth_header_line;
     $body = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => $method, 'params' => $params ?: (object)[]]);
     $ch = curl_init(rtrim($base_url, '/'));
     curl_setopt_array($ch, [
@@ -91,7 +105,7 @@ function _mcp_jsonrpc(string $base_url, string $auth_token, string $method, arra
 }
 
 function _mcp_fetch_tools(array $server): array {
-    $res = _mcp_jsonrpc($server['url'] ?? '', $server['auth_token'] ?? '', 'tools/list', []);
+    $res = _mcp_jsonrpc($server['url'] ?? '', _mcp_auth_header($server), 'tools/list', []);
     if (isset($res['error'])) return [];
     $tools = $res['result']['tools'] ?? [];
     $result = [];
@@ -147,7 +161,7 @@ function _mcp_call_tool(array $server, string $name, array $input, string $space
     }
     $res = _mcp_jsonrpc(
         $url,
-        $server['auth_token'] ?? '',
+        _mcp_auth_header($server),
         'tools/call',
         ['name' => $name, 'arguments' => $input ?: (object)[]]
     , 30);

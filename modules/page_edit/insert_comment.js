@@ -1,5 +1,5 @@
 import { insertMarkdown } from './editor.js';
-import { getUsers } from '../core/users.js';
+import { getUsers, getMentionableUsers } from '../core/users.js';
 
 const EMOJIS = ['😀','😂','😍','🤔','😢','😮','😡','👍','👎','👋','🙏','❤️','🎉','🔥','✅','❌','⭐','💡','🚀','📝','🎯','👀','💬','🤝'];
 
@@ -52,7 +52,7 @@ export const init = () => {
         while (start >= 0 && val[start] !== '#' && val[start] !== ' ' && val[start] !== '\n') start--;
         if (start < 0 || val[start] !== '#') { mentionPop.classList.add('hidden'); return; }
         const query   = val.slice(start + 1, pos).toLowerCase();
-        const matches = (await getUsers()).filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
+        const matches = (await getMentionableUsers()).filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
         if (!matches.length) { mentionPop.classList.add('hidden'); return; }
         mentionPop.innerHTML = '';
         matches.forEach(u => {
@@ -85,7 +85,8 @@ export const init = () => {
         const encoded = btoa(unescape(encodeURIComponent(text)));
 
         // Collect UIDs of users mentioned via #Name in the comment text
-        const users = await getUsers();
+        // (API accounts excluded — they can't be notified).
+        const users = await getMentionableUsers();
         const mentionedUids = [];
         const mentionRe = /#(\S+)/g;
         let m;

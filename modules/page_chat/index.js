@@ -1,7 +1,7 @@
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { showToast, confirmModal } from '../core/utils.js';
-import { getUsers } from '../core/users.js';
+import { getUsers, getMentionableUsers } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
 import { openAiModal, closeAiModal, checkAiModal, startStatusPoll } from '../core/ai_modal.js';
@@ -15,6 +15,7 @@ const CHAT_COMMANDS = [
     { name: 'topic',     description: t('chat.cmd.topic') },
     { name: 'purge',     description: t('chat.cmd.purge') },
     { name: 'summarize', description: t('chat.cmd.summarize') },
+    { name: 'aiUsers',   description: t('chat.cmd.ai-users') },
 ];
 
 let _pollTimer      = null;
@@ -306,6 +307,17 @@ const doSend = async () => {
             textarea.focus();
             return;
         }
+        if (cmd === '/aiusers') {
+            textarea.value = ''; autoResize(textarea);
+            const aiList = (await getUsers()).filter(u => u.is_ai);
+            await confirmModal(t('chat.cmd.ai-users-title'), {
+                message: aiList.length ? aiList.map(u => '#' + u.name).join(', ') : t('chat.cmd.ai-users-none'),
+                confirmLabel: t('chat.cmd.ai-users-close'),
+                hideCancel: true,
+            });
+            textarea.focus();
+            return;
+        }
         // /me and /newTopic fall through to normal posting; a new topic ends
         // the focused conversation.
         if (cmd === '/newtopic') setFocus(null);
@@ -456,7 +468,7 @@ const setupInput = () => {
 
         if (triggerChar === '#') {
             mentionPop.classList.remove('chat-mention-popup-cmd');
-            const matches = (await getUsers()).filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
+            const matches = (await getMentionableUsers()).filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
             if (!matches.length) { closePop(); return; }
             matches.forEach(u => {
                 const item = document.createElement('div');

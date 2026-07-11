@@ -18,7 +18,7 @@ export const showToast = (message, type = 'info') => {
     }
 };
 
-export const confirmModal = (title, { message = '', confirmLabel = 'Confirm', cancelLabel = 'Cancel', dangerous = false, icon = '' } = {}) => new Promise(resolve => {
+export const confirmModal = (title, { message = '', confirmLabel = 'Confirm', cancelLabel = 'Cancel', dangerous = false, icon = '', hideCancel = false } = {}) => new Promise(resolve => {
     const overlay = document.getElementById('confirm-modal');
     const titleEl = document.getElementById('confirm-modal-title');
     const iconEl = document.getElementById('confirm-modal-icon');
@@ -34,11 +34,13 @@ export const confirmModal = (title, { message = '', confirmLabel = 'Confirm', ca
     okBtn.textContent = confirmLabel;
     okBtn.className = `btn ${dangerous ? 'btn-danger' : 'btn-blue'}`;
     cancelBtn.textContent = cancelLabel;
+    cancelBtn.classList.toggle('hidden', hideCancel);
     overlay.classList.remove('hidden');
     setTimeout(() => (dangerous ? cancelBtn : okBtn).focus(), 50);
 
     const close = value => {
         overlay.classList.add('hidden');
+        cancelBtn.classList.remove('hidden'); // restore for next caller
         okBtn.removeEventListener('click', onOk);
         cancelBtn.removeEventListener('click', onCancel);
         document.removeEventListener('keydown', onKeydown);
