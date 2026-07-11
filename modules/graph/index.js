@@ -25,6 +25,19 @@ let _onNavigate = null;
 let _cy = null;              // active cytoscape instance
 let _focusHops = 2;
 
+// Cap how far the initial fit may zoom in. With only a few nodes cytoscape's
+// auto-fit would otherwise blow them up to fill the viewport; this keeps nodes
+// a readable size while still letting the user zoom in manually afterwards.
+const MAX_INITIAL_ZOOM = 1.5;
+const fitGraph = () => {
+    if (!_cy) return;
+    _cy.fit(undefined, 40);
+    if (_cy.zoom() > MAX_INITIAL_ZOOM) {
+        _cy.zoom(MAX_INITIAL_ZOOM);
+        _cy.center();
+    }
+};
+
 const loadCytoscape = () => {
     if (window.cytoscape) return Promise.resolve(window.cytoscape);
     if (_cyLoader) return _cyLoader;
@@ -121,7 +134,7 @@ const ensureOverlay = () => {
     document.body.appendChild(ov);
 
     ov.querySelector('#graph-close-btn').addEventListener('click', closeOverlay);
-    ov.querySelector('#graph-fit-btn').addEventListener('click', () => _cy && _cy.fit(undefined, 40));
+    ov.querySelector('#graph-fit-btn').addEventListener('click', fitGraph);
     ov.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOverlay(); });
     ov.querySelectorAll('.graph-toggle input').forEach(cb => {
         cb.addEventListener('change', () => {
@@ -181,15 +194,23 @@ export const openGraphOverlay = async (rootId = null) => {
         container: canvas,
         elements: buildElements(res.nodes, res.edges, rootId),
         style: stylesheet(),
-        layout: {
-            name: 'cose',
-            animate: false,
-            nodeRepulsion: 8000,
-            idealEdgeLength: 90,
-            padding: 40,
-        },
         wheelSensitivity: 0.2,
+        minZoom: 0.1,
+        maxZoom: 2.5,
     });
+
+    // Run the layout explicitly so we can clamp the zoom once it settles —
+    // registering the handler before run() avoids missing a synchronous stop.
+    const layout = _cy.layout({
+        name: 'cose',
+        animate: false,
+        nodeRepulsion: 8000,
+        idealEdgeLength: 90,
+        padding: 40,
+        fit: true,
+    });
+    layout.one('layoutstop', fitGraph);
+    layout.run();
 
     // Reapply current edge-type toggles to the fresh instance.
     ov.querySelectorAll('.graph-toggle input').forEach(cb => {
