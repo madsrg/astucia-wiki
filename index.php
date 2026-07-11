@@ -160,9 +160,14 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                         <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                     </button>
                     <?php endif; ?>
+                    <button id="graph-btn" class="sidebar-icon-btn" data-i18n-title="graph.btn-title" title="Knowledge Graph">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><line x1="6.7" y1="7.4" x2="10.5" y2="16.4"/><line x1="17.3" y1="7.4" x2="13.5" y2="16.4"/><line x1="7" y1="6" x2="17" y2="6"/></svg>
+                    </button>
                     <button id="display-mode-btn" class="sidebar-icon-btn" data-i18n-title="mobile.toggle-title" title="Desktop / mobile view">
                         <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="14" height="10" rx="1"/><line x1="2" y1="17" x2="12" y2="17"/><rect x="17" y="9" width="5" height="11" rx="1"/></svg>
                     </button>
+                    <?php if (!(AUTHENTICATION_ENABLED && isset($_SESSION['user']))): ?>
+                    <?php /* No preferences dialog for anonymous / no-auth visitors — keep a sidebar language selector so they can still switch language. */ ?>
                     <div class="lang-selector-wrapper">
                         <button id="lang-btn" class="sidebar-icon-btn" data-i18n-title="nav.lang-title" title="Language">
                             <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -176,6 +181,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <button class="lang-option" data-lang="de">🇩🇪 Deutsch</button>
                         </div>
                     </div>
+                    <?php endif; ?>
                 </div>
             </div>
         </aside>
@@ -255,6 +261,9 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     </button>
                     <button id="toc-btn" class="btn btn-icon btn-secondary hidden" data-i18n-title="toc.show-btn" title="Table of Contents">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="5" x2="21" y2="5"/><line x1="7" y1="9" x2="21" y2="9"/><line x1="7" y1="13" x2="21" y2="13"/><line x1="3" y1="17" x2="21" y2="17"/><line x1="7" y1="21" x2="21" y2="21"/></svg>
+                    </button>
+                    <button id="graph-focus-btn" class="btn btn-icon btn-secondary hidden" data-i18n-title="graph.focus-title" title="Show this page in the knowledge graph">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><line x1="6.7" y1="7.4" x2="10.5" y2="16.4"/><line x1="17.3" y1="7.4" x2="13.5" y2="16.4"/><line x1="7" y1="6" x2="17" y2="6"/></svg>
                     </button>
                     <?php if ($mailConfigured === '1'): ?>
                     <button id="share-btn" class="btn btn-icon btn-secondary hidden" data-i18n-title="header.share" title="Share page">
@@ -1123,6 +1132,17 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     <button class="btn btn-sm pref-size-btn" data-size-val="12pt" style="font-size:12pt">12pt</button>
                     <button class="btn btn-sm pref-size-btn" data-size-val="14pt" style="font-size:14pt">14pt</button>
                     <button class="btn btn-sm pref-size-btn" data-size-val="16pt" style="font-size:16pt">16pt</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label data-i18n="prefs.lang-label">Language</label>
+                <div class="pref-lang-options">
+                    <button class="lang-option" data-lang="en">🇬🇧 English</button>
+                    <button class="lang-option" data-lang="da">🇩🇰 Dansk</button>
+                    <button class="lang-option" data-lang="sv">🇸🇪 Svenska</button>
+                    <button class="lang-option" data-lang="es">🇪🇸 Español</button>
+                    <button class="lang-option" data-lang="fr">🇫🇷 Français</button>
+                    <button class="lang-option" data-lang="de">🇩🇪 Deutsch</button>
                 </div>
             </div>
             <div class="lightbox-footer">

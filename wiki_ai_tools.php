@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/git_helpers.php';
 require_once __DIR__ . '/search_index.php';
+require_once __DIR__ . '/graph.php';
 
 // Pages under a space's top-level templates/ folder are page templates, not
 // content — excluded from every search result (REST search, SQLite FTS, and the
@@ -53,6 +54,18 @@ function wiki_tool_definitions(): array {
                     'content' => ['type' => 'string', 'description' => 'REQUIRED: the complete markdown content of the page. Must not be omitted or empty.'],
                 ],
                 'required'   => ['path', 'content'],
+            ],
+        ],
+        [
+            'name'        => 'wiki_related_pages',
+            'description' => 'Find pages related to a given page by traversing the wiki knowledge graph, which combines three relationship types: explicit pageid links between pages, folder hierarchy (parent/child/sibling pages sharing a directory), and shared tags. Returns a JSON array of related pages with "id", "path", "label", "tags", "distance" (hops from the start page, nearest first) and "via" (the relationship type that connected it: "reference", "containment", or "tag"). Use this to discover context around a page, find sibling/related content, or ground answers in the wiki\'s structure instead of raw full-text search.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => [
+                    'path' => ['type' => 'string',  'description' => 'Relative path to the starting page, e.g. Notes/Meeting.md'],
+                    'hops' => ['type' => 'integer', 'description' => 'How many relationship hops to traverse (1-4, default 1). 1 = direct neighbours only.'],
+                ],
+                'required'   => ['path'],
             ],
         ],
         [
@@ -282,6 +295,18 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
             $indexer->updateModified($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
             git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Update ' . basename($rel));
             return "Page updated: {$rel}";
+
+        case 'wiki_related_pages':
+            $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
+            if (!$rel) return 'Error: path is required.';
+            $page_id = $indexer->getId($rel);
+            if ($page_id === null) return 'Error: page not found in index — make sure the path matches exactly what wiki_list_pages returns.';
+            $hops    = max(1, min(4, (int)($tool_input['hops'] ?? 1)));
+            $graph   = new WikiGraph($space_dir, $indexer);
+            $related = $graph->related((string)$page_id, $hops);
+            $space_name_rp = basename($space_dir);
+            foreach ($related as &$_r) { $_r['space'] = $space_name_rp; $_r['id'] = (string)$_r['id']; }
+            return json_encode($related);
 
         case 'wiki_add_tags':
             if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot set tags.';

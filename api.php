@@ -42,6 +42,7 @@ if (AUTHENTICATION_ENABLED && !$_anonymous_reader && !isset($_SESSION['user']) &
 }
 
 require_once 'indexer.php';
+require_once 'graph.php';
 require_once 'search_index.php';
 
 // --- API ROUTER ---
@@ -1407,6 +1408,41 @@ if (isset($_REQUEST['action'])) {
                     }
                 }
                 echo json_encode(['success' => true, 'backlinks' => $backlinks]);
+                break;
+
+            case 'get_graph':
+                // Full knowledge graph for the current space: page + folder
+                // nodes, and reference / containment / affinity edges.
+                // Optional focus scoping: ?root=<pageid>&hops=<n> filters to the
+                // neighbourhood of one page (used by the per-page focus view).
+                $graph = new WikiGraph($space_dir, $indexer);
+                $full  = $graph->build();
+                $root  = (string)($_GET['root'] ?? '');
+                $hops  = max(1, min(4, intval($_GET['hops'] ?? 2)));
+                if ($root !== '') {
+                    $related = $graph->related($root, $hops);
+                    $keep    = [$root => true];
+                    foreach ($related as $r) $keep[$r['id']] = true;
+                    // Keep folder/other nodes that sit on a kept edge too.
+                    foreach ($full['edges'] as $e) {
+                        if (isset($keep[$e['source']]) || isset($keep[$e['target']])) {
+                            $keep[$e['source']] = true;
+                            $keep[$e['target']] = true;
+                        }
+                    }
+                    $full['nodes'] = array_values(array_filter($full['nodes'], fn($n) => isset($keep[$n['id']])));
+                    $full['edges'] = array_values(array_filter($full['edges'], fn($e) => isset($keep[$e['source']]) && isset($keep[$e['target']])));
+                }
+                echo json_encode(['success' => true, 'root' => $root, 'nodes' => $full['nodes'], 'edges' => $full['edges']]);
+                break;
+
+            case 'get_related':
+                // Related pages for one page, nearest first (see-also / MCP).
+                $rel_root = (string)($_GET['pageid'] ?? '');
+                $rel_hops = max(1, min(4, intval($_GET['hops'] ?? 1)));
+                if ($rel_root === '') { echo json_encode(['success' => true, 'related' => []]); break; }
+                $rel_graph = new WikiGraph($space_dir, $indexer);
+                echo json_encode(['success' => true, 'related' => $rel_graph->related($rel_root, $rel_hops)]);
                 break;
 
             case 'get_pages_by_tag':
@@ -2844,6 +2880,7 @@ if (isset($_REQUEST['action'])) {
 
             case 'indexfiles':
                 $count = $indexer->rebuildIndex($space_dir);
+                (new WikiGraph($space_dir, $indexer))->invalidateCache();
                 $sqlite_msg = '';
                 if ($search_idx) {
                     try {
@@ -2868,6 +2905,7 @@ if (isset($_REQUEST['action'])) {
                     throw new Exception('A space name is required for reindex.');
                 }
                 $ri_count = $indexer->rebuildIndex($space_dir);
+                (new WikiGraph($space_dir, $indexer))->invalidateCache();
                 $ri_sqlite_msg = '';
                 $ri_sqlite_count = null;
                 $ri_users_cleaned = 0;

@@ -12,10 +12,16 @@ Astucia Wiki combines several content types in one place:
 - **Team chat** — per-file chat threads with real-time polling, emoji reactions, pinned messages, and #mentions
 - **AI assistants** — per-space AI users (Claude, GPT, or any OpenAI-compatible model) that respond to #mentions in chat and can read and write wiki pages
 - **AI agent jobs** — scheduled or on-demand jobs that run an AI user against a prompt and optionally write the result to a wiki page
-- **File attachments** — drag-and-drop upload stored per-page
-- **Full-text search** — keyword search and tag cloud across all content; optional SQLite FTS5 engine adds relevance ranking, highlighted snippets, prefix matching, and cross-space search
+- **MCP server** — exposes the wiki's tools over the Model Context Protocol so external AI agents and MCP clients can list, search, read, write, tag, and traverse related pages
+- **Knowledge graph** — interactive graph of how pages connect, combining explicit `pageid` links, folder hierarchy (parent/child/sibling pages), and shared tags; view the whole space or focus on one page's neighbourhood, with backlinks and related-page discovery
+- **File attachments** — drag-and-drop upload stored per-page, plus dedicated file-library folders
+- **Full-text search** — keyword search and tag cloud across all content; optional SQLite FTS5 engine adds relevance ranking, highlighted snippets, prefix matching, and cross-space search; an advanced search builder saves reusable queries as pages
 - **Page chat** — each Markdown page can have its own chat thread alongside the content
+- **Navigation & discovery** — file tree and folder-browse panes, per-page table of contents, backlinks, and "my mentions" / "my comments" views
+- **Page sharing** — email a link to any page (when email is configured)
+- **Mobile support** — responsive layout with a dedicated mobile Markdown editor and compact toolbar; switch between desktop and mobile views from the sidebar
 - **Spaces** — isolated workspaces for different teams or projects, with per-user access control
+- **Personalization** — per-user preferences (font, font size) and a saved/favourite pages list
 - **Localization** — UI available in English, Danish, Swedish, Spanish, French, and German; users pick their language from the sidebar
 - **Git integration** — optional version history per file; pages and diagrams auto-commit on save, chats and lists support manual snapshots
 
@@ -84,7 +90,7 @@ An AI user is a bot that participates in chat threads. When a regular user #ment
 | Name | The #mention handle that triggers the bot |
 | Provider | `openai` (default) or `anthropic` |
 | API URL | Leave blank for the provider default, or set a custom endpoint for self-hosted / compatible models |
-| Model | e.g. `gpt-4o`, `claude-opus-4-7`, or any model string accepted by the endpoint |
+| Model | e.g. `gpt-4o`, `claude-opus-4-8`, or any model string accepted by the endpoint |
 | API key | Stored server-side only — never sent to the browser |
 | System prompt | Optional instructions that set the bot's persona or constraints |
 | Context messages | How many recent chat messages to include in each request (default 20) |
@@ -93,10 +99,13 @@ An AI user is a bot that participates in chat threads. When a regular user #ment
 
 AI users also receive a **service token** (`wk_ai_…`) that can be used to call the API on their behalf from external scripts.
 
-AI users can use four tools the wiki exposes:
+AI users (and MCP clients — see below) can use the tools the wiki exposes:
 - **`wiki_list_pages`** — lists all pages in the current Space, including their tags
+- **`wiki_search_pages`** — searches pages by topic, recency, and/or tags
 - **`wiki_read_page`** — reads the content of any `.md`, `.list`, or `.chat` file
 - **`wiki_write_page`** — creates or overwrites a `.md` page (editor role only)
+- **`wiki_related_pages`** — finds pages related to a given page via the knowledge graph (links, folder hierarchy, and shared tags)
+- **`wiki_add_tags`** — adds tags to a page without removing existing ones (editor role only)
 - **`wiki_set_tags`** — sets or clears the tags on any page (editor role only)
 
 ### System users
@@ -104,6 +113,22 @@ AI users can use four tools the wiki exposes:
 A system user is a headless account for external integrations (scripts, CI pipelines, other services). It has no AI config — it authenticates via a **service token** (`wk_sys_…`) sent as `Authorization: Bearer <token>` and can call any API action its role permits.
 
 Create a system user in the admin panel, copy the generated token, and use it in your integration. Tokens can be regenerated at any time.
+
+### MCP server
+
+The wiki also speaks the [Model Context Protocol](https://modelcontextprotocol.io). Point any MCP client (Claude Desktop, IDE agents, custom tooling) at `mcp.php` and it can call the same `wiki_*` tools listed above over JSON-RPC 2.0 (Streamable HTTP transport). Authentication uses the same service tokens as the REST API — an AI user's `wk_ai_…` token or a system user's `wk_sys_…` token as `Authorization: Bearer <token>`. Add `?space=SpaceName` to target a specific Space (omit for the default). Role and per-Space access control apply exactly as they do everywhere else. An in-app **MCP Tool Explorer** (admin/editor sidebar) lets you try the tools interactively.
+
+## Knowledge graph
+
+Every Space can be viewed as a knowledge graph — an interactive map of how its pages relate. It layers three kinds of relationship:
+
+- **Links** — explicit `?pageid=` references between pages (directed edges)
+- **Folders** — the file hierarchy, so a page sits next to its parent, children, and siblings even before anyone cross-links them
+- **Tags** — pages that share tags are drawn together
+
+Open the whole-space map from the sidebar (graph icon), or focus on the current page's neighbourhood from the page header. Nodes are coloured by top-level folder and sized by how connected they are; each edge type can be toggled on or off, and clicking a page navigates to it. The relationships also power **backlinks**, **related-page** discovery, and the `wiki_related_pages` tool for AI/MCP clients.
+
+The graph is derived from the page index and cached per Space (`graph.json`); it refreshes incrementally as pages change and rebuilds fully on a manual reindex — no separate maintenance step is required.
 
 ## Git version history
 

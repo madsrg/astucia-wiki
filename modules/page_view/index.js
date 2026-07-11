@@ -453,6 +453,7 @@ export const loadPage = async (path, id, tags) => {
     document.getElementById('copy-btn').classList.remove('hidden');
     document.getElementById('move-btn').classList.remove('hidden');
     document.getElementById('backlinks-btn').classList.toggle('hidden', isSearch);
+    document.getElementById('graph-focus-btn')?.classList.toggle('hidden', isSearch);
     document.getElementById('print-btn').classList.toggle('hidden', isChat || isSearch);
 
     const { updateForPage, updateGitButtons } = await import('../git/index.js');

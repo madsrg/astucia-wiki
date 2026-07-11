@@ -43,6 +43,7 @@ import { init as initPageChat } from './modules/page_chat/index.js';
 import { init as initShare } from './modules/share/index.js';
 import { init as initAdvancedSearch } from './modules/advanced_search/index.js';
 import { init as initMcpExplorer } from './modules/mcp_explorer/index.js';
+import { init as initGraph } from './modules/graph/index.js';
 import { api } from './modules/core/api.js';
 import { state } from './modules/core/state.js';
 
@@ -157,6 +158,7 @@ const init = async () => {
     initShare();
     initAdvancedSearch();
     initMcpExplorer();
+    initGraph({ onNavigate: navigateToPageId });
     initNav({
         onNavigate: async (id, space, path) => {
             const spaceIsValid = !space || getAllSpaces().includes(space);

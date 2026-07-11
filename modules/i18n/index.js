@@ -58,28 +58,32 @@ const _updateSelector = () => {
     document.querySelectorAll('.lang-option').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.lang === _lang);
     });
-    const langBtn = document.getElementById('lang-btn');
-    if (langBtn) langBtn.title = t('nav.lang-title');
 };
 
+// Language is chosen from the My Preferences dialog for logged-in users, or —
+// for anonymous / no-auth visitors who have no preferences page — from a
+// sidebar globe dropdown. Both use .lang-option buttons; only one exists at a
+// time, so wiring the class covers both. The dropdown toggle is wired only
+// when the sidebar selector is present.
 export const initSelector = () => {
-    const btn = document.getElementById('lang-btn');
     const dropdown = document.getElementById('lang-dropdown');
-    if (!btn || !dropdown) return;
-
-    btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        dropdown.classList.toggle('hidden');
-    });
-    document.addEventListener('click', () => dropdown.classList.add('hidden'));
-    dropdown.addEventListener('click', (e) => e.stopPropagation());
+    const langBtn  = document.getElementById('lang-btn');
 
     document.querySelectorAll('.lang-option').forEach(opt => {
         opt.addEventListener('click', () => {
             setLanguage(opt.dataset.lang);
-            dropdown.classList.add('hidden');
+            dropdown?.classList.add('hidden');
         });
     });
+
+    if (langBtn && dropdown) {
+        langBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdown.classList.toggle('hidden');
+        });
+        document.addEventListener('click', () => dropdown.classList.add('hidden'));
+        dropdown.addEventListener('click', (e) => e.stopPropagation());
+    }
 
     _updateSelector();
 };
