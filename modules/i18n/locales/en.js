@@ -439,6 +439,8 @@ export default {
     'prefs.font-mono':    'Mono',
     'prefs.size-label':   'Text Size',
     'prefs.lang-label':   'Language',
+    'prefs.digest-label': 'Subscribe to daily updates',
+    'prefs.digest-hint':  'One email a day summarising pages created or updated in the last 24 hours.',
     'prefs.save-btn':     'Save',
     'prefs.saved':        'Preferences saved',
     'prefs.failed':       'Failed to save',

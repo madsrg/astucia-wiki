@@ -537,6 +537,9 @@ body {
 .lightbox-content { background-color: white; padding: 1.5rem; border-radius: 0.5rem; width: 90%; max-width: 600px; height: 500px; max-height: 80vh; display: flex; flex-direction: column; position: relative; }
 .lightbox-content.full-screen { width: 95vw; max-width: 95vw; height: 95vh; max-height: 95vh; padding: 0; }
 .input-modal-content { height: auto; max-width: 380px; min-height: unset; }
+.pref-check { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem; color: var(--text-color); }
+.pref-check input { cursor: pointer; }
+.pref-hint { margin: 0.3rem 0 0 1.6rem; font-size: 0.78rem; color: var(--accent-gray); }
 .input-modal-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
 .input-modal-header h3 { margin: 0; font-size: 0.95rem; }
 .input-modal-icon { display: flex; align-items: center; line-height: 0; }

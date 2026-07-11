@@ -1145,6 +1145,12 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     <button class="lang-option" data-lang="de">🇩🇪 Deutsch</button>
                 </div>
             </div>
+            <?php if ($mailConfigured === '1'): ?>
+            <div class="form-group">
+                <label class="pref-check"><input type="checkbox" id="pref-daily-digest"> <span data-i18n="prefs.digest-label">Subscribe to daily updates</span></label>
+                <p class="pref-hint" data-i18n="prefs.digest-hint">One email a day summarising pages created or updated in the last 24 hours.</p>
+            </div>
+            <?php endif; ?>
             <div class="lightbox-footer">
                 <button id="preferences-save-btn" class="btn btn-blue" data-i18n="prefs.save-btn">Save</button>
             </div>

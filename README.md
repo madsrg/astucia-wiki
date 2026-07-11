@@ -19,6 +19,7 @@ Astucia Wiki combines several content types in one place:
 - **Page chat** — each Markdown page can have its own chat thread alongside the content
 - **Navigation & discovery** — file tree and folder-browse panes, per-page table of contents, backlinks, and "my mentions" / "my comments" views
 - **Page sharing** — email a link to any page (when email is configured)
+- **Daily updates** — opt-in daily digest email summarising pages created or updated in the last 24 hours across the spaces you can access
 - **Mobile support** — responsive layout with a dedicated mobile Markdown editor and compact toolbar; switch between desktop and mobile views from the sidebar
 - **Spaces** — isolated workspaces for different teams or projects, with per-user access control
 - **Personalization** — per-user preferences (font, font size) and a saved/favourite pages list
@@ -149,7 +150,19 @@ sudo -u www-data git -C /path/to/your/PAGES_DIR commit -m "Initial content"
 
 ## Localization
 
-The UI is available in **English, Danish, Swedish, Spanish, French, and German**. Each user picks their preferred language from the globe icon in the bottom-left sidebar; the preference is stored in the browser. Adding a new language requires one new file in `modules/i18n/locales/` — copy `en.js`, translate the strings, and add the language code to `SUPPORTED_LANGUAGES` in `modules/i18n/index.js`.
+The UI is available in **English, Danish, Swedish, Spanish, French, and German**. Logged-in users pick their language from **My Preferences**; anonymous / no-auth visitors get a language selector in the sidebar instead. The choice is stored in the browser. Adding a new language requires one new file in `modules/i18n/locales/` — copy `en.js`, translate the strings, and add the language code to `SUPPORTED_LANGUAGES` in `modules/i18n/index.js`.
+
+## Daily updates
+
+Users can opt in to a **daily digest email** from **My Preferences → "Subscribe to daily updates"** (shown when email is configured). Once a day it summarises pages created or updated in the last 24 hours across every space the user can access, excluding their own edits, capped at the 20 most recent changes and grouped by space.
+
+Delivery is driven by a CLI script run from cron — the same pattern as AI Agent Jobs. Add one entry to the web-server user's crontab, e.g. 07:00 daily:
+
+```bash
+0 7 * * * php /path/to/run_daily_digest.php >> /var/log/wiki-digest.log 2>&1
+```
+
+Email links use `APP_BASE_URL` from `config.php` (falling back to the origin of `OIDC_REDIRECT_URI`), since a cron run has no web request to derive the host from.
 
 ## Documentation
 

@@ -2543,10 +2543,11 @@ if (isset($_REQUEST['action'])) {
                 foreach ($pref_data['users'] ?? [] as $pu) {
                     if (($pu['sub'] ?? '') === $me_sub) {
                         echo json_encode(['success' => true, 'data' => [
-                            'name'       => $pu['name']       ?? '',
-                            'email'      => $pu['email']      ?? '',
-                            'fontFamily' => $pu['fontFamily'] ?? 'sans',
-                            'fontSize'   => $pu['fontSize']   ?? '11pt',
+                            'name'        => $pu['name']       ?? '',
+                            'email'       => $pu['email']      ?? '',
+                            'fontFamily'  => $pu['fontFamily'] ?? 'sans',
+                            'fontSize'    => $pu['fontSize']   ?? '11pt',
+                            'dailyDigest' => !empty($pu['dailyDigest']),
                         ]]);
                         break 2;
                     }
@@ -2559,6 +2560,7 @@ if (isset($_REQUEST['action'])) {
                 $new_email      = trim($_POST['email']      ?? '');
                 $new_font       = trim($_POST['fontFamily'] ?? 'sans');
                 $new_font_size  = trim($_POST['fontSize']   ?? 'normal');
+                $new_digest     = (($_POST['dailyDigest'] ?? '') === '1');
                 if (!in_array($new_font,      ['sans','serif','mono']))                          $new_font      = 'sans';
                 if (!in_array($new_font_size, ['10pt','11pt','12pt','14pt','16pt']))          $new_font_size = '11pt';
                 if ($new_email && !filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
@@ -2569,8 +2571,9 @@ if (isset($_REQUEST['action'])) {
                 foreach ($pref_data2['users'] as &$pu2) {
                     if (($pu2['sub'] ?? '') === $me_sub2) {
                         if ($new_email) $pu2['email'] = $new_email;
-                        $pu2['fontFamily'] = $new_font;
-                        $pu2['fontSize']   = $new_font_size;
+                        $pu2['fontFamily']  = $new_font;
+                        $pu2['fontSize']    = $new_font_size;
+                        $pu2['dailyDigest'] = $new_digest;
                         $found_pref = true;
                         break;
                     }

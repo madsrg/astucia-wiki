@@ -9,6 +9,12 @@
 
 define('APP_TITLE', 'Astucia Wiki');
 
+// Absolute base URL of this wiki, e.g. 'https://wiki.example.com' (no trailing
+// slash). Only used to build clickable page links in emails sent from CLI/cron
+// (the daily-updates digest), where there is no web request to derive it from.
+// If left undefined, the digest falls back to the origin of OIDC_REDIRECT_URI.
+// define('APP_BASE_URL', 'https://wiki.example.com');
+
 // --- Session ---
 // Idle timeout in seconds before the user is redirected to the login page.
 define('SESSION_TIMEOUT', 3600); // 1 hour
