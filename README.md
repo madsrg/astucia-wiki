@@ -156,11 +156,19 @@ The UI is available in **English, Danish, Swedish, Spanish, French, and German**
 
 Users can opt in to a **daily digest email** from **My Preferences → "Subscribe to daily updates"** (shown when email is configured). Once a day it summarises pages created or updated in the last 24 hours across every space the user can access, excluding their own edits, capped at the 20 most recent changes and grouped by space.
 
-Delivery is driven by a CLI script run from cron — the same pattern as AI Agent Jobs. Add one entry to the web-server user's crontab, e.g. 07:00 daily:
+Delivery is driven by a CLI script run from cron — the same pattern as AI Agent Jobs. Edit the web-server user's crontab (`www-data` on Debian):
+
+```bash
+sudo -u www-data crontab -e
+```
+
+and add one entry to run the digest once a day, e.g. 07:00:
 
 ```bash
 0 7 * * * php /path/to/run_daily_digest.php >> /var/log/wiki-digest.log 2>&1
 ```
+
+A user's crontab isn't a file in their home directory — it lives in the cron spool (on Debian, `/var/spool/cron/crontabs/www-data`); always edit it via `crontab -e` rather than by hand. Running as `www-data` keeps file and email permissions consistent with the rest of the wiki.
 
 Email links use `APP_BASE_URL` from `config.php` (falling back to the origin of `OIDC_REDIRECT_URI`), since a cron run has no web request to derive the host from.
 
