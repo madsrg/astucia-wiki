@@ -38,6 +38,13 @@ const fitGraph = () => {
     }
 };
 
+// Zoom by a factor about the viewport centre (cytoscape clamps to min/max).
+const ZOOM_STEP = 1.3;
+const zoomBy = (factor) => {
+    if (!_cy) return;
+    _cy.zoom({ level: _cy.zoom() * factor, renderedPosition: { x: _cy.width() / 2, y: _cy.height() / 2 } });
+};
+
 const loadCytoscape = () => {
     if (window.cytoscape) return Promise.resolve(window.cytoscape);
     if (_cyLoader) return _cyLoader;
@@ -126,7 +133,11 @@ const ensureOverlay = () => {
             <label class="graph-toggle"><input type="checkbox" data-etype="reference" checked> <span style="color:#60a5fa">${t('graph.edge-reference')}</span></label>
             <label class="graph-toggle"><input type="checkbox" data-etype="containment" checked> <span style="color:#a3a3a3">${t('graph.edge-containment')}</span></label>
             <label class="graph-toggle"><input type="checkbox" data-etype="tag" checked> <span style="color:#34d399">${t('graph.edge-tag')}</span></label>
-            <button class="graph-fit-btn btn btn-sm btn-secondary" id="graph-fit-btn">${t('graph.fit')}</button>
+            <div class="graph-zoom">
+                <button class="btn btn-sm btn-secondary graph-zoom-btn" id="graph-zoom-out" title="${t('graph.zoom-out')}">&minus;</button>
+                <button class="btn btn-sm btn-secondary graph-zoom-btn" id="graph-zoom-reset" title="${t('graph.reset')}">${t('graph.reset')}</button>
+                <button class="btn btn-sm btn-secondary graph-zoom-btn" id="graph-zoom-in" title="${t('graph.zoom-in')}">+</button>
+            </div>
             <button class="graph-close-btn" id="graph-close-btn" title="${t('graph.close')}">&times;</button>
         </div>
         <div class="graph-canvas" id="graph-canvas"></div>
@@ -134,7 +145,9 @@ const ensureOverlay = () => {
     document.body.appendChild(ov);
 
     ov.querySelector('#graph-close-btn').addEventListener('click', closeOverlay);
-    ov.querySelector('#graph-fit-btn').addEventListener('click', fitGraph);
+    ov.querySelector('#graph-zoom-in').addEventListener('click', () => zoomBy(ZOOM_STEP));
+    ov.querySelector('#graph-zoom-out').addEventListener('click', () => zoomBy(1 / ZOOM_STEP));
+    ov.querySelector('#graph-zoom-reset').addEventListener('click', fitGraph);
     ov.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOverlay(); });
     ov.querySelectorAll('.graph-toggle input').forEach(cb => {
         cb.addEventListener('change', () => {

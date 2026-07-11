@@ -1599,6 +1599,9 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 .graph-toggle input { cursor: pointer; }
 .graph-close-btn { background: none; border: none; color: #cbd5e1; font-size: 1.6rem; line-height: 1; cursor: pointer; padding: 0 0.3rem; }
 .graph-close-btn:hover { color: #fff; }
+.graph-zoom { display: flex; gap: 0.25rem; }
+.graph-zoom-btn { min-width: 2rem; padding-left: 0.4rem; padding-right: 0.4rem; }
+#graph-zoom-in, #graph-zoom-out { font-size: 1.05rem; line-height: 1; font-weight: 600; }
 .graph-canvas { flex: 1; min-height: 0; }
 .graph-empty { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #94a3b8; font-size: 0.95rem; }
 .graph-empty.hidden { display: none; }
