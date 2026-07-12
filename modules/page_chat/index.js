@@ -60,7 +60,9 @@ const formatTime = ts => {
 const renderText = (raw, isAi = false) => {
     if (isAi && typeof marked !== 'undefined') {
         const html = marked.parse(String(raw ?? ''));
-        return html.replace(/#(\w+)/g, '<span class="chat-mention">#$1</span>');
+        // Highlight #mentions, but skip HTML entities so numeric ones like &#39;
+        // (marked's output for an apostrophe) aren't mangled by matching "#39".
+        return html.replace(/(&#?\w+;)|#(\w+)/g, (_, ent, name) => ent || `<span class="chat-mention">#${name}</span>`);
     }
     return esc(raw).replace(/#(\S+)/g, '<span class="chat-mention">#$1</span>');
 };
