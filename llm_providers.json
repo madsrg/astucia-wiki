@@ -1,0 +1,23 @@
+{
+  "_comment": "LLM provider registry. Each provider maps to a response 'family' (the wire format the wiki knows how to build requests for and parse). Adding a new provider variant — e.g. a different endpoint that speaks one of the known families — is a JSON edit here, no code change. The three families (anthropic, openai-chat, openai-responses) are implemented in code (ai_core.php); only add a new 'family' value if you also add its parser. Fields: id (stored in each AI user's config), label (shown in Admin - AI - Provider), family, default_url (used when an AI user leaves the API URL blank).",
+  "providers": [
+    {
+      "id": "openai",
+      "label": "OpenAI / compatible — Chat Completions (OpenAI, OpenRouter, Groq, Ollama, …)",
+      "family": "openai-chat",
+      "default_url": "https://api.openai.com/v1/chat/completions"
+    },
+    {
+      "id": "openai-responses",
+      "label": "OpenAI — Responses API (/v1/responses)",
+      "family": "openai-responses",
+      "default_url": "https://api.openai.com/v1/responses"
+    },
+    {
+      "id": "anthropic",
+      "label": "Anthropic (Claude)",
+      "family": "anthropic",
+      "default_url": "https://api.anthropic.com/v1/messages"
+    }
+  ]
+}

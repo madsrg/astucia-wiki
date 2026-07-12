@@ -89,14 +89,16 @@ An AI user is a bot that participates in chat threads. When a regular user #ment
 | Field | Description |
 |-------|-------------|
 | Name | The #mention handle that triggers the bot |
-| Provider | `openai` (default) or `anthropic` |
-| API URL | Leave blank for the provider default, or set a custom endpoint for self-hosted / compatible models |
+| Provider | One of the entries in `llm_providers.json` — `openai` (Chat Completions, default), `openai-responses` (OpenAI Responses API), or `anthropic` |
+| API URL | Leave blank for the provider's default endpoint, or set a custom endpoint for self-hosted / compatible models |
 | Model | e.g. `gpt-4o`, `claude-opus-4-8`, or any model string accepted by the endpoint |
 | API key | Stored server-side only — never sent to the browser |
 | System prompt | Optional instructions that set the bot's persona or constraints |
 | Context messages | How many recent chat messages to include in each request (default 20) |
 | Max tokens | Maximum length of the model's reply (default 4096) |
 | Temperature | Sampling temperature, 0–2 (default 0.7) |
+
+The available providers come from **`llm_providers.json`** in the project root. Each entry maps a provider `id` to a response *family* (`openai-chat`, `openai-responses`, or `anthropic` — the three wire formats the wiki knows how to build and parse), a display label, and a default endpoint. To add a provider variant that speaks one of those families (a different endpoint, a compatible service), add an entry to that file — no code change. The wiki also self-corrects common OpenAI drift automatically: it picks `max_tokens` vs `max_completion_tokens` per endpoint and retries if the API asks for the other, and drops an unsupported custom `temperature` for reasoning models.
 
 AI users also receive a **service token** (`wk_ai_…`) that can be used to call the API on their behalf from external scripts.
 

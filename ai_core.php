@@ -4,6 +4,8 @@
 // Requires: config.php (for PAGES_DIR, WIKI_SYSTEM_DATA), indexer.php
 // =================================================================
 
+require_once __DIR__ . '/llm_providers.php';
+
 /**
  * Run a git command in the given working directory.
  * Returns ['output' => string, 'code' => int].
@@ -198,51 +200,149 @@ function _mcp_call_tool(array $server, string $name, array $input, string $space
 // Sends a minimal completion request to verify a provider/api_url/api_key/model
 // combination actually works together, without the full agentic tool loop — used
 // by the "Test Connection" button on the AI User admin form.
-function _test_ai_connection(string $provider, string $api_url, string $api_key, string $model): array {
-    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'curl is not available on this server.'];
+// Newer OpenAI models (o-series, gpt-5) require "max_completion_tokens" on the
+// Chat Completions API and reject "max_tokens"; older models and many
+// OpenAI-compatible providers only accept "max_tokens". Default by endpoint,
+// then swap-and-retry once if the API says otherwise (see _is_token_param_error).
+function _openai_token_param(string $api_url): string {
+    return stripos($api_url, 'api.openai.com') !== false ? 'max_completion_tokens' : 'max_tokens';
+}
 
-    $payload = [
-        'model'      => $model,
-        'max_tokens' => 16,
-        'messages'   => [['role' => 'user', 'content' => 'Reply with the single word: OK']],
-    ];
-    if ($provider === 'anthropic') {
-        $headers = ['Content-Type: application/json', 'x-api-key: ' . $api_key, 'anthropic-version: 2023-06-01'];
-    } else {
-        $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key];
+// True when an API error indicates the wrong token-limit parameter was sent.
+function _is_token_param_error(string $msg): bool {
+    if (stripos($msg, 'max_completion_tokens') !== false) return true;
+    return stripos($msg, 'max_tokens') !== false
+        && (stripos($msg, 'unsupported') !== false || stripos($msg, 'not supported') !== false
+            || stripos($msg, 'instead') !== false || stripos($msg, 'use ') !== false);
+}
+
+// True when an API error indicates a custom temperature is not allowed (reasoning
+// models accept only the default temperature).
+function _is_temperature_error(string $msg): bool {
+    return stripos($msg, 'temperature') !== false
+        && (stripos($msg, 'unsupported') !== false || stripos($msg, 'not support') !== false
+            || stripos($msg, 'does not support') !== false || stripos($msg, 'only the default') !== false
+            || stripos($msg, 'only supports') !== false);
+}
+
+// --- OpenAI Responses API (/v1/responses) helpers ------------------------------
+// The Responses API differs from Chat Completions: tools are flat (no nested
+// "function" key), the prompt goes in "input" (+ "instructions" for the system
+// prompt), the limit is "max_output_tokens", and the reply is an "output" array
+// of typed items (message / function_call / reasoning …).
+
+function _openai_responses_tools(array $tools_def): array {
+    return array_map(fn($t) => [
+        'type'        => 'function',
+        'name'        => $t['name'],
+        'description' => $t['description'],
+        'parameters'  => $t['params'],
+    ], $tools_def);
+}
+
+// Normalise a Responses result: ['text', 'tool_calls' => [['call_id','name','args'],…],
+// 'output' => raw items to echo back on the next turn, 'truncated' => bool].
+function _openai_responses_parse(array $data): array {
+    $text = '';
+    $calls = [];
+    foreach ($data['output'] ?? [] as $item) {
+        $type = $item['type'] ?? '';
+        if ($type === 'message') {
+            foreach ($item['content'] ?? [] as $blk) {
+                if (($blk['type'] ?? '') === 'output_text') $text .= $blk['text'] ?? '';
+            }
+        } elseif ($type === 'function_call') {
+            $calls[] = [
+                'call_id' => $item['call_id'] ?? ($item['id'] ?? ''),
+                'name'    => $item['name'] ?? '',
+                'args'    => json_decode($item['arguments'] ?? '{}', true) ?: [],
+            ];
+        }
     }
+    $truncated = ($data['status'] ?? '') === 'incomplete'
+        && (($data['incomplete_details']['reason'] ?? '') === 'max_output_tokens');
+    return ['text' => trim($text), 'tool_calls' => $calls, 'output' => $data['output'] ?? [], 'truncated' => $truncated];
+}
 
+function _test_openai_responses(string $api_url, string $api_key, string $model): array {
+    $payload = ['model' => $model, 'input' => 'Reply with the single word: OK', 'max_output_tokens' => 64];
     $ch = curl_init($api_url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => json_encode($payload),
-        CURLOPT_HTTPHEADER     => $headers,
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key],
         CURLOPT_TIMEOUT        => 20,
     ]);
-    $raw      = curl_exec($ch);
-    $curl_err = curl_error($ch);
-    $http     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
+    $raw = curl_exec($ch); $curl_err = curl_error($ch); $http = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
     if (!$raw) return ['ok' => false, 'error' => $curl_err ?: 'No response (connection failed or timed out).'];
     $data = json_decode($raw, true);
     if (!$data) return ['ok' => false, 'error' => "HTTP {$http}: unreadable response."];
     if (isset($data['error'])) return ['ok' => false, 'error' => $data['error']['message'] ?? 'API returned an error.'];
-    if (($data['type'] ?? '') === 'error') return ['ok' => false, 'error' => $data['error']['message'] ?? 'API returned an error.'];
-    // Some OpenAI-compatible providers (e.g. Mistral) use {"detail": "..."} instead.
-    if ($http >= 400 && isset($data['detail'])) {
-        return ['ok' => false, 'error' => is_string($data['detail']) ? $data['detail'] : json_encode($data['detail'])];
-    }
+    $parsed = _openai_responses_parse($data);
+    return ['ok' => true, 'reply' => $parsed['text'] !== '' ? $parsed['text'] : '(empty reply)'];
+}
 
-    if ($provider === 'anthropic') {
-        $text_blocks = array_filter($data['content'] ?? [], fn($b) => ($b['type'] ?? '') === 'text');
-        $text = trim(implode(' ', array_column(array_values($text_blocks), 'text')));
+function _test_ai_connection(string $provider, string $api_url, string $api_key, string $model): array {
+    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'curl is not available on this server.'];
+    $family = llm_family($provider);
+    if ($family === 'openai-responses') return _test_openai_responses($api_url, $api_key, $model);
+
+    if ($family === 'anthropic') {
+        $headers = ['Content-Type: application/json', 'x-api-key: ' . $api_key, 'anthropic-version: 2023-06-01'];
     } else {
-        $text = trim($data['choices'][0]['message']['content'] ?? '');
+        $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key];
     }
-    if ($text === '' && $http >= 400) return ['ok' => false, 'error' => "HTTP {$http}: empty response."];
-    return ['ok' => true, 'reply' => $text !== '' ? $text : '(empty reply)'];
+    // Anthropic always uses max_tokens; OpenAI/compatible pick by endpoint and
+    // swap on the "use max_completion_tokens instead" error.
+    $token_param = $family === 'anthropic' ? 'max_tokens' : _openai_token_param($api_url);
+
+    for ($attempt = 0; $attempt < 3; $attempt++) {
+        $payload = [
+            'model'      => $model,
+            $token_param => 16,
+            'messages'   => [['role' => 'user', 'content' => 'Reply with the single word: OK']],
+        ];
+        $ch = curl_init($api_url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode($payload),
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_TIMEOUT        => 20,
+        ]);
+        $raw      = curl_exec($ch);
+        $curl_err = curl_error($ch);
+        $http     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if (!$raw) return ['ok' => false, 'error' => $curl_err ?: 'No response (connection failed or timed out).'];
+        $data = json_decode($raw, true);
+        if (!$data) return ['ok' => false, 'error' => "HTTP {$http}: unreadable response."];
+        if (isset($data['error'])) {
+            $emsg = $data['error']['message'] ?? 'API returned an error.';
+            if ($family !== 'anthropic' && $attempt < 2 && _is_token_param_error($emsg)) {
+                $token_param = $token_param === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens';
+                continue;
+            }
+            return ['ok' => false, 'error' => $emsg];
+        }
+        if (($data['type'] ?? '') === 'error') return ['ok' => false, 'error' => $data['error']['message'] ?? 'API returned an error.'];
+        // Some OpenAI-compatible providers (e.g. Mistral) use {"detail": "..."} instead.
+        if ($http >= 400 && isset($data['detail'])) {
+            return ['ok' => false, 'error' => is_string($data['detail']) ? $data['detail'] : json_encode($data['detail'])];
+        }
+
+        if ($family === 'anthropic') {
+            $text_blocks = array_filter($data['content'] ?? [], fn($b) => ($b['type'] ?? '') === 'text');
+            $text = trim(implode(' ', array_column(array_values($text_blocks), 'text')));
+        } else {
+            $text = trim($data['choices'][0]['message']['content'] ?? '');
+        }
+        if ($text === '' && $http >= 400) return ['ok' => false, 'error' => "HTTP {$http}: empty response."];
+        return ['ok' => true, 'reply' => $text !== '' ? $text : '(empty reply)'];
+    }
+    return ['ok' => false, 'error' => 'Could not find a supported token-limit parameter for this model.'];
 }
 
 /**
@@ -258,7 +358,9 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     // --- Extract LLM config ---
     $config        = $ai_user['ai_config']   ?? [];
     $provider      = $config['provider']      ?? 'openai';
-    $api_url       = $config['api_url']       ?? 'https://api.openai.com/v1/chat/completions';
+    $family        = llm_family($provider);
+    $api_url       = $config['api_url']       ?? '';
+    if ($api_url === '') $api_url = llm_default_url($provider);
     $api_key       = $config['api_key']       ?? '';
     $model         = $config['model']         ?? 'gpt-4o';
     $sys_prompt    = $config['system_prompt'] ?? 'You are a helpful assistant.';
@@ -400,12 +502,14 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
         }
     }
 
-    if ($provider === 'anthropic') {
+    if ($family === 'anthropic') {
         $tools = array_map(fn($t) => [
             'name'         => $t['name'],
             'description'  => $t['description'],
             'input_schema' => $t['params'],
         ], $tools_def);
+    } elseif ($family === 'openai-responses') {
+        $tools = _openai_responses_tools($tools_def);
     } else {
         $tools = array_map(fn($t) => [
             'type'     => 'function',
@@ -414,7 +518,9 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     }
 
     // --- Initial messages ---
-    if ($provider === 'anthropic') {
+    // For openai-responses this is the "input" list; the system prompt goes in
+    // "instructions" instead of a system message.
+    if ($family === 'anthropic' || $family === 'openai-responses') {
         $messages = [
             ['role' => 'user', 'content' => $job['prompt']],
         ];
@@ -429,9 +535,13 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     $reply        = null;
     $api_error    = null;
     $tools_called = false;
+    // OpenAI token-limit param + custom-temperature handling (see helpers above).
+    $openai_token_param  = _openai_token_param($api_url);
+    $token_param_swapped = false;
+    $drop_temperature    = false;
 
     for ($iter = 0; $iter < 10; $iter++) {
-        if ($provider === 'anthropic') {
+        if ($family === 'anthropic') {
             $payload = [
                 'model'       => $model,
                 'system'      => $full_system,
@@ -445,14 +555,27 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 'x-api-key: ' . $api_key,
                 'anthropic-version: 2023-06-01',
             ];
+        } elseif ($family === 'openai-responses') {
+            $payload = [
+                'model'             => $model,
+                'instructions'      => $full_system,
+                'input'             => $messages,
+                'max_output_tokens' => $max_tokens,
+                'tools'             => $tools,
+            ];
+            if (!$drop_temperature) $payload['temperature'] = $temperature;
+            $headers = [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $api_key,
+            ];
         } else {
             $payload = [
-                'model'       => $model,
-                'messages'    => $messages,
-                'max_tokens'  => $max_tokens,
-                'temperature' => $temperature,
-                'tools'       => $tools,
+                'model'             => $model,
+                'messages'          => $messages,
+                $openai_token_param => $max_tokens,
+                'tools'             => $tools,
             ];
+            if (!$drop_temperature) $payload['temperature'] = $temperature;
             $headers = [
                 'Content-Type: application/json',
                 'Authorization: Bearer ' . $api_key,
@@ -483,7 +606,19 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
 
         // Detect error responses
         if (isset($data['error'])) {
-            $api_error = $data['error']['message'] ?? 'Unknown API error.';
+            $emsg = $data['error']['message'] ?? 'Unknown API error.';
+            // Reasoning models (o-series, gpt-5) reject max_tokens / custom
+            // temperature — swap the token param or drop temperature and retry once each.
+            if ($family !== 'anthropic' && !$token_param_swapped && _is_token_param_error($emsg)) {
+                $openai_token_param  = $openai_token_param === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens';
+                $token_param_swapped = true;
+                continue;
+            }
+            if ($family !== 'anthropic' && !$drop_temperature && _is_temperature_error($emsg)) {
+                $drop_temperature = true;
+                continue;
+            }
+            $api_error = $emsg;
             break;
         }
         if (($data['type'] ?? '') === 'error') {
@@ -491,7 +626,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
             break;
         }
 
-        if ($provider === 'anthropic') {
+        if ($family === 'anthropic') {
             if (($data['stop_reason'] ?? '') === 'max_tokens') {
                 $api_error = 'Response truncated: the Max Tokens limit (' . $max_tokens . ') was reached before the AI could finish its reply. Increase Max Tokens in the AI user settings (recommend ≥ 4096 for page writing).';
                 break;
@@ -526,6 +661,28 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 continue;
             }
             $reply = $candidate;
+            break;
+
+        } elseif ($family === 'openai-responses') {
+            $parsed = _openai_responses_parse($data);
+            if ($parsed['tool_calls']) {
+                $tools_called = true;
+                // Echo the model's output items back, then append each tool result.
+                foreach ($parsed['output'] as $it) $messages[] = $it;
+                foreach ($parsed['tool_calls'] as $call) {
+                    $messages[] = [
+                        'type'    => 'function_call_output',
+                        'call_id' => $call['call_id'],
+                        'output'  => $exec_tool($call['name'], $call['args']),
+                    ];
+                }
+                continue;
+            }
+            if ($parsed['truncated']) {
+                $api_error = 'Response truncated: the Max Tokens limit (' . $max_tokens . ') was reached before the AI could finish its reply. Increase Max Tokens in the AI user settings (recommend ≥ 4096 for page writing).';
+                break;
+            }
+            $reply = $parsed['text'];
             break;
 
         } else {

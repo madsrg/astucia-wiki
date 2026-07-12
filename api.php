@@ -233,7 +233,9 @@ if (isset($_REQUEST['action'])) {
     function trigger_ai_response($ai_user, $chat_file, $chat_data, $indexer, $space_dir, $placeholder_id = null) {
         $config        = $ai_user['ai_config']      ?? [];
         $provider      = $config['provider']         ?? 'openai';
-        $api_url       = $config['api_url']          ?? 'https://api.openai.com/v1/chat/completions';
+        $family        = llm_family($provider);
+        $api_url       = $config['api_url']          ?? '';
+        if ($api_url === '') $api_url = llm_default_url($provider);
         $api_key       = $config['api_key']          ?? '';
         $model         = $config['model']            ?? 'gpt-4o';
         $system_prompt = $config['system_prompt']    ?? 'You are a helpful assistant.';
@@ -299,7 +301,7 @@ if (isset($_REQUEST['action'])) {
         $_trig_msgs_c   = array_values(array_filter($chat_data['messages'], fn($m) => empty($m['pending'])));
         $forced_slugs_c = _mcp_extract_forced_slugs(end($_trig_msgs_c)['text'] ?? '');
 
-        $_add_mcp_server_tools_c = function(array $mcp_srv_c) use (&$tools, &$mcp_tool_map_c, $provider) {
+        $_add_mcp_server_tools_c = function(array $mcp_srv_c) use (&$tools, &$mcp_tool_map_c, $family) {
             foreach (_mcp_fetch_tools($mcp_srv_c) as $mt) {
                 // Namespaced alias — a remote server (e.g. another AstuciaWiki's
                 // mcp.php) can expose tools named identically to our own
@@ -307,8 +309,10 @@ if (isset($_REQUEST['action'])) {
                 $alias = _mcp_tool_alias($mcp_srv_c['name'] ?? 'mcp', $mt['name']);
                 if (isset($mcp_tool_map_c[$alias])) continue;
                 $mcp_tool_map_c[$alias] = ['server' => $mcp_srv_c, 'real_name' => $mt['name']];
-                if ($provider === 'anthropic') {
+                if ($family === 'anthropic') {
                     $tools[] = ['name' => $alias, 'description' => $mt['description'], 'input_schema' => $mt['params']];
+                } elseif ($family === 'openai-responses') {
+                    $tools[] = ['type' => 'function', 'name' => $alias, 'description' => $mt['description'], 'parameters' => $mt['params']];
                 } else {
                     $tools[] = ['type' => 'function', 'function' => ['name' => $alias, 'description' => $mt['description'], 'parameters' => $mt['params']]];
                 }
@@ -355,7 +359,7 @@ if (isset($_REQUEST['action'])) {
         }
 
         // Build initial message list (provider-specific format)
-        if ($provider === 'anthropic') {
+        if ($family === 'anthropic') {
             $messages = [];
             foreach ($recent as $msg) {
                 $role = ((int)($msg['uid'] ?? -1) === $ai_uid) ? 'assistant' : 'user';
@@ -373,6 +377,13 @@ if (isset($_REQUEST['action'])) {
             // First message must be user
             while ($merged && $merged[0]['role'] !== 'user') array_shift($merged);
             $messages = $merged;
+        } elseif ($family === 'openai-responses') {
+            // Responses "input": conversation as role/content items; system → "instructions".
+            $messages = [];
+            foreach ($recent as $msg) {
+                $role = ((int)($msg['uid'] ?? -1) === $ai_uid) ? 'assistant' : 'user';
+                $messages[] = ['role' => $role, 'content' => ($msg['name'] ?? '') . ': ' . preg_replace('/\bsrc:[a-zA-Z0-9_]+\s*/i', '', $msg['text'] ?? '')];
+            }
         } else {
             $messages = [['role' => 'system', 'content' => $full_system]];
             foreach ($recent as $msg) {
@@ -385,14 +396,24 @@ if (isset($_REQUEST['action'])) {
         $reply        = null;
         $api_error    = null;
         $tools_called = false; // tracks whether any tool has fired this session
+        // OpenAI token-limit param + custom-temperature handling (helpers in ai_core.php).
+        $openai_token_param  = _openai_token_param($api_url);
+        $token_param_swapped = false;
+        $drop_temperature    = false;
         for ($iter = 0; $iter < 8; $iter++) {
-            if ($provider === 'anthropic') {
+            if ($family === 'anthropic') {
                 $payload = ['model' => $model, 'system' => $full_system, 'messages' => $messages,
                             'max_tokens' => $max_tokens, 'temperature' => $temperature, 'tools' => $tools];
                 $headers = ['Content-Type: application/json', 'x-api-key: ' . $api_key, 'anthropic-version: 2023-06-01'];
+            } elseif ($family === 'openai-responses') {
+                $payload = ['model' => $model, 'instructions' => $full_system, 'input' => $messages,
+                            'max_output_tokens' => $max_tokens, 'tools' => $tools];
+                if (!$drop_temperature) $payload['temperature'] = $temperature;
+                $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key];
             } else {
                 $payload = ['model' => $model, 'messages' => $messages,
-                            'max_tokens' => $max_tokens, 'temperature' => $temperature, 'tools' => $tools];
+                            $openai_token_param => $max_tokens, 'tools' => $tools];
+                if (!$drop_temperature) $payload['temperature'] = $temperature;
                 $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key];
             }
 
@@ -424,7 +445,19 @@ if (isset($_REQUEST['action'])) {
             // Detect error responses before attempting to parse content
             if (isset($data['error'])) {
                 // OpenAI-compatible: {"error": {"message": "...", "type": "..."}}
-                $api_error = $data['error']['message'] ?? 'Unknown API error.';
+                $emsg = $data['error']['message'] ?? 'Unknown API error.';
+                // Reasoning models (o-series, gpt-5) reject max_tokens / custom
+                // temperature — swap the token param or drop temperature and retry once each.
+                if ($family !== 'anthropic' && !$token_param_swapped && _is_token_param_error($emsg)) {
+                    $openai_token_param  = $openai_token_param === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens';
+                    $token_param_swapped = true;
+                    continue;
+                }
+                if ($family !== 'anthropic' && !$drop_temperature && _is_temperature_error($emsg)) {
+                    $drop_temperature = true;
+                    continue;
+                }
+                $api_error = $emsg;
                 break;
             }
             if (($data['type'] ?? '') === 'error') {
@@ -433,7 +466,7 @@ if (isset($_REQUEST['action'])) {
                 break;
             }
 
-            if ($provider === 'anthropic') {
+            if ($family === 'anthropic') {
                 // If the response was truncated by max_tokens, the tool input JSON is incomplete —
                 // content will be missing. Report this immediately rather than looping.
                 if (($data['stop_reason'] ?? '') === 'max_tokens') {
@@ -485,6 +518,38 @@ if (isset($_REQUEST['action'])) {
                     continue;
                 }
                 $reply = $candidate;
+                break;
+
+            } elseif ($family === 'openai-responses') {
+                $parsed = _openai_responses_parse($data);
+                if ($parsed['tool_calls']) {
+                    $tools_called = true;
+                    foreach ($parsed['output'] as $it) $messages[] = $it; // echo output items back
+                    foreach ($parsed['tool_calls'] as $call) {
+                        $_tname    = $call['name'] ?: 'unknown';
+                        $_is_mcp   = isset($mcp_tool_map_c[$_tname]);
+                        $_tdisplay = $_is_mcp ? ($mcp_tool_map_c[$_tname]['server']['name'] ?? '?') . ':' . $mcp_tool_map_c[$_tname]['real_name'] : $_tname;
+                        $tools_log[] = $_tdisplay;
+                        $write_status('executing_tool', ['tool' => $_tdisplay, 'iteration' => $iter + 1]);
+                        if ($_is_mcp) {
+                            $mcp_calls_c[] = $_tdisplay;
+                            $_tool_result = _mcp_call_tool($mcp_tool_map_c[$_tname]['server'], $mcp_tool_map_c[$_tname]['real_name'], $call['args']);
+                        } else {
+                            $_tool_result = execute_ai_tool($_tname, $call['args'], $ai_user, $indexer, $space_dir);
+                        }
+                        $messages[] = [
+                            'type'    => 'function_call_output',
+                            'call_id' => $call['call_id'],
+                            'output'  => $_tool_result,
+                        ];
+                    }
+                    continue;
+                }
+                if ($parsed['truncated']) {
+                    $api_error = 'Response truncated: the Max Tokens limit (' . $max_tokens . ') was reached before the AI could finish its reply. Increase Max Tokens in the AI user settings (recommend ≥ 4096 for page writing).';
+                    break;
+                }
+                $reply = $parsed['text'];
                 break;
 
             } else {
@@ -1346,6 +1411,15 @@ if (isset($_REQUEST['action'])) {
                     'is_system' => !empty($u['is_system']),
                 ], $all_users));
                 echo json_encode(['success' => true, 'data' => $user_list]);
+                break;
+
+            case 'get_llm_providers':
+                // Provider registry (id, label, default_url) for the Admin → AI form.
+                echo json_encode(['success' => true, 'data' => array_map(fn($p) => [
+                    'id'          => $p['id'],
+                    'label'       => $p['label'],
+                    'default_url' => $p['default_url'],
+                ], llm_providers())]);
                 break;
 
             case 'list_mcp_servers':

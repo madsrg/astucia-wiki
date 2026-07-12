@@ -755,7 +755,8 @@ const renderAiUserList = () => {
 
         const tdModel = document.createElement('td');
         tdModel.className = 'admin-log-source';
-        const providerLabel = cfg.provider === 'anthropic' ? t('admin.ai.anthropic').split(' ')[0] : 'OpenAI';
+        const providerLabel = cfg.provider === 'anthropic' ? t('admin.ai.anthropic').split(' ')[0]
+            : (cfg.provider === 'openai-responses' ? 'OpenAI Responses' : 'OpenAI');
         tdModel.textContent = cfg.model ? `${cfg.model} (${providerLabel})` : `— (${providerLabel})`;
 
         const tdUrl = document.createElement('td');
@@ -800,12 +801,28 @@ const loadAiUsers = async () => {
     }
 };
 
-const openAiUserForm = (u) => {
+let _llmProviders = null;
+const getLlmProviders = async () => {
+    if (_llmProviders) return _llmProviders;
+    const res = await api.call('get_llm_providers');
+    _llmProviders = (res.success && res.data && res.data.length) ? res.data
+        : [{ id: 'openai', label: 'OpenAI / compatible', default_url: 'https://api.openai.com/v1/chat/completions' }];
+    return _llmProviders;
+};
+
+const openAiUserForm = async (u) => {
     const container = document.getElementById('admin-ai-list');
     if (!container) return;
     const isNew = !u;
     const isClone = !!u?._cloneSourceUid;
     const cfg = u?.ai_config || {};
+    const providers = await getLlmProviders();
+    const curProvider = cfg.provider || 'openai';
+    const providerOpts = providers.map(p =>
+        `<option value="${escHtml(p.id)}" ${curProvider === p.id ? 'selected' : ''}>${escHtml(p.label)}</option>`
+    ).join('');
+    const urlByProvider = {};
+    providers.forEach(p => { if (p.default_url) urlByProvider[p.id] = p.default_url; });
 
     container.innerHTML = `
         <div class="admin-ai-form">
@@ -841,10 +858,7 @@ const openAiUserForm = (u) => {
                 <div class="admin-ai-form-row">
                     <div class="form-group">
                         <label>${t('admin.ai.provider')}</label>
-                        <select id="ai-f-provider" class="form-control">
-                            <option value="openai"    ${(cfg.provider || 'openai') === 'openai'    ? 'selected' : ''}>${t('admin.ai.openai')}</option>
-                            <option value="anthropic" ${(cfg.provider || 'openai') === 'anthropic' ? 'selected' : ''}>${t('admin.ai.anthropic')}</option>
-                        </select>
+                        <select id="ai-f-provider" class="form-control">${providerOpts}</select>
                     </div>
                     <div class="form-group">
                         <label>${t('admin.ai.url')}</label>
@@ -913,6 +927,19 @@ const openAiUserForm = (u) => {
     document.getElementById('ai-f-temperature').addEventListener('input', (e) => {
         document.getElementById('ai-f-temperature-display').textContent = parseFloat(e.target.value).toFixed(2).replace(/\.?0+$/, '') || '0';
     });
+    // Auto-fill the endpoint from the registry when the provider changes, as long
+    // as the field is empty or still holds another provider's default.
+    const _provSel = document.getElementById('ai-f-provider');
+    const _urlField = document.getElementById('ai-f-url');
+    if (_provSel && _urlField) {
+        const _allDefaults = Object.values(urlByProvider);
+        _provSel.addEventListener('change', () => {
+            const cur = _urlField.value.trim();
+            if ((cur === '' || _allDefaults.includes(cur)) && urlByProvider[_provSel.value]) {
+                _urlField.value = urlByProvider[_provSel.value];
+            }
+        });
+    }
     wireSpacesField('ai-f');
 
     document.getElementById('ai-f-test-btn').addEventListener('click', async () => {

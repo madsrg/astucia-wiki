@@ -7,6 +7,7 @@
 require_once __DIR__ . '/git_helpers.php';
 require_once __DIR__ . '/search_index.php';
 require_once __DIR__ . '/graph.php';
+require_once __DIR__ . '/llm_providers.php';
 
 // Pages under a space's top-level templates/ folder are page templates, not
 // content — excluded from every search result (REST search, SQLite FTS, and the
@@ -97,14 +98,24 @@ function wiki_tool_definitions(): array {
 
 function get_wiki_tools($provider) {
     $tools_def = wiki_tool_definitions();
-    if ($provider === 'anthropic') {
+    $family = llm_family($provider);
+    if ($family === 'anthropic') {
         return array_map(fn($t) => [
             'name'         => $t['name'],
             'description'  => $t['description'],
             'input_schema' => $t['params'],
         ], $tools_def);
     }
-    // OpenAI-compatible
+    if ($family === 'openai-responses') {
+        // Responses API uses a flat tool shape (no nested "function" object).
+        return array_map(fn($t) => [
+            'type'        => 'function',
+            'name'        => $t['name'],
+            'description' => $t['description'],
+            'parameters'  => $t['params'],
+        ], $tools_def);
+    }
+    // OpenAI Chat Completions
     return array_map(fn($t) => [
         'type'     => 'function',
         'function' => ['name' => $t['name'], 'description' => $t['description'], 'parameters' => $t['params']],
