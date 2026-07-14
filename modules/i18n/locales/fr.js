@@ -42,6 +42,9 @@ export default {
     'edit.discard-switch': 'Changer de mode d\'édition supprimera vos modifications actuelles.',
     'edit.saving': 'Enregistrement…', 'edit.saved': 'Page enregistrée avec succès !',
     'edit.save-failed': 'Échec de l\'enregistrement : {error}', 'edit.discard-nav': 'Vous avez des modifications non enregistrées qui seront perdues.',
+    'json.fullscreen': 'Plein écran', 'json.exit-fullscreen': 'Quitter le plein écran',
+    'json.invalid': 'Impossible d\'enregistrer : le document n\'est pas un JSON valide.',
+    'json.editor-unavailable': 'Impossible de charger l\'éditeur JSON (hors ligne ?). Affichage du contenu en lecture seule.',
 
     'attach.attach-file': 'Joindre un fichier', 'attach.delete-confirm': 'Supprimer « {name} » ?',
     'attach.deleted': 'Pièce jointe supprimée.', 'attach.uploaded': 'Fichier téléversé avec succès !',

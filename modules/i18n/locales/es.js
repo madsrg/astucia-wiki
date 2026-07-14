@@ -42,6 +42,9 @@ export default {
     'edit.discard-switch': 'Cambiar de modo de edición descartará los cambios actuales.',
     'edit.saving': 'Guardando…', 'edit.saved': '¡Página guardada correctamente!',
     'edit.save-failed': 'Error al guardar: {error}', 'edit.discard-nav': 'Tienes cambios sin guardar que se perderán.',
+    'json.fullscreen': 'Pantalla completa', 'json.exit-fullscreen': 'Salir de pantalla completa',
+    'json.invalid': 'No se puede guardar: el documento no es JSON válido.',
+    'json.editor-unavailable': 'No se pudo cargar el editor JSON (¿sin conexión?). Mostrando contenido de solo lectura.',
 
     'attach.attach-file': 'Adjuntar archivo', 'attach.delete-confirm': '¿Eliminar "{name}"?',
     'attach.deleted': 'Adjunto eliminado.', 'attach.uploaded': '¡Archivo subido correctamente!',

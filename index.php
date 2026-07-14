@@ -407,6 +407,9 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                         </div>
                     </div>
                 </div>
+                <div id="json-view-container" class="viewer-wrapper hidden">
+                    <div id="json-view-content" class="json-view"></div>
+                </div>
             </div>
         </main>
     </div>

@@ -517,7 +517,8 @@ if (isset($_REQUEST['action'])) {
                     $messages[] = ['role' => 'user',      'content' => 'Please proceed now using the available wiki tools.'];
                     continue;
                 }
-                $reply = $candidate;
+                $note  = _omitted_content_note($data['content'] ?? [], ['text', 'thinking', 'redacted_thinking', 'tool_use']);
+                $reply = $note ? trim($candidate . "\n\n" . $note) : $candidate;
                 break;
 
             } elseif ($family === 'openai-responses') {
@@ -550,6 +551,7 @@ if (isset($_REQUEST['action'])) {
                     break;
                 }
                 $reply = $parsed['text'];
+                if (!empty($parsed['omitted'])) $reply = trim($reply . "\n\n" . $parsed['omitted']);
                 break;
 
             } else {
@@ -579,7 +581,8 @@ if (isset($_REQUEST['action'])) {
                     }
                     continue;
                 }
-                $reply = trim($choice['message']['content'] ?? '');
+                [$reply, $note] = _openai_chat_content($choice['message']['content'] ?? '');
+                if ($note) $reply = trim($reply . "\n\n" . $note);
                 break;
             }
         }
@@ -953,7 +956,7 @@ if (isset($_REQUEST['action'])) {
                         $is_dir = is_dir($path);
                         $extension = pathinfo($path, PATHINFO_EXTENSION);
 
-                        if (!$is_dir && !in_array($extension, ['md', 'drawio', 'list', 'chat', 'search'])) {
+                        if (!$is_dir && !in_array($extension, ['md', 'drawio', 'list', 'chat', 'search', 'json'])) {
                             continue;
                         }
 
@@ -1970,14 +1973,23 @@ if (isset($_REQUEST['action'])) {
                 $rel_save   = ltrim(str_replace('..', '', $_GET['file']), '/');
                 $ext_save   = pathinfo($rel_save, PATHINFO_EXTENSION);
                 $content    = file_get_contents('php://input');
+                if ($ext_save === 'json') {
+                    // Data pages must stay well-formed; validate and normalise before writing
+                    // (text-mode edits can produce invalid JSON — the grid/tree modes can't).
+                    $decoded_save = json_decode($content, true);
+                    if ($decoded_save === null && strtolower(trim($content)) !== 'null') {
+                        throw new Exception('Invalid JSON: ' . json_last_error_msg());
+                    }
+                    $content = json_encode($decoded_save, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                }
                 if (file_put_contents($file_path, $content) !== false) {
                     $actor = get_current_actor();
                     $indexer->updateModified($_GET['file'], $actor['uid'], $actor['name']);
                     echo json_encode(['success' => true, 'message' => 'File saved successfully.']);
-                    if ($search_idx && $ext_save === 'md') {
+                    if ($search_idx && in_array($ext_save, ['md', 'json'], true)) {
                         try { $search_idx->upsertPage(_sidx_space(), $rel_save, $content); } catch (\Throwable $_e) {}
                     }
-                    if (in_array($ext_save, ['md', 'drawio'], true) && $indexer->getGitCommit($rel_save, true)) {
+                    if (in_array($ext_save, ['md', 'drawio', 'json'], true) && $indexer->getGitCommit($rel_save, true)) {
                         if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
                         $git_name  = $actor['name'] ?? 'Wiki';
                         $git_email = (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost';

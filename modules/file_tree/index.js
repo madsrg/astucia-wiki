@@ -12,7 +12,8 @@ export const renderTree = (items, parentElement) => {
         const isList    = item.name.endsWith('.list');
         const isChat    = item.name.endsWith('.chat');
         const isSearch  = item.name.endsWith('.search');
-        const displayName = item.name.replace(/\.(md|drawio|list|chat|search)$/, '');
+        const isJson    = item.name.endsWith('.json');
+        const displayName = item.name.replace(/\.(md|drawio|list|chat|search|json)$/, '');
 
         let icon = icons.file;
         if (item.type === 'folder') icon = icons.folder;
@@ -21,6 +22,7 @@ export const renderTree = (items, parentElement) => {
         if (isList)    icon = icons.list;
         if (isChat)    icon = icons.chat;
         if (isSearch)  icon = icons.search;
+        if (isJson)    icon = icons.json;
 
         const itemType = isDiagram ? 'diagram' : (isList ? 'list' : (isChat ? 'chat' : (isSearch ? 'search' : item.type)));
         li.innerHTML = `
@@ -82,7 +84,8 @@ export const renderBrowsePane = (items, currentPath) => {
         const isList    = item.name.endsWith('.list');
         const isChat    = item.name.endsWith('.chat');
         const isSearch  = item.name.endsWith('.search');
-        const displayName = item.name.replace(/\.(md|drawio|list|chat|search)$/, '');
+        const isJson    = item.name.endsWith('.json');
+        const displayName = item.name.replace(/\.(md|drawio|list|chat|search|json)$/, '');
         const isActive = state.currentPagePath && item.path === state.currentPagePath;
 
         let icon = icons.file;
@@ -91,6 +94,7 @@ export const renderBrowsePane = (items, currentPath) => {
         if (isDiagram) icon = icons.diagram;
         if (isList)    icon = icons.list;
         if (isChat)    icon = icons.chat;
+        if (isJson)    icon = icons.json;
         if (isSearch)  icon = icons.search;
 
         const bType = isDiagram ? 'diagram' : (isList ? 'list' : (isChat ? 'chat' : (isSearch ? 'search' : item.type)));

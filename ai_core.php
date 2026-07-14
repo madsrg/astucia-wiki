@@ -171,6 +171,41 @@ function _mcp_extract_forced_slugs(string $text): array {
     return array_unique(array_map('strtolower', $m[1] ?? []));
 }
 
+// Scans provider/MCP content blocks and returns a short human-readable note
+// about any non-text blocks that were dropped (images, files, audio, blobs …),
+// or '' when everything was text. Lets us surface silently-discarded binary
+// content instead of losing it without a trace. $text_types lists the block
+// "type" values that count as benign/text for the given source, so we only flag
+// genuinely unsupported content.
+function _omitted_content_note(array $blocks, array $text_types): string {
+    $dropped = [];
+    foreach ($blocks as $b) {
+        $t = is_array($b) ? ($b['type'] ?? '') : '';
+        if ($t === '' || in_array($t, $text_types, true)) continue;
+        $dropped[$t] = ($dropped[$t] ?? 0) + 1;
+    }
+    if (!$dropped) return '';
+    $parts = [];
+    foreach ($dropped as $type => $n) {
+        $parts[] = $n . ' ' . $type . ($n > 1 ? ' blocks' : ' block');
+    }
+    return '[' . implode(', ', $parts) . ' omitted — binary/non-text content is not yet supported]';
+}
+
+// Chat Completions `content` is normally a plain string, but multimodal replies
+// use an array of typed parts. Return [text, note] so callers never trim() an
+// array (a TypeError on PHP 8) and any non-text parts are surfaced, not dropped.
+function _openai_chat_content($content): array {
+    if (is_array($content)) {
+        $text = '';
+        foreach ($content as $part) {
+            if (is_array($part) && ($part['type'] ?? '') === 'text') $text .= $part['text'] ?? '';
+        }
+        return [trim($text), _omitted_content_note($content, ['text', 'refusal'])];
+    }
+    return [trim((string)($content ?? '')), ''];
+}
+
 // $space, when non-empty, targets a specific space on the remote wiki by
 // appending ?space= to its MCP URL (mirrors mcp.php's ?space= convention). The
 // remote falls back to its default space if the name isn't a valid space there.
@@ -194,7 +229,10 @@ function _mcp_call_tool(array $server, string $name, array $input, string $space
     foreach ($result['content'] ?? [] as $block) {
         if (($block['type'] ?? '') === 'text') $parts[] = $block['text'] ?? '';
     }
-    return implode("\n", $parts) ?: 'Done.';
+    $out  = implode("\n", $parts);
+    $note = _omitted_content_note($result['content'] ?? [], ['text']);
+    if ($note) $out = trim($out . "\n" . $note);
+    return $out ?: 'Done.';
 }
 
 // Sends a minimal completion request to verify a provider/api_url/api_key/model
@@ -245,10 +283,12 @@ function _openai_responses_tools(array $tools_def): array {
 function _openai_responses_parse(array $data): array {
     $text = '';
     $calls = [];
+    $msg_blocks = [];
     foreach ($data['output'] ?? [] as $item) {
         $type = $item['type'] ?? '';
         if ($type === 'message') {
             foreach ($item['content'] ?? [] as $blk) {
+                $msg_blocks[] = $blk;
                 if (($blk['type'] ?? '') === 'output_text') $text .= $blk['text'] ?? '';
             }
         } elseif ($type === 'function_call') {
@@ -261,7 +301,8 @@ function _openai_responses_parse(array $data): array {
     }
     $truncated = ($data['status'] ?? '') === 'incomplete'
         && (($data['incomplete_details']['reason'] ?? '') === 'max_output_tokens');
-    return ['text' => trim($text), 'tool_calls' => $calls, 'output' => $data['output'] ?? [], 'truncated' => $truncated];
+    return ['text' => trim($text), 'tool_calls' => $calls, 'output' => $data['output'] ?? [], 'truncated' => $truncated,
+            'omitted' => _omitted_content_note($msg_blocks, ['output_text', 'refusal'])];
 }
 
 function _test_openai_responses(string $api_url, string $api_key, string $model): array {
@@ -660,7 +701,8 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 $messages[] = ['role' => 'user',      'content' => 'Please proceed now using the available wiki tools.'];
                 continue;
             }
-            $reply = $candidate;
+            $note  = _omitted_content_note($data['content'] ?? [], ['text', 'thinking', 'redacted_thinking', 'tool_use']);
+            $reply = $note ? trim($candidate . "\n\n" . $note) : $candidate;
             break;
 
         } elseif ($family === 'openai-responses') {
@@ -683,6 +725,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 break;
             }
             $reply = $parsed['text'];
+            if (!empty($parsed['omitted'])) $reply = trim($reply . "\n\n" . $parsed['omitted']);
             break;
 
         } else {
@@ -701,7 +744,8 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 }
                 continue;
             }
-            $reply = trim($choice['message']['content'] ?? '');
+            [$reply, $note] = _openai_chat_content($choice['message']['content'] ?? '');
+            if ($note) $reply = trim($reply . "\n\n" . $note);
             break;
         }
     }

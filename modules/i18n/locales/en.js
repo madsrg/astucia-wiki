@@ -156,6 +156,10 @@ export default {
     'edit.saved':         'Page saved successfully!',
     'edit.save-failed':   'Save failed: {error}',
     'edit.discard-nav':   'You have unsaved changes that will be lost.',
+    'json.fullscreen':        'Full screen',
+    'json.exit-fullscreen':   'Exit full screen',
+    'json.invalid':           'Cannot save: the document is not valid JSON.',
+    'json.editor-unavailable':'The JSON editor could not be loaded (offline?). Showing read-only contents.',
 
     // Attachments
     'attach.attach-file': 'Attach File',

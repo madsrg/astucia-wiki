@@ -42,6 +42,9 @@ export default {
     'edit.discard-switch': 'Att byta editorläge kommer att förkasta dina nuvarande ändringar.',
     'edit.saving': 'Sparar…', 'edit.saved': 'Sidan sparades!',
     'edit.save-failed': 'Det gick inte att spara: {error}', 'edit.discard-nav': 'Du har osparade ändringar som kommer att gå förlorade.',
+    'json.fullscreen': 'Helskärm', 'json.exit-fullscreen': 'Avsluta helskärm',
+    'json.invalid': 'Kan inte spara: dokumentet är inte giltig JSON.',
+    'json.editor-unavailable': 'JSON-redigeraren kunde inte laddas (offline?). Visar skrivskyddat innehåll.',
 
     'attach.attach-file': 'Bifoga fil', 'attach.delete-confirm': 'Ta bort "{name}"?',
     'attach.deleted': 'Bilaga borttagen.', 'attach.uploaded': 'Filen laddades upp!',

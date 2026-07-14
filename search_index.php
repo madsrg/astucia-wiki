@@ -66,6 +66,11 @@ class SearchIndex {
             }
             $preview = implode(' ', $parts);
             if (strlen($preview) > 220) $preview = substr($preview, 0, 217) . '…';
+        } elseif ($ext === 'json') {
+            // Index the raw JSON text so reports/data pages are full-text searchable.
+            $content = $raw;
+            $preview = trim(preg_replace('/\s+/', ' ', $raw));
+            if (strlen($preview) > 220) $preview = substr($preview, 0, 217) . '…';
         }
 
         return [$title, $content, $preview];
@@ -286,9 +291,9 @@ class SearchIndex {
                 continue;
             }
             $ext = pathinfo($item, PATHINFO_EXTENSION);
-            if (!in_array($ext, ['md', 'drawio', 'list', 'chat'], true)) continue;
+            if (!in_array($ext, ['md', 'drawio', 'list', 'chat', 'json'], true)) continue;
             $rel = ltrim(str_replace($base . '/', '', $full), '/');
-            $raw = ($ext === 'md') ? (file_get_contents($full) ?: '') : '';
+            $raw = in_array($ext, ['md', 'json'], true) ? (file_get_contents($full) ?: '') : '';
             [$title, $content, $preview] = $this->extractInfo($ext, $item, $raw);
             $stmt->execute([$space, $rel, $title, $content, $preview, time()]);
             $count++;

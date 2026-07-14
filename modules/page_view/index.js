@@ -247,7 +247,8 @@ export const loadPage = async (path, id, tags) => {
     const chatMod = await import('../chat/index.js');
     chatMod.stopPolling();
 
-    if (state.isEditing && state.hasUnsavedChanges && !await confirmModal(t('edit.discard-confirm'), { message: t('edit.discard-nav'), confirmLabel: t('btn.discard'), dangerous: true, icon: icons.warning })) {
+    // A .json page edits inline without toggling state.isEditing, so guard it on the page type too.
+    if ((state.isEditing || state.currentPageType === 'json') && state.hasUnsavedChanges && !await confirmModal(t('edit.discard-confirm'), { message: t('edit.discard-nav'), confirmLabel: t('btn.discard'), dangerous: true, icon: icons.warning })) {
         return;
     }
 
@@ -255,23 +256,25 @@ export const loadPage = async (path, id, tags) => {
     const isList    = path.endsWith('.list');
     const isChat    = path.endsWith('.chat');
     const isSearch  = path.endsWith('.search');
+    const isJson    = path.endsWith('.json');
 
     state.currentPagePath = path;
     state.currentPageId = id;
     state.currentPageTags = tags || [];
-    state.currentPageType = isDiagram ? 'diagram' : (isList ? 'list' : (isChat ? 'chat' : (isSearch ? 'search' : 'file')));
+    state.currentPageType = isDiagram ? 'diagram' : (isList ? 'list' : (isChat ? 'chat' : (isSearch ? 'search' : (isJson ? 'json' : 'file'))));
 
     document.getElementById('print-lightbox')?.classList.add('hidden');
     updateBreadcrumb(path, state.currentSpace);
     trackPageVisit(id, path, state.currentSpace);
     updateFavoriteBtn(id);
 
-    const titleText = path.split('/').pop().replace(/\.(md|drawio|list|chat|search)$/, '');
+    const titleText = path.split('/').pop().replace(/\.(md|drawio|list|chat|search|json)$/, '');
     let titleIcon = icons.file;
     if (state.currentPageType === 'diagram') titleIcon = icons.diagram;
     else if (state.currentPageType === 'list') titleIcon = icons.list;
     else if (state.currentPageType === 'chat') titleIcon = icons.chat;
     else if (state.currentPageType === 'search') titleIcon = icons.search;
+    else if (state.currentPageType === 'json') titleIcon = icons.json;
 
     document.getElementById('current-page-title').innerHTML = `${titleIcon} <span>${titleText}</span>`;
     const pageIdDisplay = document.getElementById('page-id-display');
@@ -280,13 +283,14 @@ export const loadPage = async (path, id, tags) => {
 
     // Show mode toggle only for markdown pages
     const modeGroup = document.getElementById('editor-mode-group');
-    if (modeGroup) modeGroup.classList.toggle('hidden', isDiagram || isList || isChat || isSearch);
+    if (modeGroup) modeGroup.classList.toggle('hidden', isDiagram || isList || isChat || isSearch || isJson);
 
     document.getElementById('files-folder-container').classList.add('hidden');
     const viewerContainer  = document.getElementById('viewer-container');
     const listViewContainer = document.getElementById('list-view-container');
     const chatViewContainer = document.getElementById('chat-view-container');
     const searchViewContainer = document.getElementById('search-view-container');
+    const jsonViewContainer = document.getElementById('json-view-container');
     const editorWrapper = document.querySelector('.editor-container-wrapper');
     const viewerContent = document.getElementById('viewer-content');
     const diagramViewer = document.getElementById('diagram-viewer');
@@ -298,7 +302,37 @@ export const loadPage = async (path, id, tags) => {
 
     let loadedGitCommit = null;
 
-    if (isSearch) {
+    // The JSON viewer is only shown by the isJson branch below; hide it up-front
+    // so navigating away from a .json page always clears it, and tear down the
+    // editor instance when we're not rendering another .json page.
+    if (jsonViewContainer) jsonViewContainer.classList.add('hidden');
+    if (!isJson) import('../json_view/index.js').then(m => m.destroyJsonEditor?.()).catch(() => {});
+
+    if (isJson) {
+        viewerContainer.classList.add('hidden');
+        listViewContainer.classList.add('hidden');
+        chatViewContainer.classList.add('hidden');
+        searchViewContainer.classList.add('hidden');
+        if (jsonViewContainer) jsonViewContainer.classList.remove('hidden');
+        editorWrapper.classList.add('hidden');
+        saveBtn.classList.add('hidden');
+        cancelBtn.classList.add('hidden');
+        searchBtn.classList.add('hidden');
+        editBtn.classList.add('hidden');
+        editBtn.disabled = true;
+        pageActionsGroup.classList.remove('hidden');
+        state.isEditing = false;
+        updateTocPanel([], null);
+
+        const result = await api.call('get', { file: path });
+        if (result.success) {
+            loadedGitCommit = false;
+            state.initialContent = result.data;
+            const { renderJsonView } = await import('../json_view/index.js');
+            await renderJsonView(result.data, path);
+        }
+        renderTags();
+    } else if (isSearch) {
         viewerContainer.classList.add('hidden');
         listViewContainer.classList.add('hidden');
         chatViewContainer.classList.add('hidden');
@@ -445,7 +479,7 @@ export const loadPage = async (path, id, tags) => {
     document.getElementById('diagram-edit-btn').classList.toggle('hidden', !isDiagram);
     document.getElementById('chat-topic-btn').classList.toggle('hidden', !isChat);
 
-    const isMarkdownPage = !isDiagram && !isList && !isChat && !isSearch;
+    const isMarkdownPage = !isDiagram && !isList && !isChat && !isSearch && !isJson;
     document.getElementById('page-chat-btn')?.classList.toggle('hidden', !isMarkdownPage);
     document.getElementById('share-btn')?.classList.toggle('hidden', !isMarkdownPage);
     const pageChatMod = await import('../page_chat/index.js');

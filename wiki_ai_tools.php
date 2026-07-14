@@ -58,6 +58,18 @@ function wiki_tool_definitions(): array {
             ],
         ],
         [
+            'name'        => 'wiki_write_json',
+            'description' => 'Create a new .json data page or overwrite an existing one — use this to persist raw structured data such as statistics, reports, or query results that do not fit the schema-based .list type. Path must end in .json. Both "path" and "content" are required: "content" MUST be a string containing well-formed JSON (it is parsed and rejected if invalid). The saved page is shown read-only as a formatted, collapsible JSON tree. Only available when the AI user has editor role.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => [
+                    'path'    => ['type' => 'string', 'description' => 'Relative path ending in .json, e.g. Reports/Q3-stats.json'],
+                    'content' => ['type' => 'string', 'description' => 'REQUIRED: the complete JSON document as a string. Must be valid JSON (object or array) and must not be empty.'],
+                ],
+                'required'   => ['path', 'content'],
+            ],
+        ],
+        [
             'name'        => 'wiki_related_pages',
             'description' => 'Find pages related to a given page by traversing the wiki knowledge graph, which combines three relationship types: explicit pageid links between pages, folder hierarchy (parent/child/sibling pages sharing a directory), and shared tags. Returns a JSON array of related pages with "id", "path", "label", "tags", "distance" (hops from the start page, nearest first) and "via" (the relationship type that connected it: "reference", "containment", or "tag"). Use this to discover context around a page, find sibling/related content, or ground answers in the wiki\'s structure instead of raw full-text search.',
             'params'      => [
@@ -277,7 +289,7 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
             $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
             if (!$rel) return 'Error: path is required.';
             $ext = pathinfo($rel, PATHINFO_EXTENSION);
-            if (!in_array($ext, ['md', 'list', 'chat'], true)) return 'Error: only .md, .list and .chat files can be read.';
+            if (!in_array($ext, ['md', 'list', 'chat', 'json'], true)) return 'Error: only .md, .list, .chat and .json files can be read.';
             $abs = rtrim($space_dir, '/') . '/' . $rel;
             if (!file_exists($abs) || !is_file($abs)) return 'Error: page not found.';
             return file_get_contents($abs);
@@ -306,6 +318,38 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
             $indexer->updateModified($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
             git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Update ' . basename($rel));
             return "Page updated: {$rel}";
+
+        case 'wiki_write_json':
+            if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot write pages.';
+            $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
+            if (!$rel) return 'Error: path is required.';
+            if (pathinfo($rel, PATHINFO_EXTENSION) !== 'json') return 'Error: only .json files can be written with wiki_write_json.';
+            if (!isset($tool_input['content']) || $tool_input['content'] === '') {
+                return 'Error: content parameter is required and must not be empty. Call wiki_write_json again with the full JSON document as a string in the "content" field.';
+            }
+            $content = $tool_input['content'];
+            if (!is_string($content)) $content = json_encode($content);
+            $decoded_json = json_decode($content, true);
+            if ($decoded_json === null && strtolower(trim($content)) !== 'null') {
+                return 'Error: content is not valid JSON (' . json_last_error_msg() . '). Fix the JSON and call wiki_write_json again.';
+            }
+            // Store pretty-printed for readable diffs and raw viewing.
+            $content = json_encode($decoded_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            $abs     = rtrim($space_dir, '/') . '/' . $rel;
+            $dir     = dirname($abs);
+            if (!is_dir($dir)) mkdir($dir, 0755, true);
+            $is_new  = !file_exists($abs);
+            if (file_put_contents($abs, $content) === false) return 'Error: could not write file.';
+            $ai_git_name  = $ai_user['name'] ?? 'AI';
+            $ai_git_email = !empty($ai_user['email']) ? $ai_user['email'] : 'ai@wiki.localhost';
+            if ($is_new) {
+                $indexer->addPage($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
+                git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Create ' . basename($rel));
+                return "JSON page created: {$rel}";
+            }
+            $indexer->updateModified($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
+            git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Update ' . basename($rel));
+            return "JSON page updated: {$rel}";
 
         case 'wiki_related_pages':
             $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');

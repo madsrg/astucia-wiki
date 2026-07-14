@@ -43,6 +43,9 @@ export default {
     'edit.discard-switch': 'Skift af editortilstand vil forkaste dine nuværende ændringer.',
     'edit.saving': 'Gemmer…', 'edit.saved': 'Side gemt!',
     'edit.save-failed': 'Gem mislykkedes: {error}', 'edit.discard-nav': 'Du har ændringer der ikke er gemt og som vil gå tabt.',
+    'json.fullscreen': 'Fuld skærm', 'json.exit-fullscreen': 'Afslut fuld skærm',
+    'json.invalid': 'Kan ikke gemme: dokumentet er ikke gyldig JSON.',
+    'json.editor-unavailable': 'JSON-editoren kunne ikke indlæses (offline?). Viser skrivebeskyttet indhold.',
 
     'attach.attach-file': 'Vedhæft fil', 'attach.delete-confirm': 'Slet "{name}"?',
     'attach.deleted': 'Vedhæftning slettet.', 'attach.uploaded': 'Fil uploadet!',

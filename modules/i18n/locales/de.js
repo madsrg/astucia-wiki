@@ -42,6 +42,9 @@ export default {
     'edit.discard-switch': 'Das Wechseln des Editor-Modus verwirft Ihre aktuellen Änderungen.',
     'edit.saving': 'Speichert…', 'edit.saved': 'Seite erfolgreich gespeichert!',
     'edit.save-failed': 'Speichern fehlgeschlagen: {error}', 'edit.discard-nav': 'Sie haben nicht gespeicherte Änderungen, die verloren gehen.',
+    'json.fullscreen': 'Vollbild', 'json.exit-fullscreen': 'Vollbild beenden',
+    'json.invalid': 'Speichern nicht möglich: Das Dokument ist kein gültiges JSON.',
+    'json.editor-unavailable': 'Der JSON-Editor konnte nicht geladen werden (offline?). Schreibgeschützter Inhalt wird angezeigt.',
 
     'attach.attach-file': 'Datei anhängen', 'attach.delete-confirm': '„{name}" löschen?',
     'attach.deleted': 'Anhang gelöscht.', 'attach.uploaded': 'Datei erfolgreich hochgeladen!',
