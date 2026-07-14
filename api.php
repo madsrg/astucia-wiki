@@ -951,6 +951,8 @@ if (isset($_REQUEST['action'])) {
                     foreach ($files as $file) {
                         if ($file === '.' || $file === '..' || substr($file, -8) === '.uploads') continue;
                         if ($file[0] === '.') continue; // skip hidden files/dirs (.git, .gitignore, etc.)
+                        // System sidecars at the space root (PageIndexer index + graph cache) are not content.
+                        if ($dir === $base_dir && ($file === 'index.json' || $file === 'graph.json')) continue;
 
                         $path = $dir . '/' . $file;
                         $is_dir = is_dir($path);
