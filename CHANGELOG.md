@@ -6,6 +6,82 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.24] — 2026-07-14
+
+### Fixed
+- **System sidecars hidden from the file tree and search** — the `.json` content type added in 2026.7.23 had surfaced the space-root `index.json` (page index) and `graph.json` (knowledge-graph cache) sidecars in the file tree and full-text search. Both are now excluded at the space root, scoped so a real user file named `index.json` inside a subfolder is still shown and searchable.
+
+## [2026.7.23] — 2026-07-14
+
+### Added
+- **JSON data pages (`.json`)** — a new content type for raw structured data (statistics, reports, query results) that doesn't fit the schema-based `.list` type. Rendered with an editable tree/table/text viewer (vanilla-jsoneditor); Save is role-gated (readers get a read-only view), with a full-screen toggle and a read-only fallback if the editor can't load. New `wiki_write_json` AI tool (validates JSON, editor-role gated); `.json` files are validated and pretty-printed on save, git-committed, full-text indexed, and shown in the file tree with their own icon. Toolbar strings localized across all six languages.
+
+### Fixed
+- **Non-text AI/MCP content no longer silently dropped** — image/binary/resource blocks returned by an LLM or MCP tool were discarded without a trace. All provider parsers (Anthropic, OpenAI Responses, OpenAI Chat) and the MCP client now append a visible note listing omitted blocks, and OpenAI chat replies with array content no longer risk a `trim()`-on-array error.
+
+## [2026.7.22] — 2026-07-12
+
+### Fixed
+- **HTML entities mangled in AI chat replies** — the #mention highlighter matched digits inside numeric HTML entities (e.g. `&#39;`), so apostrophes rendered as a broken, highlighted `#39;`. The highlighter now skips entities via an alternation, leaving them intact (in both team chat and page chat).
+
+## [2026.7.21] — 2026-07-12
+
+### Added
+- **OpenAI Responses API provider** — a new `openai-responses` provider (Admin → AI → Provider) that speaks the Responses shape (flat tools, instructions + input, `max_output_tokens`), working across chat/page-chat replies, agent jobs, and Test Connection.
+- **Config-driven LLM provider registry** — `llm_providers.json` maps a provider id to its response family (openai-chat / openai-responses / anthropic), label, and default endpoint; adding a provider that speaks a known family is now a JSON edit. The Admin provider dropdown and endpoint auto-fill are built from the registry.
+
+### Fixed
+- **Reasoning-model requests (o-series / gpt-5)** — send `max_completion_tokens` for api.openai.com (else `max_tokens`) with a swap-and-retry, and drop an unsupported custom temperature and retry, across all call paths.
+
+## [2026.7.20] — 2026-07-12
+
+### Changed
+- **Clearer MCP connection errors** — outbound MCP calls now surface the server's real error (message/detail, code, data/meta) instead of a generic "JSON-RPC error", and advertise gzip/deflate. A plain REST API misconfigured as an MCP URL now reports its actual validation message.
+- **Neutral MCP auth-header example** — replaced the misleading "X-Subscription-Token for Brave" example in the Admin MCP form with a neutral `X-API-Key` one.
+
+## [2026.7.19] — 2026-07-12
+
+### Added
+- **Custom outbound MCP auth header** — external MCP servers can use a custom header + scheme instead of the hardcoded `Authorization: Bearer <token>`; Admin → AI → MCP Servers gains Auth header / Auth scheme fields. Existing configs need no migration.
+- **`/aiUsers` chat command** — lists the AI users you can #mention (team chat and page chat).
+
+### Fixed
+- **API accounts excluded from #mention autocomplete** — headless inbound tokens (`is_system`) no longer appear in chat, page chat, or comment mentions.
+
+## [2026.7.18] — 2026-07-11
+
+### Changed
+- **Docs** — daily-digest setup now shows installing the cron entry as the web-server user (`sudo -u www-data crontab -e`), and notes the crontab lives in the cron spool.
+
+## [2026.7.17] — 2026-07-11
+
+### Added
+- **Daily updates digest email** — opt-in per user: once a day, email a summary of pages created or updated in the last 24 hours across the spaces they can access (own edits excluded, capped at the 20 most-recent, grouped by space). Driven by a `run_daily_digest.php` CLI/cron runner; toggle in My Preferences (shown when email is configured).
+
+## [2026.7.16] — 2026-07-11
+
+### Added
+- **Knowledge-graph zoom controls** — a −/Reset/+ button group in the graph toolbar; Reset re-fits with the clamped fit used on open.
+
+## [2026.7.15] — 2026-07-11
+
+### Fixed
+- **Knowledge-graph initial zoom** — sparse graphs (notably the per-page focus view) no longer blow nodes up to fill the viewport; initial zoom is clamped to a readable level while manual zoom still works.
+
+## [2026.7.14] — 2026-07-11
+
+### Added
+- **Knowledge graph view** — an interactive per-Space graph layering three relationship types: explicit `?pageid=` links (reference), folder hierarchy (containment), and shared tags (affinity). Whole-space map and per-page focus view via a scope toggle, with edge-type filters, colour-by-folder and size-by-degree (cytoscape, lazy-loaded from CDN). Backed by `graph.php`/`WikiGraph` with an mtime-cached outbound-link map.
+- **`wiki_related_pages` AI tool** — lets AI/MCP clients traverse page relationships and ground answers in wiki structure.
+
+### Changed
+- **Language selector moved to My Preferences** — with a sidebar fallback for anonymous / no-auth visitors who have no preferences page.
+
+## [2026.7.13] — 2026-07-10
+
+### Fixed
+- **ES module cache-busting** — edited JS modules could be served stale because only `script.js`/`styles.css` carried a `?v=<mtime>` query. An import map in `<head>` now maps every `modules/*.js` to a `?v=<mtime>` URL, covering both static and dynamic imports without changing any import statements.
+
 ## [2026.7.12] — 2026-07-10
 
 ### Fixed
