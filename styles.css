@@ -545,6 +545,15 @@ body {
 .input-modal-icon { display: flex; align-items: center; line-height: 0; }
 .confirm-modal-message { margin: -0.25rem 0 0.75rem; color: #4a5568; font-size: 0.875rem; }
 #confirm-modal { z-index: 1100; }
+/* /aiUsers overview table (rendered via confirmModal messageHtml) */
+/* Widen the confirm dialog by 150px (380 → 530) only when it holds the table. */
+#confirm-modal .input-modal-content:has(.ai-users-table) { max-width: 530px; }
+.ai-users-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left; }
+.ai-users-table th, .ai-users-table td { padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+.ai-users-table th { color: var(--accent-gray); font-weight: 600; white-space: nowrap; }
+.ai-users-table td:first-child { font-weight: 600; white-space: nowrap; }
+.ai-users-table code { font-size: 0.8rem; background: var(--border-color); padding: 0.05rem 0.35rem; border-radius: 4px; }
+.ai-users-table .ai-users-empty { color: var(--accent-gray); }
 #agent-instructions-lightbox { z-index: 1050; }
 #api-account-help-lightbox { z-index: 1050; }
 #ai-user-help-lightbox { z-index: 1050; }

@@ -311,12 +311,8 @@ const doSend = async () => {
         }
         if (cmd === '/aiusers') {
             textarea.value = ''; autoResize(textarea);
-            const aiList = (await getUsers()).filter(u => u.is_ai);
-            await confirmModal(t('chat.cmd.ai-users-title'), {
-                message: aiList.length ? aiList.map(u => '#' + u.name).join(', ') : t('chat.cmd.ai-users-none'),
-                confirmLabel: t('chat.cmd.ai-users-close'),
-                hideCancel: true,
-            });
+            const { showAiUsersOverview } = await import('../core/ai_users_overview.js');
+            await showAiUsersOverview();
             textarea.focus();
             return;
         }

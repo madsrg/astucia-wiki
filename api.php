@@ -1418,6 +1418,37 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true, 'data' => $user_list]);
                 break;
 
+            case 'get_ai_users_overview':
+                // Richer AI-user list for the /aiUsers chat command: model + the MCP
+                // servers enabled for each. Non-secret only (no api_url / api_key / token).
+                $aio_users_file = WIKI_SYSTEM_DATA . 'users.json';
+                if (!defined('WIKI_SYSTEM_DATA') || !file_exists($aio_users_file)) {
+                    echo json_encode(['success' => true, 'data' => []]);
+                    break;
+                }
+                $aio_all   = json_decode(file_get_contents($aio_users_file), true)['users'] ?? [];
+                $aio_srv   = _load_mcp_servers();
+                $aio_names = [];
+                foreach ($aio_srv as $s) { if (!empty($s['id'])) $aio_names[$s['id']] = $s['name'] ?? ''; }
+                $aio_out = [];
+                foreach ($aio_all as $u) {
+                    if (empty($u['is_ai'])) continue;
+                    $cfg = $u['ai_config'] ?? [];
+                    $ids = $cfg['mcp_server_ids'] ?? [];
+                    $servers = [];
+                    foreach ((is_array($ids) ? $ids : []) as $id) {
+                        if (isset($aio_names[$id]) && $aio_names[$id] !== '') $servers[] = $aio_names[$id];
+                    }
+                    $aio_out[] = [
+                        'name'        => $u['name'] ?? '',
+                        'provider'    => $cfg['provider'] ?? '',
+                        'model'       => $cfg['model'] ?? '',
+                        'mcp_servers' => $servers,
+                    ];
+                }
+                echo json_encode(['success' => true, 'data' => $aio_out]);
+                break;
+
             case 'get_llm_providers':
                 // Provider registry (id, label, default_url) for the Admin → AI form.
                 echo json_encode(['success' => true, 'data' => array_map(fn($p) => [

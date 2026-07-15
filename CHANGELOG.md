@@ -6,6 +6,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.25] — 2026-07-15
+
+### Changed
+- **`/aiUsers` overview is now a table** — the chat command lists each AI user alongside the model it uses and the MCP servers enabled for it, instead of a plain comma-separated list of names. Backed by a new `get_ai_users_overview` action that returns non-secret config only (no endpoints, API keys, or tokens); the dialog is widened to fit the table.
+
 ## [2026.7.24] — 2026-07-14
 
 ### Fixed

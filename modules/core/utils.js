@@ -18,7 +18,7 @@ export const showToast = (message, type = 'info') => {
     }
 };
 
-export const confirmModal = (title, { message = '', confirmLabel = 'Confirm', cancelLabel = 'Cancel', dangerous = false, icon = '', hideCancel = false } = {}) => new Promise(resolve => {
+export const confirmModal = (title, { message = '', messageHtml = '', confirmLabel = 'Confirm', cancelLabel = 'Cancel', dangerous = false, icon = '', hideCancel = false } = {}) => new Promise(resolve => {
     const overlay = document.getElementById('confirm-modal');
     const titleEl = document.getElementById('confirm-modal-title');
     const iconEl = document.getElementById('confirm-modal-icon');
@@ -29,8 +29,11 @@ export const confirmModal = (title, { message = '', confirmLabel = 'Confirm', ca
     titleEl.textContent = title;
     iconEl.innerHTML = icon;
     iconEl.classList.toggle('hidden', !icon);
-    messageEl.textContent = message;
-    messageEl.classList.toggle('hidden', !message);
+    // messageHtml is trusted markup built by callers (values escaped there); plain
+    // message stays text-only. messageHtml wins when both are provided.
+    if (messageHtml) messageEl.innerHTML = messageHtml;
+    else messageEl.textContent = message;
+    messageEl.classList.toggle('hidden', !message && !messageHtml);
     okBtn.textContent = confirmLabel;
     okBtn.className = `btn ${dangerous ? 'btn-danger' : 'btn-blue'}`;
     cancelBtn.textContent = cancelLabel;
