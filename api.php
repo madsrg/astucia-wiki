@@ -402,7 +402,12 @@ if (isset($_REQUEST['action'])) {
         $openai_token_param  = _openai_token_param($api_url);
         $token_param_swapped = false;
         $drop_temperature    = false;
-        for ($iter = 0; $iter < 8; $iter++) {
+        // Reserve the final iteration for a tool-free answer: if the model keeps
+        // calling tools right up to the cap, forbid tools on the last pass so it
+        // must return text — instead of failing with "too many tool calls".
+        $max_iters = 10;
+        for ($iter = 0; $iter < $max_iters; $iter++) {
+            $force_final = ($iter === $max_iters - 1);
             if ($family === 'anthropic') {
                 $payload = ['model' => $model, 'system' => $full_system, 'messages' => $messages,
                             'max_tokens' => $max_tokens, 'temperature' => $temperature, 'tools' => $tools];
@@ -419,6 +424,8 @@ if (isset($_REQUEST['action'])) {
                 $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key];
             }
             if ($extra_lines) $headers = array_merge($headers, $extra_lines);
+            // Final pass: forbid tools so the model must produce a text reply.
+            if ($force_final) $payload['tool_choice'] = $family === 'anthropic' ? ['type' => 'none'] : 'none';
 
             $api_call_count++;
             $write_status('calling_api', ['iteration' => $iter + 1]);
@@ -598,7 +605,7 @@ if (isset($_REQUEST['action'])) {
         if (!$reply) {
             if ($api_error) {
                 $reply = '⚠️ ' . $api_error;
-            } elseif ($iter >= 8) {
+            } elseif ($iter >= $max_iters) {
                 $reply = '⚠️ Stopped after too many tool calls without producing a response.';
             } else {
                 $reply = '⚠️ No response was generated.';

@@ -617,7 +617,12 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     $token_param_swapped = false;
     $drop_temperature    = false;
 
-    for ($iter = 0; $iter < 10; $iter++) {
+    // Reserve the final iteration for a tool-free answer: if the model keeps
+    // calling tools right up to the cap, forbid tools on the last pass so it must
+    // return text — instead of failing with "too many tool calls".
+    $max_iters = 12;
+    for ($iter = 0; $iter < $max_iters; $iter++) {
+        $force_final = ($iter === $max_iters - 1);
         if ($family === 'anthropic') {
             $payload = [
                 'model'       => $model,
@@ -659,6 +664,8 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
             ];
         }
         if ($extra_lines) $headers = array_merge($headers, $extra_lines);
+        // Final pass: forbid tools so the model must produce a text reply.
+        if ($force_final) $payload['tool_choice'] = $family === 'anthropic' ? ['type' => 'none'] : 'none';
 
         $ch = curl_init($api_url);
         curl_setopt_array($ch, [
@@ -791,7 +798,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
         return ['reply' => null, 'error' => $api_error];
     }
     if (!$reply) {
-        if ($iter >= 10) {
+        if ($iter >= $max_iters) {
             return ['reply' => null, 'error' => 'Stopped after too many tool calls without producing a response.'];
         }
         return ['reply' => null, 'error' => 'No response was generated.'];

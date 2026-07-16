@@ -6,6 +6,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.27] — 2026-07-17
+
+### Fixed
+- **AI users no longer fail with "Stopped after too many tool calls without producing a response"** — when a model kept calling tools right up to the agentic-loop cap without ever writing a final reply, the request errored out. The final iteration now forbids tools (`tool_choice: none`) across all provider families, so the model is forced to produce a text answer instead of erroring. The per-request iteration caps were also raised (agent jobs 10→12, team/page chat 8→10) to give complex tasks more room.
+
 ## [2026.7.26] — 2026-07-17
 
 ### Added
