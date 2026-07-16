@@ -144,6 +144,46 @@ const readSpacesField = (prefix) => {
     return [...document.querySelectorAll(`.${prefix}-spaces-cb:checked`)].map(cb => cb.value);
 };
 
+// Extra HTTP headers editor — an editable list of name/value pairs sent on every
+// outbound request (AI model endpoint or MCP server). Handles gateway auth such
+// as Cloudflare Access (CF-Access-Client-Id / CF-Access-Client-Secret). Rendered
+// via extraHeadersFieldHtml(prefix, headers), wired with wireExtraHeadersField,
+// and read back as a {name,value}[] list by readExtraHeadersField at save time.
+const extraHeaderRowHtml = (prefix, name = '', value = '') => `
+    <div class="admin-xhdr-row" style="display:flex;gap:0.4rem;margin-bottom:0.35rem">
+        <input type="text" class="${prefix}-xhdr-name form-control" value="${escHtml(name)}" placeholder="Header name" style="flex:1">
+        <input type="text" class="${prefix}-xhdr-value form-control" value="${escHtml(value)}" placeholder="Value" style="flex:1.4">
+        <button type="button" class="${prefix}-xhdr-del btn btn-icon btn-secondary" title="Remove header" aria-label="Remove header">&times;</button>
+    </div>`;
+
+const extraHeadersFieldHtml = (prefix, headers) => {
+    const rows = (Array.isArray(headers) ? headers : [])
+        .map(h => extraHeaderRowHtml(prefix, h?.name ?? '', h?.value ?? '')).join('');
+    return `
+        <div id="${prefix}-xhdr-rows">${rows}</div>
+        <button type="button" id="${prefix}-xhdr-add" class="btn btn-sm btn-secondary">+ Add header</button>`;
+};
+
+const wireExtraHeadersField = (prefix) => {
+    const rows   = document.getElementById(`${prefix}-xhdr-rows`);
+    const addBtn = document.getElementById(`${prefix}-xhdr-add`);
+    if (!rows || !addBtn) return;
+    addBtn.addEventListener('click', () => rows.insertAdjacentHTML('beforeend', extraHeaderRowHtml(prefix)));
+    rows.addEventListener('click', (e) => {
+        if (e.target.closest(`.${prefix}-xhdr-del`)) e.target.closest('.admin-xhdr-row')?.remove();
+    });
+};
+
+// Returns a {name, value}[] list, dropping rows whose name is blank.
+const readExtraHeadersField = (prefix) => {
+    const rows = document.getElementById(`${prefix}-xhdr-rows`);
+    if (!rows) return [];
+    return [...rows.querySelectorAll('.admin-xhdr-row')].map(r => ({
+        name:  r.querySelector(`.${prefix}-xhdr-name`)?.value.trim() || '',
+        value: r.querySelector(`.${prefix}-xhdr-value`)?.value ?? '',
+    })).filter(h => h.name !== '');
+};
+
 const makeSpacesCell = (u, i) => {
     const isAdmin = u.role === 'admin';
     const td = document.createElement('td');
@@ -896,6 +936,11 @@ const openAiUserForm = async (u) => {
                     <input type="range" id="ai-f-temperature" class="admin-ai-temp-slider" value="${cfg.temperature ?? 0.7}" min="0" max="2" step="0.05">
                     <p class="form-hint">Controls randomness. <strong>0.7</strong> (default) balances creativity with coherence — good for most tasks. Lower values (0–0.4) produce more focused, deterministic replies; useful for factual Q&amp;A or structured output. Higher values (1.0–2.0) increase variety and creativity but risk incoherent or off-topic replies.</p>
                 </div>
+                <div class="form-group">
+                    <label>Extra request headers <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                    ${extraHeadersFieldHtml('ai-f', cfg.extra_headers ?? [])}
+                    <p class="form-hint">Additional HTTP headers sent on every request to the model endpoint — on top of the provider's auth. Useful for a gateway in front of a self-hosted model, e.g. a Cloudflare Access tunnel needing <code>CF-Access-Client-Id</code> and <code>CF-Access-Client-Secret</code>.</p>
+                </div>
             </div>
             <div class="admin-ai-form-section-header">${t('admin.ai.behaviour')}</div>
             <div class="admin-ai-form-section">
@@ -941,6 +986,7 @@ const openAiUserForm = async (u) => {
         });
     }
     wireSpacesField('ai-f');
+    wireExtraHeadersField('ai-f');
 
     document.getElementById('ai-f-test-btn').addEventListener('click', async () => {
         const provider = document.getElementById('ai-f-provider')?.value || 'openai';
@@ -954,7 +1000,7 @@ const openAiUserForm = async (u) => {
         if (!api_key && !cfg.api_key_set) { showToast('Enter an API key first.', 'error'); return; }
         btn.disabled = true;
         btn.textContent = 'Testing…';
-        const params = { provider, api_url, model };
+        const params = { provider, api_url, model, extra_headers: JSON.stringify(readExtraHeadersField('ai-f')) };
         if (api_key) params.api_key = api_key;
         else if (u?.uid) params.uid = String(u.uid);
         const res = await api.call('admin_test_ai_user', params, 'POST');
@@ -1045,6 +1091,7 @@ const saveAiUser = async (uid) => {
         const v = ta.value.trim();
         if (v) mcp_instructions[ta.dataset.mcpId] = v;
     });
+    const extra_headers = readExtraHeadersField('ai-f');
     const spaces = readSpacesField('ai-f');
 
     if (!name)    { showToast(t('admin.ai.name-req'), 'error'); return; }
@@ -1060,7 +1107,7 @@ const saveAiUser = async (uid) => {
         source_uid,
         name, role,
         spaces: JSON.stringify(spaces),
-        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, context_messages, temperature, max_tokens, mcp_server_ids, mcp_instructions }),
+        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, context_messages, temperature, max_tokens, mcp_server_ids, mcp_instructions, extra_headers }),
     }, 'POST');
 
     saveBtn.disabled = false;
@@ -1712,6 +1759,11 @@ const openMcpServerForm = (s) => {
                     <p class="form-hint">How the token is sent: <code>&lt;header&gt;: &lt;scheme&gt; &lt;token&gt;</code>. Defaults to <code>Authorization: Bearer …</code>. For a server that authenticates with a custom header, set the header name (e.g. <code>X-API-Key</code>) and clear the scheme to send the raw token.</p>
                 </div>
                 <div class="form-group">
+                    <label>Extra request headers <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                    ${extraHeadersFieldHtml('mcp-f', s?.extra_headers ?? [])}
+                    <p class="form-hint">Additional HTTP headers sent on every request to this server, alongside the auth header above. Useful for a gateway such as a Cloudflare Access tunnel needing <code>CF-Access-Client-Id</code> and <code>CF-Access-Client-Secret</code>.</p>
+                </div>
+                <div class="form-group">
                     <label style="display:flex;align-items:center;gap:0.45rem;font-weight:600;cursor:pointer">
                         <input type="checkbox" id="mcp-f-native" ${s?.wiki_native ? 'checked' : ''} style="width:auto"> This server is an Astucia Wiki
                     </label>
@@ -1739,6 +1791,8 @@ const openMcpServerForm = (s) => {
         document.getElementById('admin-mcp-add-btn').classList.remove('hidden');
     });
 
+    wireExtraHeadersField('mcp-f');
+
     document.getElementById('mcp-f-test-btn').addEventListener('click', async () => {
         const url   = document.getElementById('mcp-f-url')?.value.trim();
         const token = document.getElementById('mcp-f-token')?.value;
@@ -1751,6 +1805,7 @@ const openMcpServerForm = (s) => {
             url,
             auth_header: document.getElementById('mcp-f-auth-header')?.value.trim() || '',
             auth_prefix: document.getElementById('mcp-f-auth-prefix')?.value ?? '',
+            extra_headers: JSON.stringify(readExtraHeadersField('mcp-f')),
         };
         if (token) params.auth_token = token;
         else if (s?.id) params.id = s.id;
@@ -1790,6 +1845,7 @@ const saveMcpServer = async (id) => {
     const token  = document.getElementById('mcp-f-token')?.value || '';
     const authHeader = document.getElementById('mcp-f-auth-header')?.value.trim() || '';
     const authPrefix = document.getElementById('mcp-f-auth-prefix')?.value ?? '';
+    const extraHeaders = readExtraHeadersField('mcp-f');
     const native = document.getElementById('mcp-f-native')?.checked ? '1' : '0';
     const searchTool = document.getElementById('mcp-f-search-tool')?.value.trim() || '';
     const searchArg  = document.getElementById('mcp-f-search-arg')?.value.trim() || '';
@@ -1802,6 +1858,7 @@ const saveMcpServer = async (id) => {
 
     const result = await api.call('admin_save_mcp_server',
         { id: id || '', name, url, auth_token: token, auth_header: authHeader, auth_prefix: authPrefix,
+          extra_headers: JSON.stringify(extraHeaders),
           wiki_native: native, search_tool: searchTool, search_arg: searchArg }, 'POST');
     saveBtn.disabled = false;
     saveBtn.textContent = 'Save';

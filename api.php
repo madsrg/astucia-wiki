@@ -161,13 +161,14 @@ if (isset($_REQUEST['action'])) {
         file_put_contents(WIKI_SYSTEM_DATA . 'mcp_servers.json', json_encode($servers, JSON_PRETTY_PRINT));
     }
 
-    function _mcp_jsonrpc_test(string $base_url, ?string $auth_header_line, string $method, array $params = []): array {
+    function _mcp_jsonrpc_test(string $base_url, ?string $auth_header_line, string $method, array $params = [], array $extra_headers = []): array {
         if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'curl not available', 'data' => null];
         $headers = [
             'Content-Type: application/json',
             'Accept: application/json, text/event-stream',
         ];
         if ($auth_header_line) $headers[] = $auth_header_line;
+        foreach ($extra_headers as $line) $headers[] = $line;
         $body = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => $method, 'params' => $params ?: (object)[]]);
         $ch = curl_init(rtrim($base_url, '/'));
         curl_setopt_array($ch, [
@@ -242,6 +243,7 @@ if (isset($_REQUEST['action'])) {
         $context_msgs  = (int)($config['context_messages'] ?? 10);
         $max_tokens    = (int)($config['max_tokens']       ?? 4096);
         $temperature   = (float)($config['temperature']    ?? 0.7);
+        $extra_lines   = _extra_header_lines($config['extra_headers'] ?? []);
         if (!$api_key || !$api_url || !function_exists('curl_init')) return;
 
         $status_file = $chat_file . '.ai-status.' . (int)$placeholder_id;
@@ -416,6 +418,7 @@ if (isset($_REQUEST['action'])) {
                 if (!$drop_temperature) $payload['temperature'] = $temperature;
                 $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key];
             }
+            if ($extra_lines) $headers = array_merge($headers, $extra_lines);
 
             $api_call_count++;
             $write_status('calling_api', ['iteration' => $iter + 1]);
@@ -3276,6 +3279,7 @@ if (isset($_REQUEST['action'])) {
                             'temperature'      => (float)($ai_cfg_in['temperature']      ?? $ec['temperature']      ?? 0.7),
                             'mcp_server_ids'    => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? $ec['mcp_server_ids'] ?? []))),
                             'mcp_instructions'  => (array)($ai_cfg_in['mcp_instructions'] ?? $ec['mcp_instructions'] ?? []),
+                            'extra_headers'     => _sanitize_extra_headers($ai_cfg_in['extra_headers'] ?? $ec['extra_headers'] ?? []),
                         ];
                         if (!empty($ai_cfg_in['api_key'])) $nc['api_key'] = $ai_cfg_in['api_key'];
                         elseif (!empty($ec['api_key']))     $nc['api_key'] = $ec['api_key'];
@@ -3316,6 +3320,7 @@ if (isset($_REQUEST['action'])) {
                             'temperature'      => (float)($ai_cfg_in['temperature']      ?? 0.7),
                             'mcp_server_ids'   => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? []))),
                             'mcp_instructions' => (array)($ai_cfg_in['mcp_instructions'] ?? []),
+                            'extra_headers'    => _sanitize_extra_headers($ai_cfg_in['extra_headers'] ?? []),
                         ],
                     ];
                 }
@@ -3553,6 +3558,7 @@ if (isset($_REQUEST['action'])) {
                     'auth_token_set' => !empty($s['auth_token']),
                     'auth_header'    => $s['auth_header'] ?? 'Authorization',
                     'auth_prefix'    => array_key_exists('auth_prefix', $s) ? $s['auth_prefix'] : 'Bearer',
+                    'extra_headers'  => $s['extra_headers'] ?? [],
                     'wiki_native'    => !empty($s['wiki_native']),
                     'search_tool'    => $s['search_tool'] ?? '',
                     'search_arg'     => $s['search_arg']  ?? '',
@@ -3568,6 +3574,7 @@ if (isset($_REQUEST['action'])) {
                 $mcp_token = $_POST['auth_token']      ?? '';
                 $mcp_auth_header = trim($_POST['auth_header'] ?? '');
                 $mcp_auth_prefix = array_key_exists('auth_prefix', $_POST) ? trim($_POST['auth_prefix']) : 'Bearer';
+                $mcp_extra_headers = _sanitize_extra_headers(json_decode($_POST['extra_headers'] ?? '[]', true));
                 $mcp_native = !empty($_POST['wiki_native']) && $_POST['wiki_native'] !== '0' && $_POST['wiki_native'] !== 'false';
                 $mcp_search_tool = trim($_POST['search_tool'] ?? '');
                 $mcp_search_arg  = trim($_POST['search_arg']  ?? '');
@@ -3582,6 +3589,7 @@ if (isset($_REQUEST['action'])) {
                         $_ms['url']  = $mcp_url;
                         $_ms['auth_header'] = $mcp_auth_header;
                         $_ms['auth_prefix'] = $mcp_auth_prefix;
+                        $_ms['extra_headers'] = $mcp_extra_headers;
                         $_ms['wiki_native'] = $mcp_native;
                         $_ms['search_tool'] = $mcp_search_tool;
                         $_ms['search_arg']  = $mcp_search_arg;
@@ -3599,6 +3607,7 @@ if (isset($_REQUEST['action'])) {
                         'auth_token'  => $mcp_token,
                         'auth_header' => $mcp_auth_header,
                         'auth_prefix' => $mcp_auth_prefix,
+                        'extra_headers' => $mcp_extra_headers,
                         'wiki_native' => $mcp_native,
                         'search_tool' => $mcp_search_tool,
                         'search_arg'  => $mcp_search_arg,
@@ -3631,11 +3640,12 @@ if (isset($_REQUEST['action'])) {
                         'auth_token'  => $_POST['auth_token']      ?? '',
                         'auth_header' => trim($_POST['auth_header'] ?? ''),
                         'auth_prefix' => array_key_exists('auth_prefix', $_POST) ? trim($_POST['auth_prefix']) : 'Bearer',
+                        'extra_headers' => _sanitize_extra_headers(json_decode($_POST['extra_headers'] ?? '[]', true)),
                     ];
                 }
                 $test_mcp_url = $test_server['url'] ?? '';
                 if (!$test_mcp_url) throw new Exception('URL is required.');
-                $test_res = _mcp_jsonrpc_test($test_mcp_url, _mcp_auth_header($test_server), 'tools/list');
+                $test_res = _mcp_jsonrpc_test($test_mcp_url, _mcp_auth_header($test_server), 'tools/list', [], _extra_header_lines($test_server['extra_headers'] ?? []));
                 if (!$test_res['ok']) {
                     echo json_encode(['success' => false, 'message' => 'Connection failed: ' . $test_res['error']]);
                     break;
@@ -3668,7 +3678,8 @@ if (isset($_REQUEST['action'])) {
                     }
                 }
                 if (!$test_ai_key) throw new Exception('API key is required.');
-                $test_ai_res = _test_ai_connection($test_ai_provider, $test_ai_url, $test_ai_key, $test_ai_model);
+                $test_ai_extra = _extra_header_lines(json_decode($_POST['extra_headers'] ?? '[]', true));
+                $test_ai_res = _test_ai_connection($test_ai_provider, $test_ai_url, $test_ai_key, $test_ai_model, $test_ai_extra);
                 if (!$test_ai_res['ok']) {
                     echo json_encode(['success' => false, 'message' => $test_ai_res['error']]);
                     break;

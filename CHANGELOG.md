@@ -6,6 +6,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.26] — 2026-07-17
+
+### Added
+- **Custom request headers for AI Users and MCP Servers** — both admin forms now have an "Extra request headers" editor (an editable list of name/value pairs) sent on every outbound request, on top of the provider/server auth. This covers gateways in front of a self-hosted model or MCP server, e.g. a Cloudflare Access tunnel needing `CF-Access-Client-Id` and `CF-Access-Client-Secret`. Headers are merged into every request site (agent jobs, team/page chat, saved searches, and the Test Connection buttons) across all provider families; CR/LF are stripped on save to prevent header injection.
+
 ## [2026.7.25] — 2026-07-15
 
 ### Changed

@@ -73,12 +73,46 @@ function _mcp_auth_header(array $server): ?string {
     return $header . ': ' . ($scheme === '' ? $token : $scheme . ' ' . $token);
 }
 
-function _mcp_jsonrpc(string $base_url, ?string $auth_header_line, string $method, array $params, int $timeout = 15): array {
+// Normalizes a stored/posted extra-headers value into a clean list of
+// ['name' => ..., 'value' => ...] pairs for persistence. Accepts a list of
+// {name,value} objects (the canonical form) or a plain {name: value} map (so
+// hand-edited JSON also works). CR/LF are stripped to prevent header injection,
+// and entries with a blank name are dropped.
+function _sanitize_extra_headers($raw): array {
+    if (!is_array($raw)) return [];
+    $out = [];
+    foreach ($raw as $k => $v) {
+        if (is_array($v)) {              // list-of-objects form
+            $name = (string)($v['name'] ?? '');
+            $val  = (string)($v['value'] ?? '');
+        } else {                          // {name: value} map form
+            $name = (string)$k;
+            $val  = (string)$v;
+        }
+        $name = trim(str_replace(["\r", "\n"], '', $name));
+        $val  = str_replace(["\r", "\n"], '', $val);
+        if ($name === '') continue;
+        $out[] = ['name' => $name, 'value' => $val];
+    }
+    return $out;
+}
+
+// Turns configured extra headers into curl "Name: Value" header lines.
+function _extra_header_lines($raw): array {
+    $lines = [];
+    foreach (_sanitize_extra_headers($raw) as $h) {
+        $lines[] = $h['name'] . ': ' . $h['value'];
+    }
+    return $lines;
+}
+
+function _mcp_jsonrpc(string $base_url, ?string $auth_header_line, string $method, array $params, int $timeout = 15, array $extra_headers = []): array {
     $headers = [
         'Content-Type: application/json',
         'Accept: application/json, text/event-stream',
     ];
     if ($auth_header_line) $headers[] = $auth_header_line;
+    foreach ($extra_headers as $line) $headers[] = $line;
     $body = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => $method, 'params' => $params ?: (object)[]]);
     $ch = curl_init(rtrim($base_url, '/'));
     curl_setopt_array($ch, [
@@ -125,7 +159,7 @@ function _mcp_error_text($error): string {
 }
 
 function _mcp_fetch_tools(array $server): array {
-    $res = _mcp_jsonrpc($server['url'] ?? '', _mcp_auth_header($server), 'tools/list', []);
+    $res = _mcp_jsonrpc($server['url'] ?? '', _mcp_auth_header($server), 'tools/list', [], 15, _extra_header_lines($server['extra_headers'] ?? []));
     if (isset($res['error'])) return [];
     $tools = $res['result']['tools'] ?? [];
     $result = [];
@@ -219,7 +253,7 @@ function _mcp_call_tool(array $server, string $name, array $input, string $space
         _mcp_auth_header($server),
         'tools/call',
         ['name' => $name, 'arguments' => $input ?: (object)[]]
-    , 30);
+    , 30, _extra_header_lines($server['extra_headers'] ?? []));
     if (isset($res['error'])) return 'Error: MCP call failed — ' . $res['error'];
     $result = $res['result'];
     if (!empty($result['isError'])) {
@@ -305,14 +339,14 @@ function _openai_responses_parse(array $data): array {
             'omitted' => _omitted_content_note($msg_blocks, ['output_text', 'refusal'])];
 }
 
-function _test_openai_responses(string $api_url, string $api_key, string $model): array {
+function _test_openai_responses(string $api_url, string $api_key, string $model, array $extra_headers = []): array {
     $payload = ['model' => $model, 'input' => 'Reply with the single word: OK', 'max_output_tokens' => 64];
     $ch = curl_init($api_url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => json_encode($payload),
-        CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key],
+        CURLOPT_HTTPHEADER     => array_merge(['Content-Type: application/json', 'Authorization: Bearer ' . $api_key], $extra_headers),
         CURLOPT_TIMEOUT        => 20,
     ]);
     $raw = curl_exec($ch); $curl_err = curl_error($ch); $http = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
@@ -324,16 +358,17 @@ function _test_openai_responses(string $api_url, string $api_key, string $model)
     return ['ok' => true, 'reply' => $parsed['text'] !== '' ? $parsed['text'] : '(empty reply)'];
 }
 
-function _test_ai_connection(string $provider, string $api_url, string $api_key, string $model): array {
+function _test_ai_connection(string $provider, string $api_url, string $api_key, string $model, array $extra_headers = []): array {
     if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'curl is not available on this server.'];
     $family = llm_family($provider);
-    if ($family === 'openai-responses') return _test_openai_responses($api_url, $api_key, $model);
+    if ($family === 'openai-responses') return _test_openai_responses($api_url, $api_key, $model, $extra_headers);
 
     if ($family === 'anthropic') {
         $headers = ['Content-Type: application/json', 'x-api-key: ' . $api_key, 'anthropic-version: 2023-06-01'];
     } else {
         $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key];
     }
+    $headers = array_merge($headers, $extra_headers);
     // Anthropic always uses max_tokens; OpenAI/compatible pick by endpoint and
     // swap on the "use max_completion_tokens instead" error.
     $token_param = $family === 'anthropic' ? 'max_tokens' : _openai_token_param($api_url);
@@ -407,6 +442,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     $sys_prompt    = $config['system_prompt'] ?? 'You are a helpful assistant.';
     $max_tokens    = (int)($config['max_tokens']   ?? 4096);
     $temperature   = (float)($config['temperature'] ?? 0.7);
+    $extra_lines   = _extra_header_lines($config['extra_headers'] ?? []);
 
     if (!$api_key)              return ['reply' => null, 'error' => 'AI user has no api_key configured.'];
     if (!$api_url)              return ['reply' => null, 'error' => 'AI user has no api_url configured.'];
@@ -622,6 +658,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 'Authorization: Bearer ' . $api_key,
             ];
         }
+        if ($extra_lines) $headers = array_merge($headers, $extra_lines);
 
         $ch = curl_init($api_url);
         curl_setopt_array($ch, [
