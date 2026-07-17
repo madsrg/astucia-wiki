@@ -266,6 +266,8 @@ export default {
     'chat.send':          'Send',
     'chat.placeholder':   'Type a message… (Enter to send, Shift+Enter for new line, # to mention, / for commands)',
     'chat.emoji-title':   'Emoji',
+    'chat.new-topic-toggle':       'New Topic',
+    'chat.new-topic-toggle-title': "Start a new topic (Alt+C) — resets the AI's context for the next message",
     'chat.reply-title':   'Reply to {name}',
     'chat.reaction-title':'Add reaction',
     'chat.delete-confirm':'Delete this message?',

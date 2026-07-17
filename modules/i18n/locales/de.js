@@ -68,6 +68,7 @@ export default {
 
     'chat.send': 'Senden', 'chat.placeholder': 'Nachricht eingeben… (Enter zum Senden, Umschalt+Enter für neue Zeile, # für Erwähnungen, / für Befehle)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Antwort an {name}',
+    'chat.new-topic-toggle': 'Neues Thema', 'chat.new-topic-toggle-title': 'Neues Thema beginnen (Alt+C) — setzt den Kontext der KI für die nächste Nachricht zurück',
     'chat.reaction-title': 'Reaktion hinzufügen', 'chat.delete-confirm': 'Diese Nachricht löschen?',
     'chat.delete-title': 'Nachricht löschen', 'chat.pin-title': 'Nachricht anheften',
     'chat.unpin-title': 'Nachricht loslösen',

@@ -68,6 +68,7 @@ export default {
 
     'chat.send': 'Skicka', 'chat.placeholder': 'Skriv ett meddelande… (Enter för att skicka, Skift+Enter för ny rad, # för att nämna, / för kommandon)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Svara {name}',
+    'chat.new-topic-toggle': 'Nytt ämne', 'chat.new-topic-toggle-title': 'Starta ett nytt ämne (Alt+C) — återställer AI:ns kontext för nästa meddelande',
     'chat.reaction-title': 'Lägg till reaktion', 'chat.delete-confirm': 'Ta bort det här meddelandet?',
     'chat.delete-title': 'Ta bort meddelande', 'chat.pin-title': 'Fäst meddelande',
     'chat.unpin-title': 'Ta bort fästning',

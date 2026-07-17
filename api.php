@@ -435,20 +435,24 @@ if (isset($_REQUEST['action'])) {
                 CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
                 CURLOPT_POSTFIELDS     => json_encode($payload),
                 CURLOPT_HTTPHEADER     => $headers, CURLOPT_TIMEOUT => 120,
+                CURLOPT_ENCODING       => '', // advertise gzip/deflate and auto-decode
             ]);
             $raw      = curl_exec($ch);
             $curl_err = curl_error($ch);
+            $http     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
             $last_call_ms = (int)((microtime(true) - $call_start) * 1000);
             $write_status('received', ['iteration' => $iter + 1, 'last_call_ms' => $last_call_ms]);
 
             if (!$raw) {
-                $api_error = $curl_err ?: 'No response from the API (connection failed or timed out).';
+                $api_error = ($curl_err ?: 'No response from the API (connection failed or timed out).')
+                    . ($http ? " (HTTP {$http})" : '');
                 break;
             }
             $data = json_decode($raw, true);
             if (!$data) {
-                $api_error = 'The API returned an unreadable response.';
+                $api_error = 'The API returned an unreadable response' . ($http ? " (HTTP {$http})" : '') . '.'
+                    . _ai_raw_debug($raw, $http);
                 break;
             }
 
@@ -467,12 +471,12 @@ if (isset($_REQUEST['action'])) {
                     $drop_temperature = true;
                     continue;
                 }
-                $api_error = $emsg;
+                $api_error = $emsg . _ai_raw_debug($raw, $http);
                 break;
             }
             if (($data['type'] ?? '') === 'error') {
                 // Anthropic: {"type": "error", "error": {"type": "...", "message": "..."}}
-                $api_error = $data['error']['message'] ?? 'Unknown API error.';
+                $api_error = ($data['error']['message'] ?? 'Unknown API error.') . _ai_raw_debug($raw, $http);
                 break;
             }
 

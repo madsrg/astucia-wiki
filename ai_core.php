@@ -106,6 +106,27 @@ function _extra_header_lines($raw): array {
     return $lines;
 }
 
+// When AI_DEBUG_RAW_ERRORS is enabled in config.php, technical errors from the
+// model endpoint carry a truncated copy of the raw response body. This is the
+// fastest way to see what a reverse proxy actually returned instead of JSON —
+// e.g. an nginx "502 Bad Gateway" / "504 Gateway Timeout" HTML page, a "413
+// Request Entity Too Large", or an auth/redirect page. Off by default because the
+// body is surfaced to whoever triggered the AI.
+function _ai_debug_errors(): bool {
+    return defined('AI_DEBUG_RAW_ERRORS') && AI_DEBUG_RAW_ERRORS;
+}
+
+// Builds a debug suffix for a technical error. Always safe to call; returns ''
+// when debugging is off or there is nothing to show. $http 0 means "not captured".
+function _ai_raw_debug(string $raw, int $http = 0): string {
+    if (!_ai_debug_errors()) return '';
+    $snippet = trim($raw);
+    if ($snippet === '') return '';
+    if (strlen($snippet) > 2000) $snippet = substr($snippet, 0, 2000) . '… [truncated]';
+    $head = $http ? "HTTP {$http}" : 'raw response';
+    return "\n\n[debug] {$head}:\n" . $snippet;
+}
+
 function _mcp_jsonrpc(string $base_url, ?string $auth_header_line, string $method, array $params, int $timeout = 15, array $extra_headers = []): array {
     $headers = [
         'Content-Type: application/json',
@@ -348,12 +369,13 @@ function _test_openai_responses(string $api_url, string $api_key, string $model,
         CURLOPT_POSTFIELDS     => json_encode($payload),
         CURLOPT_HTTPHEADER     => array_merge(['Content-Type: application/json', 'Authorization: Bearer ' . $api_key], $extra_headers),
         CURLOPT_TIMEOUT        => 20,
+        CURLOPT_ENCODING       => '', // advertise gzip/deflate and auto-decode
     ]);
     $raw = curl_exec($ch); $curl_err = curl_error($ch); $http = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
     if (!$raw) return ['ok' => false, 'error' => $curl_err ?: 'No response (connection failed or timed out).'];
     $data = json_decode($raw, true);
-    if (!$data) return ['ok' => false, 'error' => "HTTP {$http}: unreadable response."];
-    if (isset($data['error'])) return ['ok' => false, 'error' => $data['error']['message'] ?? 'API returned an error.'];
+    if (!$data) return ['ok' => false, 'error' => "HTTP {$http}: unreadable response." . _ai_raw_debug($raw, $http)];
+    if (isset($data['error'])) return ['ok' => false, 'error' => ($data['error']['message'] ?? 'API returned an error.') . _ai_raw_debug($raw, $http)];
     $parsed = _openai_responses_parse($data);
     return ['ok' => true, 'reply' => $parsed['text'] !== '' ? $parsed['text'] : '(empty reply)'];
 }
@@ -386,6 +408,7 @@ function _test_ai_connection(string $provider, string $api_url, string $api_key,
             CURLOPT_POSTFIELDS     => json_encode($payload),
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_TIMEOUT        => 20,
+            CURLOPT_ENCODING       => '', // advertise gzip/deflate and auto-decode
         ]);
         $raw      = curl_exec($ch);
         $curl_err = curl_error($ch);
@@ -394,16 +417,16 @@ function _test_ai_connection(string $provider, string $api_url, string $api_key,
 
         if (!$raw) return ['ok' => false, 'error' => $curl_err ?: 'No response (connection failed or timed out).'];
         $data = json_decode($raw, true);
-        if (!$data) return ['ok' => false, 'error' => "HTTP {$http}: unreadable response."];
+        if (!$data) return ['ok' => false, 'error' => "HTTP {$http}: unreadable response." . _ai_raw_debug($raw, $http)];
         if (isset($data['error'])) {
             $emsg = $data['error']['message'] ?? 'API returned an error.';
             if ($family !== 'anthropic' && $attempt < 2 && _is_token_param_error($emsg)) {
                 $token_param = $token_param === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens';
                 continue;
             }
-            return ['ok' => false, 'error' => $emsg];
+            return ['ok' => false, 'error' => $emsg . _ai_raw_debug($raw, $http)];
         }
-        if (($data['type'] ?? '') === 'error') return ['ok' => false, 'error' => $data['error']['message'] ?? 'API returned an error.'];
+        if (($data['type'] ?? '') === 'error') return ['ok' => false, 'error' => ($data['error']['message'] ?? 'API returned an error.') . _ai_raw_debug($raw, $http)];
         // Some OpenAI-compatible providers (e.g. Mistral) use {"detail": "..."} instead.
         if ($http >= 400 && isset($data['detail'])) {
             return ['ok' => false, 'error' => is_string($data['detail']) ? $data['detail'] : json_encode($data['detail'])];
@@ -674,18 +697,22 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
             CURLOPT_POSTFIELDS     => json_encode($payload),
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_TIMEOUT        => 120,
+            CURLOPT_ENCODING       => '', // advertise gzip/deflate and auto-decode
         ]);
         $raw      = curl_exec($ch);
         $curl_err = curl_error($ch);
+        $http     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
         if (!$raw) {
-            $api_error = $curl_err ?: 'No response from the API (connection failed or timed out).';
+            $api_error = ($curl_err ?: 'No response from the API (connection failed or timed out).')
+                . ($http ? " (HTTP {$http})" : '');
             break;
         }
         $data = json_decode($raw, true);
         if (!$data) {
-            $api_error = 'The API returned an unreadable response.';
+            $api_error = 'The API returned an unreadable response' . ($http ? " (HTTP {$http})" : '') . '.'
+                . _ai_raw_debug($raw, $http);
             break;
         }
 
@@ -703,11 +730,11 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 $drop_temperature = true;
                 continue;
             }
-            $api_error = $emsg;
+            $api_error = $emsg . _ai_raw_debug($raw, $http);
             break;
         }
         if (($data['type'] ?? '') === 'error') {
-            $api_error = $data['error']['message'] ?? 'Unknown API error.';
+            $api_error = ($data['error']['message'] ?? 'Unknown API error.') . _ai_raw_debug($raw, $http);
             break;
         }
 

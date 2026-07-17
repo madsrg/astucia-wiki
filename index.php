@@ -304,9 +304,15 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     <div id="pc-page-input-area" class="chat-input-area hidden">
                         <div id="pc-emoji-picker" class="chat-emoji-picker hidden"></div>
                         <div id="pc-mention-popup" class="chat-mention-popup hidden"></div>
-                        <button id="pc-emoji-btn" class="btn btn-icon btn-secondary chat-emoji-btn" data-i18n-title="chat.emoji-title" title="Emoji">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-                        </button>
+                        <div class="chat-emoji-col">
+                            <label class="chat-newtopic-label" data-i18n-title="chat.new-topic-toggle-title" title="Start a new topic (Alt+C) — resets the AI's context for the next message">
+                                <input type="checkbox" id="pc-newtopic-chk">
+                                <span data-i18n="chat.new-topic-toggle">New Topic</span>
+                            </label>
+                            <button id="pc-emoji-btn" class="btn btn-icon btn-secondary chat-emoji-btn" data-i18n-title="chat.emoji-title" title="Emoji">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                            </button>
+                        </div>
                         <textarea id="pc-input" class="chat-input" rows="1" data-i18n-placeholder="chat.placeholder" placeholder="Type a message… (Enter to send, Shift+Enter for new line, # to mention)"></textarea>
                         <button id="pc-send-btn" class="btn btn-blue chat-send-btn" data-i18n="chat.send">Send</button>
                     </div>
@@ -383,9 +389,15 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     <div class="chat-input-area">
                         <div id="chat-emoji-picker" class="chat-emoji-picker hidden"></div>
                         <div id="chat-mention-popup" class="chat-mention-popup hidden"></div>
-                        <button id="chat-emoji-btn" class="btn btn-icon btn-secondary chat-emoji-btn" data-i18n-title="chat.emoji-title" title="Emoji">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-                        </button>
+                        <div class="chat-emoji-col">
+                            <label class="chat-newtopic-label" data-i18n-title="chat.new-topic-toggle-title" title="Start a new topic (Alt+C) — resets the AI's context for the next message">
+                                <input type="checkbox" id="chat-newtopic-chk">
+                                <span data-i18n="chat.new-topic-toggle">New Topic</span>
+                            </label>
+                            <button id="chat-emoji-btn" class="btn btn-icon btn-secondary chat-emoji-btn" data-i18n-title="chat.emoji-title" title="Emoji">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                            </button>
+                        </div>
                         <textarea id="chat-input" class="chat-input" data-i18n-placeholder="chat.placeholder" placeholder="Type a message… (Enter to send, Shift+Enter for new line, # to mention)" rows="1"></textarea>
                         <button id="chat-send-btn" class="btn btn-blue chat-send-btn" data-i18n="chat.send">Send</button>
                     </div>

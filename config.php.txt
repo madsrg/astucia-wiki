@@ -114,3 +114,12 @@ define('LOG_DIR', '/var/log/wiki/');
 // Leave empty ('') to hide the section.
 define('NGINX_ERROR_LOG',  '/var/log/nginx/error.log');
 define('NGINX_ACCESS_LOG', '/var/log/nginx/access.log');
+
+// --- AI error debugging (optional) ---
+// When true, technical errors from an AI model endpoint (unreadable response,
+// HTTP errors, API errors) include a truncated copy of the raw response body.
+// Useful for debugging a self-hosted model behind a reverse proxy — an nginx
+// "502 Bad Gateway" / "504 Gateway Timeout" / "413 Request Entity Too Large"
+// page shows up instead of an opaque "unreadable response". The body is shown
+// to whoever triggered the AI, so leave this off in normal operation.
+define('AI_DEBUG_RAW_ERRORS', false);

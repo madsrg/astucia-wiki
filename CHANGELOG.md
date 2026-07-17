@@ -6,6 +6,16 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.28] — 2026-07-17
+
+### Added
+- **"New Topic" checkbox in the chat composer** — a checkbox stacked above the emoji button (in both team chat and the page-chat panel) that starts a new topic for the next message, so you don't have to remember to type `/newTopic`. It's consumed (unchecked) on send, and `Alt+C` toggles it while the chat input is focused. Localized across all six languages.
+- **Raw AI error diagnostics** — a new `AI_DEBUG_RAW_ERRORS` config flag (default off) that appends the HTTP status and a truncated raw response body to technical errors from the model endpoint, making it possible to see what a reverse proxy actually returned (e.g. an nginx 502/504/413 HTML page) instead of an opaque "unreadable response".
+
+### Changed
+- **Starting a new topic keeps the current AI focus** — `/newTopic` (and the new checkbox) still reset the AI's message context, but no longer drop you out of the focused conversation, so plain follow-up messages keep going to the same AI user.
+- **AI model requests now advertise gzip/deflate** (`CURLOPT_ENCODING`) and always surface the HTTP status in connection errors, matching the MCP client and improving diagnosability of self-hosted endpoints behind a proxy.
+
 ## [2026.7.27] — 2026-07-17
 
 ### Fixed

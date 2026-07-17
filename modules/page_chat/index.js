@@ -275,6 +275,15 @@ const doSend = async () => {
     let text = textarea.value.trim();
     if (!text) return;
 
+    // "New Topic" checkbox: reset the AI's context for this message, exactly as
+    // typing /newTopic does. Consume (uncheck) it on any real submit; only
+    // prepend for normal messages — a slash command would be swallowed by the
+    // prefix, and the user isn't starting a topic when running one.
+    const newTopicChk = document.getElementById('pc-newtopic-chk');
+    const wantNewTopic = newTopicChk?.checked;
+    if (newTopicChk) newTopicChk.checked = false;
+    if (wantNewTopic && !text.startsWith('/')) text = '/newTopic ' + text;
+
     if (text.startsWith('/')) {
         const spaceIdx = text.indexOf(' ');
         const cmd = (spaceIdx === -1 ? text : text.slice(0, spaceIdx)).toLowerCase();
@@ -316,9 +325,9 @@ const doSend = async () => {
             textarea.focus();
             return;
         }
-        // /me and /newTopic fall through to normal posting; a new topic ends
-        // the focused conversation.
-        if (cmd === '/newtopic') setFocus(null);
+        // /me and /newTopic fall through to normal posting. A new topic resets
+        // the AI's message context (server-side) but keeps the current AI focus,
+        // so you stay in conversation with the same AI user after resetting.
     }
 
     const users = await getUsers();
@@ -512,6 +521,12 @@ const setupInput = () => {
 
     textarea.addEventListener('blur', () => setTimeout(closePop, 150));
     textarea.addEventListener('keydown', e => {
+        if (e.altKey && (e.code === 'KeyC' || e.key === 'c' || e.key === 'C')) { // toggle "New Topic"
+            e.preventDefault();
+            const chk = document.getElementById('pc-newtopic-chk');
+            if (chk) chk.checked = !chk.checked;
+            return;
+        }
         if (!mentionPop.classList.contains('hidden')) {
             const items = getItems();
             if (e.key === 'ArrowDown') { e.preventDefault(); setSelected(Math.min(selectedIdx + 1, items.length - 1)); return; }

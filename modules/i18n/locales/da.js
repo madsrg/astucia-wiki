@@ -69,6 +69,7 @@ export default {
 
     'chat.send': 'Send', 'chat.placeholder': 'Skriv en besked… (Enter for at sende, Skift+Enter for ny linje, # for at nævne, / for kommandoer)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Svar til {name}',
+    'chat.new-topic-toggle': 'Nyt emne', 'chat.new-topic-toggle-title': "Start et nyt emne (Alt+C) — nulstiller AI'ens kontekst for næste besked",
     'chat.reaction-title': 'Tilføj reaktion', 'chat.delete-confirm': 'Slet denne besked?',
     'chat.delete-title': 'Slet besked', 'chat.pin-title': 'Fastgør besked',
     'chat.unpin-title': 'Fjern fastgørelse',

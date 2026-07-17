@@ -684,6 +684,7 @@ export const init = () => {
     const emojiBtn    = document.getElementById('chat-emoji-btn');
     const emojiPicker = document.getElementById('chat-emoji-picker');
     const mentionPop  = document.getElementById('chat-mention-popup');
+    const newTopicChk = document.getElementById('chat-newtopic-chk');
     if (!sendBtn) return;
 
     EMOJIS.forEach(e => {
@@ -715,6 +716,14 @@ export const init = () => {
     const sendMessage = async () => {
         let text = textarea.value.trim();
         if (!text) return;
+
+        // "New Topic" checkbox: reset the AI's context for this message, exactly as
+        // typing /newTopic does. Consume (uncheck) it on any real submit; only
+        // prepend for normal messages — a slash command would be swallowed by the
+        // prefix, and the user isn't starting a topic when running one.
+        const wantNewTopic = newTopicChk?.checked;
+        if (newTopicChk) newTopicChk.checked = false;
+        if (wantNewTopic && !text.startsWith('/')) text = '/newTopic ' + text;
 
         if (text.startsWith('/')) {
             const spaceIdx = text.indexOf(' ');
@@ -757,9 +766,9 @@ export const init = () => {
                 textarea.focus();
                 return;
             }
-            // /me and /newTopic fall through to normal posting; a new topic
-            // ends the focused conversation.
-            if (cmd === '/newtopic') setFocus(null);
+            // /me and /newTopic fall through to normal posting. A new topic resets
+            // the AI's message context (server-side) but keeps the current AI focus,
+            // so you stay in conversation with the same AI user after resetting.
         }
 
         // Detect AI user mention so we can show a waiting modal
@@ -815,6 +824,11 @@ export const init = () => {
 
     sendBtn.addEventListener('click', sendMessage);
     textarea.addEventListener('keydown', (e) => {
+        if (e.altKey && (e.code === 'KeyC' || e.key === 'c' || e.key === 'C')) { // toggle "New Topic"
+            e.preventDefault();
+            if (newTopicChk) newTopicChk.checked = !newTopicChk.checked;
+            return;
+        }
         if (e.key === 'Enter' && !e.shiftKey) {
             if (!mentionPop.classList.contains('hidden')) return; // let autocomplete handle it
             e.preventDefault();

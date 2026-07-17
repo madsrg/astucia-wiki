@@ -68,6 +68,7 @@ export default {
 
     'chat.send': 'Envoyer', 'chat.placeholder': 'Tapez un message… (Entrée pour envoyer, Maj+Entrée pour nouvelle ligne, # pour mentionner, / pour commandes)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Répondre à {name}',
+    'chat.new-topic-toggle': 'Nouveau sujet', 'chat.new-topic-toggle-title': "Démarrer un nouveau sujet (Alt+C) — réinitialise le contexte de l'IA pour le prochain message",
     'chat.reaction-title': 'Ajouter une réaction', 'chat.delete-confirm': 'Supprimer ce message ?',
     'chat.delete-title': 'Supprimer le message', 'chat.pin-title': 'Épingler le message',
     'chat.unpin-title': 'Désépingler le message',
