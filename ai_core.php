@@ -261,6 +261,53 @@ function _openai_chat_content($content): array {
     return [trim((string)($content ?? '')), ''];
 }
 
+// Collects the advertised tool names from a provider-shaped $tools array. Handles
+// all three families: Chat Completions nests the name under "function"; Anthropic
+// and the Responses API keep "name" at the top level.
+function _tool_names(array $tools): array {
+    $names = [];
+    foreach ($tools as $t) {
+        $n = $t['function']['name'] ?? $t['name'] ?? null;
+        if (is_string($n) && $n !== '') $names[] = $n;
+    }
+    return $names;
+}
+
+// Fallback for models/servers that emit a tool call as plain text in the message
+// content instead of the API's structured tool_calls field (e.g. Qwen via vLLM
+// when the hermes tool-call parser misses a malformed emission). Detects a JSON
+// object {"name":..,"arguments":{..}} — bare, fenced in ```json, or wrapped in
+// Hermes <tool_call> tags — whose name matches a tool we actually advertised, and
+// returns ['name' => .., 'args' => ..]. Returns null for a normal text reply, so
+// real answers are never intercepted (the name must match a known tool).
+function _extract_text_tool_call(string $text, array $known_tool_names): ?array {
+    $text = trim($text);
+    if ($text === '' || !$known_tool_names) return null;
+    // Unwrap a single surrounding ```json … ``` fence, if present.
+    if (preg_match('/^```(?:json)?\s*(.+?)\s*```$/s', $text, $fm)) $text = trim($fm[1]);
+    $candidates = [];
+    // Hermes-style wrapper(s): <tool_call>{...}</tool_call>
+    if (preg_match_all('/<tool_call>\s*(\{.*?\})\s*<\/tool_call>/s', $text, $m)) {
+        foreach ($m[1] as $j) $candidates[] = $j;
+    }
+    // Otherwise treat the message as a tool call only when it is essentially a
+    // single bare JSON object — avoids misreading prose that contains braces.
+    if (!$candidates && ($text[0] ?? '') === '{' && substr($text, -1) === '}') {
+        $candidates[] = $text;
+    }
+    foreach ($candidates as $j) {
+        $obj = json_decode($j, true);
+        if (!is_array($obj)) continue;
+        $name = $obj['name'] ?? $obj['tool'] ?? null;
+        if (!is_string($name) || !in_array($name, $known_tool_names, true)) continue;
+        $args = $obj['arguments'] ?? $obj['parameters'] ?? [];
+        if (is_string($args)) { $d = json_decode($args, true); $args = is_array($d) ? $d : []; }
+        if (!is_array($args)) $args = [];
+        return ['name' => $name, 'args' => $args];
+    }
+    return null;
+}
+
 // $space, when non-empty, targets a specific space on the remote wiki by
 // appending ?space= to its MCP URL (mirrors mcp.php's ?space= convention). The
 // remote falls back to its default space if the name isn't a valid space there.
@@ -442,6 +489,84 @@ function _test_ai_connection(string $provider, string $api_url, string $api_key,
         return ['ok' => true, 'reply' => $text !== '' ? $text : '(empty reply)'];
     }
     return ['ok' => false, 'error' => 'Could not find a supported token-limit parameter for this model.'];
+}
+
+// Single-shot, tool-free completion for ephemeral features (e.g. the "Explain"
+// selection action) that need a synchronous reply string without the full
+// agentic chat loop or a .chat file. Returns ['ok'=>true,'reply'=>string] or
+// ['ok'=>false,'error'=>string]. Mirrors the chat loop's per-family request shape
+// (extra headers, gzip, token-param/temperature swap-and-retry).
+function _ai_quick_reply(array $ai_user, string $system, string $user_msg, int $max_tokens = 500): array {
+    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'curl is not available on this server.'];
+    $config      = $ai_user['ai_config'] ?? [];
+    $provider    = $config['provider'] ?? 'openai';
+    $family      = llm_family($provider);
+    $api_url     = trim($config['api_url'] ?? '') ?: llm_default_url($provider);
+    $api_key     = $config['api_key'] ?? '';
+    $model       = $config['model'] ?? 'gpt-4o';
+    $temperature = (float)($config['temperature'] ?? 0.7);
+    $extra       = _extra_header_lines($config['extra_headers'] ?? []);
+    if (!$api_key) return ['ok' => false, 'error' => 'The AI user has no API key configured.'];
+    if (!$api_url) return ['ok' => false, 'error' => 'The AI user has no API URL configured.'];
+
+    $headers = $family === 'anthropic'
+        ? ['Content-Type: application/json', 'x-api-key: ' . $api_key, 'anthropic-version: 2023-06-01']
+        : ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key];
+    $headers          = array_merge($headers, $extra);
+    $token_param      = $family === 'anthropic' ? 'max_tokens' : _openai_token_param($api_url);
+    $drop_temperature = false;
+
+    for ($attempt = 0; $attempt < 3; $attempt++) {
+        if ($family === 'anthropic') {
+            $payload = ['model' => $model, 'system' => $system, 'messages' => [['role' => 'user', 'content' => $user_msg]],
+                        'max_tokens' => $max_tokens, 'temperature' => $temperature];
+        } elseif ($family === 'openai-responses') {
+            $payload = ['model' => $model, 'instructions' => $system, 'input' => [['role' => 'user', 'content' => $user_msg]],
+                        'max_output_tokens' => $max_tokens];
+            if (!$drop_temperature) $payload['temperature'] = $temperature;
+        } else {
+            $payload = ['model' => $model, 'messages' => [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => $user_msg]],
+                        $token_param => $max_tokens];
+            if (!$drop_temperature) $payload['temperature'] = $temperature;
+        }
+        $ch = curl_init($api_url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode($payload),
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_TIMEOUT        => 60,
+            CURLOPT_ENCODING       => '', // advertise gzip/deflate and auto-decode
+        ]);
+        $raw = curl_exec($ch); $curl_err = curl_error($ch); $http = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+        if (!$raw) return ['ok' => false, 'error' => ($curl_err ?: 'No response from the API.') . ($http ? " (HTTP {$http})" : '')];
+        $data = json_decode($raw, true);
+        if (!$data) return ['ok' => false, 'error' => 'The API returned an unreadable response' . ($http ? " (HTTP {$http})" : '') . '.' . _ai_raw_debug($raw, $http)];
+        if (isset($data['error'])) {
+            $emsg = $data['error']['message'] ?? 'API returned an error.';
+            if ($family !== 'anthropic' && $attempt < 2 && _is_token_param_error($emsg)) {
+                $token_param = $token_param === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens';
+                continue;
+            }
+            if ($family !== 'anthropic' && !$drop_temperature && _is_temperature_error($emsg)) {
+                $drop_temperature = true;
+                continue;
+            }
+            return ['ok' => false, 'error' => $emsg . _ai_raw_debug($raw, $http)];
+        }
+        if (($data['type'] ?? '') === 'error') return ['ok' => false, 'error' => ($data['error']['message'] ?? 'API returned an error.') . _ai_raw_debug($raw, $http)];
+
+        if ($family === 'anthropic') {
+            $blocks = array_filter($data['content'] ?? [], fn($b) => ($b['type'] ?? '') === 'text');
+            $text = trim(implode("\n", array_column(array_values($blocks), 'text')));
+        } elseif ($family === 'openai-responses') {
+            $text = _openai_responses_parse($data)['text'];
+        } else {
+            [$text] = _openai_chat_content($data['choices'][0]['message']['content'] ?? '');
+        }
+        return ['ok' => true, 'reply' => $text !== '' ? $text : '(empty reply)'];
+    }
+    return ['ok' => false, 'error' => 'Could not complete the request.'];
 }
 
 /**
@@ -816,6 +941,21 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 continue;
             }
             [$reply, $note] = _openai_chat_content($choice['message']['content'] ?? '');
+            // Fallback: the model emitted a tool call as text instead of via the
+            // structured tool_calls field — execute it and keep looping rather than
+            // returning the raw JSON as the answer.
+            $fb = _extract_text_tool_call($reply, _tool_names($tools));
+            if ($fb) {
+                $tools_called = true;
+                $fb_id = 'fallback_' . $iter;
+                $messages[] = ['role' => 'assistant', 'content' => null, 'tool_calls' => [[
+                    'id' => $fb_id, 'type' => 'function',
+                    'function' => ['name' => $fb['name'], 'arguments' => json_encode($fb['args'])],
+                ]]];
+                $messages[] = ['role' => 'tool', 'tool_call_id' => $fb_id, 'content' => $exec_tool($fb['name'], $fb['args'])];
+                $reply = null;
+                continue;
+            }
             if ($note) $reply = trim($reply . "\n\n" . $note);
             break;
         }

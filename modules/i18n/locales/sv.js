@@ -233,4 +233,17 @@ export default {
 
     'help.not-found': 'Hjälpfilen hittades inte.',
     'lang.title': 'Språk',
+    'select.quote':         'Citera i chatt',
+    'select.ask-ai':        'Fråga AI',
+    'select.copy':          'Kopiera',
+    'select.search':        'Sök i wikin',
+    'select.new-page':      'Ny sida',
+    'select.explain':       'Förklara',
+    'select.copied':        'Kopierat till urklipp',
+    'select.copy-failed':   'Kunde inte kopiera',
+    'select.explaining':    'Förklarar…',
+    'select.explain-failed':'Kunde inte förklara markeringen.',
+    'select.no-ai':         'Ingen AI-användare tillgänglig.',
+    'select.only-md':       'Öppna en Markdown-sida först.',
+    'select.title-empty':   'Markeringen är inte ett giltigt sidnamn.',
 };

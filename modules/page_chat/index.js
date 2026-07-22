@@ -633,8 +633,9 @@ const loadAndOpen = async (chatPath) => {
 
 const createAndOpen = async (chatPath) => {
     const res = await api.call('create_chat', { path: chatPath, topic: '', git_commit: '0' }, 'POST');
-    if (!res.success) { showToast(res.message || t('page-chat.create-failed'), 'error'); return; }
+    if (!res.success) { showToast(res.message || t('page-chat.create-failed'), 'error'); _pendingComposer = null; return; }
     await loadAndOpen(chatPath);
+    if (_pendingComposer) { const cb = _pendingComposer; _pendingComposer = null; cb(); }
 };
 
 // ── Confirm lightbox ──────────────────────────────────────────────────────────
@@ -655,10 +656,11 @@ const showCreateConfirm = (chatPath) => {
     const fc = fresh(confirmBtn), fl = fresh(cancelBtn), fx = fresh(closeBtn);
 
     const close = () => lb.classList.add('hidden');
+    const cancel = () => { _pendingComposer = null; close(); };
     fc.addEventListener('click', async () => { close(); await createAndOpen(chatPath); });
-    fl.addEventListener('click', close);
-    fx.addEventListener('click', close);
-    lb.onclick = e => { if (e.target === lb) close(); };
+    fl.addEventListener('click', cancel);
+    fx.addEventListener('click', cancel);
+    lb.onclick = e => { if (e.target === lb) cancel(); };
 
     lb.classList.remove('hidden');
 };
@@ -676,6 +678,61 @@ export const openPageChat = async (pagePath) => {
     } else {
         showCreateConfirm(chatPath);
     }
+};
+
+// ── Selection-toolbar helpers (Quote in Chat / Ask AI about this) ──────────────
+
+// A callback to run against the composer once a just-created chat has opened.
+let _pendingComposer = null;
+
+const _asQuote = (text) => '> ' + text.trim().replace(/\r?\n/g, '\n> ');
+
+// Insert text at the end of the composer (blank line before existing content) and focus.
+const _insertComposer = (text) => {
+    const ta = document.getElementById('pc-input');
+    if (!ta) return;
+    ta.value = ta.value.trim() ? ta.value.replace(/\s+$/, '') + '\n\n' + text : text;
+    ta.selectionStart = ta.selectionEnd = ta.value.length;
+    autoResize(ta);
+    ta.focus();
+};
+
+// Ensure the current page's chat is open, then run cb() with the composer ready.
+// Reuses the standard "create if none exists" confirm flow.
+const _ensureChatThen = async (cb) => {
+    const path = state.currentPagePath;
+    if (!path || !/\.md$/i.test(path)) { showToast(t('select.only-md'), 'error'); return; }
+    const chatPath = path.replace(/\.md$/i, '.chat');
+    if (_pcPath === chatPath) { cb(); return; }
+    const res = await api.call('exists', { file: chatPath });
+    if (res.exists) { await loadAndOpen(chatPath); cb(); }
+    else { _pendingComposer = cb; showCreateConfirm(chatPath); }
+};
+
+// Insert the selected text as a Markdown blockquote into the page chat composer.
+export const quoteSelectionInChat = (text) => {
+    if (!text || !text.trim()) return;
+    _ensureChatThen(() => _insertComposer(_asQuote(text) + '\n\n'));
+};
+
+// Prefill the composer with the quoted selection + an @mention of an AI user, cursor
+// placed for the user to type their question (they send when ready).
+export const askAiAboutSelection = async (text) => {
+    if (!text || !text.trim()) return;
+    const users = await getUsers();
+    const ais = users.filter(u => u.is_ai);
+    if (!ais.length) { showToast(t('select.no-ai'), 'error'); return; }
+    const chatPath = (state.currentPagePath || '').replace(/\.md$/i, '.chat');
+    const focused = getFocusAi(chatPath);
+    const name = (focused && ais.some(a => a.name === focused)) ? focused : ais[0].name;
+    _ensureChatThen(() => {
+        const ta = document.getElementById('pc-input');
+        if (!ta) return;
+        ta.value = _asQuote(text) + '\n\n#' + name + ' ';
+        ta.selectionStart = ta.selectionEnd = ta.value.length;
+        autoResize(ta);
+        ta.focus();
+    });
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────

@@ -233,4 +233,17 @@ export default {
 
     'help.not-found': 'Hilfedatei nicht gefunden.',
     'lang.title': 'Sprache',
+    'select.quote':         'Im Chat zitieren',
+    'select.ask-ai':        'KI fragen',
+    'select.copy':          'Kopieren',
+    'select.search':        'Wiki durchsuchen',
+    'select.new-page':      'Neue Seite',
+    'select.explain':       'Erklären',
+    'select.copied':        'In die Zwischenablage kopiert',
+    'select.copy-failed':   'Kopieren fehlgeschlagen',
+    'select.explaining':    'Erkläre…',
+    'select.explain-failed':'Auswahl konnte nicht erklärt werden.',
+    'select.no-ai':         'Kein KI-Benutzer verfügbar.',
+    'select.only-md':       'Öffne zuerst eine Markdown-Seite.',
+    'select.title-empty':   'Auswahl ist kein gültiger Seitenname.',
 };

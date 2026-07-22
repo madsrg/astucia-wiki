@@ -137,6 +137,17 @@ const buildReactionBar = (msg) => {
         pill.addEventListener('click', () => toggleReaction(msg.id, emoji));
         bar.appendChild(pill);
     }
+    return bar;
+};
+
+// The hover-only action buttons (reply, save, append, add-reaction; pin is added
+// by the caller). Returned in their own container so it can be floated as an
+// overlay — revealing it on hover then never changes the message layout (no jump,
+// no permanently reserved space). See .chat-actions in styles.css.
+const buildMsgActions = (msg) => {
+    const actions = document.createElement('div');
+    actions.className = 'chat-actions';
+
     const replyBtn = document.createElement('button');
     replyBtn.className = 'chat-reply-btn';
     replyBtn.title = t('chat.reply-title', { name: msg.name || 'this message' });
@@ -150,29 +161,29 @@ const buildReactionBar = (msg) => {
         textarea.focus();
         autoResize(textarea);
     });
-    bar.appendChild(replyBtn);
+    actions.appendChild(replyBtn);
 
     const saveBtn = document.createElement('button');
     saveBtn.className = 'chat-save-btn';
     saveBtn.title = t('chat.save.action-save');
     saveBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>';
     saveBtn.addEventListener('click', () => openSaveMessageDialog(msg.text, 'create'));
-    bar.appendChild(saveBtn);
+    actions.appendChild(saveBtn);
 
     const appendBtn = document.createElement('button');
     appendBtn.className = 'chat-save-btn';
     appendBtn.title = t('chat.save.action-append');
     appendBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9.5 15.5 12 18 14.5 15.5"/></svg>';
     appendBtn.addEventListener('click', () => openSaveMessageDialog(msg.text, 'append'));
-    bar.appendChild(appendBtn);
+    actions.appendChild(appendBtn);
 
     const addBtn = document.createElement('button');
     addBtn.className = 'chat-reaction-add-btn';
     addBtn.textContent = '😊';
     addBtn.title = t('chat.reaction-title');
     addBtn.addEventListener('click', (e) => { e.stopPropagation(); showReactionPicker(msg.id, addBtn); });
-    bar.appendChild(addBtn);
-    return bar;
+    actions.appendChild(addBtn);
+    return actions;
 };
 
 // ── Sticky area ───────────────────────────────────────────────────────────────
@@ -313,9 +324,10 @@ const buildRow = (msg, grouped) => {
         bubble.appendChild(del);
     }
 
-    col.appendChild(bubble);
-
-    const reactionBar = buildReactionBar(msg);
+    // Hover action toolbar — floated as an overlay (see .chat-actions) so it never
+    // shifts the message layout when revealed. Lives inside the bubble so it is
+    // positioned relative to it, but only shows on .chat-col hover.
+    const actions = buildMsgActions(msg);
     if (isMe || currentRole === 'admin') {
         const pin = document.createElement('button');
         pin.className = 'chat-pin-btn' + (isSticky ? ' chat-pin-btn-active' : '');
@@ -326,9 +338,12 @@ const buildRow = (msg, grouped) => {
             if (res.success) renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
             else showToast(res.message || 'Failed to pin', 'error');
         });
-        reactionBar.appendChild(pin);
+        actions.appendChild(pin);
     }
-    col.appendChild(reactionBar);
+    bubble.appendChild(actions);
+
+    col.appendChild(bubble);
+    col.appendChild(buildReactionBar(msg));
     row.appendChild(col);
     return row;
 };

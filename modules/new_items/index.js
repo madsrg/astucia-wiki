@@ -44,6 +44,27 @@ const createAndOpen = async (ext, apiAction, promptKey, defaultKey, createdKey, 
     }
 };
 
+// Create a `.md` page with a given (already human-readable) name, in the current
+// tree location, then reveal + open it. Used by the read-mode selection toolbar's
+// "New page" action. Returns the API response.
+export const createPageNamed = async (rawName) => {
+    let fileName = (rawName || '').trim();
+    if (!fileName) return { success: false };
+    if (!fileName.endsWith('.md')) fileName += '.md';
+    const path = getCreationPath() + fileName;
+    const res = await api.call('create_file', { path }, 'POST');
+    if (res.success) {
+        showToast(t('new.page-created'), 'success');
+        await refreshFileTree();
+        switchToTreePane();
+        const newFileEl = document.querySelector(`[data-path="${path}"]`);
+        if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
+    } else {
+        showToast(res.message || 'Failed to create page.', 'error');
+    }
+    return res;
+};
+
 export const init = () => {
     const newItemBtn = document.getElementById('new-item-btn');
     const newItemDropdown = document.getElementById('new-item-dropdown');

@@ -234,4 +234,17 @@ export default {
 
     'help.not-found': 'Hjælpefil ikke fundet.',
     'lang.title': 'Sprog',
+    'select.quote':         'Citér i chat',
+    'select.ask-ai':        'Spørg AI',
+    'select.copy':          'Kopiér',
+    'select.search':        'Søg i wikien',
+    'select.new-page':      'Ny side',
+    'select.explain':       'Forklar',
+    'select.copied':        'Kopieret til udklipsholder',
+    'select.copy-failed':   'Kunne ikke kopiere',
+    'select.explaining':    'Forklarer…',
+    'select.explain-failed':'Kunne ikke forklare markeringen.',
+    'select.no-ai':         'Ingen AI-bruger tilgængelig.',
+    'select.only-md':       'Åbn en Markdown-side først.',
+    'select.title-empty':   'Markeringen er ikke et gyldigt sidenavn.',
 };

@@ -6,6 +6,18 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.29] — 2026-07-22
+
+### Added
+- **Text-selection actions on read-mode Markdown pages** — selecting text in a rendered page now shows a floating toolbar with six actions: **Quote in chat** (insert the selection as a Markdown blockquote into the page chat, creating the chat if needed), **Ask AI** (prefill the composer with the quote + an AI @mention, ready for your question), **Copy**, **Search wiki** (run a full-text search for the selection), **New page** (create a page titled from the selection), and **Explain** (an ephemeral AI tooltip that explains/defines the selection in 2–4 sentences). Backed by a new synchronous `ai_explain` endpoint. Localized across all six languages.
+
+### Fixed
+- **Text-emitted tool calls no longer leak into chat** — when a model (e.g. Qwen via vLLM) returns a tool call as plain text instead of the structured `tool_calls` field, the agentic loop now detects a tool-call-shaped JSON (bare, ` ```json `-fenced, or Hermes `<tool_call>`-wrapped) whose name matches an advertised tool, executes it, and continues — instead of posting the raw JSON as the reply. Guarded so normal replies are never intercepted.
+- **Chat message hover no longer shifts the layout** — the per-message action buttons (reply, save, pin, react) moved out of the in-flow reaction bar into a floated overlay toolbar, so revealing them on hover adds no jump and no reserved space.
+
+### Changed
+- **The admin panel closes only via its "×" button** — a stray click on the backdrop no longer dismisses it, protecting unsaved edits in its forms.
+
 ## [2026.7.28] — 2026-07-17
 
 ### Added

@@ -233,4 +233,17 @@ export default {
 
     'help.not-found': 'Fichier d\'aide introuvable.',
     'lang.title': 'Langue',
+    'select.quote':         'Citer dans le chat',
+    'select.ask-ai':        'Demander à l\'IA',
+    'select.copy':          'Copier',
+    'select.search':        'Rechercher dans le wiki',
+    'select.new-page':      'Nouvelle page',
+    'select.explain':       'Expliquer',
+    'select.copied':        'Copié dans le presse-papiers',
+    'select.copy-failed':   'Échec de la copie',
+    'select.explaining':    'Explication…',
+    'select.explain-failed':'Impossible d\'expliquer la sélection.',
+    'select.no-ai':         'Aucun utilisateur IA disponible.',
+    'select.only-md':       'Ouvrez d\'abord une page Markdown.',
+    'select.title-empty':   'La sélection n\'est pas un nom de page valide.',
 };

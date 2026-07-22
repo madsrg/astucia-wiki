@@ -233,4 +233,17 @@ export default {
 
     'help.not-found': 'Archivo de ayuda no encontrado.',
     'lang.title': 'Idioma',
+    'select.quote':         'Citar en el chat',
+    'select.ask-ai':        'Preguntar a la IA',
+    'select.copy':          'Copiar',
+    'select.search':        'Buscar en la wiki',
+    'select.new-page':      'Nueva página',
+    'select.explain':       'Explicar',
+    'select.copied':        'Copiado al portapapeles',
+    'select.copy-failed':   'No se pudo copiar',
+    'select.explaining':    'Explicando…',
+    'select.explain-failed':'No se pudo explicar la selección.',
+    'select.no-ai':         'No hay ningún usuario de IA disponible.',
+    'select.only-md':       'Abre primero una página Markdown.',
+    'select.title-empty':   'La selección no es un nombre de página válido.',
 };

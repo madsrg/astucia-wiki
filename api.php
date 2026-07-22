@@ -596,6 +596,31 @@ if (isset($_REQUEST['action'])) {
                     continue;
                 }
                 [$reply, $note] = _openai_chat_content($choice['message']['content'] ?? '');
+                // Fallback: some models/servers (e.g. Qwen via vLLM) emit a tool
+                // call as plain text instead of the structured tool_calls field.
+                // Execute it and keep looping rather than posting the raw JSON.
+                $fb = _extract_text_tool_call($reply, _tool_names($tools));
+                if ($fb) {
+                    $_tname    = $fb['name'];
+                    $_is_mcp   = isset($mcp_tool_map_c[$_tname]);
+                    $_tdisplay = $_is_mcp ? ($mcp_tool_map_c[$_tname]['server']['name'] ?? '?') . ':' . $mcp_tool_map_c[$_tname]['real_name'] : $_tname;
+                    $tools_log[] = $_tdisplay;
+                    $write_status('executing_tool', ['tool' => $_tdisplay, 'iteration' => $iter + 1]);
+                    if ($_is_mcp) {
+                        $mcp_calls_c[] = $_tdisplay;
+                        $_tool_result = _mcp_call_tool($mcp_tool_map_c[$_tname]['server'], $mcp_tool_map_c[$_tname]['real_name'], $fb['args']);
+                    } else {
+                        $_tool_result = execute_ai_tool($_tname, $fb['args'], $ai_user, $indexer, $space_dir);
+                    }
+                    $fb_id = 'fallback_' . $iter;
+                    $messages[] = ['role' => 'assistant', 'content' => null, 'tool_calls' => [[
+                        'id' => $fb_id, 'type' => 'function',
+                        'function' => ['name' => $_tname, 'arguments' => json_encode($fb['args'])],
+                    ]]];
+                    $messages[] = ['role' => 'tool', 'tool_call_id' => $fb_id, 'content' => $_tool_result];
+                    $reply = null;
+                    continue;
+                }
                 if ($note) $reply = trim($reply . "\n\n" . $note);
                 break;
             }
@@ -1253,6 +1278,42 @@ if (isset($_REQUEST['action'])) {
                     if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
                     trigger_ai_response($_pending_ai_user, $file_path, $chat_data, $indexer, $space_dir, $_pending_placeholder_id);
                 }
+                break;
+
+            case 'ai_explain':
+                // Ephemeral, synchronous "explain this selection" — a single tool-free
+                // completion returned as text (no .chat file, no placeholder message).
+                $ex_text = trim($_POST['text'] ?? '');
+                if ($ex_text === '') throw new Exception('No text provided.');
+                if (mb_strlen($ex_text) > 4000) $ex_text = mb_substr($ex_text, 0, 4000);
+                $ex_uid = isset($_POST['uid']) && $_POST['uid'] !== '' ? (int)$_POST['uid'] : null;
+                // Resolve an AI user accessible in the current space (explicit uid wins,
+                // else the first is_ai user whose space grant covers this space).
+                $ex_users = defined('WIKI_SYSTEM_DATA') && file_exists(WIKI_SYSTEM_DATA . 'users.json')
+                    ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? []) : [];
+                $ex_space = basename(trim($_REQUEST['space'] ?? ''));
+                $ex_ai = null;
+                foreach ($ex_users as $_eu) {
+                    if (empty($_eu['is_ai'])) continue;
+                    if ($ex_uid !== null) { if ((int)($_eu['uid'] ?? -1) === $ex_uid) { $ex_ai = $_eu; break; } continue; }
+                    $_esp = $_eu['spaces'] ?? null;
+                    if ($_esp === null || $ex_space === '' || in_array($ex_space, (array)$_esp, true)) { $ex_ai = $_eu; break; }
+                }
+                if (!$ex_ai) throw new Exception('No AI user is available to explain the selection.');
+                $ex_page = trim($_POST['page'] ?? '');
+                $ex_page = $ex_page !== '' ? preg_replace('/\.[^.]+$/', '', basename($ex_page)) : '';
+                $ex_system = 'You are a concise explainer embedded in a wiki reader. Explain or define the user\'s '
+                    . 'selected text in 2–4 short sentences of plain prose. Be direct — no preamble, no restating '
+                    . 'the request, no Markdown headings.';
+                $ex_user = ($ex_page !== '' ? "Selected from the wiki page \"{$ex_page}\".\n\n" : '')
+                    . "Selected text:\n\"\"\"\n{$ex_text}\n\"\"\"";
+                $ex_res = _ai_quick_reply($ex_ai, $ex_system, $ex_user, 400);
+                echo json_encode([
+                    'success' => $ex_res['ok'],
+                    'reply'   => $ex_res['reply'] ?? null,
+                    'ai'      => $ex_ai['name'] ?? '',
+                    'message' => $ex_res['error'] ?? null,
+                ]);
                 break;
 
             case 'delete_chat_message':

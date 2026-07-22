@@ -2113,9 +2113,9 @@ export const init = () => {
     document.getElementById('admin-lightbox-close-btn').addEventListener('click', () => {
         document.getElementById('admin-lightbox').classList.add('hidden');
     });
-    document.getElementById('admin-lightbox').addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
-    });
+    // Intentionally no backdrop-click-to-close: the admin lightbox holds forms with
+    // unsaved edits, so it closes only via the "×" button to avoid losing work to a
+    // stray click outside it.
 
     document.querySelectorAll('.admin-group').forEach(grp =>
         grp.addEventListener('click', () => switchGroup(grp.dataset.group)));

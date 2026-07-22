@@ -1095,7 +1095,7 @@ body {
 .chat-row-mine { flex-direction: row-reverse; }
 .chat-avatar { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.8rem; }
 .chat-avatar-gap { width: 32px; flex-shrink: 0; }
-.chat-col { display: flex; flex-direction: column; max-width: 70%; }
+.chat-col { display: flex; flex-direction: column; max-width: 70%; position: relative; }
 .chat-row-mine .chat-col { align-items: flex-end; }
 .chat-meta { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 2px; padding: 0 4px; }
 .chat-row-mine .chat-meta { flex-direction: row-reverse; }
@@ -1121,17 +1121,15 @@ body {
 .chat-bubble:hover .chat-del-btn { display: block; }
 .chat-del-btn:hover { color: #e53e3e; }
 
-/* Pin button in reaction bar (next to emoji add button) */
-.chat-pin-btn { background: none; border: 1px solid transparent; border-radius: 12px; padding: 1px 5px; font-size: 0.85rem; cursor: pointer; color: var(--accent-gray); line-height: 1.5; display: none; }
-.chat-col:hover .chat-pin-btn { display: inline-flex; align-items: center; }
-.chat-pin-btn.chat-pin-btn-active { display: inline-flex; align-items: center; color: #d97706; }
-.chat-pin-btn:hover { background: #f0f4f8; border-color: #e2e8f0; color: var(--text-color); }
-.chat-reply-btn { background: none; border: 1px solid transparent; border-radius: 12px; padding: 1px 5px; cursor: pointer; color: var(--accent-gray); line-height: 1.5; display: none; }
-.chat-col:hover .chat-reply-btn { display: inline-flex; align-items: center; }
-.chat-reply-btn:hover { background: #f0f4f8; border-color: #e2e8f0; color: var(--text-color); }
-.chat-save-btn { background: none; border: 1px solid transparent; border-radius: 12px; padding: 1px 5px; cursor: pointer; color: var(--accent-gray); line-height: 1.5; display: none; }
-.chat-col:hover .chat-save-btn { display: inline-flex; align-items: center; }
-.chat-save-btn:hover { background: #f0f4f8; border-color: #e2e8f0; color: var(--text-color); }
+/* Hover action toolbar — floated over the bubble's top corner so revealing it on
+   hover never changes the message layout (no jump, no reserved space). */
+.chat-actions { position: absolute; top: -12px; right: 8px; display: none; align-items: center; gap: 1px; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1px 3px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); z-index: 5; }
+.chat-row-mine .chat-actions { right: auto; left: 8px; }
+.chat-col:hover .chat-actions { display: flex; }
+.chat-pin-btn, .chat-reply-btn, .chat-save-btn, .chat-reaction-add-btn { display: inline-flex; align-items: center; background: none; border: 1px solid transparent; border-radius: 12px; padding: 1px 5px; cursor: pointer; color: var(--accent-gray); line-height: 1.5; }
+.chat-pin-btn, .chat-reaction-add-btn { font-size: 0.85rem; }
+.chat-pin-btn.chat-pin-btn-active { color: #d97706; }
+.chat-pin-btn:hover, .chat-reply-btn:hover, .chat-save-btn:hover, .chat-reaction-add-btn:hover { background: #f0f4f8; border-color: #e2e8f0; color: var(--text-color); }
 
 /* Sticky bubble highlight */
 .chat-bubble-sticky { border-left: 2px solid #f6ad55; }
@@ -1170,9 +1168,24 @@ body {
 .chat-reaction-pill:hover { background: #e2e8f0; }
 .chat-reaction-pill-mine { background: #ebf8ff; border-color: #90cdf4; }
 .chat-reaction-pill-mine:hover { background: #bee3f8; }
-.chat-reaction-add-btn { background: none; border: 1px solid transparent; border-radius: 12px; padding: 1px 5px; font-size: 0.85rem; cursor: pointer; color: var(--accent-gray); line-height: 1.5; display: none; }
-.chat-col:hover .chat-reaction-add-btn { display: inline-flex; align-items: center; }
-.chat-reaction-add-btn:hover { background: #f0f4f8; border-color: #e2e8f0; color: var(--text-color); }
+/* .chat-reaction-add-btn is styled with the other action buttons above
+   (the hover toolbar); it lives in .chat-actions, not the reaction bar. */
+
+/* Read-mode text-selection toolbar (floating overlay near the selection) */
+.selection-toolbar { position: fixed; z-index: 600; display: flex; flex-wrap: wrap; gap: 2px; max-width: 92vw; background: white; border: 1px solid var(--border-color); border-radius: 8px; padding: 3px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+.selection-toolbar.hidden { display: none; }
+.selection-toolbar-btn { display: inline-flex; align-items: center; gap: 4px; background: none; border: none; border-radius: 6px; padding: 4px 8px; font-size: 0.8rem; color: var(--text-color); cursor: pointer; white-space: nowrap; }
+.selection-toolbar-btn:hover { background: #f0f4f8; }
+.selection-toolbar-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* Ephemeral AI "Explain" popover */
+.selection-explain { position: fixed; z-index: 600; width: 320px; max-width: 90vw; background: white; border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.18); font-size: 0.85rem; }
+.selection-explain.hidden { display: none; }
+.selection-explain-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 6px 10px; border-bottom: 1px solid var(--border-color); }
+.selection-explain-title { font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent-gray); }
+.selection-explain-close { background: none; border: none; font-size: 1.1rem; line-height: 1; cursor: pointer; color: #999; padding: 0 2px; }
+.selection-explain-close:hover { color: var(--text-color); }
+.selection-explain-body { padding: 10px; line-height: 1.5; max-height: 40vh; overflow-y: auto; white-space: pre-wrap; }
 
 /* Floating reaction emoji picker */
 .chat-reaction-picker { position: fixed; background: white; border: 1px solid var(--border-color); border-radius: 8px; padding: 5px 7px; display: flex; gap: 2px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); z-index: 500; }
