@@ -688,7 +688,7 @@ if (isset($_REQUEST['action'])) {
                       'admin_delete_ai_user', 'admin_regenerate_ai_token',
                       'admin_get_api_accounts', 'admin_save_api_account',
                       'admin_delete_api_account', 'admin_regenerate_api_token',
-                      'admin_get_agent_jobs', 'admin_save_agent_job', 'admin_delete_agent_job', 'admin_run_agent_job',
+                      'admin_get_agent_jobs', 'admin_save_agent_job', 'admin_delete_agent_job', 'admin_run_agent_job', 'admin_agent_job_status',
                       'git_deleted_files', 'git_restore_deleted',
                       'admin_reindex',
                       'admin_get_mcp_servers', 'admin_save_mcp_server', 'admin_delete_mcp_server', 'admin_test_mcp_server'];
@@ -3592,8 +3592,31 @@ if (isset($_REQUEST['action'])) {
                 $run_space_dir2 = rtrim(PAGES_DIR, '/') . '/' . $run_safe_space;
                 if (!is_dir($run_space_dir2)) $run_space_dir2 = rtrim(PAGES_DIR, '/');
                 $run_indexer2 = new PageIndexer($run_space_dir2);
-                set_time_limit(300);
-                $run_result = run_agent_job($run_job, $run_ai_user, $run_indexer2, $run_space_dir2);
+
+                // Per-job status file the client polls (the job runs detached below).
+                $run_status_dir  = WIKI_SYSTEM_DATA . 'agent_job_runs/';
+                if (!is_dir($run_status_dir)) @mkdir($run_status_dir, 0755, true);
+                $run_status_file = $run_status_dir . preg_replace('/[^a-zA-Z0-9_-]/', '', $run_job_id) . '.json';
+                $run_started_at  = date('c');
+                file_put_contents($run_status_file, json_encode(['state' => 'running', 'started_at' => $run_started_at]));
+
+                // Answer the browser immediately, then detach and run server-side.
+                // Closing the session first releases its lock so the user can keep
+                // editing/chatting; ignore_user_abort + no time limit let the job
+                // outlive the request and the admin lightbox being closed.
+                echo json_encode(['success' => true, 'started' => true]);
+                ignore_user_abort(true);
+                set_time_limit(0);
+                if (session_id()) session_write_close();
+                if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+
+                try {
+                    $run_result = run_agent_job($run_job, $run_ai_user, $run_indexer2, $run_space_dir2);
+                } catch (\Throwable $e) {
+                    // Detached run: make sure a crash still flips the status file off
+                    // "running" so the client's poll resolves instead of hanging.
+                    $run_result = ['reply' => null, 'error' => 'Job crashed: ' . $e->getMessage()];
+                }
                 $run_status = $run_result['error'] ? 'error' : 'ok';
                 $run_ts     = date('c');
                 $safe_jn2   = preg_replace('/[^a-zA-Z0-9_-]/', '-', $run_job['name'] ?? 'job');
@@ -3615,11 +3638,36 @@ if (isset($_REQUEST['action'])) {
                              . '<p><strong>Log file:</strong> <code>' . htmlspecialchars($log_file2) . '</code></p>';
                     send_email(ADMIN_EMAIL, 'Admin', $rj_subj, $rj_body);
                 }
-                $aj_data4['jobs'][$run_job_idx]['last_run']      = $run_ts;
-                $aj_data4['jobs'][$run_job_idx]['last_status']   = $run_status;
-                $aj_data4['jobs'][$run_job_idx]['last_log_file'] = $log_file2;
+                // Re-read jobs before updating: we detached, so another request may
+                // have edited agent_jobs.json in the meantime.
+                $aj_data4 = file_exists($aj_file4) ? (json_decode(file_get_contents($aj_file4), true) ?? ['jobs' => []]) : ['jobs' => []];
+                foreach ($aj_data4['jobs'] as &$_uj) {
+                    if (($_uj['id'] ?? '') === $run_job_id) {
+                        $_uj['last_run']      = $run_ts;
+                        $_uj['last_status']   = $run_status;
+                        $_uj['last_log_file'] = $log_file2;
+                        break;
+                    }
+                }
+                unset($_uj);
                 file_put_contents($aj_file4, json_encode($aj_data4, JSON_PRETTY_PRINT));
-                echo json_encode(['success' => true, 'status' => $run_status, 'reply' => $run_result['reply'] ?? '', 'error' => $run_result['error'] ?? null, 'log_file' => $log_file2]);
+                file_put_contents($run_status_file, json_encode([
+                    'state'       => $run_status,
+                    'started_at'  => $run_started_at,
+                    'finished_at' => $run_ts,
+                    'reply'       => $run_result['reply'] ?? '',
+                    'error'       => $run_result['error'] ?? null,
+                    'log_file'    => $log_file2,
+                ]));
+                break;
+
+            case 'admin_agent_job_status':
+                $st_id = trim($_REQUEST['id'] ?? '');
+                if (!$st_id) throw new Exception('Missing id.');
+                $st_file = WIKI_SYSTEM_DATA . 'agent_job_runs/' . preg_replace('/[^a-zA-Z0-9_-]/', '', $st_id) . '.json';
+                if (!file_exists($st_file)) { echo json_encode(['success' => true, 'state' => 'idle']); break; }
+                $st = json_decode(file_get_contents($st_file), true) ?: ['state' => 'idle'];
+                echo json_encode(array_merge(['success' => true], $st));
                 break;
 
             case 'admin_get_mcp_servers':

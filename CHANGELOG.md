@@ -6,6 +6,14 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.30] — 2026-07-24
+
+### Changed
+- **Agent Job "Run now" runs detached instead of blocking the browser** — the run used to execute synchronously inside the admin request, so any job longer than the reverse proxy's timeout (typically 60s) returned a 504 in the UI and held the session lock. It now answers immediately, runs server-side (`fastcgi_finish_request` + `ignore_user_abort` + no time limit, session lock released), and the admin panel polls a new `admin_agent_job_status` endpoint for the result. The job survives closing the admin panel and no longer blocks editing or chatting; the poll caps at 15 minutes and a crash still records an error status.
+
+### Added
+- **Copy button for AI User service tokens** — a "Copy" button next to "Regenerate" copies the service token to the clipboard. Localized across all six languages.
+
 ## [2026.7.29] — 2026-07-22
 
 ### Added

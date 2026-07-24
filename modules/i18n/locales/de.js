@@ -195,6 +195,7 @@ export default {
     'admin.ai.context': 'Kontext-Nachrichten', 'admin.ai.temp': 'Temperatur',
     'admin.ai.tokens': 'Max. Tokens pro Anfrage', 'admin.ai.svc-token': 'Service-Token',
     'admin.ai.regen-btn': 'Neu generieren', 'admin.ai.token-hint': 'Verwenden Sie diesen Token als Authorization: Bearer <token> beim Aufruf der API als dieser KI-Benutzer.',
+    'admin.ai.copy-btn': 'Kopieren', 'admin.ai.token-copied': 'Service-Token kopiert',
     'admin.ai.save-btn': 'KI-Benutzer speichern', 'admin.ai.test-btn': 'Verbindung testen', 'admin.ai.name-req': 'Name ist erforderlich',
     'admin.ai.saved': 'KI-Benutzer gespeichert', 'admin.ai.del-confirm': 'KI-Benutzer „{name}" löschen? Dies kann nicht rückgängig gemacht werden.',
     'admin.ai.deleted': '{name} gelöscht', 'admin.ai.regen-confirm': 'Service-Token neu generieren? Der alte Token wird sofort ungültig.',

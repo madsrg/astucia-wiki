@@ -195,6 +195,7 @@ export default {
     'admin.ai.context': 'Kontextmeddelanden', 'admin.ai.temp': 'Temperatur',
     'admin.ai.tokens': 'Max tokens per förfrågan', 'admin.ai.svc-token': 'Tjänsttoken',
     'admin.ai.regen-btn': 'Regenerera', 'admin.ai.token-hint': 'Använd den här token som Authorization: Bearer <token> när du anropar API:et som den här AI-användaren.',
+    'admin.ai.copy-btn': 'Kopiera', 'admin.ai.token-copied': 'Servicetoken kopierad',
     'admin.ai.save-btn': 'Spara AI-användare', 'admin.ai.test-btn': 'Testa anslutning', 'admin.ai.name-req': 'Namn krävs',
     'admin.ai.saved': 'AI-användare sparad', 'admin.ai.del-confirm': 'Ta bort AI-användaren "{name}"? Det går inte att ångra.',
     'admin.ai.deleted': '{name} borttagen', 'admin.ai.regen-confirm': 'Regenerera tjänsttoken? Den gamla token slutar fungera omedelbart.',

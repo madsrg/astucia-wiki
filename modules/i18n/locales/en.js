@@ -606,6 +606,8 @@ export default {
     'admin.ai.tokens':    'Max Tokens per request',
     'admin.ai.svc-token': 'Service Token',
     'admin.ai.regen-btn': 'Regenerate',
+    'admin.ai.copy-btn': 'Copy',
+    'admin.ai.token-copied': 'Service token copied',
     'admin.ai.token-hint':'Use this token as Authorization: Bearer <token> when calling the API as this AI user.',
     'admin.ai.save-btn':  'Save AI User',
     'admin.ai.test-btn':  'Test Connection',

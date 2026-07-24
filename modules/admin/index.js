@@ -955,6 +955,7 @@ const openAiUserForm = async (u) => {
             <div class="admin-ai-form-section">
                 <div class="admin-ai-token-row">
                     <code id="ai-f-token" class="admin-ai-token">${escHtml(u.service_token || '')}</code>
+                    <button type="button" id="ai-f-copy-btn" class="btn btn-sm btn-secondary">${t('admin.ai.copy-btn')}</button>
                     <button type="button" id="ai-f-regen-btn" class="btn btn-sm btn-secondary">${t('admin.ai.regen-btn')}</button>
                 </div>
                 <p class="admin-ai-token-hint">${t('admin.ai.token-hint')}</p>
@@ -1055,6 +1056,12 @@ const openAiUserForm = async (u) => {
     document.getElementById('ai-f-save-btn').addEventListener('click', () => saveAiUser(u?.uid ?? null));
 
     if (!isNew) {
+        document.getElementById('ai-f-copy-btn').addEventListener('click', async () => {
+            const token = document.getElementById('ai-f-token')?.textContent.trim() || '';
+            if (!token) return;
+            try { await navigator.clipboard.writeText(token); showToast(t('admin.ai.token-copied'), 'success'); }
+            catch { showToast(t('select.copy-failed'), 'error'); }
+        });
         document.getElementById('ai-f-regen-btn').addEventListener('click', () => regenerateAiToken(u.uid));
         document.getElementById('ai-f-agent-instructions-btn').addEventListener('click', () => {
             const token = document.getElementById('ai-f-token')?.textContent.trim() || '';
@@ -1621,32 +1628,62 @@ const saveJob = async (jobId) => {
     }
 };
 
+// "Run now" runs the job detached on the server (see admin_run_agent_job): it
+// survives closing the admin lightbox and doesn't block other work. The client
+// just polls admin_agent_job_status until it finishes.
+let _jobPollTimer = null;
+const stopJobPoll = () => { if (_jobPollTimer) { clearInterval(_jobPollTimer); _jobPollTimer = null; } };
+
 const runJobNow = async (job, btn) => {
+    stopJobPoll();
     const statusEl = document.getElementById('job-f-run-status');
-    if (btn) { btn.disabled = true; btn.textContent = t('admin.jobs.running'); }
-    if (statusEl) { statusEl.style.display = ''; statusEl.innerHTML = `<span style="color:var(--accent-gray)">${t('admin.jobs.running')}…</span>`; }
-    const result = await api.call('admin_run_agent_job', { id: job.id }, 'POST');
-    if (btn) { btn.disabled = false; btn.textContent = t('admin.jobs.run-btn'); }
-    if (result.success) {
-        const ok  = result.status === 'ok';
-        const msg = ok ? (result.reply || '(no reply)') : (result.error || 'Error');
+    const resetBtn = () => { if (btn) { btn.disabled = false; btn.textContent = t('admin.jobs.run-btn'); } };
+    const showRunning = () => {
+        if (btn) { btn.disabled = true; btn.textContent = t('admin.jobs.running'); }
+        if (statusEl) { statusEl.style.display = ''; statusEl.innerHTML = `<span style="color:var(--accent-gray)">${t('admin.jobs.running')}…</span>`; }
+    };
+    const showResult = (ok, msg, logFile) => {
         if (statusEl) {
             statusEl.style.display = '';
             statusEl.innerHTML = `<div class="admin-job-run-result ${ok ? 'admin-job-run-ok' : 'admin-job-run-err'}">
                 <strong>${ok ? '✓ Success' : '✗ Error'}</strong>
                 <pre class="admin-job-run-pre">${escHtml(msg)}</pre>
-                ${(result.log_file || result.log_page) ? `<div style="margin-top:0.4rem;font-size:0.8rem;color:var(--accent-gray)">${t('admin.jobs.log-file-label')}: <code>${escHtml(result.log_file || result.log_page)}</code></div>` : ''}
+                ${logFile ? `<div style="margin-top:0.4rem;font-size:0.8rem;color:var(--accent-gray)">${t('admin.jobs.log-file-label')}: <code>${escHtml(logFile)}</code></div>` : ''}
             </div>`;
-        } else {
-            showToast(ok ? t('admin.jobs.run-ok') : (result.error || 'Job failed.'), ok ? 'success' : 'error');
         }
-        await loadAgentJobs();
-    } else {
-        if (statusEl) {
-            statusEl.style.display = '';
-            statusEl.innerHTML = `<div class="admin-job-run-result admin-job-run-err"><strong>✗ Error</strong><pre class="admin-job-run-pre">${escHtml(result.message || 'Failed.')}</pre></div>`;
-        }
+        showToast(ok ? t('admin.jobs.run-ok') : (msg || 'Job failed.'), ok ? 'success' : 'error');
+    };
+    const showErr = (msg) => {
+        if (statusEl) { statusEl.style.display = ''; statusEl.innerHTML = `<div class="admin-job-run-result admin-job-run-err"><strong>✗ Error</strong><pre class="admin-job-run-pre">${escHtml(msg)}</pre></div>`; }
+        else showToast(msg, 'error');
+    };
+
+    showRunning();
+    const started = await api.call('admin_run_agent_job', { id: job.id }, 'POST');
+    if (!started || !started.success) {
+        resetBtn();
+        showErr(started?.message || 'Failed to start job.');
+        return;
     }
+
+    // Poll for completion. Cap at ~15 min so a job whose process died mid-run
+    // (e.g. a server restart) doesn't poll forever.
+    let polls = 0;
+    const MAX_POLLS = 450; // 450 × 2s = 15 min
+    _jobPollTimer = setInterval(async () => {
+        if (++polls > MAX_POLLS) {
+            stopJobPoll(); resetBtn();
+            showErr('Still running after 15 minutes — check the job list and logs.');
+            return;
+        }
+        const st = await api.call('admin_agent_job_status', { id: job.id });
+        if (!st || !st.success || st.state === 'running') return; // keep polling
+        stopJobPoll();
+        resetBtn();
+        const ok = st.state === 'ok';
+        showResult(ok, ok ? (st.reply || '(no reply)') : (st.error || 'Error'), st.log_file);
+        await loadAgentJobs();
+    }, 2000);
 };
 
 const deleteJob = async (job) => {
@@ -2112,6 +2149,7 @@ export const init = () => {
 
     document.getElementById('admin-lightbox-close-btn').addEventListener('click', () => {
         document.getElementById('admin-lightbox').classList.add('hidden');
+        stopJobPoll(); // the job keeps running server-side; just stop the live poll
     });
     // Intentionally no backdrop-click-to-close: the admin lightbox holds forms with
     // unsaved edits, so it closes only via the "×" button to avoid losing work to a

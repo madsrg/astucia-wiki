@@ -195,6 +195,7 @@ export default {
     'admin.ai.context': 'Messages de contexte', 'admin.ai.temp': 'Température',
     'admin.ai.tokens': 'Tokens max par requête', 'admin.ai.svc-token': 'Token de service',
     'admin.ai.regen-btn': 'Régénérer', 'admin.ai.token-hint': 'Utilisez ce token comme Authorization: Bearer <token> lors des appels à l\'API en tant que cet utilisateur IA.',
+    'admin.ai.copy-btn': 'Copier', 'admin.ai.token-copied': 'Jeton de service copié',
     'admin.ai.save-btn': 'Enregistrer l\'utilisateur IA', 'admin.ai.test-btn': 'Tester la connexion', 'admin.ai.name-req': 'Le nom est obligatoire',
     'admin.ai.saved': 'Utilisateur IA enregistré', 'admin.ai.del-confirm': 'Supprimer l\'utilisateur IA « {name} » ? Cette action est irréversible.',
     'admin.ai.deleted': '{name} supprimé', 'admin.ai.regen-confirm': 'Régénérer le token de service ? L\'ancien token cessera de fonctionner immédiatement.',

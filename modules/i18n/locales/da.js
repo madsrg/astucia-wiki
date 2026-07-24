@@ -196,6 +196,7 @@ export default {
     'admin.ai.context': 'Kontekstbeskeder', 'admin.ai.temp': 'Temperatur',
     'admin.ai.tokens': 'Maks. tokens pr. anmodning', 'admin.ai.svc-token': 'Servicetoken',
     'admin.ai.regen-btn': 'Regenerér', 'admin.ai.token-hint': 'Brug dette token som Authorization: Bearer <token> når du kalder API\'et som denne AI-bruger.',
+    'admin.ai.copy-btn': 'Kopiér', 'admin.ai.token-copied': 'Servicetoken kopieret',
     'admin.ai.save-btn': 'Gem AI-bruger', 'admin.ai.test-btn': 'Test forbindelse', 'admin.ai.name-req': 'Navn er påkrævet',
     'admin.ai.saved': 'AI-bruger gemt', 'admin.ai.del-confirm': 'Slet AI-bruger "{name}"? Dette kan ikke fortrydes.',
     'admin.ai.deleted': '{name} slettet', 'admin.ai.regen-confirm': 'Regenerér servicetoken? Det gamle token holder straks op med at virke.',
