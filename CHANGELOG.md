@@ -6,6 +6,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.31] — 2026-07-25
+
+### Added
+- **View Agent Job run logs in the admin panel** — the job edit form now has a "Run logs" section: a dropdown of recent runs (timestamp + size) and a log viewer, so per-run output is readable in the browser instead of only on disk. Backed by a new `admin_get_agent_job_logs` action that lists/reads files under `LOG_DIR/agent-jobs/<job>/` (path-constrained to the job's own directory; large logs tailed to the last 200 KB).
+
 ## [2026.7.30] — 2026-07-24
 
 ### Changed

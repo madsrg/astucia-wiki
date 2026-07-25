@@ -536,6 +536,8 @@ export default {
     'admin.jobs.last-run-section':'Last Run',
     'admin.jobs.last-run-label':'Last run',
     'admin.jobs.log-file-label':'Log file',
+    'admin.jobs.logs-section':'Run logs',
+    'admin.jobs.logs-none':'No logs yet.',
 
     'admin.users.none':       'No users yet. Users are added when their access request is approved.',
     'admin.users.loading':    'Loading…',

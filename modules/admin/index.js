@@ -1572,6 +1572,16 @@ const openJobForm = (job) => {
                 <code style="font-size:0.75rem;word-break:break-all">${escHtml(job.last_log_file || job.last_log_page)}</code>` : ''}
             </div>` : ''}
 
+            ${!isNew ? `
+            <div class="admin-ai-form-section-header">${t('admin.jobs.logs-section')}</div>
+            <div class="admin-ai-form-section">
+                <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem">
+                    <select id="job-f-log-select" class="form-control" style="flex:1"><option value="">${t('admin.diag.loading')}</option></select>
+                    <button type="button" id="job-f-log-refresh" class="btn btn-sm btn-secondary">${t('btn.refresh')}</button>
+                </div>
+                <pre id="job-f-log-output" class="admin-diag-pre" style="max-height:300px"></pre>
+            </div>` : ''}
+
             <div style="display:flex;gap:0.5rem;margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border-color)">
                 <button id="job-f-cancel-btn" class="btn btn-secondary">${t('btn.cancel')}</button>
                 <button id="job-f-save-btn" class="btn btn-green" style="margin-left:auto">${t('btn.save')}</button>
@@ -1591,6 +1601,46 @@ const openJobForm = (job) => {
         document.getElementById('admin-jobs-add-btn')?.classList.remove('hidden');
         renderAgentJobList();
     });
+
+    if (!isNew) wireJobLogViewer(job.id);
+};
+
+// Loads the list of a job's run logs into the form's viewer, then shows the
+// selected one's content. Reads from LOG_DIR/agent-jobs/<job>/ via the backend.
+const wireJobLogViewer = (jobId) => {
+    const sel = document.getElementById('job-f-log-select');
+    const out = document.getElementById('job-f-log-output');
+    const refresh = document.getElementById('job-f-log-refresh');
+    if (!sel || !out) return;
+
+    const loadContent = async (file) => {
+        if (!file) { out.textContent = ''; return; }
+        out.textContent = t('admin.diag.loading');
+        const res = await api.call('admin_get_agent_job_logs', { id: jobId, file });
+        out.textContent = res.success ? (res.content || t('admin.diag.empty')) : (res.message || t('admin.diag.empty'));
+    };
+
+    const loadList = async () => {
+        sel.innerHTML = `<option value="">${t('admin.diag.loading')}</option>`;
+        out.textContent = '';
+        const res = await api.call('admin_get_agent_job_logs', { id: jobId });
+        const logs = (res && res.logs) || [];
+        if (!logs.length) {
+            sel.innerHTML = `<option value="">${t('admin.jobs.logs-none')}</option>`;
+            out.textContent = res && res.hint ? res.hint : t('admin.jobs.logs-none');
+            return;
+        }
+        sel.innerHTML = logs.map(l => {
+            const when = new Date((l.mtime || 0) * 1000).toLocaleString();
+            const kb   = Math.max(1, Math.round((l.size || 0) / 1024));
+            return `<option value="${escHtml(l.file)}">${escHtml(when)} · ${kb} KB</option>`;
+        }).join('');
+        loadContent(logs[0].file); // newest first
+    };
+
+    sel.addEventListener('change', () => loadContent(sel.value));
+    refresh?.addEventListener('click', loadList);
+    loadList();
 };
 
 const buildScheduleObject = () => {

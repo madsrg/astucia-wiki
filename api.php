@@ -688,7 +688,7 @@ if (isset($_REQUEST['action'])) {
                       'admin_delete_ai_user', 'admin_regenerate_ai_token',
                       'admin_get_api_accounts', 'admin_save_api_account',
                       'admin_delete_api_account', 'admin_regenerate_api_token',
-                      'admin_get_agent_jobs', 'admin_save_agent_job', 'admin_delete_agent_job', 'admin_run_agent_job', 'admin_agent_job_status',
+                      'admin_get_agent_jobs', 'admin_save_agent_job', 'admin_delete_agent_job', 'admin_run_agent_job', 'admin_agent_job_status', 'admin_get_agent_job_logs',
                       'git_deleted_files', 'git_restore_deleted',
                       'admin_reindex',
                       'admin_get_mcp_servers', 'admin_save_mcp_server', 'admin_delete_mcp_server', 'admin_test_mcp_server'];
@@ -3668,6 +3668,44 @@ if (isset($_REQUEST['action'])) {
                 if (!file_exists($st_file)) { echo json_encode(['success' => true, 'state' => 'idle']); break; }
                 $st = json_decode(file_get_contents($st_file), true) ?: ['state' => 'idle'];
                 echo json_encode(array_merge(['success' => true], $st));
+                break;
+
+            case 'admin_get_agent_job_logs':
+                // Lists a job's run logs, or returns one log's content when ?file= is
+                // given. Logs live in LOG_DIR/agent-jobs/<safe-job-name>/.
+                if (!defined('LOG_DIR') || !LOG_DIR) { echo json_encode(['success' => true, 'logs' => [], 'hint' => 'LOG_DIR is not configured.']); break; }
+                $ajl_id = trim($_REQUEST['id'] ?? '');
+                if (!$ajl_id) throw new Exception('Missing id.');
+                $ajl_file = WIKI_SYSTEM_DATA . 'agent_jobs.json';
+                $ajl_data = file_exists($ajl_file) ? (json_decode(file_get_contents($ajl_file), true) ?? ['jobs' => []]) : ['jobs' => []];
+                $ajl_job  = null;
+                foreach ($ajl_data['jobs'] as $_jj) { if (($_jj['id'] ?? '') === $ajl_id) { $ajl_job = $_jj; break; } }
+                if (!$ajl_job) throw new Exception('Job not found.');
+                $ajl_safe = preg_replace('/[^a-zA-Z0-9_-]/', '-', $ajl_job['name'] ?? 'job');
+                $ajl_dir  = rtrim(LOG_DIR, '/') . '/agent-jobs/' . $ajl_safe . '/';
+
+                $ajl_want = trim($_REQUEST['file'] ?? '');
+                if ($ajl_want !== '') {
+                    $ajl_name = basename($ajl_want); // constrain to this job's dir
+                    $ajl_path = $ajl_dir . $ajl_name;
+                    if (substr($ajl_name, -4) !== '.log' || !is_file($ajl_path)) throw new Exception('Log file not found.');
+                    $ajl_content = (string)file_get_contents($ajl_path);
+                    if (strlen($ajl_content) > 200000) $ajl_content = "… (truncated to last 200 KB) …\n" . substr($ajl_content, -200000);
+                    echo json_encode(['success' => true, 'file' => $ajl_name, 'content' => $ajl_content]);
+                    break;
+                }
+
+                $ajl_list = [];
+                if (is_dir($ajl_dir)) {
+                    foreach (scandir($ajl_dir) ?: [] as $_lf) {
+                        if (substr($_lf, -4) !== '.log') continue;
+                        $_lp = $ajl_dir . $_lf;
+                        $ajl_list[] = ['file' => $_lf, 'mtime' => filemtime($_lp), 'size' => filesize($_lp)];
+                    }
+                    usort($ajl_list, fn($a, $b) => $b['mtime'] <=> $a['mtime']);
+                    $ajl_list = array_slice($ajl_list, 0, 100);
+                }
+                echo json_encode(['success' => true, 'logs' => $ajl_list]);
                 break;
 
             case 'admin_get_mcp_servers':
