@@ -1,4 +1,6 @@
 import { api } from '../core/api.js';
+import { state } from '../core/state.js';
+import { icons } from '../core/icons.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { invalidateUsers } from '../core/users.js';
 import { invalidateMcpServers } from '../core/mcp_servers.js';
@@ -945,6 +947,16 @@ const openAiUserForm = async (u) => {
             <div class="admin-ai-form-section-header">${t('admin.ai.behaviour')}</div>
             <div class="admin-ai-form-section">
                 <div class="form-group">
+                    <label>${t('admin.ai.prompt-page')}</label>
+                    <div style="display:flex;gap:0.5rem;align-items:center">
+                        <span id="ai-f-prompt-page-display" data-space="${escHtml(cfg.system_prompt_space || '')}" data-path="${escHtml(cfg.system_prompt_page || '')}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.85rem">${cfg.system_prompt_page ? escHtml((cfg.system_prompt_space ? cfg.system_prompt_space + ' / ' : '') + cfg.system_prompt_page.replace(/\.md$/i, '')) : t('admin.ai.prompt-page-none')}</span>
+                        <button type="button" id="ai-f-prompt-page-btn" class="btn btn-sm btn-secondary" style="flex-shrink:0">${t('admin.ai.prompt-page-choose')}</button>
+                        <button type="button" id="ai-f-prompt-page-clear" class="btn btn-sm btn-secondary" style="flex-shrink:0${cfg.system_prompt_page ? '' : ';display:none'}">${t('admin.ai.prompt-page-clear')}</button>
+                    </div>
+                    <p class="form-hint">${t('admin.ai.prompt-page-hint')}</p>
+                    <p id="ai-f-prompt-page-active" class="form-hint" style="${cfg.system_prompt_page ? '' : 'display:none;'}color:var(--accent-blue)">${cfg.system_prompt_page ? t('admin.ai.prompt-page-active') : ''}</p>
+                </div>
+                <div class="form-group">
                     <label>${t('admin.ai.prompt')}</label>
                     <textarea id="ai-f-prompt" class="form-control admin-ai-prompt" rows="10" placeholder="${t('admin.ai.prompt-ph')}">${escHtml(cfg.system_prompt || '')}</textarea>
                 </div>
@@ -1011,6 +1023,39 @@ const openAiUserForm = async (u) => {
             ? `<p style="color:#48bb78;font-size:0.85rem">✓ Connected — reply: "${escHtml(res.reply)}"</p>`
             : `<p style="color:#fc8181;font-size:0.85rem">✗ ${escHtml(res.message || 'Connection failed')}</p>`;
     });
+
+    // "System prompt from page" — Space -> Folder -> Markdown page picker (opens a
+    // lightbox in the move/copy style). Selection is held on the display span's
+    // dataset and read back by saveAiUser.
+    (() => {
+        const display   = document.getElementById('ai-f-prompt-page-display');
+        const chooseBtn = document.getElementById('ai-f-prompt-page-btn');
+        const clearBtn  = document.getElementById('ai-f-prompt-page-clear');
+        const activeEl  = document.getElementById('ai-f-prompt-page-active');
+        const promptTa  = document.getElementById('ai-f-prompt');
+        if (!display || !chooseBtn) return;
+        const sync = () => {
+            const on = !!display.dataset.path;
+            if (clearBtn) clearBtn.style.display = on ? '' : 'none';
+            if (activeEl) { activeEl.style.display = on ? '' : 'none'; if (on) activeEl.textContent = t('admin.ai.prompt-page-active'); }
+            if (promptTa) promptTa.style.opacity = on ? '0.55' : '';
+        };
+        chooseBtn.addEventListener('click', () => {
+            openPromptPagePicker(display.dataset.space || '', display.dataset.path || '', (space, path) => {
+                display.dataset.space = space;
+                display.dataset.path  = path;
+                display.textContent = (space ? space + ' / ' : '') + path.replace(/\.md$/i, '');
+                sync();
+            });
+        });
+        clearBtn?.addEventListener('click', () => {
+            display.dataset.space = '';
+            display.dataset.path  = '';
+            display.textContent = t('admin.ai.prompt-page-none');
+            sync();
+        });
+        sync();
+    })();
 
     // Async: load MCP server checkboxes
     (async () => {
@@ -1081,6 +1126,103 @@ const openAiUserForm = async (u) => {
     document.getElementById('admin-footer-ai').querySelector('#admin-ai-add-btn').classList.add('hidden');
 };
 
+// Space -> Folder -> Markdown page picker lightbox (move/copy style). Calls
+// onSelect(space, path) when a .md page is chosen. Built lazily, appended to body.
+const openPromptPagePicker = async (initSpace, initPath, onSelect) => {
+    let lb = document.getElementById('pp-lightbox');
+    if (!lb) {
+        lb = document.createElement('div');
+        lb.id = 'pp-lightbox';
+        lb.className = 'lightbox-overlay hidden';
+        lb.innerHTML = `
+            <div class="lightbox-content">
+                <button type="button" id="pp-close-btn" class="lightbox-close">&times;</button>
+                <h3>${t('admin.ai.prompt-page-choose')}</h3>
+                <div class="form-group">
+                    <label>Space</label>
+                    <select id="pp-space-select" class="form-control"></select>
+                </div>
+                <div class="form-group">
+                    <div id="pp-breadcrumb" style="font-size:0.82rem;margin-bottom:0.4rem;color:var(--accent-gray)"></div>
+                    <div id="pp-file-list" class="link-file-tree"></div>
+                </div>
+            </div>`;
+        document.body.appendChild(lb);
+        lb.addEventListener('click', (e) => { if (e.target === lb) lb.classList.add('hidden'); });
+        lb.querySelector('#pp-close-btn').addEventListener('click', () => lb.classList.add('hidden'));
+    }
+    const spaceSel = lb.querySelector('#pp-space-select');
+    const listEl   = lb.querySelector('#pp-file-list');
+    const crumbEl  = lb.querySelector('#pp-breadcrumb');
+
+    let tree = [];
+    let cwd  = []; // folder-name segments of the current directory
+
+    const childrenAt = (segs) => {
+        let nodes = tree;
+        for (const seg of segs) {
+            const f = nodes.find(n => n.type === 'folder' && n.name === seg);
+            if (!f) return [];
+            nodes = f.children || [];
+        }
+        return nodes;
+    };
+    const renderCrumb = () => {
+        const parts = [`<a href="#" data-i="-1">${t('fileops.root')}</a>`];
+        cwd.forEach((seg, i) => parts.push(`<a href="#" data-i="${i}">${escHtml(seg)}</a>`));
+        crumbEl.innerHTML = parts.join(' / ');
+    };
+    const renderList = () => {
+        renderCrumb();
+        const kids = childrenAt(cwd);
+        const folders = kids.filter(n => n.type === 'folder');
+        const files   = kids.filter(n => n.type === 'file' && /\.md$/i.test(n.path || ''));
+        let html = '';
+        folders.forEach(f => {
+            html += `<div class="file-item-content pp-folder" data-name="${escHtml(f.name)}" style="cursor:pointer"><span class="file-item-name"><span class="folder-icon">${icons.folder}</span><span>${escHtml(f.name)}</span></span></div>`;
+        });
+        files.forEach(f => {
+            html += `<div class="file-item-content pp-file" data-path="${escHtml(f.path)}" style="cursor:pointer"><span class="file-item-name">${icons.file}<span>${escHtml(f.name.replace(/\.md$/i, ''))}</span></span></div>`;
+        });
+        listEl.innerHTML = html || `<p class="admin-empty" style="padding:0.5rem">${t('admin.ai.prompt-page-empty')}</p>`;
+    };
+    const loadSpace = async (space) => {
+        listEl.innerHTML = `<p class="admin-loading" style="padding:0.5rem">${t('admin.diag.loading')}</p>`;
+        const res = await api.call('list', space ? { space } : {});
+        tree = (res && res.success) ? (res.data || []) : [];
+        cwd = [];
+        renderList();
+    };
+
+    const spacesRes = await api.call('list_spaces');
+    spaceSel.innerHTML = '';
+    (spacesRes.data || []).forEach(sp => {
+        const opt = document.createElement('option');
+        opt.value = sp; opt.textContent = sp;
+        if (sp === (initSpace || state.currentSpace)) opt.selected = true;
+        spaceSel.appendChild(opt);
+    });
+
+    spaceSel.onchange = () => loadSpace(spaceSel.value);
+    crumbEl.onclick = (e) => {
+        const a = e.target.closest('a[data-i]'); if (!a) return;
+        e.preventDefault();
+        const i = parseInt(a.dataset.i, 10);
+        cwd = i < 0 ? [] : cwd.slice(0, i + 1);
+        renderList();
+    };
+    listEl.onclick = (e) => {
+        const folder = e.target.closest('.pp-folder');
+        if (folder) { cwd.push(folder.dataset.name); renderList(); return; }
+        const file = e.target.closest('.pp-file');
+        if (file) { onSelect(spaceSel.value, file.dataset.path); lb.classList.add('hidden'); }
+    };
+
+    await loadSpace(spaceSel.value);
+    if (initPath && initPath.includes('/')) { cwd = initPath.split('/').slice(0, -1); renderList(); }
+    lb.classList.remove('hidden');
+};
+
 const saveAiUser = async (uid) => {
     const name     = document.getElementById('ai-f-name')?.value.trim() || '';
     const role     = document.getElementById('ai-f-role')?.value || 'editor';
@@ -1089,6 +1231,9 @@ const saveAiUser = async (uid) => {
     const api_key  = document.getElementById('ai-f-key')?.value || '';
     const model    = document.getElementById('ai-f-model')?.value.trim() || '';
     const system_prompt    = document.getElementById('ai-f-prompt')?.value || '';
+    const _promptDisp         = document.getElementById('ai-f-prompt-page-display');
+    const system_prompt_space = _promptDisp?.dataset.space || '';
+    const system_prompt_page  = _promptDisp?.dataset.path || '';
     const context_messages = parseInt(document.getElementById('ai-f-context')?.value || '10', 10);
     const temperature      = parseFloat(document.getElementById('ai-f-temperature')?.value || '0.7');
     const max_tokens       = parseInt(document.getElementById('ai-f-tokens')?.value || '4096', 10);
@@ -1114,7 +1259,7 @@ const saveAiUser = async (uid) => {
         source_uid,
         name, role,
         spaces: JSON.stringify(spaces),
-        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, context_messages, temperature, max_tokens, mcp_server_ids, mcp_instructions, extra_headers }),
+        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, system_prompt_space, system_prompt_page, context_messages, temperature, max_tokens, mcp_server_ids, mcp_instructions, extra_headers }),
     }, 'POST');
 
     saveBtn.disabled = false;

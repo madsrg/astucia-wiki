@@ -6,7 +6,14 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
-## [2026.7.31] — 2026-07-25
+## [2026.7.32] — 2026-07-26
+
+### Added
+- **AI User system prompt from a Markdown page** — an AI User's system prompt can optionally be sourced from an existing Markdown page instead of the inline textarea, so Editors (not just admins) can view and edit the AI's instructions as an ordinary, Git-versioned wiki page. Chosen via a Space → Folder → page picker lightbox (move/copy style); falls back to the inline text when unset, missing, or empty. Applies to agent jobs and team/page chat. Localized across all six languages.
+- **Sidebar toggle hotkey** — press **`s`** to show/hide the sidebar while reading any page (suppressed in the Markdown editor and when typing in a field). The shortcut is shown in the toggle button's tooltip.
+
+### Fixed
+- **Chat hover-action toolbar no longer overlaps the first line of the message** — raised it 10px so it clears the text.
 
 ### Added
 - **View Agent Job run logs in the admin panel** — the job edit form now has a "Run logs" section: a dropdown of recent runs (timestamp + size) and a log viewer, so per-run output is readable in the browser instead of only on disk. Backed by a new `admin_get_agent_job_logs` action that lists/reads files under `LOG_DIR/agent-jobs/<job>/` (path-constrained to the job's own directory; large logs tailed to the last 200 KB).

@@ -239,7 +239,7 @@ if (isset($_REQUEST['action'])) {
         if ($api_url === '') $api_url = llm_default_url($provider);
         $api_key       = $config['api_key']          ?? '';
         $model         = $config['model']            ?? 'gpt-4o';
-        $system_prompt = $config['system_prompt']    ?? 'You are a helpful assistant.';
+        $system_prompt = _resolve_system_prompt($config);
         $context_msgs  = (int)($config['context_messages'] ?? 10);
         $max_tokens    = (int)($config['max_tokens']       ?? 4096);
         $temperature   = (float)($config['temperature']    ?? 0.7);
@@ -3346,6 +3346,8 @@ if (isset($_REQUEST['action'])) {
                             'api_url'          => trim($ai_cfg_in['api_url']            ?? $ec['api_url']          ?? ''),
                             'model'            => trim($ai_cfg_in['model']              ?? $ec['model']            ?? ''),
                             'system_prompt'    =>        $ai_cfg_in['system_prompt']    ?? $ec['system_prompt']    ?? '',
+                            'system_prompt_space' => trim($ai_cfg_in['system_prompt_space'] ?? $ec['system_prompt_space'] ?? ''),
+                            'system_prompt_page'  => trim($ai_cfg_in['system_prompt_page']  ?? $ec['system_prompt_page']  ?? ''),
                             'context_messages' => (int)( $ai_cfg_in['context_messages'] ?? $ec['context_messages'] ?? 10),
                             'max_tokens'       => (int)( $ai_cfg_in['max_tokens']       ?? $ec['max_tokens']       ?? 4096),
                             'temperature'      => (float)($ai_cfg_in['temperature']      ?? $ec['temperature']      ?? 0.7),
@@ -3387,6 +3389,8 @@ if (isset($_REQUEST['action'])) {
                             'api_key'          => $new_api_key,
                             'model'            => trim($ai_cfg_in['model']              ?? ''),
                             'system_prompt'    =>        $ai_cfg_in['system_prompt']    ?? '',
+                            'system_prompt_space' => trim($ai_cfg_in['system_prompt_space'] ?? ''),
+                            'system_prompt_page'  => trim($ai_cfg_in['system_prompt_page']  ?? ''),
                             'context_messages' => (int)( $ai_cfg_in['context_messages'] ?? 10),
                             'max_tokens'       => (int)( $ai_cfg_in['max_tokens']       ?? 4096),
                             'temperature'      => (float)($ai_cfg_in['temperature']      ?? 0.7),

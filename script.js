@@ -52,16 +52,30 @@ import { state } from './modules/core/state.js';
 const initSidebarToggle = () => {
     const btn = document.getElementById('sidebar-toggle-btn');
     const container = document.querySelector('.app-container');
-    if (localStorage.getItem('sidebarCollapsed') === 'true') {
-        container.classList.add('sidebar-collapsed');
-        btn.innerHTML = '&#x203A;';
-        btn.title = t('nav.expand');
-    }
-    btn.addEventListener('click', () => {
+    const HK = ' (S)'; // shortcut hint shown in the tooltip
+    const applyTitle = (collapsed) => { btn.title = (collapsed ? t('nav.expand') : t('nav.collapse')) + HK; };
+
+    const startCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+    if (startCollapsed) { container.classList.add('sidebar-collapsed'); btn.innerHTML = '&#x203A;'; }
+    applyTitle(startCollapsed);
+
+    const toggle = () => {
         const collapsed = container.classList.toggle('sidebar-collapsed');
         btn.innerHTML = collapsed ? '&#x203A;' : '&#x2039;';
-        btn.title = collapsed ? t('nav.expand') : t('nav.collapse');
+        applyTitle(collapsed);
         localStorage.setItem('sidebarCollapsed', collapsed);
+    };
+    btn.addEventListener('click', toggle);
+
+    // Press "s" to toggle the sidebar while reading any page (not while the
+    // Markdown editor is open, and not when typing in a field).
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 's' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+        if (state.isEditing) return;
+        const el = document.activeElement, tag = el?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return;
+        e.preventDefault();
+        toggle();
     });
 };
 

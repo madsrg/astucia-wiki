@@ -106,6 +106,23 @@ function _extra_header_lines($raw): array {
     return $lines;
 }
 
+// Resolves an AI user's effective system prompt. When a system-prompt page is
+// configured (space + relative .md path), its Markdown content is used — so
+// Editors can view and edit the AI's instructions as an ordinary wiki page,
+// versioned in Git — falling back to the inline system_prompt text when the
+// page is unset, missing, or empty.
+function _resolve_system_prompt(array $config): string {
+    $fallback = $config['system_prompt'] ?? 'You are a helpful assistant.';
+    if (!defined('PAGES_DIR')) return $fallback;
+    $sp_space = basename(trim((string)($config['system_prompt_space'] ?? '')));
+    $sp_page  = ltrim(str_replace('..', '', trim((string)($config['system_prompt_page'] ?? ''))), '/');
+    if ($sp_space === '' || $sp_page === '' || substr($sp_page, -3) !== '.md') return $fallback;
+    $abs = rtrim(PAGES_DIR, '/') . '/' . $sp_space . '/' . $sp_page;
+    if (!is_file($abs)) return $fallback;
+    $content = (string)file_get_contents($abs);
+    return trim($content) !== '' ? $content : $fallback;
+}
+
 // When AI_DEBUG_RAW_ERRORS is enabled in config.php, technical errors from the
 // model endpoint carry a truncated copy of the raw response body. This is the
 // fastest way to see what a reverse proxy actually returned instead of JSON —
@@ -587,7 +604,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     if ($api_url === '') $api_url = llm_default_url($provider);
     $api_key       = $config['api_key']       ?? '';
     $model         = $config['model']         ?? 'gpt-4o';
-    $sys_prompt    = $config['system_prompt'] ?? 'You are a helpful assistant.';
+    $sys_prompt    = _resolve_system_prompt($config);
     $max_tokens    = (int)($config['max_tokens']   ?? 4096);
     $temperature   = (float)($config['temperature'] ?? 0.7);
     $extra_lines   = _extra_header_lines($config['extra_headers'] ?? []);

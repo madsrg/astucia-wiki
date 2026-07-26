@@ -1123,7 +1123,7 @@ body {
 
 /* Hover action toolbar — floated over the bubble's top corner so revealing it on
    hover never changes the message layout (no jump, no reserved space). */
-.chat-actions { position: absolute; top: -12px; right: 8px; display: none; align-items: center; gap: 1px; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1px 3px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); z-index: 5; }
+.chat-actions { position: absolute; top: -22px; right: 8px; display: none; align-items: center; gap: 1px; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1px 3px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); z-index: 5; }
 .chat-row-mine .chat-actions { right: auto; left: 8px; }
 .chat-col:hover .chat-actions { display: flex; }
 .chat-pin-btn, .chat-reply-btn, .chat-save-btn, .chat-reaction-add-btn { display: inline-flex; align-items: center; background: none; border: 1px solid transparent; border-radius: 12px; padding: 1px 5px; cursor: pointer; color: var(--accent-gray); line-height: 1.5; }
