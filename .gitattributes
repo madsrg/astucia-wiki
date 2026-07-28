@@ -1,0 +1,16 @@
+# Normalize all text files to LF in the repository (checked-in), regardless of
+# the OS/editor that wrote them. Binary files are auto-detected and left alone.
+* text=auto eol=lf
+
+# Be explicit about common binary types so they're never touched.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.woff  binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
+*.pdf  binary
