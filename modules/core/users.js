@@ -5,7 +5,12 @@ let _cache = null;
 export const getUsers = async () => {
     if (_cache !== null) return _cache;
     const res = await api.call('get_user_list');
-    _cache = res.success ? (res.data || []) : [];
+    // Only cache a successful response. A transient failure (e.g. the auth
+    // session isn't ready yet right after a reload) must not poison the cache
+    // with an empty list forever — otherwise AI-user lookups such as chat focus
+    // routing silently break until an admin action calls invalidateUsers().
+    if (!res.success) return [];
+    _cache = res.data || [];
     return _cache;
 };
 

@@ -6,6 +6,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.33] — 2026-07-29
+
+### Fixed
+- **AI chat focus no longer silently stops working** — reopening a chat where an AI User was pre-selected (the "Chatting with {name}" focus chip is shown) could silently post plain messages that never reached the AI, so nothing happened. The chip is drawn from persisted focus state, while the send path re-resolved the name against the live user list and dropped the routing on a miss with no feedback. Two fixes: the user list is no longer cached as empty after a transient load failure (which had permanently broken AI-user lookups until an admin action refreshed it), and an unresolvable focus now surfaces a toast instead of quietly posting an un-routed message. Applies to both team chat and page chat.
+
 ## [2026.7.32] — 2026-07-26
 
 ### Added

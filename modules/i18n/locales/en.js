@@ -304,6 +304,7 @@ export default {
     'chat.focus.placeholder': 'Message {name}…',
     'chat.focus.exit':        'Stop chatting with this AI',
     'chat.focus.start':       'Chat with {name}',
+    'chat.focus.unavailable': 'Can’t reach {name} right now — the AI user may be unavailable. Try again in a moment.',
     'chat.save.action-save':   'Save as markdown page',
     'chat.save.action-append': 'Append to markdown page',
     'chat.save.title-save':    'Save as Markdown Page',

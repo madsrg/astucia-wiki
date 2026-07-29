@@ -796,7 +796,15 @@ export const init = () => {
         // auto-routes later plain messages to the same AI without re-mentioning.
         if (explicitAi) setFocus(explicitAi.name);
 
+        // The focus chip is drawn from persisted state; if it names an AI we can no
+        // longer resolve (renamed/removed, or the user list failed to load), don't
+        // silently post a plain message with no routing — tell the user instead.
+        const focusName   = getFocusAi(_chatPath);
         const focus       = applyFocus(text, { chatPath: _chatPath, aiUsers, mentionedAi: explicitAi });
+        if (focusName && !explicitAi && !text.startsWith('/') && !focus.mentionedAi) {
+            showToast(t('chat.focus.unavailable', { name: focusName }), 'error');
+            return;
+        }
         text = focus.text;
         const mentionedAi = focus.mentionedAi;
         const hasAiMention = !!mentionedAi;
