@@ -4,8 +4,10 @@ import sv from './locales/sv.js';
 import es from './locales/es.js';
 import fr from './locales/fr.js';
 import de from './locales/de.js';
+import zh from './locales/zh.js';
+import hi from './locales/hi.js';
 
-const LOCALES = { en, da, sv, es, fr, de };
+const LOCALES = { en, da, sv, es, fr, de, zh, hi };
 
 export const SUPPORTED_LANGUAGES = {
     en: { label: 'English',  flag: '🇬🇧' },
@@ -14,6 +16,8 @@ export const SUPPORTED_LANGUAGES = {
     es: { label: 'Español',  flag: '🇪🇸' },
     fr: { label: 'Français', flag: '🇫🇷' },
     de: { label: 'Deutsch',  flag: '🇩🇪' },
+    zh: { label: '简体中文',  flag: '🇨🇳' },
+    hi: { label: 'हिन्दी',     flag: '🇮🇳' },
 };
 
 let _lang = 'en';

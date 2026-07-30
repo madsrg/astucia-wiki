@@ -179,6 +179,8 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <button class="lang-option" data-lang="es">🇪🇸 Español</button>
                             <button class="lang-option" data-lang="fr">🇫🇷 Français</button>
                             <button class="lang-option" data-lang="de">🇩🇪 Deutsch</button>
+                            <button class="lang-option" data-lang="zh">🇨🇳 简体中文</button>
+                            <button class="lang-option" data-lang="hi">🇮🇳 हिन्दी</button>
                         </div>
                     </div>
                     <?php endif; ?>
@@ -1158,6 +1160,8 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     <button class="lang-option" data-lang="es">🇪🇸 Español</button>
                     <button class="lang-option" data-lang="fr">🇫🇷 Français</button>
                     <button class="lang-option" data-lang="de">🇩🇪 Deutsch</button>
+                    <button class="lang-option" data-lang="zh">🇨🇳 简体中文</button>
+                    <button class="lang-option" data-lang="hi">🇮🇳 हिन्दी</button>
                 </div>
             </div>
             <?php if ($mailConfigured === '1'): ?>

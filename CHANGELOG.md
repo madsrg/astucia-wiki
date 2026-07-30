@@ -6,6 +6,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.34] — 2026-07-30
+
+### Added
+- **Two new interface languages: Simplified Chinese (简体中文) and Hindi (हिन्दी)** — selectable from the sidebar language dropdown and My Preferences. Each covers the same ~440 UI strings as the other translated languages, with the remaining admin/help strings falling back to English, matching existing locale behaviour.
+
 ## [2026.7.33] — 2026-07-29
 
 ### Fixed
