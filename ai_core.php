@@ -144,15 +144,22 @@ function _ai_raw_debug(string $raw, int $http = 0): string {
     return "\n\n[debug] {$head}:\n" . $snippet;
 }
 
-function _mcp_jsonrpc(string $base_url, ?string $auth_header_line, string $method, array $params, int $timeout = 15, array $extra_headers = []): array {
-    $headers = [
-        'Content-Type: application/json',
-        'Accept: application/json, text/event-stream',
-    ];
-    if ($auth_header_line) $headers[] = $auth_header_line;
-    foreach ($extra_headers as $line) $headers[] = $line;
-    $body = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => $method, 'params' => $params ?: (object)[]]);
-    $ch = curl_init(rtrim($base_url, '/'));
+// Low-level single JSON-RPC POST. Captures the Mcp-Session-Id response header
+// (Streamable HTTP transport) so the caller can carry it on follow-up requests.
+// Returns ['result'=>..., 'session'=>?string, 'http'=>int] on success or
+// ['error'=>string, 'session'=>?string, 'http'=>int] on failure. Notifications
+// (no id, no expected response body) are sent with $is_notification = true.
+function _mcp_http_rpc(string $url, array $base_headers, string $method, $params, int $timeout, ?string $session_id = null, bool $is_notification = false): array {
+    $headers = $base_headers;
+    if ($session_id !== null && $session_id !== '') $headers[] = 'Mcp-Session-Id: ' . $session_id;
+
+    $payload = ['jsonrpc' => '2.0', 'method' => $method];
+    if (!$is_notification) $payload['id'] = 1;
+    if ($params !== null)  $payload['params'] = $params ?: (object)[];
+    $body = json_encode($payload);
+
+    $resp_headers = [];
+    $ch = curl_init(rtrim($url, '/'));
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
@@ -160,12 +167,29 @@ function _mcp_jsonrpc(string $base_url, ?string $auth_header_line, string $metho
         CURLOPT_HTTPHEADER     => $headers,
         CURLOPT_TIMEOUT        => $timeout,
         CURLOPT_ENCODING       => '', // advertise gzip/deflate and auto-decode
+        CURLOPT_HEADERFUNCTION => function ($ch, $line) use (&$resp_headers) {
+            $p = strpos($line, ':');
+            if ($p !== false) {
+                $resp_headers[strtolower(trim(substr($line, 0, $p)))] = trim(substr($line, $p + 1));
+            }
+            return strlen($line);
+        },
     ]);
     $raw  = curl_exec($ch);
     $err  = curl_error($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    if (!$raw) return ['error' => $err ?: 'no response'];
+
+    $session = $resp_headers['mcp-session-id'] ?? null;
+
+    // Notifications carry no response body (servers typically answer 202) — only
+    // a transport-level failure matters.
+    if ($is_notification) {
+        return ($raw === false) ? ['error' => $err ?: 'no response', 'session' => $session, 'http' => $code]
+                                : ['result' => [], 'session' => $session, 'http' => $code];
+    }
+
+    if ($raw === false || $raw === '') return ['error' => $err ?: 'no response', 'session' => $session, 'http' => $code];
     // SSE stream: grab the first data: line
     if (str_contains($raw, 'data:')) {
         foreach (explode("\n", $raw) as $line) {
@@ -174,9 +198,52 @@ function _mcp_jsonrpc(string $base_url, ?string $auth_header_line, string $metho
         }
     }
     $data = json_decode($raw, true);
-    if (!$data) return ['error' => "HTTP {$code}: invalid JSON response"];
-    if (isset($data['error'])) return ['error' => _mcp_error_text($data['error'])];
-    return ['result' => $data['result'] ?? []];
+    if (!$data)                 return ['error' => "HTTP {$code}: invalid JSON — " . substr(trim($raw), 0, 200), 'session' => $session, 'http' => $code];
+    if (isset($data['error']))  return ['error' => _mcp_error_text($data['error']), 'session' => $session, 'http' => $code];
+    return ['result' => $data['result'] ?? [], 'session' => $session, 'http' => $code];
+}
+
+// JSON-RPC to an MCP server over HTTP. For real methods (tools/list, tools/call)
+// this performs the Streamable HTTP handshake: it sends `initialize`, captures
+// any Mcp-Session-Id the server assigns, sends the `notifications/initialized`
+// follow-up, then issues the actual call carrying that session — which is what
+// stateful servers require (otherwise they answer -32000 "Server not
+// initialized"). Stateless servers are unaffected: they return no session id, so
+// no session header is added and the call proceeds exactly as before; and if a
+// server doesn't support `initialize` at all, we fall back to calling the method
+// directly (the original single-POST behaviour).
+function _mcp_jsonrpc(string $base_url, ?string $auth_header_line, string $method, array $params, int $timeout = 15, array $extra_headers = []): array {
+    $headers = [
+        'Content-Type: application/json',
+        'Accept: application/json, text/event-stream',
+    ];
+    if ($auth_header_line) $headers[] = $auth_header_line;
+    foreach ($extra_headers as $line) $headers[] = $line;
+
+    $strip = fn(array $r) => isset($r['error']) ? ['error' => $r['error']] : ['result' => $r['result']];
+
+    // `initialize` itself is a single request — never recurse into a handshake.
+    if ($method === 'initialize') {
+        return $strip(_mcp_http_rpc($base_url, $headers, 'initialize', $params, $timeout));
+    }
+
+    // Establish a session first.
+    $init = _mcp_http_rpc($base_url, $headers, 'initialize', [
+        'protocolVersion' => '2025-03-26',
+        'capabilities'    => (object)[],
+        'clientInfo'      => ['name' => 'AstuciaWiki', 'version' => '1.0'],
+    ], $timeout);
+    $session = $init['session'] ?? null;
+
+    // Stateful server: complete the handshake, then call with the session header.
+    if (!isset($init['error']) && $session) {
+        _mcp_http_rpc($base_url, $headers, 'notifications/initialized', null, $timeout, $session, true);
+        return $strip(_mcp_http_rpc($base_url, $headers, $method, $params, $timeout, $session));
+    }
+
+    // Stateless server (no session id) or one that doesn't support initialize:
+    // issue the method directly — identical to the original behaviour.
+    return $strip(_mcp_http_rpc($base_url, $headers, $method, $params, $timeout));
 }
 
 // Turn a JSON-RPC error field into a readable string. Servers vary: some send

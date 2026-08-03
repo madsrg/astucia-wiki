@@ -169,32 +169,35 @@ if (isset($_REQUEST['action'])) {
         ];
         if ($auth_header_line) $headers[] = $auth_header_line;
         foreach ($extra_headers as $line) $headers[] = $line;
-        $body = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => $method, 'params' => $params ?: (object)[]]);
-        $ch = curl_init(rtrim($base_url, '/'));
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $body,
-            CURLOPT_HTTPHEADER     => $headers,
-            CURLOPT_TIMEOUT        => 15,
-            CURLOPT_ENCODING       => '', // advertise gzip/deflate and auto-decode
-        ]);
-        $raw  = curl_exec($ch);
-        $err  = curl_error($ch);
-        $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        if (!$raw) return ['ok' => false, 'error' => $err ?: 'No response', 'data' => null];
-        if (str_contains($raw, 'data:')) {
-            foreach (explode("\n", $raw) as $line) {
-                $line = trim($line);
-                if (str_starts_with($line, 'data:')) { $raw = trim(substr($line, 5)); break; }
-            }
+
+        // Map a low-level _mcp_http_rpc() result to this function's ok/error/data
+        // contract, preserving the HTTP>=400 failure signal for the Test button.
+        $as_test = function (array $r): array {
+            if (isset($r['error']))         return ['ok' => false, 'error' => $r['error'], 'data' => null];
+            if (($r['http'] ?? 200) >= 400) return ['ok' => false, 'error' => 'HTTP ' . ($r['http'] ?? '?'), 'data' => $r['result'] ?? null];
+            return ['ok' => true, 'error' => null, 'data' => $r['result'] ?? []];
+        };
+
+        // Mirror the runtime MCP client (_mcp_jsonrpc): perform the Streamable HTTP
+        // handshake so stateful servers are tested the same way they're used —
+        // initialize, capture any Mcp-Session-Id, send the initialized
+        // notification, then the real method carrying the session. Stateless
+        // servers return no session id and the call proceeds directly; a server
+        // that doesn't support initialize falls back to a direct call.
+        if ($method === 'initialize') {
+            return $as_test(_mcp_http_rpc($base_url, $headers, 'initialize', $params, 15));
         }
-        $data = json_decode($raw, true);
-        if (!$data) return ['ok' => false, 'error' => "HTTP {$http}: invalid JSON — " . substr(trim($raw), 0, 200), 'data' => null];
-        if (isset($data['error'])) return ['ok' => false, 'error' => _mcp_error_text($data['error']), 'data' => null];
-        if ($http >= 400) return ['ok' => false, 'error' => "HTTP {$http}", 'data' => $data];
-        return ['ok' => true, 'error' => null, 'data' => $data['result'] ?? []];
+        $init = _mcp_http_rpc($base_url, $headers, 'initialize', [
+            'protocolVersion' => '2025-03-26',
+            'capabilities'    => (object)[],
+            'clientInfo'      => ['name' => 'AstuciaWiki', 'version' => '1.0'],
+        ], 15);
+        $session = $init['session'] ?? null;
+        if (!isset($init['error']) && $session) {
+            _mcp_http_rpc($base_url, $headers, 'notifications/initialized', null, 15, $session, true);
+            return $as_test(_mcp_http_rpc($base_url, $headers, $method, $params, 15, $session));
+        }
+        return $as_test(_mcp_http_rpc($base_url, $headers, $method, $params, 15));
     }
 
     function wiki_error_log_dir() {

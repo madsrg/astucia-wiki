@@ -6,6 +6,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.35] — 2026-08-03
+
+### Fixed
+- **MCP tool calls to stateful (Streamable HTTP) servers now work** — invoking a tool on an MCP server that requires a session (e.g. a Brave Search server) failed with `Bad Request: Server not initialized — code -32000`, even though listing its tools worked. The outbound MCP client was stateless: it never sent `initialize`, never captured the `Mcp-Session-Id` response header, and never carried it on the actual call. The client now performs the full Streamable HTTP handshake (initialize → capture session → `notifications/initialized` → the real call with the session header) for both tool listing and tool calls, and the admin "Test Connection" path uses the same logic. Stateless servers are unaffected — they return no session id, so no session header is added and the call proceeds as before; a server that doesn't support `initialize` falls back to a direct call. Fixes chat `#mention` tool calls, the MCP Tool Explorer, and advanced-search MCP sources.
+
 ## [2026.7.34] — 2026-07-30
 
 ### Added
