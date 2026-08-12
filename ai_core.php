@@ -440,13 +440,76 @@ function _is_token_param_error(string $msg): bool {
             || stripos($msg, 'instead') !== false || stripos($msg, 'use ') !== false);
 }
 
-// True when an API error indicates a custom temperature is not allowed (reasoning
-// models accept only the default temperature).
-function _is_temperature_error(string $msg): bool {
-    return stripos($msg, 'temperature') !== false
-        && (stripos($msg, 'unsupported') !== false || stripos($msg, 'not support') !== false
-            || stripos($msg, 'does not support') !== false || stripos($msg, 'only the default') !== false
-            || stripos($msg, 'only supports') !== false);
+// Phrasings providers use when a request parameter is not accepted by the model.
+// Pattern body only — callers wrap it in delimiters so they can extend it.
+const _LLM_PARAM_REJECTED = 'unsupported|not support|not permitted|unexpected|unrecogni[sz]ed'
+                          . '|extra input|only the default|only supports|removed|invalid';
+
+// True when an API error indicates a sampling parameter is not allowed, so the
+// request should be retried without it. Two distinct causes: OpenAI reasoning
+// models accept only the default temperature, and newer Anthropic models reject
+// temperature/top_p/top_k outright.
+function _is_sampling_param_error(string $msg): bool {
+    return (bool)preg_match('/\b(temperature|top_p|top_k)\b/i', $msg)
+        && (bool)preg_match('/' . _LLM_PARAM_REJECTED . '/i', $msg);
+}
+
+// True when an API error indicates the thinking/reasoning parameters are not
+// accepted, so the request should be retried without them. Catches a model that
+// predates them and the wrong thinking shape for the model's generation
+// (budget_tokens is rejected by adaptive-only models, and vice versa).
+function _is_thinking_param_error(string $msg): bool {
+    return (bool)preg_match('/\b(thinking|budget_tokens|output_config|effort|reasoning|reasoning_effort)\b/i', $msg)
+        && (bool)preg_match('/' . _LLM_PARAM_REJECTED . '|does not match/i', $msg);
+}
+
+/**
+ * Model-aware sampling / reasoning request parameters, to merge into a payload.
+ *
+ * Both concerns are per model rather than per provider (see llm_model_rules()):
+ * one Anthropic endpoint serves models that require temperature and models that
+ * reject it, and asking for thinking looks different in each family. Callers own
+ * the retry: on a rejection, re-call with the matching $drop_* flag set.
+ *
+ * @param array|null $thinking ['enabled' => bool, 'effort' => low|medium|high|xhigh|max]
+ */
+function _llm_tuning_params(string $family, string $model, float $temperature, int $max_tokens,
+                            ?array $thinking = null, bool $drop_sampling = false,
+                            bool $drop_thinking = false): array {
+    $rules  = llm_model_rules($model);
+    $params = [];
+
+    // How this model is asked to reason depends on the family: Anthropic takes a
+    // thinking block, the OpenAI families take a reasoning effort.
+    $can_reason = $family === 'anthropic' ? $rules['thinking'] !== null : $rules['reasoning_effort'];
+
+    if (!$drop_thinking && !empty($thinking['enabled']) && $can_reason) {
+        $effort = in_array($thinking['effort'] ?? '', ['low', 'medium', 'high', 'xhigh', 'max'], true)
+            ? $thinking['effort'] : 'high';
+        if ($family === 'anthropic') {
+            if ($rules['thinking'] === 'adaptive') {
+                $params['thinking'] = ['type' => 'adaptive'];
+            } elseif ($max_tokens >= 4096) {
+                // Older models take a fixed budget, which must be at least 1024 and
+                // must leave room for the answer — below 4096 total there is no split
+                // worth making, so skip thinking rather than emit a doomed request.
+                $params['thinking'] = ['type' => 'enabled', 'budget_tokens' => (int)floor($max_tokens * 0.6)];
+            }
+            if ($rules['effort']) $params['output_config'] = ['effort' => $effort];
+        } elseif ($family === 'openai-responses') {
+            $params['reasoning'] = ['effort' => $effort];
+        } else {
+            $params['reasoning_effort'] = $effort;
+        }
+    }
+
+    // Thinking and sampling are mutually exclusive on Anthropic: the adaptive
+    // generation rejects sampling params, and the budget_tokens generation
+    // requires the default temperature.
+    if ($rules['sampling'] && !$drop_sampling && !isset($params['thinking'])) {
+        $params['temperature'] = $temperature;
+    }
+    return $params;
 }
 
 // --- OpenAI Responses API (/v1/responses) helpers ------------------------------
@@ -601,18 +664,20 @@ function _ai_quick_reply(array $ai_user, string $system, string $user_msg, int $
     $drop_temperature = false;
 
     for ($attempt = 0; $attempt < 3; $attempt++) {
+        // Explain is a short single-shot reply — never asks for thinking, but still
+        // has to respect models that reject temperature (see _llm_tuning_params).
+        $tuning = _llm_tuning_params($family, $model, $temperature, $max_tokens, null, $drop_temperature);
         if ($family === 'anthropic') {
             $payload = ['model' => $model, 'system' => $system, 'messages' => [['role' => 'user', 'content' => $user_msg]],
-                        'max_tokens' => $max_tokens, 'temperature' => $temperature];
+                        'max_tokens' => $max_tokens];
         } elseif ($family === 'openai-responses') {
             $payload = ['model' => $model, 'instructions' => $system, 'input' => [['role' => 'user', 'content' => $user_msg]],
                         'max_output_tokens' => $max_tokens];
-            if (!$drop_temperature) $payload['temperature'] = $temperature;
         } else {
             $payload = ['model' => $model, 'messages' => [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => $user_msg]],
                         $token_param => $max_tokens];
-            if (!$drop_temperature) $payload['temperature'] = $temperature;
         }
+        $payload = array_merge($payload, $tuning);
         $ch = curl_init($api_url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
@@ -632,7 +697,7 @@ function _ai_quick_reply(array $ai_user, string $system, string $user_msg, int $
                 $token_param = $token_param === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens';
                 continue;
             }
-            if ($family !== 'anthropic' && !$drop_temperature && _is_temperature_error($emsg)) {
+            if (!$drop_temperature && _is_sampling_param_error($emsg)) {
                 $drop_temperature = true;
                 continue;
             }
@@ -675,6 +740,14 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     $max_tokens    = (int)($config['max_tokens']   ?? 4096);
     $temperature   = (float)($config['temperature'] ?? 0.7);
     $extra_lines   = _extra_header_lines($config['extra_headers'] ?? []);
+
+    // A job may ask for extended reasoning: ['enabled' => true, 'effort' => …].
+    // Thinking runs are slow by design, so they also get a longer per-call
+    // timeout, more tool iterations and more output headroom than a chat reply.
+    $thinking      = is_array($job['thinking'] ?? null) ? $job['thinking'] : null;
+    $is_thinking   = !empty($thinking['enabled']);
+    $call_timeout  = $is_thinking ? 900 : 120;
+    if ($is_thinking) $max_tokens = max($max_tokens, 16000);
 
     if (!$api_key)              return ['reply' => null, 'error' => 'AI user has no api_key configured.'];
     if (!$api_url)              return ['reply' => null, 'error' => 'AI user has no api_url configured.'];
@@ -844,24 +917,29 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     $reply        = null;
     $api_error    = null;
     $tools_called = false;
-    // OpenAI token-limit param + custom-temperature handling (see helpers above).
+    // OpenAI token-limit param + sampling/thinking handling (see helpers above).
     $openai_token_param  = _openai_token_param($api_url);
     $token_param_swapped = false;
     $drop_temperature    = false;
+    $drop_thinking       = false;
 
     // Reserve the final iteration for a tool-free answer: if the model keeps
     // calling tools right up to the cap, forbid tools on the last pass so it must
     // return text — instead of failing with "too many tool calls".
-    $max_iters = 12;
+    // A thinking run gets more room: it is expected to work through more steps.
+    $max_iters = $is_thinking ? 24 : 12;
     for ($iter = 0; $iter < $max_iters; $iter++) {
         $force_final = ($iter === $max_iters - 1);
+        $tuning = _llm_tuning_params($family, $model, $temperature, $max_tokens, $thinking,
+                                     $drop_temperature, $drop_thinking);
+        $sent_thinking = (bool)array_intersect_key($tuning,
+            ['thinking' => 1, 'output_config' => 1, 'reasoning' => 1, 'reasoning_effort' => 1]);
         if ($family === 'anthropic') {
             $payload = [
                 'model'       => $model,
                 'system'      => $full_system,
                 'messages'    => $messages,
                 'max_tokens'  => $max_tokens,
-                'temperature' => $temperature,
                 'tools'       => $tools,
             ];
             $headers = [
@@ -877,7 +955,6 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 'max_output_tokens' => $max_tokens,
                 'tools'             => $tools,
             ];
-            if (!$drop_temperature) $payload['temperature'] = $temperature;
             $headers = [
                 'Content-Type: application/json',
                 'Authorization: Bearer ' . $api_key,
@@ -889,12 +966,12 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 $openai_token_param => $max_tokens,
                 'tools'             => $tools,
             ];
-            if (!$drop_temperature) $payload['temperature'] = $temperature;
             $headers = [
                 'Content-Type: application/json',
                 'Authorization: Bearer ' . $api_key,
             ];
         }
+        $payload = array_merge($payload, $tuning);
         if ($extra_lines) $headers = array_merge($headers, $extra_lines);
         // Final pass: forbid tools so the model must produce a text reply.
         if ($force_final) $payload['tool_choice'] = $family === 'anthropic' ? ['type' => 'none'] : 'none';
@@ -905,7 +982,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => json_encode($payload),
             CURLOPT_HTTPHEADER     => $headers,
-            CURLOPT_TIMEOUT        => 120,
+            CURLOPT_TIMEOUT        => $call_timeout,
             CURLOPT_ENCODING       => '', // advertise gzip/deflate and auto-decode
         ]);
         $raw      = curl_exec($ch);
@@ -928,15 +1005,20 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
         // Detect error responses
         if (isset($data['error'])) {
             $emsg = $data['error']['message'] ?? 'Unknown API error.';
-            // Reasoning models (o-series, gpt-5) reject max_tokens / custom
-            // temperature — swap the token param or drop temperature and retry once each.
+            // Models disagree about which tuning parameters they accept, and the
+            // model_rules table cannot know every gateway alias — so swap the token
+            // param, or drop the sampling/thinking params, and retry once each.
             if ($family !== 'anthropic' && !$token_param_swapped && _is_token_param_error($emsg)) {
                 $openai_token_param  = $openai_token_param === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens';
                 $token_param_swapped = true;
                 continue;
             }
-            if ($family !== 'anthropic' && !$drop_temperature && _is_temperature_error($emsg)) {
+            if (!$drop_temperature && _is_sampling_param_error($emsg)) {
                 $drop_temperature = true;
+                continue;
+            }
+            if (!$drop_thinking && $sent_thinking && _is_thinking_param_error($emsg)) {
+                $drop_thinking = true;
                 continue;
             }
             $api_error = $emsg . _ai_raw_debug($raw, $http);

@@ -19,5 +19,31 @@
       "family": "anthropic",
       "default_url": "https://api.anthropic.com/v1/messages"
     }
+  ],
+  "_comment_model_rules": "Per-MODEL request rules. The provider decides the wire format; the model decides which tuning parameters that format will accept, so these are matched separately. First matching 'match' pattern wins (case-insensitive regex, anchored patterns recommended); a model matching nothing gets the conservative defaults sampling=true, thinking=null, effort=false, reasoning_effort=false, i.e. exactly the pre-rules behaviour. Matching happens against the bare model name, after gateway prefixes and version tags are stripped (OpenRouter 'anthropic/claude-opus-5', Bedrock 'us.anthropic.claude-opus-5', Vertex 'claude-opus-5@2026...' all match '^claude-opus-5'). Fields: sampling (false = the model rejects temperature/top_p/top_k, so they are never sent), thinking ('adaptive' = Anthropic adaptive thinking, 'budget_tokens' = older fixed-budget extended thinking, null = the model cannot be asked to think), effort (supports output_config.effort), reasoning_effort (OpenAI reasoning_effort / responses reasoning.effort). Requests are also retried without a parameter the API rejects at runtime, so an unlisted model still works — the table just saves the wasted round trip.",
+  "model_rules": [
+    {
+      "match": "^claude-(fable-5|mythos-5|opus-5|opus-4-7|opus-4-8|sonnet-5)",
+      "sampling": false,
+      "thinking": "adaptive",
+      "effort": true
+    },
+    {
+      "match": "^claude-(opus-4-6|sonnet-4-6)",
+      "sampling": true,
+      "thinking": "adaptive",
+      "effort": true
+    },
+    {
+      "match": "^claude-",
+      "sampling": true,
+      "thinking": "budget_tokens",
+      "effort": false
+    },
+    {
+      "match": "^(o[1-9]($|[-.])|gpt-5)",
+      "sampling": false,
+      "reasoning_effort": true
+    }
   ]
 }

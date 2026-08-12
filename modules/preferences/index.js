@@ -17,6 +17,7 @@ export const init = () => {
     const saveBtn    = document.getElementById('preferences-save-btn');
     const emailInput = document.getElementById('pref-email');
     const digestCb   = document.getElementById('pref-daily-digest');
+    const jobNotifyCb = document.getElementById('pref-notify-agent-jobs');
     const fontBtns   = lightbox.querySelectorAll('[data-font-val]');
     const sizeBtns   = lightbox.querySelectorAll('[data-size-val]');
 
@@ -51,12 +52,14 @@ export const init = () => {
         updateFontBtns(selectedFont);
         updateSizeBtns(selectedFontSize);
         if (digestCb) digestCb.checked = false;
+        if (jobNotifyCb) jobNotifyCb.checked = false;
         const result = await api.call('user_get_preferences');
         if (result.success) {
             emailInput.value = result.data.email || '';
             if (FONTS.includes(result.data.fontFamily))      selectedFont     = result.data.fontFamily;
             if (FONT_SIZES.includes(result.data.fontSize))   selectedFontSize = result.data.fontSize;
             if (digestCb) digestCb.checked = !!result.data.dailyDigest;
+            if (jobNotifyCb) jobNotifyCb.checked = !!result.data.notifyAgentJobs;
             updateFontBtns(selectedFont);
             updateSizeBtns(selectedFontSize);
         }
@@ -74,7 +77,8 @@ export const init = () => {
         saveBtn.disabled = true;
         const result = await api.call('user_save_preferences',
             { email: emailInput.value.trim(), fontFamily: selectedFont, fontSize: selectedFontSize,
-              dailyDigest: digestCb && digestCb.checked ? '1' : '0' }, 'POST');
+              dailyDigest: digestCb && digestCb.checked ? '1' : '0',
+              notifyAgentJobs: jobNotifyCb && jobNotifyCb.checked ? '1' : '0' }, 'POST');
         saveBtn.disabled = false;
         if (result.success) {
             window.WIKI_USER_FONT      = selectedFont;

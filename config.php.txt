@@ -30,8 +30,17 @@ define('ENVIRONMENT', 'production');
 define('PAGES_DIR', '/var/www/wiki-pages/');
 
 // --- Authentication ---
-// Set to true to require OIDC login. False = open access, everyone is admin.
-define('AUTHENTICATION_ENABLED', false);
+// AUTHENTICATION: which auth method(s) are active. Required in every
+// configuration — the app reads it even when authentication is off.
+//   'off'  — no authentication, everyone has full admin access
+//   'oidc' — OIDC/OAuth2 only (Auth0 etc.); configure the OIDC constants below
+//   'otp'  — OTP email codes only; users added manually to users.json
+//   'both' — OIDC and OTP active simultaneously; each user has an 'auth' field
+define('AUTHENTICATION', 'off');
+
+// Legacy shim — every existing AUTHENTICATION_ENABLED check continues to work.
+// Derive it rather than setting it by hand, so the two can never disagree.
+define('AUTHENTICATION_ENABLED', AUTHENTICATION !== 'off');
 
 // When AUTHENTICATION_ENABLED is true and this is also true, unauthenticated
 // visitors can browse as readers without logging in. A Login button is shown
@@ -108,6 +117,13 @@ define('SEARCH_ENGINE', 'basic');
 // Directory where daily access logs are written. Must be writable by the web
 // server. Set to null to disable.
 define('LOG_DIR', '/var/log/wiki/');
+
+// --- AI Agent Jobs ---
+// Minutes between run_ai_agent_jobs.php ticks. MUST match the crontab entry:
+//   */15 * * * * php /path/to/run_ai_agent_jobs.php >> /var/log/wiki-agent-jobs.log 2>&1
+// One-off /aiJob requests use this to tell the user when their job will start,
+// so a value that disagrees with cron produces a wrong estimate.
+define('AGENT_JOB_RUNNER_INTERVAL_MINUTES', 15);
 
 // --- Diagnostics (optional) ---
 // Absolute paths to server log files shown in Admin → Diagnostics.

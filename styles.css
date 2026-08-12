@@ -1143,6 +1143,16 @@ body {
 .chat-spinner { flex-shrink: 0; width: 13px; height: 13px; border: 2px solid #cbd5e0; border-top-color: #4a90d9; border-radius: 50%; animation: chat-spin 0.75s linear infinite; }
 @keyframes chat-spin { to { transform: rotate(360deg); } }
 .chat-pending-timeout { font-size: 0.875rem; color: #c05621; }
+/* Queued /aiJob: waiting for the cron runner rather than actively working, so it
+   is deliberately calmer than the live "Working…" indicator. */
+.chat-pending-queued { opacity: 0.75; }
+.chat-pending-queued .chat-spinner { animation-duration: 2.4s; border-top-color: var(--accent-gray); }
+
+/* Admin → AI → one-off /aiJob jobs */
+.admin-oneoff-section { margin-top: 1.75rem; }
+.admin-oneoff-prompt { font-size: 0.82rem; color: var(--text-secondary); max-width: 320px; }
+.admin-jobs-runner { font-size: 0.8rem; color: var(--accent-gray); margin: 0 0 0.6rem; }
+.admin-jobs-runner-bad { color: #c05621; font-weight: 600; }
 .ai-processing-content { text-align: center; padding: 2.5rem 2rem; min-width: 320px; }
 .ai-processing-spinner { width: 40px; height: 40px; border: 3px solid #cbd5e0; border-top-color: #4a90d9; border-radius: 50%; animation: chat-spin 0.75s linear infinite; margin: 0 auto 1.25rem; }
 .ai-processing-label { margin: 0 0 1rem; color: var(--text-secondary); font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 0.4rem; }

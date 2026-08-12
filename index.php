@@ -1169,6 +1169,12 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <label class="pref-check"><input type="checkbox" id="pref-daily-digest"> <span data-i18n="prefs.digest-label">Subscribe to daily updates</span></label>
                 <p class="pref-hint" data-i18n="prefs.digest-hint">One email a day summarising pages created or updated in the last 24 hours.</p>
             </div>
+            <?php if ($userRole !== 'reader'): ?>
+            <div class="form-group">
+                <label class="pref-check"><input type="checkbox" id="pref-notify-agent-jobs"> <span data-i18n="prefs.job-notify-label">Email me when my AI jobs finish</span></label>
+                <p class="pref-hint" data-i18n="prefs.job-notify-hint">For /aiJob requests, which run in the background. The result is always posted back into the chat thread as well.</p>
+            </div>
+            <?php endif; ?>
             <?php endif; ?>
             <div class="lightbox-footer">
                 <button id="preferences-save-btn" class="btn btn-blue" data-i18n="prefs.save-btn">Save</button>

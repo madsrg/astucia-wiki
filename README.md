@@ -11,7 +11,7 @@ Astucia Wiki combines several content types in one place:
 - **Structured lists** — spreadsheet-style tables with typed columns, named views, filters, and CSV/XML/JSON export
 - **Team chat** — per-file chat threads with real-time polling, emoji reactions, pinned messages, and #mentions
 - **AI assistants** — per-space AI users (Claude, GPT, or any OpenAI-compatible model) that respond to #mentions in chat and can read and write wiki pages
-- **AI agent jobs** — scheduled or on-demand jobs that run an AI user against a prompt and optionally write the result to a wiki page
+- **AI agent jobs** — scheduled or on-demand jobs that run an AI user against a prompt and optionally write the result to a wiki page, plus one-off `/aiJob` requests queued from the chat prompt for long, reasoning-heavy work that answers back in the thread when it finishes
 - **MCP server** — exposes the wiki's tools over the Model Context Protocol so external AI agents and MCP clients can list, search, read, write, tag, and traverse related pages
 - **Knowledge graph** — interactive graph of how pages connect, combining explicit `pageid` links, folder hierarchy (parent/child/sibling pages), and shared tags; view the whole space or focus on one page's neighbourhood, with backlinks and related-page discovery
 - **File attachments** — drag-and-drop upload stored per-page, plus dedicated file-library folders
@@ -48,7 +48,16 @@ The minimum required settings are `PAGES_DIR` (where wiki content is stored) and
 
 ## Authentication
 
-Authentication is optional and disabled by default. When enabled it uses OIDC (tested with Auth0, Keycloak, Okta). Set `AUTHENTICATION_ENABLED = true` in `config.php` along with the four OIDC constants (`OIDC_PROVIDER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`).
+Authentication is optional and off by default. `AUTHENTICATION` in `config.php` selects the method:
+
+| Value | Behaviour |
+|---|---|
+| `'off'` | No authentication — every visitor has full admin access (the default) |
+| `'oidc'` | OIDC / OAuth2 only (tested with Auth0, Keycloak, Okta) |
+| `'otp'` | One-time codes by email; users are added manually to `users.json` |
+| `'both'` | OIDC and OTP side by side; each user record carries an `auth` field |
+
+For `'oidc'` or `'both'`, also set the four OIDC constants (`OIDC_PROVIDER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`). `AUTHENTICATION_ENABLED` still exists as a legacy shim, but it is derived from `AUTHENTICATION` — don't set it by hand.
 
 ### Bootstrapping the first admin
 
@@ -121,6 +130,27 @@ Create a system user in the admin panel, copy the generated token, and use it in
 
 The wiki also speaks the [Model Context Protocol](https://modelcontextprotocol.io). Point any MCP client (Claude Desktop, IDE agents, custom tooling) at `mcp.php` and it can call the same `wiki_*` tools listed above over JSON-RPC 2.0 (Streamable HTTP transport). Authentication uses the same service tokens as the REST API — an AI user's `wk_ai_…` token or a system user's `wk_sys_…` token as `Authorization: Bearer <token>`. Add `?space=SpaceName` to target a specific Space (omit for the default). Role and per-Space access control apply exactly as they do everywhere else. An in-app **MCP Tool Explorer** (admin/editor sidebar) lets you try the tools interactively.
 
+### AI agent jobs
+
+An agent job runs an AI user against a prompt in the background, with the wiki tools available, so it can read and write pages on its own. There are two kinds:
+
+- **Scheduled jobs** — created in **Admin → AI → Agent Jobs**, running daily, weekly, or monthly. Use these for recurring work: a weekly summary page, a nightly link audit. "Run now" also runs one on demand.
+- **One-off jobs** — queued by any editor or admin straight from a chat prompt with `/aiJob #AiUser your request`. Use these for a request that is too slow or too involved for an inline chat reply: the AI user is asked to reason at length, so the job may take many minutes. Submitting only confirms acceptance ("job accepted — starts in about N minutes"); the answer arrives as a normal chat message in the same thread when it is done, and optionally by email (**My Preferences → notify me when my AI jobs finish**). Readers cannot queue jobs, and each person may have three waiting at a time.
+
+Both kinds are executed by one CLI script run from cron. **Without this entry, scheduled jobs never fire and one-off jobs are accepted but never start** (the chat prompt will say so, and Admin → AI shows a warning):
+
+```bash
+sudo -u www-data crontab -e
+```
+
+```bash
+*/15 * * * * php /path/to/run_ai_agent_jobs.php >> /var/log/wiki-agent-jobs.log 2>&1
+```
+
+Keep `AGENT_JOB_RUNNER_INTERVAL_MINUTES` in `config.php` equal to the cron interval — it is what the "starts in about N minutes" estimate is calculated from, so a mismatch produces a wrong estimate. Each run executes at most three one-off jobs; the rest wait for the next tick. Per-run logs are written to `LOG_DIR/agent-jobs/`, viewable in the admin panel, and failures are emailed to `ADMIN_EMAIL`.
+
+Which model an AI user runs matters here: reasoning-capable models (Claude Opus/Sonnet 4.6 and newer, OpenAI o-series and GPT-5) are asked to think at length for one-off jobs, while older models simply run the prompt normally. Per-model request rules live in `llm_providers.json` under `model_rules` and can be adjusted without code changes.
+
 ## Knowledge graph
 
 Every Space can be viewed as a knowledge graph — an interactive map of how its pages relate. It layers three kinds of relationship:
@@ -152,7 +182,9 @@ sudo -u www-data git -C /path/to/your/PAGES_DIR commit -m "Initial content"
 
 ## Localization
 
-The UI is available in **English, Danish, Swedish, Spanish, French, and German**. Logged-in users pick their language from **My Preferences**; anonymous / no-auth visitors get a language selector in the sidebar instead. The choice is stored in the browser. Adding a new language requires one new file in `modules/i18n/locales/` — copy `en.js`, translate the strings, and add the language code to `SUPPORTED_LANGUAGES` in `modules/i18n/index.js`.
+The UI is available in **English, Danish, Swedish, Spanish, French, German, Simplified Chinese, and Hindi**. Logged-in users pick their language from **My Preferences**; anonymous / no-auth visitors get a language selector in the sidebar instead. The choice is stored in the browser. Adding a new language requires one new file in `modules/i18n/locales/` — copy `en.js`, translate the strings, and add the language code to `SUPPORTED_LANGUAGES` in `modules/i18n/index.js`.
+
+Translations don't have to be complete: any key a locale is missing falls back to English, so the admin panel is intentionally English-only.
 
 ## Daily updates
 

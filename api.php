@@ -7,6 +7,7 @@ require_once 'config.php';
 require_once 'logger.php';
 require_once 'mailer.php';
 require_once __DIR__ . '/ai_core.php';
+require_once __DIR__ . '/agent_jobs.php';
 require_once __DIR__ . '/service_auth.php';
 
 session_start();
@@ -401,7 +402,7 @@ if (isset($_REQUEST['action'])) {
         $reply        = null;
         $api_error    = null;
         $tools_called = false; // tracks whether any tool has fired this session
-        // OpenAI token-limit param + custom-temperature handling (helpers in ai_core.php).
+        // OpenAI token-limit param + sampling handling (helpers in ai_core.php).
         $openai_token_param  = _openai_token_param($api_url);
         $token_param_swapped = false;
         $drop_temperature    = false;
@@ -411,21 +412,23 @@ if (isset($_REQUEST['action'])) {
         $max_iters = 10;
         for ($iter = 0; $iter < $max_iters; $iter++) {
             $force_final = ($iter === $max_iters - 1);
+            // Interactive chat never asks for thinking (that is what /aiJob is for),
+            // but still has to skip temperature on models that reject it.
+            $tuning = _llm_tuning_params($family, $model, $temperature, $max_tokens, null, $drop_temperature);
             if ($family === 'anthropic') {
                 $payload = ['model' => $model, 'system' => $full_system, 'messages' => $messages,
-                            'max_tokens' => $max_tokens, 'temperature' => $temperature, 'tools' => $tools];
+                            'max_tokens' => $max_tokens, 'tools' => $tools];
                 $headers = ['Content-Type: application/json', 'x-api-key: ' . $api_key, 'anthropic-version: 2023-06-01'];
             } elseif ($family === 'openai-responses') {
                 $payload = ['model' => $model, 'instructions' => $full_system, 'input' => $messages,
                             'max_output_tokens' => $max_tokens, 'tools' => $tools];
-                if (!$drop_temperature) $payload['temperature'] = $temperature;
                 $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key];
             } else {
                 $payload = ['model' => $model, 'messages' => $messages,
                             $openai_token_param => $max_tokens, 'tools' => $tools];
-                if (!$drop_temperature) $payload['temperature'] = $temperature;
                 $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $api_key];
             }
+            $payload = array_merge($payload, $tuning);
             if ($extra_lines) $headers = array_merge($headers, $extra_lines);
             // Final pass: forbid tools so the model must produce a text reply.
             if ($force_final) $payload['tool_choice'] = $family === 'anthropic' ? ['type' => 'none'] : 'none';
@@ -463,14 +466,15 @@ if (isset($_REQUEST['action'])) {
             if (isset($data['error'])) {
                 // OpenAI-compatible: {"error": {"message": "...", "type": "..."}}
                 $emsg = $data['error']['message'] ?? 'Unknown API error.';
-                // Reasoning models (o-series, gpt-5) reject max_tokens / custom
-                // temperature — swap the token param or drop temperature and retry once each.
+                // Models disagree about which tuning parameters they accept, and the
+                // model_rules table cannot know every gateway alias — so swap the
+                // token param, or drop the sampling params, and retry once each.
                 if ($family !== 'anthropic' && !$token_param_swapped && _is_token_param_error($emsg)) {
                     $openai_token_param  = $openai_token_param === 'max_tokens' ? 'max_completion_tokens' : 'max_tokens';
                     $token_param_swapped = true;
                     continue;
                 }
-                if ($family !== 'anthropic' && !$drop_temperature && _is_temperature_error($emsg)) {
+                if (!$drop_temperature && _is_sampling_param_error($emsg)) {
                     $drop_temperature = true;
                     continue;
                 }
@@ -678,7 +682,7 @@ if (isset($_REQUEST['action'])) {
     }
 
     $edit_actions  = ['save', 'create_file', 'save_message_page', 'create_folder', 'create_diagram', 'create_list', 'create_chat', 'create_search',
-                      'post_chat_message', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'purge_chat_messages', 'toggle_sticky',
+                      'post_chat_message', 'queue_agent_job', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'purge_chat_messages', 'toggle_sticky',
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags',
                       'save_diagram_svg', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore'];
@@ -692,6 +696,7 @@ if (isset($_REQUEST['action'])) {
                       'admin_get_api_accounts', 'admin_save_api_account',
                       'admin_delete_api_account', 'admin_regenerate_api_token',
                       'admin_get_agent_jobs', 'admin_save_agent_job', 'admin_delete_agent_job', 'admin_run_agent_job', 'admin_agent_job_status', 'admin_get_agent_job_logs',
+                      'admin_get_oneoff_job_log',
                       'git_deleted_files', 'git_restore_deleted',
                       'admin_reindex',
                       'admin_get_mcp_servers', 'admin_save_mcp_server', 'admin_delete_mcp_server', 'admin_test_mcp_server'];
@@ -1072,6 +1077,10 @@ if (isset($_REQUEST['action'])) {
                 $cm_changed = false;
                 foreach ($cm_data['messages'] as &$_cm_msg) {
                     if (empty($_cm_msg['pending'])) continue;
+                    // A job-backed placeholder is *meant* to sit pending until the cron
+                    // runner picks the job up, which is minutes to hours away. The queue
+                    // does its own crash detection, so this sweep must not touch these.
+                    if (!empty($_cm_msg['job_id'])) continue;
                     $cm_age = time() - strtotime($_cm_msg['timestamp'] ?? '');
                     if ($cm_age > $cm_stale_timeout) {
                         $_cm_msg['text']    = '⚠️ No response was received. The request may have timed out on the server.';
@@ -1281,6 +1290,119 @@ if (isset($_REQUEST['action'])) {
                     if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
                     trigger_ai_response($_pending_ai_user, $file_path, $chat_data, $indexer, $space_dir, $_pending_placeholder_id);
                 }
+                break;
+
+            case 'queue_agent_job':
+                // One-off AI job from the chat prompt (/aiJob #AiUser <prompt>).
+                // This request only *accepts* the job: it appends the request and a
+                // pending placeholder to the thread, queues the work, and answers with
+                // an ETA. run_ai_agent_jobs.php executes it and fills the placeholder
+                // in — deliberately unlike post_chat_message, which runs the AI inline.
+                if (!defined('WIKI_SYSTEM_DATA')) throw new Exception('WIKI_SYSTEM_DATA is not configured.');
+                $qj_path = sanitize_path($_POST['file'] ?? '');
+                if (!is_file($qj_path)) throw new Exception('Chat file not found.');
+                $qj_prompt = trim($_POST['prompt'] ?? '');
+                if ($qj_prompt === '') throw new Exception('The job needs a prompt.');
+                if (mb_strlen($qj_prompt) > 4000) throw new Exception('Job prompt too long (max 4000 characters).');
+
+                // The AI user is explicit — no focus fallback. An expensive background
+                // job should never run on a guess about who was meant.
+                $qj_ai_name = ltrim(trim($_POST['ai_user'] ?? ''), '#@');
+                if ($qj_ai_name === '') throw new Exception('Specify the AI user to run the job: /aiJob #AiUser <prompt>');
+                $qj_users = is_file(WIKI_SYSTEM_DATA . 'users.json')
+                    ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? []) : [];
+                $qj_ai = null;
+                foreach ($qj_users as $_qu) {
+                    if (empty($_qu['is_ai'])) continue;
+                    if (mb_strtolower((string)($_qu['name'] ?? '')) === mb_strtolower($qj_ai_name)) { $qj_ai = $_qu; break; }
+                }
+                if (!$qj_ai) throw new Exception('No AI user named "' . $qj_ai_name . '".');
+
+                // The job runs later, outside this session — so the AI user's own space
+                // grant is what authorises it, checked here while we still can.
+                $qj_space = trim(str_replace(rtrim(PAGES_DIR, '/'), '', rtrim($space_dir, '/')), '/');
+                $qj_ai_spaces = $qj_ai['spaces'] ?? null;
+                if ($qj_ai_spaces !== null && $qj_space !== '' && !in_array($qj_space, (array)$qj_ai_spaces, true)) {
+                    throw new Exception('"' . ($qj_ai['name'] ?? 'That AI user') . '" does not have access to this space.');
+                }
+
+                $qj_actor = get_current_actor();
+                $qj_uid   = AUTHENTICATION_ENABLED ? ($qj_actor['uid'] ?? null) : 0;
+                $qj_ahead = 0;
+                $qj_mine  = 0;
+                foreach (agent_job_queue_read() as $_qq) {
+                    if (($_qq['state'] ?? '') !== 'queued') continue;
+                    $qj_ahead++;
+                    if ((int)($_qq['requested_by']['uid'] ?? -1) === (int)$qj_uid) $qj_mine++;
+                }
+                if ($qj_mine >= AGENT_JOB_MAX_QUEUED_PER_USER) {
+                    throw new Exception('You already have ' . AGENT_JOB_MAX_QUEUED_PER_USER
+                        . ' jobs waiting. Let those finish before queuing more.');
+                }
+
+                $qj_chat = json_decode((string)file_get_contents($qj_path), true);
+                if ($qj_chat === null) throw new Exception('Invalid chat file.');
+                $qj_id   = 'oneoff_' . date('Ymd-His') . '_' . bin2hex(random_bytes(3));
+                $qj_rel  = ltrim(str_replace(rtrim($space_dir, '/'), '', $qj_path), '/');
+
+                // The request, as the user typed it, so the thread reads normally.
+                $qj_chat['messages'][] = [
+                    'id'        => $qj_chat['nextMessageId'],
+                    'uid'       => AUTHENTICATION_ENABLED ? (int)($qj_actor['uid'] ?? 0) : 0,
+                    'name'      => AUTHENTICATION_ENABLED ? ($qj_actor['name'] ?? 'Unknown') : 'Local User',
+                    'timestamp' => date('c'),
+                    'text'      => '/aiJob #' . ($qj_ai['name'] ?? $qj_ai_name) . ' ' . $qj_prompt,
+                ];
+                $qj_chat['nextMessageId']++;
+                // Placeholder the runner fills in. 'job_id' marks it as job-backed so
+                // the chat poll's stale-pending sweep leaves it alone (see chat_messages).
+                $qj_msg_id = $qj_chat['nextMessageId'];
+                $qj_chat['messages'][] = [
+                    'id'        => $qj_msg_id,
+                    'uid'       => (int)($qj_ai['uid'] ?? 0),
+                    'name'      => $qj_ai['name'] ?? 'AI',
+                    'timestamp' => date('c'),
+                    'text'      => '',
+                    'pending'   => true,
+                    'job_id'    => $qj_id,
+                ];
+                $qj_chat['nextMessageId']++;
+
+                $qj_eta = agent_job_eta_minutes($qj_ahead);
+                agent_job_queue_mutate(function (array &$jobs) use (
+                    $qj_id, $qj_actor, $qj_uid, $qj_ai, $qj_space, $qj_prompt, $qj_rel, $qj_msg_id
+                ) {
+                    $jobs[] = [
+                        'id'           => $qj_id,
+                        'state'        => 'queued',
+                        'created_at'   => date('c'),
+                        'requested_by' => ['uid' => $qj_uid, 'name' => $qj_actor['name'] ?? 'Local User'],
+                        'ai_user_uid'  => (int)($qj_ai['uid'] ?? 0),
+                        'ai_user_name' => $qj_ai['name'] ?? 'AI',
+                        'space'        => $qj_space,
+                        'prompt'       => $qj_prompt,
+                        'reply_to'     => ['chat' => $qj_rel, 'message_id' => $qj_msg_id],
+                        // /aiJob always means "take your time and reason"; that is the
+                        // whole point of queuing instead of replying inline.
+                        'thinking'     => ['enabled' => true, 'effort' => 'high'],
+                        'started_at'   => null,
+                        'finished_at'  => null,
+                        'log_file'     => null,
+                        'error'        => null,
+                    ];
+                });
+
+                // Written only after the job is safely queued: a placeholder with no job
+                // behind it would spin until the stale sweep gave up on it.
+                file_put_contents($qj_path, json_encode($qj_chat, JSON_PRETTY_PRINT));
+                echo json_encode([
+                    'success'     => true,
+                    'job_id'      => $qj_id,
+                    'eta_minutes' => $qj_eta,
+                    'ai_user'     => $qj_ai['name'] ?? 'AI',
+                    'queued_ahead' => $qj_ahead,
+                    'data'        => $qj_chat,
+                ]);
                 break;
 
             case 'ai_explain':
@@ -2746,6 +2868,7 @@ if (isset($_REQUEST['action'])) {
                             'fontFamily'  => $pu['fontFamily'] ?? 'sans',
                             'fontSize'    => $pu['fontSize']   ?? '11pt',
                             'dailyDigest' => !empty($pu['dailyDigest']),
+                            'notifyAgentJobs' => !empty($pu['notifyAgentJobs']),
                         ]]);
                         break 2;
                     }
@@ -2759,6 +2882,7 @@ if (isset($_REQUEST['action'])) {
                 $new_font       = trim($_POST['fontFamily'] ?? 'sans');
                 $new_font_size  = trim($_POST['fontSize']   ?? 'normal');
                 $new_digest     = (($_POST['dailyDigest'] ?? '') === '1');
+                $new_job_notify = (($_POST['notifyAgentJobs'] ?? '') === '1');
                 if (!in_array($new_font,      ['sans','serif','mono']))                          $new_font      = 'sans';
                 if (!in_array($new_font_size, ['10pt','11pt','12pt','14pt','16pt']))          $new_font_size = '11pt';
                 if ($new_email && !filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
@@ -2772,6 +2896,7 @@ if (isset($_REQUEST['action'])) {
                         $pu2['fontFamily']  = $new_font;
                         $pu2['fontSize']    = $new_font_size;
                         $pu2['dailyDigest'] = $new_digest;
+                        $pu2['notifyAgentJobs'] = $new_job_notify;
                         $found_pref = true;
                         break;
                     }
@@ -3520,6 +3645,11 @@ if (isset($_REQUEST['action'])) {
                 foreach (scandir(PAGES_DIR) as $_sf) {
                     if ($_sf[0] !== '.' && is_dir(PAGES_DIR . '/' . $_sf)) $sp_list[] = $_sf;
                 }
+                // One-off /aiJob jobs share this panel: same runner, same logs, but a
+                // separate queue (see agent_jobs.php). The heartbeat is included so an
+                // admin can tell "nothing queued" from "the crontab entry is missing".
+                $aj_oneoff = agent_job_queue_read();
+                usort($aj_oneoff, fn($a, $b) => strcmp((string)($b['created_at'] ?? ''), (string)($a['created_at'] ?? '')));
                 echo json_encode([
                     'success'          => true,
                     'jobs'             => $aj_data['jobs'] ?? [],
@@ -3527,7 +3657,25 @@ if (isset($_REQUEST['action'])) {
                     'spaces'           => $sp_list,
                     'server_time'      => date('Y-m-d H:i:s'),
                     'server_timezone'  => date_default_timezone_get(),
+                    'oneoff'           => array_slice($aj_oneoff, 0, 30),
+                    'oneoff_queued'    => count(array_filter($aj_oneoff, fn($j) => ($j['state'] ?? '') === 'queued')),
+                    'runner_heartbeat' => agent_job_heartbeat(),
+                    'runner_interval'  => agent_job_runner_interval(),
                 ]);
+                break;
+
+            case 'admin_get_oneoff_job_log':
+                // One-off logs are keyed by job id under a reserved folder, so they need
+                // their own lookup — admin_get_agent_job_logs resolves names from
+                // agent_jobs.json, which one-offs are deliberately not in.
+                if (!defined('LOG_DIR') || !LOG_DIR) throw new Exception('LOG_DIR is not configured.');
+                $ol_id = preg_replace('/[^a-zA-Z0-9_-]/', '-', trim($_REQUEST['id'] ?? ''));
+                if ($ol_id === '') throw new Exception('Missing id.');
+                $ol_path = rtrim(LOG_DIR, '/') . '/agent-jobs/_oneoff/' . $ol_id . '.log';
+                if (!is_file($ol_path)) throw new Exception('No log for this job (it may not have run yet).');
+                $ol_body = (string)file_get_contents($ol_path);
+                if (strlen($ol_body) > 200000) $ol_body = "… (truncated to last 200 KB) …\n" . substr($ol_body, -200000);
+                echo json_encode(['success' => true, 'file' => basename($ol_path), 'content' => $ol_body]);
                 break;
 
             case 'admin_save_agent_job':

@@ -1538,6 +1538,11 @@ let agentJobAiUsers = {};
 let agentJobSpaces  = [];
 let agentServerTime = '';
 let agentServerTz   = '';
+// One-off /aiJob jobs — same runner, separate queue (see agent_jobs.php).
+let oneoffJobs      = [];
+let oneoffQueued    = 0;
+let runnerHeartbeat = null;
+let runnerInterval  = 15;
 
 const DOW_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -1568,6 +1573,10 @@ const loadAgentJobs = async () => {
     agentJobSpaces  = result.spaces   || [];
     agentServerTime = result.server_time     || '';
     agentServerTz   = result.server_timezone || '';
+    oneoffJobs      = result.oneoff   || [];
+    oneoffQueued    = result.oneoff_queued    || 0;
+    runnerHeartbeat = result.runner_heartbeat || null;
+    runnerInterval  = result.runner_interval  || 15;
     renderAgentJobList();
 };
 
@@ -1581,6 +1590,7 @@ const renderAgentJobList = () => {
 
     if (!agentJobs.length) {
         container.innerHTML = serverTimeHtml + `<p class="admin-empty">${t('admin.jobs.none')}</p>`;
+        renderOneoffSection(container);
         return;
     }
     const table = document.createElement('table');
@@ -1637,6 +1647,115 @@ const renderAgentJobList = () => {
     table.appendChild(tbody);
     container.innerHTML = serverTimeHtml;
     container.appendChild(table);
+    renderOneoffSection(container);
+};
+
+// --- One-off jobs (/aiJob) ----------------------------------------------------
+// Read-only: these are created by users from the chat prompt, not edited here.
+
+const elapsedLabel = (job) => {
+    if (!job.started_at) return '—';
+    const from = new Date(job.started_at).getTime();
+    const to   = job.finished_at ? new Date(job.finished_at).getTime() : Date.now();
+    const secs = Math.max(0, Math.round((to - from) / 1000));
+    return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+};
+
+// The whole /aiJob ETA rests on the runner actually being scheduled, so surface
+// that here rather than leaving an admin to infer it from jobs never starting.
+const runnerStatusHtml = () => {
+    if (!runnerHeartbeat || !runnerHeartbeat.last_run) {
+        return `<div class="admin-jobs-runner admin-jobs-runner-bad">${t('admin.oneoff.runner-never')}</div>`;
+    }
+    const last    = new Date(runnerHeartbeat.last_run);
+    const ageMin  = (Date.now() - last.getTime()) / 60000;
+    const stale   = ageMin > (runnerInterval * 2) + 1;
+    return `<div class="admin-jobs-runner ${stale ? 'admin-jobs-runner-bad' : ''}">`
+        + t(stale ? 'admin.oneoff.runner-stale' : 'admin.oneoff.runner-ok',
+            { time: last.toLocaleString(), interval: runnerInterval })
+        + `</div>`;
+};
+
+const renderOneoffSection = (container) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'admin-oneoff-section';
+    wrap.innerHTML = `<div class="admin-ai-form-section-header">${t('admin.oneoff.heading')}`
+        + (oneoffQueued ? ` <span class="admin-ai-badge" style="background:#4a90d9">${oneoffQueued} ${t('admin.oneoff.waiting')}</span>` : '')
+        + `</div><p class="form-hint">${t('admin.oneoff.hint')}</p>` + runnerStatusHtml();
+
+    if (!oneoffJobs.length) {
+        wrap.insertAdjacentHTML('beforeend', `<p class="admin-empty">${t('admin.oneoff.none')}</p>`);
+        container.appendChild(wrap);
+        return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'admin-table';
+    table.innerHTML = `<thead><tr>
+        <th>${t('admin.oneoff.col-when')}</th>
+        <th>${t('admin.oneoff.col-requester')}</th>
+        <th>${t('admin.oneoff.col-ai-user')}</th>
+        <th>${t('admin.oneoff.col-request')}</th>
+        <th>${t('admin.oneoff.col-state')}</th>
+        <th>${t('admin.oneoff.col-elapsed')}</th>
+        <th></th>
+    </tr></thead>`;
+    const tbody = document.createElement('tbody');
+
+    const STATE_COLOURS = { queued: '#a0aec0', running: '#4a90d9', ok: '#48bb78', error: '#c53030' };
+    oneoffJobs.forEach(job => {
+        const tr = document.createElement('tr');
+        const state = job.state || '?';
+        // An undelivered result only lives in the log and the requester's email —
+        // flag it so an admin knows to go looking.
+        const undelivered = (state === 'ok' || state === 'error') && job.delivered === false
+            ? ` <span class="admin-ai-badge" style="background:#dd6b20">${t('admin.oneoff.undelivered')}</span>` : '';
+        tr.innerHTML = `
+            <td style="font-size:0.82rem;white-space:nowrap">${job.created_at ? new Date(job.created_at).toLocaleString() : '—'}</td>
+            <td>${escHtml(job.requested_by?.name || '—')}</td>
+            <td>${escHtml(job.ai_user_name || `uid:${job.ai_user_uid}`)}</td>
+            <td class="admin-oneoff-prompt" title="${escHtml(job.prompt || '')}">${escHtml((job.prompt || '').slice(0, 90))}${(job.prompt || '').length > 90 ? '…' : ''}</td>
+            <td style="white-space:nowrap"><span class="admin-ai-badge" style="background:${STATE_COLOURS[state] || '#a0aec0'}">${escHtml(state)}</span>${undelivered}</td>
+            <td style="font-size:0.82rem">${elapsedLabel(job)}</td>
+            <td style="white-space:nowrap"></td>`;
+
+        if (job.log_file) {
+            const logBtn = document.createElement('button');
+            logBtn.className = 'btn btn-sm btn-secondary';
+            logBtn.textContent = t('admin.oneoff.log-btn');
+            logBtn.addEventListener('click', () => showOneoffLog(job, logBtn));
+            tr.querySelector('td:last-child').appendChild(logBtn);
+        }
+        if (job.error) tr.title = job.error;
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    container.appendChild(wrap);
+};
+
+const showOneoffLog = async (job, btn) => {
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = t('admin.users.loading');
+    const res = await api.call('admin_get_oneoff_job_log', { id: job.id });
+    btn.disabled = false;
+    btn.textContent = original;
+    if (!res.success) { showToast(res.message || t('admin.oneoff.log-fail'), 'error'); return; }
+
+    const existing = document.getElementById('admin-oneoff-log-row');
+    if (existing) existing.remove();
+    const row = document.createElement('tr');
+    row.id = 'admin-oneoff-log-row';
+    const cell = document.createElement('td');
+    cell.colSpan = 7;
+    const pre = document.createElement('pre');
+    pre.className = 'admin-diag-pre';
+    pre.style.maxHeight = '320px';
+    pre.textContent = res.content;
+    cell.appendChild(pre);
+    row.appendChild(cell);
+    btn.closest('tr').after(row);
 };
 
 const openJobForm = (job) => {

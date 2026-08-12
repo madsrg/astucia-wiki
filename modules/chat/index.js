@@ -16,8 +16,13 @@ const CHAT_COMMANDS = [
     { name: 'topic',     description: t('chat.cmd.topic') },
     { name: 'purge',     description: t('chat.cmd.purge') },
     { name: 'summarize', description: t('chat.cmd.summarize') },
+    { name: 'aiJob',     description: t('chat.cmd.ai-job'), editorOnly: true },
     { name: 'aiUsers',   description: t('chat.cmd.ai-users') },
 ];
+// Readers can't queue jobs (the API rejects them too — this only keeps the
+// command out of an autocomplete where it would never work).
+const availableCommands = () =>
+    CHAT_COMMANDS.filter(c => !c.editorOnly || window.WIKI_ROLE !== 'reader');
 const POLL_MS = 5000;
 
 let pollTimer     = null;
@@ -281,6 +286,17 @@ const buildRow = (msg, grouped) => {
     let bubbleClass = 'chat-bubble' + (isMe ? ' chat-bubble-mine' : '') + (isAiMsg ? ' chat-bubble-md' : '');
     if (isSticky) bubbleClass += ' chat-bubble-sticky';
     bubble.className = bubbleClass;
+
+    if (msg.pending && msg.job_id) {
+        // A queued /aiJob waits for the cron runner — minutes to hours — so the
+        // 5-minute timeout below must not apply to it (the server's stale sweep
+        // skips these for the same reason). Show it as waiting, not working.
+        bubble.innerHTML = `<span class="chat-pending-indicator chat-pending-queued">`
+            + `<span class="chat-spinner"></span>${escHtml(t('chat.job-queued'))}</span>`;
+        col.appendChild(bubble);
+        row.appendChild(col);
+        return row;
+    }
 
     if (msg.pending) {
         const age = Date.now() - new Date(msg.timestamp).getTime();
@@ -619,7 +635,11 @@ const setupMentionAutocomplete = (textarea, popup) => {
 
         if (triggerChar === '#') {
             popup.classList.remove('chat-mention-popup-cmd');
-            const matches = (await getMentionableUsers()).filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
+            // On an /aiJob line the #mention slot only accepts an AI user, so
+            // don't offer humans for it.
+            let pool = await getMentionableUsers();
+            if (/^\/aijob\b/i.test(val)) pool = pool.filter(u => u.is_ai);
+            const matches = pool.filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
             if (!matches.length) { closePop(); return; }
             matches.forEach(u => {
                 const item = document.createElement('div');
@@ -637,7 +657,7 @@ const setupMentionAutocomplete = (textarea, popup) => {
             });
         } else {
             popup.classList.add('chat-mention-popup-cmd');
-            const matches = CHAT_COMMANDS.filter(c => c.name.toLowerCase().startsWith(query));
+            const matches = availableCommands().filter(c => c.name.toLowerCase().startsWith(query));
             if (!matches.length) { closePop(); return; }
             matches.forEach(c => {
                 const item = document.createElement('div');
@@ -772,6 +792,42 @@ export const init = () => {
                 textarea.dispatchEvent(new Event('input'));
                 textarea.selectionStart = textarea.selectionEnd = 1;
                 textarea.focus();
+                return;
+            }
+            if (cmd === '/aijob') {
+                // Queue a long-running, reasoning-heavy job instead of replying
+                // inline. The AI user is mandatory: an expensive background job
+                // must never run on a guess about who was meant, so there is
+                // deliberately no fall back to the current chat focus here.
+                // Name, then a prompt that must contain something other than
+                // whitespace — don't depend on the caller having trimmed `arg`.
+                const parsed = arg.match(/^[#@]?(\S+)\s+(\S[\s\S]*)$/);
+                if (!parsed) { showToast(t('chat.cmd.aijob-usage'), 'error'); return; }
+                const [, aiName, jobPrompt] = parsed;
+                const ai = (await getUsers()).find(u => u.is_ai && u.name.toLowerCase() === aiName.toLowerCase());
+                if (!ai) { showToast(t('chat.cmd.aijob-unknown-ai', { name: aiName }), 'error'); return; }
+
+                textarea.value = ''; autoResize(textarea);
+                sendBtn.disabled = true;
+                let jobRes;
+                try {
+                    jobRes = await api.call('queue_agent_job',
+                        { file: _chatPath, ai_user: ai.name, prompt: jobPrompt.trim() }, 'POST');
+                } finally {
+                    sendBtn.disabled = false;
+                }
+                if (jobRes?.success) {
+                    renderChatView(_applyFullDataToWindow(jobRes.data), _hasMore, true);
+                    // eta_minutes is null when the runner has not checked in — say so
+                    // rather than promising a time that may never come.
+                    showToast(jobRes.eta_minutes != null
+                        ? t('chat.cmd.aijob-accepted', { name: jobRes.ai_user, minutes: jobRes.eta_minutes })
+                        : t('chat.cmd.aijob-accepted-no-eta', { name: jobRes.ai_user }));
+                } else {
+                    // Put the request back so a long prompt isn't lost to an error.
+                    textarea.value = text; autoResize(textarea);
+                    showToast(jobRes?.message || t('chat.cmd.aijob-fail'), 'error');
+                }
                 return;
             }
             if (cmd === '/aiusers') {
