@@ -69,6 +69,7 @@ export default {
     'chat.send': 'Senden', 'chat.placeholder': 'Nachricht eingeben… (Enter zum Senden, Umschalt+Enter für neue Zeile, # für Erwähnungen, / für Befehle)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Antwort an {name}',
     'chat.new-topic-toggle': 'Neues Thema', 'chat.new-topic-toggle-title': 'Neues Thema beginnen (Alt+C) — setzt den Kontext der KI für die nächste Nachricht zurück',
+    'chat.copy-title': 'Nachricht kopieren',
     'chat.reaction-title': 'Reaktion hinzufügen', 'chat.delete-confirm': 'Diese Nachricht löschen?',
     'chat.delete-title': 'Nachricht löschen', 'chat.pin-title': 'Nachricht anheften',
     'chat.unpin-title': 'Nachricht loslösen',
@@ -84,6 +85,11 @@ export default {
     'chat.cmd.topic':           'Chat-Thema aktualisieren — /topic Neuer Titel hier',
     'chat.cmd.purge':           'Letzte N Nachrichten behalten, Rest löschen — /purge 20 oder /purge 20 -y',
     'chat.cmd.summarize':       'Eine KI bitten, die Konversation zusammenzufassen',
+    'chat.cmd.debug':           'Kontext-Debugging umschalten — Token-Kosten jeder KI-Antwort in diesem Chat anzeigen',
+    'chat.cmd.debug-on':        'Kontext-Debugging aktiviert — nach jeder KI-Antwort folgt eine Token-Aufschlüsselung',
+    'chat.cmd.debug-off':       'Kontext-Debugging deaktiviert',
+    'chat.cmd.debug-off-cleared': 'Kontext-Debugging deaktiviert — {count} Debug-Nachricht(en) entfernt',
+    'chat.cmd.debug-fail':      'Kontext-Debugging konnte nicht umgeschaltet werden',
     'chat.cmd.ai-job':          'Langen Denk-Auftrag einreihen — /aiJob #KiBenutzer deine Anfrage',
     'chat.cmd.aijob-usage':     'Verwendung: /aiJob #KiBenutzer hier deine Anfrage',
     'chat.cmd.aijob-unknown-ai': 'Kein KI-Benutzer mit dem Namen "{name}" — /aiUsers zeigt die Liste',
@@ -112,6 +118,7 @@ export default {
 
     'fileops.root': '(Wurzel)', 'fileops.rename-title': '„{name}" umbenennen',
     'fileops.renamed': 'Element erfolgreich umbenannt.', 'fileops.delete-confirm': '„{name}" löschen?',
+    'page.no-start-page': 'Dieser Space hat keine Startseite. Erstelle eine Seite namens Main, um sie als Startseite zu verwenden.',
     'fileops.deleted': 'Element gelöscht.', 'fileops.copy-suffix': '(Kopie)',
     'fileops.copied': 'Seite erfolgreich kopiert!', 'fileops.moved': 'Element erfolgreich verschoben!',
 

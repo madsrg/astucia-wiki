@@ -70,6 +70,7 @@ export default {
     'chat.send': 'Send', 'chat.placeholder': 'Skriv en besked… (Enter for at sende, Skift+Enter for ny linje, # for at nævne, / for kommandoer)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Svar til {name}',
     'chat.new-topic-toggle': 'Nyt emne', 'chat.new-topic-toggle-title': "Start et nyt emne (Alt+C) — nulstiller AI'ens kontekst for næste besked",
+    'chat.copy-title': 'Kopiér besked',
     'chat.reaction-title': 'Tilføj reaktion', 'chat.delete-confirm': 'Slet denne besked?',
     'chat.delete-title': 'Slet besked', 'chat.pin-title': 'Fastgør besked',
     'chat.unpin-title': 'Fjern fastgørelse',
@@ -85,6 +86,11 @@ export default {
     'chat.cmd.topic':           'Opdater chattemnet — /topic Ny titel her',
     'chat.cmd.purge':           'Behold de N seneste beskeder, slet resten — /purge 20 eller /purge 20 -y',
     'chat.cmd.summarize':       'Bed en AI om at opsummere samtalen',
+    'chat.cmd.debug':           'Slå kontekst-fejlfinding til/fra — vis token-forbruget for hvert AI-svar i denne chat',
+    'chat.cmd.debug-on':        'Kontekst-fejlfinding slået til — hvert AI-svar følges af en token-oversigt',
+    'chat.cmd.debug-off':       'Kontekst-fejlfinding slået fra',
+    'chat.cmd.debug-off-cleared': 'Kontekst-fejlfinding slået fra — {count} fejlfindingsbesked(er) fjernet',
+    'chat.cmd.debug-fail':      'Kunne ikke skifte kontekst-fejlfinding',
     'chat.cmd.ai-job':          'Sæt et langt ræsonnement-job i kø — /aiJob #AiBruger din anmodning',
     'chat.cmd.aijob-usage':     'Brug: /aiJob #AiBruger din anmodning her',
     'chat.cmd.aijob-unknown-ai': 'Ingen AI-bruger med navnet "{name}" — skriv /aiUsers for at se listen',
@@ -113,6 +119,7 @@ export default {
 
     'fileops.root': '(Rod)', 'fileops.rename-title': 'Omdøb "{name}"',
     'fileops.renamed': 'Element omdøbt.', 'fileops.delete-confirm': 'Slet "{name}"?',
+    'page.no-start-page': 'Dette Space har ingen startside. Opret en side med navnet Main for at bruge den som startside.',
     'fileops.deleted': 'Element slettet.', 'fileops.copy-suffix': '(kopi)',
     'fileops.copied': 'Side kopieret!', 'fileops.moved': 'Element flyttet!',
 

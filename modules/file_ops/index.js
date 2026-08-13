@@ -3,7 +3,7 @@ import { state } from '../core/state.js';
 import { showToast, promptModal, confirmModal } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { refreshFileTree, revealAndSelectFile } from '../file_tree/index.js';
-import { loadPage } from '../page_view/index.js';
+import { loadPage, showBlankPage } from '../page_view/index.js';
 import { openCopyLightbox, init as initCopy } from './copy.js';
 import { openMoveLightbox, init as initMove } from './move.js';
 import { t } from '../i18n/index.js';
@@ -52,10 +52,14 @@ export const handleDelete = async () => {
         if (res.success) {
             showToast(t('fileops.deleted'), 'success');
             await refreshFileTree();
+            // Falls back to an empty view when the space has no Main.md — including
+            // when Main.md is the page that was just deleted.
             const startResult = await api.call('get_start_page');
-            if (startResult.success) {
+            if (startResult.success && startResult.path) {
                 await loadPage(startResult.path, startResult.id, []);
                 revealAndSelectFile(startResult.path);
+            } else if (startResult.success) {
+                await showBlankPage();
             }
         }
     });

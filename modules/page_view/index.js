@@ -240,6 +240,61 @@ export const refreshPageContent = async () => {
     updateTocPanel(headings, viewerContent);
 };
 
+/**
+ * Empty view for "there is no page to show" — currently only when a space has no
+ * Main.md start page. Deliberately does not create anything: the space may simply
+ * not have a start page, and the previous behaviour (silently recreating Main.md)
+ * made deleting it look broken.
+ */
+export const showBlankPage = async () => {
+    const chatMod = await import('../chat/index.js');
+    chatMod.stopPolling();
+    const pageChatMod = await import('../page_chat/index.js');
+    pageChatMod.closePanel();
+
+    state.currentPagePath = null;
+    state.currentPageId = null;
+    state.currentPageTags = [];
+    state.currentPageType = null;
+    state.initialContent = '';
+    state.isEditing = false;
+    state.hasUnsavedChanges = false;
+
+    // Leave edit mode FIRST: setEditingMode(false) un-hides the meta row, the tags
+    // section and the page-actions group (it assumes there is a page to act on), so
+    // anything hidden before it would be shown again.
+    await setEditingMode(false);
+
+    document.getElementById('print-lightbox')?.classList.add('hidden');
+    document.getElementById('current-page-title').innerHTML = '';
+    document.getElementById('page-id-display').classList.add('hidden');
+    updateBreadcrumb('', state.currentSpace);
+    updateFavoriteBtn(null); // no page id → hides the star
+
+    // Show the ordinary viewer and hide every other content container.
+    document.getElementById('viewer-container').classList.remove('hidden');
+    ['list-view-container', 'chat-view-container', 'search-view-container',
+     'json-view-container', 'files-folder-container'].forEach(id =>
+        document.getElementById(id)?.classList.add('hidden'));
+    document.querySelector('.editor-container-wrapper')?.classList.add('hidden');
+    document.getElementById('diagram-viewer')?.classList.add('hidden');
+
+    // Hide the per-page chrome: the actions dropdown (and its menu, in case it was
+    // left open), the attachments/tags meta row, and every page-scoped header button.
+    ['page-actions-group', 'file-actions-menu', 'page-meta-row', 'tags-container',
+     'attachments-section', 'save-btn', 'cancel-btn', 'search-btn', 'edit-btn',
+     'diagram-edit-btn', 'copy-btn', 'move-btn', 'backlinks-btn', 'print-btn',
+     'graph-focus-btn', 'page-chat-btn', 'share-btn', 'chat-topic-btn', 'toc-btn',
+     'editor-mode-group', 'git-history-btn', 'git-commit-toggle-btn',
+     'git-snapshot-btn'].forEach(id =>
+        document.getElementById(id)?.classList.add('hidden'));
+    document.getElementById('edit-btn').disabled = true;
+
+    document.getElementById('viewer-content').innerHTML =
+        `<div class="page-blank-state">${t('page.no-start-page')}</div>`;
+    updateTocPanel([], null);
+};
+
 export const loadPage = async (path, id, tags) => {
     setupDiagramObserver();
 

@@ -18,6 +18,7 @@ const CHAT_COMMANDS = [
     { name: 'summarize', description: t('chat.cmd.summarize') },
     { name: 'aiJob',     description: t('chat.cmd.ai-job'), editorOnly: true },
     { name: 'aiUsers',   description: t('chat.cmd.ai-users') },
+    { name: 'debug',     description: t('chat.cmd.debug'), editorOnly: true },
 ];
 // Readers can't queue jobs (the API rejects them too — this only keeps the
 // command out of an autocomplete where it would never work).
@@ -145,7 +146,7 @@ const buildReactionBar = (msg) => {
     return bar;
 };
 
-// The hover-only action buttons (reply, save, append, add-reaction; pin is added
+// The hover-only action buttons (reply, copy, save, append, add-reaction; pin is added
 // by the caller). Returned in their own container so it can be floated as an
 // overlay — revealing it on hover then never changes the message layout (no jump,
 // no permanently reserved space). See .chat-actions in styles.css.
@@ -167,6 +168,20 @@ const buildMsgActions = (msg) => {
         autoResize(textarea);
     });
     actions.appendChild(replyBtn);
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'chat-copy-btn';
+    copyBtn.title = t('chat.copy-title');
+    copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    copyBtn.addEventListener('click', async () => {
+        try {
+            await navigator.clipboard.writeText(msg.text || '');
+            showToast(t('select.copied'), 'success');
+        } catch {
+            showToast(t('select.copy-failed'), 'error');
+        }
+    });
+    actions.appendChild(copyBtn);
 
     const saveBtn = document.createElement('button');
     saveBtn.className = 'chat-save-btn';
@@ -285,6 +300,10 @@ const buildRow = (msg, grouped) => {
     const isAiMsg = _aiUids.has(msg.uid);
     let bubbleClass = 'chat-bubble' + (isMe ? ' chat-bubble-mine' : '') + (isAiMsg ? ' chat-bubble-md' : '');
     if (isSticky) bubbleClass += ' chat-bubble-sticky';
+    // A /debug report: rendered like an AI message (it is a Markdown table) but on
+    // its own background, so it reads as instrumentation rather than conversation.
+    // The server also keeps these out of the AI's context window.
+    if (msg.is_debug) bubbleClass += ' chat-bubble-debug';
     bubble.className = bubbleClass;
 
     if (msg.pending && msg.job_id) {
@@ -785,6 +804,17 @@ export const init = () => {
                 const res = await api.call('purge_chat_messages', { file: _chatPath, keep }, 'POST');
                 if (res.success) renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
                 else showToast(res.message || t('chat.cmd.purge-fail'), 'error');
+                return;
+            }
+            if (cmd === '/debug') {
+                textarea.value = ''; autoResize(textarea);
+                const res = await api.call('toggle_chat_debug', { file: _chatPath }, 'POST');
+                if (!res.success) { showToast(res.message || t('chat.cmd.debug-fail'), 'error'); return; }
+                renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
+                showToast(res.debug
+                    ? t('chat.cmd.debug-on')
+                    : (res.removed ? t('chat.cmd.debug-off-cleared', { count: res.removed }) : t('chat.cmd.debug-off')),
+                    res.debug ? 'success' : 'info');
                 return;
             }
             if (cmd === '/summarize') {

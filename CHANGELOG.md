@@ -6,6 +6,22 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.37] — 2026-08-13
+
+### Added
+- **Content changed outside the wiki is picked up automatically** — pages added, removed or edited directly on disk (an `rsync`, a `git pull` on the content repository, a script, a desktop editor over a network share) are now reconciled with the page index, the knowledge-graph cache and the SQLite search index without anyone pressing reindex, and the file tree refreshes on its own. There is no cron entry and no filesystem watcher to install: the check runs as part of ordinary requests, is skipped unless `INDEX_SYNC_INTERVAL_SECONDS` (default 30) has elapsed since the last look, and is serialised between simultaneous visitors so two of them can't corrupt the index between them. It also runs on the MCP endpoint, so an AI client reconciles before it reads instead of answering from a stale index. Existing pages keep their IDs, so `?pageid=` links and bookmarks survive; bulk drift (hundreds of files at once) is applied in a single index write.
+- **Chats, saved searches and data pages get stable page IDs** — the index has only ever tracked `.md`, `.drawio` and `.list`, so a `.chat`, `.search` or `.json` page created outside the wiki never received an ID and could not be linked by `?pageid=`. All six content types are now indexed, by both the automatic reconcile and `?action=indexfiles`, from one shared definition so the two can never disagree about what counts as content.
+- **Copy a chat message** — a Copy button in the message hover toolbar puts the full message text on the clipboard in one click, alongside Reply and the save-to-page actions.
+- **`/debug` — see what a chat reply actually costs** — toggling it per thread appends a compact report after each AI reply: estimated tokens for every block of the request (built-in wiki instructions, the attached page injected by page chat, the AI User's own system prompt, MCP guidance, tool schemas, chat history), the AI User's Max Tokens ceiling, and the token counts the provider actually reported for every call in the agentic loop. The per-call figures make the real cost driver visible — each pass re-sends the whole payload plus every tool result so far — and a reply that lands exactly on the Max Tokens ceiling is flagged as probably truncated. Debug reports are excluded from the AI's own context window and don't consume a "last N messages" slot; turning debug off removes them from the thread.
+- **Agent-job run logs report their context and token usage** — the same accounting is written to every scheduled and one-off `/aiJob` run log, unconditionally (a run log is read precisely when something looks wrong), including on failed runs, where the breakdown next to a context-length error is the useful part. Extended-reasoning runs report the ceiling actually sent and note that it was raised above the configured value.
+
+### Fixed
+- **AI Users no longer save new pages in unpredictable places** — the system prompt named the Space but never the folder, so "write this up as a page" produced a plausible-looking guess such as `Notes/…`. Chat replies now state the current folder (derived from the chat's own location) and one-off `/aiJob` runs derive it from the thread they were queued in; scheduled jobs fall back to the Space root. The `wiki_write_page` and `wiki_write_json` tool descriptions carry the same instruction, since that is the text in front of the model at the moment it picks a path — the old example path was itself inviting the invented `Notes/` folder.
+- **Deleting a Space's start page no longer recreates it** — `Main.md` was silently rewritten on the next load, so deleting it appeared to do nothing. A Space without a start page now shows an empty page with a short hint instead.
+- **Action buttons in Settings could disappear** — leaving the AI Users, API Accounts, Agent Jobs or MCP Servers tab with a form open (by switching tabs or closing Settings, rather than Cancel or Save) left "+ New …" hidden, with only a full page reload bringing it back. The button's visibility now belongs to the list view itself, so every path back to the list restores it.
+- **Agent-job run logs wrap instead of scrolling sideways** — the log viewer forced a horizontal scrollbar through prompts and model output; long unbroken tokens such as URLs and JSON tool arguments now break too.
+
+
 ## [2026.7.36] — 2026-08-12
 
 ### Added

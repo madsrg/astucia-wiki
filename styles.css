@@ -229,6 +229,8 @@ body {
 
 .viewer-wrapper { display: flex; flex-direction: column; height: 100%; }
 #viewer-content { flex-grow: 1; padding: 1rem 2rem; overflow-y: auto; margin-left: 24px; line-height: 1.6; }
+/* Shown when a space has no Main.md start page — see showBlankPage(). */
+.page-blank-state { color: var(--accent-gray); font-style: italic; font-size: 0.9rem; padding: 2rem 0; }
 #diagram-viewer { flex-grow: 1; display: flex; min-height: 0; }
 #diagram-viewer iframe { flex-grow: 1; width: 100%; border: none; }
 
@@ -1126,10 +1128,21 @@ body {
 .chat-actions { position: absolute; top: -22px; right: 8px; display: none; align-items: center; gap: 1px; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 1px 3px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); z-index: 5; }
 .chat-row-mine .chat-actions { right: auto; left: 8px; }
 .chat-col:hover .chat-actions { display: flex; }
-.chat-pin-btn, .chat-reply-btn, .chat-save-btn, .chat-reaction-add-btn { display: inline-flex; align-items: center; background: none; border: 1px solid transparent; border-radius: 12px; padding: 1px 5px; cursor: pointer; color: var(--accent-gray); line-height: 1.5; }
+.chat-pin-btn, .chat-reply-btn, .chat-copy-btn, .chat-save-btn, .chat-reaction-add-btn { display: inline-flex; align-items: center; background: none; border: 1px solid transparent; border-radius: 12px; padding: 1px 5px; cursor: pointer; color: var(--accent-gray); line-height: 1.5; }
 .chat-pin-btn, .chat-reaction-add-btn { font-size: 0.85rem; }
 .chat-pin-btn.chat-pin-btn-active { color: #d97706; }
-.chat-pin-btn:hover, .chat-reply-btn:hover, .chat-save-btn:hover, .chat-reaction-add-btn:hover { background: #f0f4f8; border-color: #e2e8f0; color: var(--text-color); }
+.chat-pin-btn:hover, .chat-reply-btn:hover, .chat-copy-btn:hover, .chat-save-btn:hover, .chat-reaction-add-btn:hover { background: #f0f4f8; border-color: #e2e8f0; color: var(--text-color); }
+
+/* /debug context report — instrumentation, not conversation, so it gets its own
+   muted background and a monospace table. Excluded from the AI's context window
+   server-side (see the is_debug filters in api.php). */
+.chat-bubble-debug { background: #f7fafc; border: 1px dashed #cbd5e0; color: var(--text-secondary); font-size: 0.8rem; }
+.chat-bubble-debug table { border-collapse: collapse; width: 100%; margin: .35em 0; font-family: 'JetBrains Mono', monospace; font-size: 0.95em; }
+.chat-bubble-debug th, .chat-bubble-debug td { border-bottom: 1px solid #e2e8f0; padding: .15em .5em; text-align: left; }
+.chat-bubble-debug th:last-child, .chat-bubble-debug td:last-child,
+.chat-bubble-debug th:nth-child(n+2), .chat-bubble-debug td:nth-child(n+2) { text-align: right; }
+.chat-bubble-debug sub { color: var(--accent-gray); font-size: 0.8em; }
+.chat-bubble-debug em { color: var(--accent-gray); }
 
 /* Sticky bubble highlight */
 .chat-bubble-sticky { border-left: 2px solid #f6ad55; }
@@ -1150,6 +1163,10 @@ body {
 
 /* Admin → AI → one-off /aiJob jobs */
 .admin-oneoff-section { margin-top: 1.75rem; }
+/* Agent-job run logs (scheduled and one-off) are prose-heavy — prompts, tool args,
+   model output — so wrap instead of forcing a horizontal scrollbar. Long unbroken
+   tokens (URLs, base64) break too. */
+.admin-joblog-pre { white-space: pre-wrap; overflow-x: hidden; overflow-wrap: break-word; word-break: break-word; }
 .admin-oneoff-prompt { font-size: 0.82rem; color: var(--text-secondary); max-width: 320px; }
 .admin-jobs-runner { font-size: 0.8rem; color: var(--accent-gray); margin: 0 0 0.6rem; }
 .admin-jobs-runner-bad { color: #c05621; font-weight: 600; }
@@ -1548,6 +1565,7 @@ body.mobile .lightbox-content.full-screen { width: 100vw; max-width: 100vw; heig
 /* General Chat is part of the mobile cut. Its message actions live behind
    :hover, which doesn't exist on touch — reveal them so they're reachable. */
 body.mobile .chat-reply-btn,
+body.mobile .chat-copy-btn,
 body.mobile .chat-save-btn,
 body.mobile .chat-reaction-add-btn,
 body.mobile .chat-pin-btn { display: inline-flex; align-items: center; }

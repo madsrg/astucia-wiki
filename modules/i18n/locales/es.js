@@ -69,6 +69,7 @@ export default {
     'chat.send': 'Enviar', 'chat.placeholder': 'Escribe un mensaje… (Enter para enviar, Mayús+Enter para nueva línea, # para mencionar, / para comandos)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Responder a {name}',
     'chat.new-topic-toggle': 'Nuevo tema', 'chat.new-topic-toggle-title': 'Iniciar un nuevo tema (Alt+C) — reinicia el contexto de la IA para el próximo mensaje',
+    'chat.copy-title': 'Copiar mensaje',
     'chat.reaction-title': 'Añadir reacción', 'chat.delete-confirm': '¿Eliminar este mensaje?',
     'chat.delete-title': 'Eliminar mensaje', 'chat.pin-title': 'Fijar mensaje',
     'chat.unpin-title': 'Desfijar mensaje',
@@ -84,6 +85,11 @@ export default {
     'chat.cmd.topic':           'Actualizar el tema del chat — /topic Nuevo título aquí',
     'chat.cmd.purge':           'Conservar los últimos N mensajes, eliminar el resto — /purge 20 o /purge 20 -y',
     'chat.cmd.summarize':       'Pedir a una IA que resuma la conversación',
+    'chat.cmd.debug':           'Alternar la depuración de contexto — muestra el coste en tokens de cada respuesta de IA en este chat',
+    'chat.cmd.debug-on':        'Depuración de contexto activada — cada respuesta de IA irá seguida de un desglose de tokens',
+    'chat.cmd.debug-off':       'Depuración de contexto desactivada',
+    'chat.cmd.debug-off-cleared': 'Depuración de contexto desactivada — {count} mensaje(s) de depuración eliminado(s)',
+    'chat.cmd.debug-fail':      'No se pudo alternar la depuración de contexto',
     'chat.cmd.ai-job':          'Poner en cola un trabajo de razonamiento largo — /aiJob #UsuarioIA tu solicitud',
     'chat.cmd.aijob-usage':     'Uso: /aiJob #UsuarioIA tu solicitud aquí',
     'chat.cmd.aijob-unknown-ai': 'No hay ningún Usuario IA llamado "{name}" — escribe /aiUsers para ver la lista',
@@ -112,6 +118,7 @@ export default {
 
     'fileops.root': '(Raíz)', 'fileops.rename-title': 'Renombrar "{name}"',
     'fileops.renamed': 'Elemento renombrado correctamente.', 'fileops.delete-confirm': '¿Eliminar "{name}"?',
+    'page.no-start-page': 'Este espacio no tiene página de inicio. Crea una página llamada Main para usarla como tal.',
     'fileops.deleted': 'Elemento eliminado.', 'fileops.copy-suffix': '(copia)',
     'fileops.copied': '¡Página copiada correctamente!', 'fileops.moved': '¡Elemento movido correctamente!',
 

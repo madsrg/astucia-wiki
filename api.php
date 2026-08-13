@@ -45,6 +45,7 @@ if (AUTHENTICATION_ENABLED && !$_anonymous_reader && !isset($_SESSION['user']) &
 require_once 'indexer.php';
 require_once 'graph.php';
 require_once 'search_index.php';
+require_once 'index_sync.php';
 
 // --- API ROUTER ---
 if (isset($_REQUEST['action'])) {
@@ -87,6 +88,15 @@ if (isset($_REQUEST['action'])) {
     function _sidx_space(): string {
         global $space_dir;
         return basename(rtrim($space_dir, '/'));
+    }
+
+    // Pick up content added/removed/edited outside the wiki (rsync, git pull, an editor
+    // writing straight into PAGES_DIR). Debounced and lock-guarded, so the common case
+    // is one small stamp-file read; see index_sync.php for why this is here rather than
+    // in cron or a filesystem watcher. Runs before the action so the request that
+    // notices drift already serves the reconciled index.
+    if (($_REQUEST['action'] ?? '') !== 'indexfiles') {   // that action rebuilds unconditionally anyway
+        try { index_sync_maybe($space_dir, $indexer, $search_idx); } catch (\Throwable $_isy) {}
     }
 
     // Session timeout check — app-level idle expiry, more reliable than PHP GC.
@@ -270,8 +280,19 @@ if (isset($_REQUEST['action'])) {
         $space_name = basename($space_dir);
         $chat_name  = basename($chat_file, '.chat');
 
+        // Where the AI is. Without an explicit current folder, models invent a
+        // plausible-looking path ("Notes/…") for a new page instead of writing it
+        // next to the chat they were asked in — so state the folder and spell out
+        // the resulting path, since the tool takes a relative path string.
+        $chat_dir_rel = ltrim(str_replace(rtrim($space_dir, '/'), '', dirname($chat_file)), '/');
+        $loc_ctx = ($chat_dir_rel === ''
+                ? "The current folder is the root of this space, so a new page named Example belongs at \"Example.md\". "
+                : "The current folder is \"{$chat_dir_rel}\", so a new page named Example belongs at \"{$chat_dir_rel}/Example.md\". ")
+            . "Create new pages in the current folder unless the request asks for a different location. ";
+
         // Prepend wiki context so the AI knows where it is and what tools are available
         $wiki_ctx = "You are operating in the \"{$space_name}\" wiki space (current chat: \"{$chat_name}\"). "
+            . $loc_ctx
             . "Use wiki_list_pages to discover available pages, wiki_read_page to read content, "
             . "and wiki_write_page to create or update .md pages. "
             . "When calling wiki_write_page you MUST include the complete markdown content in the \"content\" field in the same tool call — never call it with an empty or missing content field. "
@@ -279,20 +300,24 @@ if (isset($_REQUEST['action'])) {
             . "Only invoke tools when the user's request actually requires wiki content. "
             . "When writing internal links to other wiki pages, use the Markdown syntax [Page Title](?pageid=ID&space=SPACE) "
             . "where ID and SPACE come from the wiki_list_pages results. Never use file paths as link targets for internal pages.\n\n";
-        // If a .md page with the same name exists in the same folder, inject its content as context
+        // If a .md page with the same name exists in the same folder, inject its content as context.
+        // Kept in its own variable rather than appended to $wiki_ctx so /debug can price it
+        // separately — it is unbounded and frequently the largest block in the payload.
+        $page_ctx        = '';
         $linked_md       = dirname($chat_file) . '/' . $chat_name . '.md';
         $pages_dir_real  = realpath(rtrim(PAGES_DIR, '/'));
         if (file_exists($linked_md) && $pages_dir_real !== false && strpos(realpath($linked_md), $pages_dir_real) === 0) {
             $linked_md_rel = ltrim(str_replace(rtrim($space_dir, '/') . '/', '', $linked_md), '/');
             $page_content = file_get_contents($linked_md);
-            $wiki_ctx .= "The following is the current content of the wiki page \"{$chat_name}\" that this chat is attached to. "
+            $page_ctx = "The following is the current content of the wiki page \"{$chat_name}\" that this chat is attached to. "
                       . "Its full path (use this exact value when calling wiki_write_page to update it) is: \"{$linked_md_rel}\". "
                       . "Use it as context when answering questions:\n\n```markdown\n"
                       . $page_content
                       . "\n```\n\n";
         }
 
-        $full_system = $wiki_ctx . $system_prompt;
+        $full_system = $wiki_ctx . $page_ctx . $system_prompt;
+        $debug_on    = !empty($chat_data['debug']);
 
         $tools          = get_wiki_tools($provider);
         $mcp_tool_map_c    = [];
@@ -304,7 +329,7 @@ if (isset($_REQUEST['action'])) {
         // ONLY that MCP server's tools (no built-ins, no other enabled servers) —
         // a deterministic alternative to the free-text per-server instructions
         // below. The type-ahead for this lives in chat.js / page_chat.js.
-        $_trig_msgs_c   = array_values(array_filter($chat_data['messages'], fn($m) => empty($m['pending'])));
+        $_trig_msgs_c   = array_values(array_filter($chat_data['messages'], fn($m) => empty($m['pending']) && empty($m['is_debug'])));
         $forced_slugs_c = _mcp_extract_forced_slugs(end($_trig_msgs_c)['text'] ?? '');
 
         $_add_mcp_server_tools_c = function(array $mcp_srv_c) use (&$tools, &$mcp_tool_map_c, $family) {
@@ -325,6 +350,10 @@ if (isset($_REQUEST['action'])) {
             }
         };
 
+        // Everything MCP appends to the system prompt lands here first, so /debug can
+        // price the servers' guidance apart from the built-in and custom instructions.
+        $mcp_extra_c   = '';
+        $mcp_srv_count = 0;
         if ($mcp_server_ids_c && defined('WIKI_SYSTEM_DATA')) {
             $mcp_file_c = WIKI_SYSTEM_DATA . 'mcp_servers.json';
             if (file_exists($mcp_file_c)) {
@@ -335,7 +364,8 @@ if (isset($_REQUEST['action'])) {
                 if ($forced_c) {
                     $tools = []; // explicit source(s) referenced — built-ins and other servers excluded
                     foreach ($forced_c as $mcp_srv_c) $_add_mcp_server_tools_c($mcp_srv_c);
-                    $full_system .= "\n\nThe user explicitly requested " . implode(' and ', array_column($forced_c, 'name'))
+                    $mcp_srv_count = count($forced_c);
+                    $mcp_extra_c .= "\n\nThe user explicitly requested " . implode(' and ', array_column($forced_c, 'name'))
                         . " via src: — use only the tools available to you for this reply.";
                 } else {
                     $mcp_guidance_c = '';
@@ -344,13 +374,17 @@ if (isset($_REQUEST['action'])) {
                         $instr_c = trim($mcp_instructions_c[$mcp_srv_c['id'] ?? ''] ?? '');
                         if ($instr_c) $mcp_guidance_c .= "\n[" . $mcp_srv_c['name'] . '] ' . $instr_c;
                     }
-                    if ($mcp_guidance_c) $full_system .= "\n\nMCP tool guidance:" . $mcp_guidance_c;
+                    $mcp_srv_count = count($enabled_c);
+                    if ($mcp_guidance_c) $mcp_extra_c .= "\n\nMCP tool guidance:" . $mcp_guidance_c;
                 }
             }
         }
+        $full_system .= $mcp_extra_c;
 
-        // Respect /newTopic sentinels: only include messages after the last one
-        $all_msgs = array_values(array_filter($chat_data['messages'], fn($m) => empty($m['pending'])));
+        // Respect /newTopic sentinels: only include messages after the last one.
+        // is_debug messages are /debug reports about this very context — they are
+        // never fed back into it, and they don't consume a "last N messages" slot.
+        $all_msgs = array_values(array_filter($chat_data['messages'], fn($m) => empty($m['pending']) && empty($m['is_debug'])));
         $nt_sentinel = null;
         $nt_pos = -1;
         foreach ($all_msgs as $i => $m) {
@@ -396,6 +430,34 @@ if (isset($_REQUEST['action'])) {
                 $role = ((int)($msg['uid'] ?? -1) === $ai_uid) ? 'assistant' : 'user';
                 $messages[] = ['role' => $role, 'content' => ($msg['name'] ?? '') . ': ' . preg_replace('/\bsrc:[a-zA-Z0-9_]+\s*/i', '', $msg['text'] ?? '')];
             }
+        }
+
+        // /debug accounting: price every block of the first request. Measured here,
+        // after the tool list is final (MCP schemas are fetched live) and the history
+        // window has been sliced, so the numbers match what actually goes on the wire.
+        $debug_blocks = [];
+        $debug_usage  = [];
+        if ($debug_on) {
+            $hist_chars = '';
+            foreach ($messages as $_dm) {
+                if (($_dm['role'] ?? '') === 'system') continue; // counted as its own blocks below
+                if (is_string($_dm['content'] ?? null)) $hist_chars .= $_dm['content'];
+            }
+            $tool_names = array_map(
+                fn($t) => $t['name'] ?? ($t['function']['name'] ?? '?'),
+                $tools
+            );
+            $mcp_tool_n = count($mcp_tool_map_c);
+            $debug_blocks = [
+                'Wiki instructions'   => ['tokens' => ai_token_estimate($wiki_ctx),     'note' => 'built-in'],
+                'Attached page'       => ['tokens' => ai_token_estimate($page_ctx),     'note' => $page_ctx === '' ? 'none' : $chat_name . '.md'],
+                'Custom system prompt'=> ['tokens' => ai_token_estimate($system_prompt), 'note' => ''],
+                'MCP guidance'        => ['tokens' => ai_token_estimate($mcp_extra_c),   'note' => $mcp_srv_count . ' server' . ($mcp_srv_count === 1 ? '' : 's')],
+                'Tool schemas'        => ['tokens' => ai_token_estimate(json_encode($tools)),
+                                          'note'   => count($tool_names) . ' tools, ' . $mcp_tool_n . ' via MCP'],
+                'Chat history'        => ['tokens' => ai_token_estimate($hist_chars),
+                                          'note'   => count($recent) . ' of last ' . $context_msgs],
+            ];
         }
 
         // Agentic loop: call API → execute tools → repeat until text reply (max 8 iterations)
@@ -460,6 +522,13 @@ if (isset($_REQUEST['action'])) {
                 $api_error = 'The API returned an unreadable response' . ($http ? " (HTTP {$http})" : '') . '.'
                     . _ai_raw_debug($raw, $http);
                 break;
+            }
+
+            // One capture point for all three wire families, before the family-specific
+            // branches — every successful pass adds a row to the /debug usage table.
+            if ($debug_on) {
+                $_u = ai_usage_tokens($data);
+                if ($_u['in'] || $_u['out']) $debug_usage[] = $_u;
             }
 
             // Detect error responses before attempting to parse content
@@ -677,12 +746,27 @@ if (isset($_REQUEST['action'])) {
             $fresh['messages'][] = ['id' => $fresh['nextMessageId'], 'uid' => (int)($ai_user['uid'] ?? 0), 'name' => $ai_user['name'] ?? 'AI', 'timestamp' => date('c'), 'text' => $reply];
             $fresh['nextMessageId']++;
         }
+        // Debug report goes in after the reply so it reads as a footnote to it. It is
+        // flagged is_debug, which keeps it out of the context window (see the filters
+        // above) and gives it its own bubble style in the client.
+        if ($debug_on && $debug_blocks) {
+            $fresh['messages'][] = [
+                'id'        => $fresh['nextMessageId'],
+                'uid'       => (int)($ai_user['uid'] ?? 0),
+                'name'      => $ai_user['name'] ?? 'AI',
+                'timestamp' => date('c'),
+                'is_debug'  => true,
+                'text'      => ai_debug_report($debug_blocks, $debug_usage, $model, $api_call_count,
+                                               (int)((microtime(true) - $started_at) * 1000), $max_tokens),
+            ];
+            $fresh['nextMessageId']++;
+        }
         file_put_contents($chat_file, json_encode($fresh, JSON_PRETTY_PRINT));
         @unlink($status_file);
     }
 
     $edit_actions  = ['save', 'create_file', 'save_message_page', 'create_folder', 'create_diagram', 'create_list', 'create_chat', 'create_search',
-                      'post_chat_message', 'queue_agent_job', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'purge_chat_messages', 'toggle_sticky',
+                      'post_chat_message', 'queue_agent_job', 'toggle_chat_debug', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'purge_chat_messages', 'toggle_sticky',
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags',
                       'save_diagram_svg', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore'];
@@ -971,24 +1055,21 @@ if (isset($_REQUEST['action'])) {
                 break;
 
             case 'get_start_page':
+                // A missing Main.md is respected, not repaired: deleting the start page
+                // used to resurrect it on the next load, which made the delete look
+                // broken. The client shows an empty view when "exists" is false.
                 $start_rel  = 'Main.md';
                 $start_file = sanitize_path($start_rel);
                 if (!file_exists($start_file)) {
-                    $welcome = "# Welcome to " . APP_TITLE . "\n\n"
-                             . "This is your wiki's start page.\n\n"
-                             . "- Use the **New ...** button in the sidebar to create pages, folders, diagrams and lists\n"
-                             . "- Click any page in the left sidebar to open it\n"
-                             . "- Use the pencil icon (top right) to edit a Markdown page\n"
-                             . "- Embed diagrams and lists in any page using the toolbar insert options\n\n"
-                             . "## Help & Documentation\n\n"
-                             . "Full documentation is available at [astucia.wiki](https://astucia.wiki).\n";
-                    file_put_contents($start_file, $welcome);
-                    $start_id = $indexer->addPage($start_rel);
-                } else {
-                    $start_id = $indexer->getId($start_rel);
-                    if (!$start_id) $start_id = $indexer->addPage($start_rel);
+                    // Drop a stale index entry (no-op if absent) so the page doesn't
+                    // linger in the ID map when the file was removed outside the app.
+                    $indexer->removePage($start_rel);
+                    echo json_encode(['success' => true, 'exists' => false, 'path' => null, 'id' => null]);
+                    break;
                 }
-                echo json_encode(['success' => true, 'path' => $start_rel, 'id' => $start_id]);
+                $start_id = $indexer->getId($start_rel);
+                if (!$start_id) $start_id = $indexer->addPage($start_rel);
+                echo json_encode(['success' => true, 'exists' => true, 'path' => $start_rel, 'id' => $start_id]);
                 break;
 
             case 'list':
@@ -1290,6 +1371,29 @@ if (isset($_REQUEST['action'])) {
                     if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
                     trigger_ai_response($_pending_ai_user, $file_path, $chat_data, $indexer, $space_dir, $_pending_placeholder_id);
                 }
+                break;
+
+            case 'toggle_chat_debug':
+                // /debug — per-thread context accounting. The flag has to live in the
+                // chat file because trigger_ai_response reads it server-side, long after
+                // the request that set it has finished. Turning it off sweeps the reports
+                // so a thread never accumulates them.
+                $td_path = sanitize_path($_POST['file'] ?? '');
+                if (!is_file($td_path)) throw new Exception('Chat file not found.');
+                $td_data = json_decode(file_get_contents($td_path), true);
+                if ($td_data === null) throw new Exception('Invalid chat file.');
+                $td_on   = empty($td_data['debug']);
+                $td_removed = 0;
+                if ($td_on) {
+                    $td_data['debug'] = true;
+                } else {
+                    unset($td_data['debug']);
+                    $td_before = count($td_data['messages'] ?? []);
+                    $td_data['messages'] = array_values(array_filter($td_data['messages'] ?? [], fn($m) => empty($m['is_debug'])));
+                    $td_removed = $td_before - count($td_data['messages']);
+                }
+                file_put_contents($td_path, json_encode($td_data, JSON_PRETTY_PRINT));
+                echo json_encode(['success' => true, 'debug' => $td_on, 'removed' => $td_removed, 'data' => $td_data]);
                 break;
 
             case 'queue_agent_job':
@@ -3780,6 +3884,7 @@ if (isset($_REQUEST['action'])) {
                 if (!is_dir($log_dir2)) mkdir($log_dir2, 0755, true);
                 $log_body2  = "[{$run_ts}] Job: {$run_job['name']}\n[{$run_ts}] Status: {$run_status}\n[{$run_ts}] AI User: " . ($run_ai_user['name'] ?? 'AI') . "\n\n";
                 $log_body2 .= $run_result['error'] ? "ERROR:\n{$run_result['error']}\n" : "RESULT:\n{$run_result['reply']}\n";
+                if (!empty($run_result['debug'])) $log_body2 .= "\n" . $run_result['debug'];
                 file_put_contents($log_file2, $log_body2);
                 if ($run_result['error'] && defined('ADMIN_EMAIL') && ADMIN_EMAIL && is_mail_configured()) {
                     $rj_subj = APP_TITLE . ' — Agent job failed: ' . $run_job['name'];

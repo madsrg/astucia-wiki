@@ -16,6 +16,7 @@ const CHAT_COMMANDS = [
     { name: 'purge',     description: t('chat.cmd.purge') },
     { name: 'summarize', description: t('chat.cmd.summarize') },
     { name: 'aiUsers',   description: t('chat.cmd.ai-users') },
+    { name: 'debug',     description: t('chat.cmd.debug'), editorOnly: true },
 ];
 
 let _pollTimer      = null;
@@ -128,7 +129,8 @@ const buildRow = (msg, grouped) => {
 
     const isAiMsg = _aiUids.has(msg.uid);
     const bubble = document.createElement('div');
-    bubble.className = 'chat-bubble' + (isMe ? ' chat-bubble-mine' : '') + (isAiMsg ? ' chat-bubble-md' : '');
+    bubble.className = 'chat-bubble' + (isMe ? ' chat-bubble-mine' : '') + (isAiMsg ? ' chat-bubble-md' : '')
+        + (msg.is_debug ? ' chat-bubble-debug' : ''); // /debug report — see api.php's is_debug filters
 
     if (msg.pending) {
         const age = Date.now() - new Date(msg.timestamp).getTime();
@@ -309,6 +311,18 @@ const doSend = async () => {
             const res = await api.call('purge_chat_messages', { file: _pcPath, keep }, 'POST');
             if (res.success) { _pcData = res.data; renderMessages(_pcData.messages || [], false); }
             else showToast(res.message || t('chat.cmd.purge-fail'), 'error');
+            return;
+        }
+        if (cmd === '/debug') {
+            textarea.value = ''; autoResize(textarea);
+            const res = await api.call('toggle_chat_debug', { file: _pcPath }, 'POST');
+            if (!res.success) { showToast(res.message || t('chat.cmd.debug-fail'), 'error'); return; }
+            _pcData = res.data;
+            renderMessages(_pcData.messages || [], false);
+            showToast(res.debug
+                ? t('chat.cmd.debug-on')
+                : (res.removed ? t('chat.cmd.debug-off-cleared', { count: res.removed }) : t('chat.cmd.debug-off')),
+                res.debug ? 'success' : 'info');
             return;
         }
         if (cmd === '/summarize') {
@@ -501,7 +515,10 @@ const setupInput = () => {
             });
         } else {
             mentionPop.classList.add('chat-mention-popup-cmd');
-            const matches = CHAT_COMMANDS.filter(c => c.name.toLowerCase().startsWith(query));
+            // editorOnly commands hit edit-guarded API actions, so keep them out of a
+            // reader's autocomplete where they could only ever fail.
+            const matches = CHAT_COMMANDS.filter(c => c.name.toLowerCase().startsWith(query)
+                && (!c.editorOnly || window.WIKI_ROLE !== 'reader'));
             if (!matches.length) { closePop(); return; }
             matches.forEach(c => {
                 const item = document.createElement('div');

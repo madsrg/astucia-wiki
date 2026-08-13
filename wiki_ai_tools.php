@@ -51,7 +51,7 @@ function wiki_tool_definitions(): array {
             'params'      => [
                 'type'       => 'object',
                 'properties' => [
-                    'path'    => ['type' => 'string', 'description' => 'Relative path ending in .md, e.g. Notes/Summary.md'],
+                    'path'    => ['type' => 'string', 'description' => 'Relative path ending in .md, e.g. Notes/Summary.md. For a NEW page, put it in the current folder named in the system prompt unless the request asks for a different location — do not invent a folder.'],
                     'content' => ['type' => 'string', 'description' => 'REQUIRED: the complete markdown content of the page. Must not be omitted or empty.'],
                 ],
                 'required'   => ['path', 'content'],
@@ -63,7 +63,7 @@ function wiki_tool_definitions(): array {
             'params'      => [
                 'type'       => 'object',
                 'properties' => [
-                    'path'    => ['type' => 'string', 'description' => 'Relative path ending in .json, e.g. Reports/Q3-stats.json'],
+                    'path'    => ['type' => 'string', 'description' => 'Relative path ending in .json, e.g. Reports/Q3-stats.json. For a NEW page, put it in the current folder named in the system prompt unless the request asks for a different location — do not invent a folder.'],
                     'content' => ['type' => 'string', 'description' => 'REQUIRED: the complete JSON document as a string. Must be valid JSON (object or array) and must not be empty.'],
                 ],
                 'required'   => ['path', 'content'],

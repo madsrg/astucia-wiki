@@ -269,10 +269,15 @@ const navigateToPageId = async (pageId, fallbackPath = null) => {
 
 const loadStartPage = async () => {
     const result = await api.call('get_start_page');
-    if (result.success) {
-        await loadPage(result.path, result.id, []);
-        revealAndSelectFile(result.path);
+    if (!result.success) return;
+    // No Main.md in this space — show an empty view rather than creating one.
+    if (!result.path) {
+        const { showBlankPage } = await import('./modules/page_view/index.js');
+        await showBlankPage();
+        return;
     }
+    await loadPage(result.path, result.id, []);
+    revealAndSelectFile(result.path);
 };
 
 init();

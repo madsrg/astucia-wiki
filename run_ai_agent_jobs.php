@@ -127,6 +127,7 @@ foreach ($jobs as $idx => &$job) {
     $log_body .= $result['error']
         ? "ERROR:\n" . $result['error'] . "\n"
         : "RESULT:\n" . $result['reply'] . "\n";
+    if (!empty($result['debug'])) $log_body .= "\n" . $result['debug'];
     file_put_contents($log_file, $log_body);
 
     // Send failure alert to ADMIN_EMAIL
@@ -225,6 +226,7 @@ foreach ($oneoff_batch as $oj) {
 
     $oj_reply = null;
     $oj_error = null;
+    $oj_debug = '';
     if (!$oj_ai) {
         $oj_error = 'The AI user for this job no longer exists.';
     } else {
@@ -233,6 +235,7 @@ foreach ($oneoff_batch as $oj) {
             $oj_result = run_agent_job($oj, $oj_ai, new PageIndexer($oj_space_dir), $oj_space_dir);
             $oj_reply  = $oj_result['reply'] ?? null;
             $oj_error  = $oj_result['error'] ?? null;
+            $oj_debug  = (string)($oj_result['debug'] ?? '');
         } catch (\Throwable $e) {
             // A crash must still resolve the placeholder rather than leave it spinning.
             $oj_error = 'Job crashed: ' . $e->getMessage();
@@ -255,7 +258,8 @@ foreach ($oneoff_batch as $oj) {
                   . "[{$oj_ts}] Space: " . (($oj['space'] ?? '') !== '' ? $oj['space'] : '(root)') . "\n"
                   . "[{$oj_ts}] Thread: " . ($oj['reply_to']['chat'] ?? '?') . "\n\n"
                   . "PROMPT:\n" . ($oj['prompt'] ?? '') . "\n\n"
-                  . ($oj_error !== null ? "ERROR:\n{$oj_error}\n" : "RESULT:\n{$oj_reply}\n");
+                  . ($oj_error !== null ? "ERROR:\n{$oj_error}\n" : "RESULT:\n{$oj_reply}\n")
+                  . ($oj_debug !== '' ? "\n" . $oj_debug : '');
         @file_put_contents($oj_log_file, $oj_body);
     }
 

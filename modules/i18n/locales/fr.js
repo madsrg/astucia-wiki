@@ -69,6 +69,7 @@ export default {
     'chat.send': 'Envoyer', 'chat.placeholder': 'Tapez un message… (Entrée pour envoyer, Maj+Entrée pour nouvelle ligne, # pour mentionner, / pour commandes)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Répondre à {name}',
     'chat.new-topic-toggle': 'Nouveau sujet', 'chat.new-topic-toggle-title': "Démarrer un nouveau sujet (Alt+C) — réinitialise le contexte de l'IA pour le prochain message",
+    'chat.copy-title': 'Copier le message',
     'chat.reaction-title': 'Ajouter une réaction', 'chat.delete-confirm': 'Supprimer ce message ?',
     'chat.delete-title': 'Supprimer le message', 'chat.pin-title': 'Épingler le message',
     'chat.unpin-title': 'Désépingler le message',
@@ -84,6 +85,11 @@ export default {
     'chat.cmd.topic':           'Mettre à jour le sujet — /topic Nouveau titre ici',
     'chat.cmd.purge':           'Conserver les N derniers messages, supprimer le reste — /purge 20 ou /purge 20 -y',
     'chat.cmd.summarize':       "Demander à une IA de résumer la conversation",
+    'chat.cmd.debug':           'Activer/désactiver le débogage du contexte — affiche le coût en jetons de chaque réponse IA de ce chat',
+    'chat.cmd.debug-on':        'Débogage du contexte activé — chaque réponse IA est suivie du détail des jetons',
+    'chat.cmd.debug-off':       'Débogage du contexte désactivé',
+    'chat.cmd.debug-off-cleared': 'Débogage du contexte désactivé — {count} message(s) de débogage supprimé(s)',
+    'chat.cmd.debug-fail':      'Impossible de basculer le débogage du contexte',
     'chat.cmd.ai-job':          "Mettre en file une tâche de raisonnement longue — /aiJob #UtilisateurIA votre demande",
     'chat.cmd.aijob-usage':     'Usage : /aiJob #UtilisateurIA votre demande ici',
     'chat.cmd.aijob-unknown-ai': "Aucun utilisateur IA nommé « {name} » — tapez /aiUsers pour voir la liste",
@@ -112,6 +118,7 @@ export default {
 
     'fileops.root': '(Racine)', 'fileops.rename-title': 'Renommer « {name} »',
     'fileops.renamed': 'Élément renommé avec succès.', 'fileops.delete-confirm': 'Supprimer « {name} » ?',
+    'page.no-start-page': 'Cet espace n’a pas de page d’accueil. Créez une page nommée Main pour en utiliser une.',
     'fileops.deleted': 'Élément supprimé.', 'fileops.copy-suffix': '(copie)',
     'fileops.copied': 'Page copiée avec succès !', 'fileops.moved': 'Élément déplacé avec succès !',
 

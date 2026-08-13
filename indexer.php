@@ -5,6 +5,54 @@
 // =================================================================
 
 class PageIndexer {
+    // Content types that get a stable page id. Defined once because two paths walk the
+    // tree — rebuildIndex() behind ?action=indexfiles, and index_sync.php's automatic
+    // external-change detection — and if the two sets disagreed, one would index what
+    // the other then deleted on its next pass.
+    const CONTENT_EXTS = ['md', 'drawio', 'list', 'chat', 'search', 'json'];
+
+    /**
+     * One recursive pass over a space's content tree.
+     *
+     * Exclusions match SearchIndex::scanAndInsert() and the `list` action:
+     *  - dot-entries (`.git`, `.gitignore`, `.filesfolder`)
+     *  - `index.json` / `graph.json` at the space root — the indexer's own sidecar and
+     *    the graph cache. Essential now that `.json` is indexed, or the index would
+     *    contain an entry for itself.
+     *  - `*.uploads` directories (per-page attachments, not pages)
+     * `templates/` is deliberately NOT excluded: template pages have always had ids,
+     * and the search layers filter them out separately via wiki_is_template_path().
+     *
+     * @return array [relative path => mtime] for every indexable file.
+     */
+    public static function scanContent($directory) {
+        $root = rtrim($directory, '/');
+        // Every immediate subdirectory of PAGES_DIR is a space with its own index.json
+        // (see list_spaces), so a root-level scan stays flat — recursing would give the
+        // same file an id in two different indexes.
+        $isPagesRoot = defined('PAGES_DIR') && $root === rtrim(PAGES_DIR, '/');
+        $found = [];
+
+        $walk = function ($dir, $prefix, $descend) use (&$walk, &$found, $root) {
+            $entries = @scandir($dir);
+            if ($entries === false) return;
+            foreach ($entries as $e) {
+                if ($e === '.' || $e === '..' || $e[0] === '.') continue;
+                if ($dir === $root && ($e === 'index.json' || $e === 'graph.json')) continue;
+                $abs = $dir . '/' . $e;
+                $rel = $prefix === '' ? $e : $prefix . '/' . $e;
+                if (is_dir($abs)) {
+                    if ($descend && substr($e, -8) !== '.uploads') $walk($abs, $rel, true);
+                    continue;
+                }
+                if (!in_array(strtolower(pathinfo($e, PATHINFO_EXTENSION)), self::CONTENT_EXTS, true)) continue;
+                $found[$rel] = (int)@filemtime($abs);
+            }
+        };
+        $walk($root, '', !$isPagesRoot);
+        return $found;
+    }
+
     private $indexFile;
     private $indexData;
 
@@ -58,6 +106,48 @@ class PageIndexer {
             }
             $this->saveIndex();
         }
+    }
+
+    /**
+     * Apply a batch of filesystem drift in a single index write.
+     *
+     * addPage/removePage/updateModified each rewrite the whole index.json, so applying
+     * a bulk external change (someone rsyncs in 500 pages) one call at a time is
+     * quadratic. Used by index_sync.php; ids of existing pages are never reassigned,
+     * so ?pageid= links survive.
+     *
+     * @param string[] $addPaths    Paths on disk with no index entry.
+     * @param string[] $removePaths Indexed paths no longer on disk.
+     * @param string[] $touchPaths  Indexed paths whose file is newer than 'updated'.
+     * @return array{added:int,removed:int,touched:int}
+     */
+    public function applyReconcile(array $addPaths, array $removePaths, array $touchPaths) {
+        $now = time();
+        $added = 0;
+        foreach ($addPaths as $path) {
+            if ($this->getId($path) !== null) continue;
+            $this->indexData[$this->generateUniqueId()] =
+                ['path' => $path, 'tags' => [], 'created' => $now, 'updated' => $now];
+            $added++;
+        }
+        $removed = 0;
+        foreach ($removePaths as $path) {
+            $id = $this->getId($path);
+            if ($id === null) continue;
+            unset($this->indexData[$id]);
+            $removed++;
+        }
+        $touched = 0;
+        foreach ($touchPaths as $path) {
+            $id = $this->getId($path);
+            if ($id === null) continue;
+            // Stamped with "now" rather than the file's mtime, so a file whose mtime is
+            // in the future can't be re-detected as changed on every pass.
+            $this->indexData[$id]['updated'] = $now;
+            $touched++;
+        }
+        if ($added || $removed || $touched) $this->saveIndex();
+        return ['added' => $added, 'removed' => $removed, 'touched' => $touched];
     }
 
     public function removePage($path) {
@@ -145,18 +235,9 @@ class PageIndexer {
     }
 
     public function rebuildIndex($directory) {
-        $directory = rtrim($directory, '/');
-        $allFiles = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory));
-        $markdownFiles = new RegexIterator($allFiles, '/\.(md|drawio|list)$/');
-        $foundPaths = [];
-
-        foreach ($markdownFiles as $file) {
-            $relativePath = str_replace($directory . '/', '', $file->getPathname());
-            $foundPaths[] = $relativePath;
-            if ($this->getId($relativePath) === null) {
-                $this->addPage($relativePath);
-            }
-        }
+        // Shares scanContent() with index_sync.php so both paths agree on what counts as
+        // content. Existing ids are never reassigned, so ?pageid= links survive a rebuild.
+        $foundPaths = array_keys(self::scanContent($directory));
 
         $indexedPaths = [];
         foreach($this->indexData as $data) {
@@ -165,12 +246,11 @@ class PageIndexer {
             }
         }
 
-        $deletedPaths = array_diff($indexedPaths, $foundPaths);
-        foreach ($deletedPaths as $path) {
-            $this->removePage($path);
-        }
-        
-        $this->saveIndex();
+        $this->applyReconcile(
+            array_values(array_diff($foundPaths, $indexedPaths)),
+            array_values(array_diff($indexedPaths, $foundPaths)),
+            []
+        );
         return count($foundPaths);
     }
 }

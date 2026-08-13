@@ -180,6 +180,14 @@ sudo -u www-data git -C /path/to/your/PAGES_DIR add .
 sudo -u www-data git -C /path/to/your/PAGES_DIR commit -m "Initial content"
 ```
 
+## Editing content outside the wiki
+
+Because content is plain files, you can work on it however you like — `rsync` a folder in, `git pull` on the content repository, run a script, edit with a desktop editor over a network share. Astucia Wiki notices: added, removed and externally edited pages are reconciled with the page index, the knowledge-graph cache and the search index automatically, and the file tree refreshes on its own.
+
+There is **no cron job and no filesystem watcher to install** — the check runs as part of ordinary requests, is skipped unless `INDEX_SYNC_INTERVAL_SECONDS` (default 30) has elapsed since the last look, and is shared safely between simultaneous visitors. It also runs on the MCP endpoint, so an AI client reconciles before it reads rather than answering from a stale index. Existing pages keep their IDs, so `?pageid=` links and bookmarks survive.
+
+Lower `INDEX_SYNC_INTERVAL_SECONDS` to react sooner, raise it to do less work on a very large content directory. `?action=indexfiles` still forces a full rebuild on demand.
+
 ## Localization
 
 The UI is available in **English, Danish, Swedish, Spanish, French, German, Simplified Chinese, and Hindi**. Logged-in users pick their language from **My Preferences**; anonymous / no-auth visitors get a language selector in the sidebar instead. The choice is stored in the browser. Adding a new language requires one new file in `modules/i18n/locales/` — copy `en.js`, translate the strings, and add the language code to `SUPPORTED_LANGUAGES` in `modules/i18n/index.js`.

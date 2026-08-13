@@ -769,6 +769,11 @@ const showAgentInstructions = async (token) => {
 const renderAiUserList = () => {
     const container = document.getElementById('admin-ai-list');
     if (!container) return;
+    // The footer "add" button belongs to the list state, so it is restored here rather
+    // than by each path that leaves a form. Otherwise leaving a tab with a form open
+    // (switchTab re-renders the list but never touched the button) stranded it hidden
+    // until a full page reload. Set before the empty-list early return below.
+    document.getElementById('admin-ai-add-btn')?.classList.remove('hidden');
 
     if (!aiUsers.length) {
         container.innerHTML = `<p class="admin-empty">${t('admin.ai.none')}</p>`;
@@ -1093,10 +1098,7 @@ const openAiUserForm = async (u) => {
         });
     })();
 
-    document.getElementById('ai-f-cancel-btn').addEventListener('click', () => {
-        renderAiUserList();
-        document.getElementById('admin-footer-ai').querySelector('#admin-ai-add-btn').classList.remove('hidden');
-    });
+    document.getElementById('ai-f-cancel-btn').addEventListener('click', () => renderAiUserList());
 
     document.getElementById('ai-f-save-btn').addEventListener('click', () => saveAiUser(u?.uid ?? null));
 
@@ -1123,7 +1125,7 @@ const openAiUserForm = async (u) => {
         lb.querySelector('#ai-user-help-close-btn')?.addEventListener('click', () => lb.classList.add('hidden'), { once: true });
     });
 
-    document.getElementById('admin-footer-ai').querySelector('#admin-ai-add-btn').classList.add('hidden');
+    document.getElementById('admin-ai-add-btn')?.classList.add('hidden');
 };
 
 // Space -> Folder -> Markdown page picker lightbox (move/copy style). Calls
@@ -1268,7 +1270,6 @@ const saveAiUser = async (uid) => {
     if (result.success) {
         showToast(t('admin.ai.saved'), 'success');
         invalidateUsers();
-        document.getElementById('admin-footer-ai').querySelector('#admin-ai-add-btn').classList.remove('hidden');
         await loadAiUsers();
     } else {
         showToast(result.message || 'Failed to save', 'error');
@@ -1346,6 +1347,7 @@ const regenerateAiToken = async (uid) => {
 const renderApiAccountList = () => {
     const container = document.getElementById('admin-api-list');
     if (!container) return;
+    document.getElementById('admin-api-add-btn')?.classList.remove('hidden'); // see renderAiUserList
 
     if (!apiAccounts.length) {
         container.innerHTML = `<p class="admin-empty">${t('admin.api.none')}</p>`;
@@ -1466,16 +1468,13 @@ const openApiAccountForm = (u) => {
         </div>`;
 
     document.getElementById('api-f-help-btn').addEventListener('click', showApiAccountHelp);
-    document.getElementById('api-f-cancel-btn').addEventListener('click', () => {
-        renderApiAccountList();
-        document.getElementById('admin-api-add-btn').classList.remove('hidden');
-    });
+    document.getElementById('api-f-cancel-btn').addEventListener('click', () => renderApiAccountList());
     document.getElementById('api-f-save-btn').addEventListener('click', () => saveApiAccount(u?.uid ?? null));
     if (!isNew) {
         document.getElementById('api-f-regen-btn').addEventListener('click', () => regenerateApiToken(u.uid));
     }
     wireSpacesField('api-f');
-    document.getElementById('admin-api-add-btn').classList.add('hidden');
+    document.getElementById('admin-api-add-btn')?.classList.add('hidden');
 };
 
 const saveApiAccount = async (uid) => {
@@ -1499,7 +1498,6 @@ const saveApiAccount = async (uid) => {
 
     if (result.success) {
         showToast(t('admin.api.saved'), 'success');
-        document.getElementById('admin-api-add-btn').classList.remove('hidden');
         await loadApiAccounts();
     } else {
         showToast(result.message || 'Failed to save', 'error');
@@ -1583,6 +1581,7 @@ const loadAgentJobs = async () => {
 const renderAgentJobList = () => {
     const container = document.getElementById('admin-jobs-list');
     if (!container) return;
+    document.getElementById('admin-jobs-add-btn')?.classList.remove('hidden'); // see renderAiUserList
 
     const serverTimeHtml = agentServerTime
         ? `<div class="admin-jobs-server-time">${t('admin.jobs.server-time')}: <strong>${agentServerTime}</strong> (${agentServerTz})</div>`
@@ -1750,7 +1749,7 @@ const showOneoffLog = async (job, btn) => {
     const cell = document.createElement('td');
     cell.colSpan = 7;
     const pre = document.createElement('pre');
-    pre.className = 'admin-diag-pre';
+    pre.className = 'admin-diag-pre admin-joblog-pre';
     pre.style.maxHeight = '320px';
     pre.textContent = res.content;
     cell.appendChild(pre);
@@ -1843,7 +1842,7 @@ const openJobForm = (job) => {
                     <select id="job-f-log-select" class="form-control" style="flex:1"><option value="">${t('admin.diag.loading')}</option></select>
                     <button type="button" id="job-f-log-refresh" class="btn btn-sm btn-secondary">${t('btn.refresh')}</button>
                 </div>
-                <pre id="job-f-log-output" class="admin-diag-pre" style="max-height:300px"></pre>
+                <pre id="job-f-log-output" class="admin-diag-pre admin-joblog-pre" style="max-height:300px"></pre>
             </div>` : ''}
 
             <div style="display:flex;gap:0.5rem;margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border-color)">
@@ -1861,10 +1860,7 @@ const openJobForm = (job) => {
     });
 
     document.getElementById('job-f-save-btn').addEventListener('click', () => saveJob(isNew ? null : job.id));
-    document.getElementById('job-f-cancel-btn').addEventListener('click', () => {
-        document.getElementById('admin-jobs-add-btn')?.classList.remove('hidden');
-        renderAgentJobList();
-    });
+    document.getElementById('job-f-cancel-btn').addEventListener('click', () => renderAgentJobList());
 
     if (!isNew) wireJobLogViewer(job.id);
 };
@@ -1935,7 +1931,6 @@ const saveJob = async (jobId) => {
     };
     const result = await api.call('admin_save_agent_job', params, 'POST');
     if (result.success) {
-        document.getElementById('admin-jobs-add-btn')?.classList.remove('hidden');
         await loadAgentJobs();
     } else {
         showToast(result.message || 'Failed to save job.', 'error');
@@ -2029,6 +2024,7 @@ const loadMcpServers = async () => {
 const renderMcpServerList = () => {
     const container = document.getElementById('admin-mcp-list');
     if (!container) return;
+    document.getElementById('admin-mcp-add-btn')?.classList.remove('hidden'); // see renderAiUserList
 
     if (!mcpServers.length) {
         container.innerHTML = '<p class="admin-empty">No MCP servers configured. Add one to give AI users access to external tools.</p>';
@@ -2137,10 +2133,7 @@ const openMcpServerForm = (s) => {
             </div>
         </div>`;
 
-    document.getElementById('mcp-f-cancel-btn').addEventListener('click', () => {
-        renderMcpServerList();
-        document.getElementById('admin-mcp-add-btn').classList.remove('hidden');
-    });
+    document.getElementById('mcp-f-cancel-btn').addEventListener('click', () => renderMcpServerList());
 
     wireExtraHeadersField('mcp-f');
 
@@ -2187,7 +2180,7 @@ const openMcpServerForm = (s) => {
 
     document.getElementById('mcp-f-save-btn').addEventListener('click', () => saveMcpServer(s?.id ?? null));
 
-    document.getElementById('admin-mcp-add-btn').classList.add('hidden');
+    document.getElementById('admin-mcp-add-btn')?.classList.add('hidden');
 };
 
 const saveMcpServer = async (id) => {
@@ -2216,7 +2209,6 @@ const saveMcpServer = async (id) => {
 
     if (result.success) {
         showToast('MCP server saved.', 'success');
-        document.getElementById('admin-mcp-add-btn').classList.remove('hidden');
         invalidateMcpServers();
         await loadMcpServers();
     } else {

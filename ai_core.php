@@ -106,6 +106,140 @@ function _extra_header_lines($raw): array {
     return $lines;
 }
 
+// --- Context debug accounting (/debug) ---------------------------------------
+
+// Rough token estimate for one prompt block. PHP has no tokenizer and shipping
+// one per provider is not worth it — ~4 characters per token is close enough to
+// answer "which block is fat?". Every debug report prints the provider's real
+// usage totals next to these, so the estimate is never trusted on its own.
+function ai_token_estimate(?string $s): int {
+    $s = (string)$s;
+    if ($s === '') return 0;
+    // ~4 characters per token holds for Latin text, but CJK and Indic scripts run
+    // closer to one token per character — counting those at the Latin rate would
+    // understate a Chinese or Hindi page several-fold.
+    $ascii    = strlen(preg_replace('/[^\x00-\x7F]/u', '', $s));
+    $nonascii = max(0, mb_strlen($s) - $ascii);
+    return (int)ceil($ascii / 4) + $nonascii;
+}
+
+// Input/output token counts from a provider response. The three wire families
+// name the same numbers differently, and Anthropic reports cache traffic in
+// separate fields that still count as input.
+function ai_usage_tokens(array $data): array {
+    $u = $data['usage'] ?? null;
+    if (!is_array($u)) return ['in' => 0, 'out' => 0];
+    return [
+        'in'  => (int)($u['input_tokens'] ?? $u['prompt_tokens'] ?? 0)
+                 + (int)($u['cache_read_input_tokens'] ?? 0)
+                 + (int)($u['cache_creation_input_tokens'] ?? 0),
+        'out' => (int)($u['output_tokens'] ?? $u['completion_tokens'] ?? 0),
+    ];
+}
+
+/**
+ * Renders the /debug report posted back into the chat as an is_debug message.
+ *
+ * @param array $blocks Ordered [label => ['tokens' => int, 'note' => string]] for
+ *                      the first request's payload.
+ * @param array $usage  Per-call ['in' => int, 'out' => int] from the provider,
+ *                      in call order. Empty when no provider reported usage.
+ * @param int   $max_tokens The AI user's Max Tokens setting — the output ceiling
+ *                      actually sent, so a truncated run is recognisable.
+ */
+function ai_debug_report(array $blocks, array $usage, string $model, int $api_calls, int $elapsed_ms, int $max_tokens = 0): string {
+    $n = fn($v) => number_format((int)$v);
+    $out  = "**🔎 Context debug** · `{$model}` · {$api_calls} API call" . ($api_calls === 1 ? '' : 's')
+          . ' · ' . round($elapsed_ms / 1000, 1) . 's'
+          . ($max_tokens > 0 ? ' · max tokens ' . $n($max_tokens) : '') . "\n\n";
+    $out .= "| First request | Est. tokens |\n|---|--:|\n";
+    $total = 0;
+    foreach ($blocks as $label => $b) {
+        $tok    = (int)($b['tokens'] ?? 0);
+        $total += $tok;
+        $note   = ($b['note'] ?? '') !== '' ? ' <sub>' . $b['note'] . '</sub>' : '';
+        $out   .= "| {$label}{$note} | " . $n($tok) . " |\n";
+    }
+    $out .= '| **Total** | **' . $n($total) . "** |\n";
+
+    if (!$usage) {
+        $out .= "\n*The provider reported no usage figures for this run, so only the estimate above is available.*";
+        return $out;
+    }
+    // The agentic loop re-sends the whole payload plus every prior tool result on
+    // each pass, so input grows per call — that growth is usually the real cost,
+    // and it is invisible in the first-request estimate above.
+    $in_tot = array_sum(array_column($usage, 'in'));
+    $out_tot = array_sum(array_column($usage, 'out'));
+    $out .= "\n**Actual usage** (reported by the provider)\n\n";
+    $out .= "| Call | In | Out |\n|---|--:|--:|\n";
+    foreach ($usage as $i => $u) {
+        $out .= '| ' . ($i + 1) . ' | ' . $n($u['in']) . ' | ' . $n($u['out']) . " |\n";
+    }
+    $out .= '| **Run total** | **' . $n($in_tot) . '** | **' . $n($out_tot) . "** |\n";
+    if (count($usage) > 1) {
+        $first = (int)($usage[0]['in'] ?? 0);
+        if ($first > 0) {
+            $out .= "\n*Input grew from " . $n($first) . ' to ' . $n((int)end($usage)['in'])
+                  . ' tokens across the run — each pass re-sends the full payload plus every tool result so far.*';
+        }
+    }
+    // An output that lands exactly on the ceiling was almost certainly cut off, which
+    // shows up as a half-finished reply rather than an error.
+    if ($max_tokens > 0 && max(array_column($usage, 'out')) >= $max_tokens) {
+        $out .= "\n\n*⚠️ A call produced " . $n($max_tokens) . ' output tokens — the Max Tokens ceiling.'
+              . ' The reply was probably truncated; raise Max Tokens for this AI user.*';
+    }
+    return $out;
+}
+
+/**
+ * Same accounting as ai_debug_report(), rendered as aligned plain text for the
+ * agent-job run logs — those are shown in a <pre>, where Markdown pipe tables and
+ * <sub> tags would just be noise.
+ */
+function ai_debug_report_text(array $blocks, array $usage, string $model, int $api_calls, int $elapsed_ms, int $max_tokens = 0, string $max_tokens_note = ''): string {
+    $n = fn($v) => number_format((int)$v);
+    $out = "CONTEXT (estimated tokens sent in the first request)\n";
+    $total = 0;
+    foreach ($blocks as $label => $b) {
+        $tok    = (int)($b['tokens'] ?? 0);
+        $total += $tok;
+        $out   .= '  ' . str_pad($label, 24) . str_pad((string)($b['note'] ?? ''), 26)
+                . str_pad($n($tok), 9, ' ', STR_PAD_LEFT) . "\n";
+    }
+    $out .= '  ' . str_repeat('-', 59) . "\n";
+    $out .= '  ' . str_pad('Total', 50) . str_pad($n($total), 9, ' ', STR_PAD_LEFT) . "\n";
+    $out .= '  model: ' . $model . ' · ' . $api_calls . ' API call' . ($api_calls === 1 ? '' : 's')
+          . ' · ' . round($elapsed_ms / 1000, 1) . "s\n";
+    if ($max_tokens > 0) {
+        $out .= '  max tokens (output ceiling per call): ' . $n($max_tokens)
+              . ($max_tokens_note !== '' ? ' ' . $max_tokens_note : '') . "\n";
+    }
+
+    if (!$usage) {
+        return $out . "\nUSAGE: the provider reported no token figures for this run.\n";
+    }
+    $out .= "\nUSAGE (reported by the provider)\n";
+    foreach ($usage as $i => $u) {
+        $out .= '  ' . str_pad('Call ' . ($i + 1), 14)
+              . 'in ' . str_pad($n($u['in']), 10, ' ', STR_PAD_LEFT)
+              . '   out ' . str_pad($n($u['out']), 8, ' ', STR_PAD_LEFT) . "\n";
+    }
+    $out .= '  ' . str_repeat('-', 46) . "\n";
+    $out .= '  ' . str_pad('Run total', 14)
+          . 'in ' . str_pad($n(array_sum(array_column($usage, 'in'))), 10, ' ', STR_PAD_LEFT)
+          . '   out ' . str_pad($n(array_sum(array_column($usage, 'out'))), 8, ' ', STR_PAD_LEFT) . "\n";
+    if (count($usage) > 1) {
+        $out .= "  (input grows per call: each pass re-sends the full payload plus every tool result so far)\n";
+    }
+    if ($max_tokens > 0 && max(array_column($usage, 'out')) >= $max_tokens) {
+        $out .= '  WARNING: a call produced ' . $n($max_tokens) . " output tokens — the Max Tokens ceiling.\n"
+              . "           The reply was probably truncated; raise Max Tokens for this AI user.\n";
+    }
+    return $out;
+}
+
 // Resolves an AI user's effective system prompt. When a system-prompt page is
 // configured (space + relative .md path), its Markdown content is used — so
 // Editors can view and edit the AI's instructions as an ordinary wiki page,
@@ -725,7 +859,9 @@ function _ai_quick_reply(array $ai_user, string $system, string $user_msg, int $
  * @param array       $ai_user  The AI user record (ai_config, name, role, uid, …)
  * @param PageIndexer $indexer  PageIndexer for the space
  * @param string      $space_dir Absolute path to the space directory
- * @return array ['reply' => string|null, 'error' => string|null]
+ * @return array ['reply' => string|null, 'error' => string|null, 'debug' => string]
+ *               'debug' is the context/token accounting for the run log — always
+ *               produced, since a run log is read precisely when something looks off.
  */
 function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string $space_dir): array {
     // --- Extract LLM config ---
@@ -755,13 +891,27 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
 
     $space_name = basename($space_dir);
 
+    // One-off /aiJob runs carry the chat they were queued from, which gives the run
+    // a current folder to save into; scheduled jobs only know their space, so they
+    // default to its root. Either way the folder must be stated explicitly —
+    // otherwise the model invents a plausible path for a new page.
+    $job_chat_rel = ltrim(str_replace('..', '', (string)($job['reply_to']['chat'] ?? '')), '/');
+    $job_dir_rel  = $job_chat_rel !== '' ? trim(dirname($job_chat_rel), '/.') : '';
+    $loc_ctx = ($job_dir_rel === ''
+            ? "The current folder is the root of this space, so a new page named Example belongs at \"Example.md\". "
+            : "The current folder is \"{$job_dir_rel}\", so a new page named Example belongs at \"{$job_dir_rel}/Example.md\". ")
+        . "Create new pages in the current folder unless the task asks for a different location. ";
+
     // --- Build system prompt with wiki context ---
-    $full_system = "You are an AI agent operating in the \"{$space_name}\" wiki space. "
+    // Held in its own variable so the run log can price the built-in instructions
+    // separately from the AI user's own system prompt.
+    $wiki_ctx = "You are an AI agent operating in the \"{$space_name}\" wiki space. "
+        . $loc_ctx
         . "Use wiki_list_pages to discover pages, wiki_read_page to read content, "
         . "and wiki_write_page to create or update .md pages. "
         . "When calling wiki_write_page you MUST include the complete markdown content in the \"content\" field. "
-        . "Proceed with tasks directly using tools — do not describe what you are about to do before doing it.\n\n"
-        . $sys_prompt;
+        . "Proceed with tasks directly using tools — do not describe what you are about to do before doing it.\n\n";
+    $full_system = $wiki_ctx . $sys_prompt;
 
     // --- Tool executor closure ---
     $mcp_tool_map  = []; // populated below after $tools_def is built
@@ -839,7 +989,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
             'params'      => [
                 'type'       => 'object',
                 'properties' => [
-                    'path'    => ['type' => 'string', 'description' => 'Relative path ending in .md, e.g. Notes/Summary.md'],
+                    'path'    => ['type' => 'string', 'description' => 'Relative path ending in .md, e.g. Notes/Summary.md. For a NEW page, put it in the current folder named in the system prompt unless the task asks for a different location — do not invent a folder.'],
                     'content' => ['type' => 'string', 'description' => 'REQUIRED: the complete markdown content of the page. Must not be omitted or empty.'],
                 ],
                 'required'   => ['path', 'content'],
@@ -853,6 +1003,10 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     // server's tools (no built-ins, no other enabled servers) — a deterministic
     // alternative to the free-text per-server instructions below.
     $forced_slugs = _mcp_extract_forced_slugs($job['prompt'] ?? '');
+    // Whatever MCP appends to the system prompt is collected here first, so the run
+    // log can price the servers' guidance apart from the other instruction blocks.
+    $mcp_extra     = '';
+    $mcp_srv_count = 0;
     $add_mcp_server_tools = function(array $mcp_srv) use (&$mcp_tool_map, &$tools_def) {
         foreach (_mcp_fetch_tools($mcp_srv) as $tool) {
             $alias = _mcp_tool_alias($mcp_srv['name'] ?? 'mcp', $tool['name']);
@@ -870,7 +1024,8 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
             if ($forced) {
                 $tools_def = []; // explicit source(s) referenced — built-ins and other servers excluded
                 foreach ($forced as $mcp_srv) $add_mcp_server_tools($mcp_srv);
-                $full_system .= "\n\nThe prompt explicitly requested " . implode(' and ', array_column($forced, 'name'))
+                $mcp_srv_count = count($forced);
+                $mcp_extra .= "\n\nThe prompt explicitly requested " . implode(' and ', array_column($forced, 'name'))
                     . " via src: — use only the tools available to you for this run.";
             } else {
                 $mcp_guidance = '';
@@ -879,10 +1034,12 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                     $instr = trim($mcp_instructions[$mcp_srv['id'] ?? ''] ?? '');
                     if ($instr) $mcp_guidance .= "\n[" . $mcp_srv['name'] . '] ' . $instr;
                 }
-                if ($mcp_guidance) $full_system .= "\n\nMCP tool guidance:" . $mcp_guidance;
+                $mcp_srv_count = count($enabled);
+                if ($mcp_guidance) $mcp_extra .= "\n\nMCP tool guidance:" . $mcp_guidance;
             }
         }
     }
+    $full_system .= $mcp_extra;
 
     if ($family === 'anthropic') {
         $tools = array_map(fn($t) => [
@@ -912,6 +1069,23 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
             ['role' => 'user',   'content' => $job['prompt']],
         ];
     }
+
+    // --- Context accounting for the run log ---
+    // Measured here, after the tool list is final (MCP schemas are fetched live), so
+    // the numbers match what actually goes on the wire. Unlike the chat-side /debug
+    // this is unconditional: a run log is read precisely when a job looks wrong.
+    $dbg_started    = microtime(true);
+    $api_call_count = 0;
+    $debug_usage    = [];
+    $debug_blocks = [
+        'Wiki instructions'    => ['tokens' => ai_token_estimate($wiki_ctx),   'note' => 'built-in'],
+        'Custom system prompt' => ['tokens' => ai_token_estimate($sys_prompt), 'note' => ''],
+        'MCP guidance'         => ['tokens' => ai_token_estimate($mcp_extra),
+                                   'note'   => $mcp_srv_count . ' server' . ($mcp_srv_count === 1 ? '' : 's')],
+        'Tool schemas'         => ['tokens' => ai_token_estimate(json_encode($tools)),
+                                   'note'   => count($tools_def) . ' tools, ' . count($mcp_tool_map) . ' via MCP'],
+        'Job prompt'           => ['tokens' => ai_token_estimate((string)($job['prompt'] ?? '')), 'note' => ''],
+    ];
 
     // --- Agentic loop (max 10 iterations) ---
     $reply        = null;
@@ -976,6 +1150,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
         // Final pass: forbid tools so the model must produce a text reply.
         if ($force_final) $payload['tool_choice'] = $family === 'anthropic' ? ['type' => 'none'] : 'none';
 
+        $api_call_count++;
         $ch = curl_init($api_url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
@@ -1001,6 +1176,11 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 . _ai_raw_debug($raw, $http);
             break;
         }
+
+        // One capture point for all three wire families, before the family-specific
+        // branches — every successful pass adds a row to the run log's usage table.
+        $_u = ai_usage_tokens($data);
+        if ($_u['in'] || $_u['out']) $debug_usage[] = $_u;
 
         // Detect error responses
         if (isset($data['error'])) {
@@ -1127,14 +1307,25 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
         }
     }
 
+    // The accounting is attached to every outcome, failures included — a run that
+    // died on a context-length error is exactly when the breakdown is worth reading.
+    // A thinking run raises max_tokens above the configured value (see above), so
+    // report the ceiling actually sent and say where it came from.
+    $cfg_max = (int)($config['max_tokens'] ?? 4096);
+    $debug_text = ai_debug_report_text($debug_blocks, $debug_usage, $model, $api_call_count,
+                                       (int)((microtime(true) - $dbg_started) * 1000), $max_tokens,
+                                       $max_tokens > $cfg_max
+                                           ? '(raised from the configured ' . number_format($cfg_max) . ' for this extended-reasoning run)'
+                                           : '(AI user setting)');
+
     if ($api_error) {
-        return ['reply' => null, 'error' => $api_error];
+        return ['reply' => null, 'error' => $api_error, 'debug' => $debug_text];
     }
     if (!$reply) {
         if ($iter >= $max_iters) {
-            return ['reply' => null, 'error' => 'Stopped after too many tool calls without producing a response.'];
+            return ['reply' => null, 'error' => 'Stopped after too many tool calls without producing a response.', 'debug' => $debug_text];
         }
-        return ['reply' => null, 'error' => 'No response was generated.'];
+        return ['reply' => null, 'error' => 'No response was generated.', 'debug' => $debug_text];
     }
 
     if ($mcp_calls_log) {
@@ -1142,5 +1333,5 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
         $reply .= "\n\n---\n*MCP tools used: " . implode(', ', $unique) . '*';
     }
 
-    return ['reply' => $reply, 'error' => null];
+    return ['reply' => $reply, 'error' => null, 'debug' => $debug_text];
 }

@@ -69,6 +69,7 @@ export default {
     'chat.send': 'Skicka', 'chat.placeholder': 'Skriv ett meddelande… (Enter för att skicka, Skift+Enter för ny rad, # för att nämna, / för kommandon)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Svara {name}',
     'chat.new-topic-toggle': 'Nytt ämne', 'chat.new-topic-toggle-title': 'Starta ett nytt ämne (Alt+C) — återställer AI:ns kontext för nästa meddelande',
+    'chat.copy-title': 'Kopiera meddelande',
     'chat.reaction-title': 'Lägg till reaktion', 'chat.delete-confirm': 'Ta bort det här meddelandet?',
     'chat.delete-title': 'Ta bort meddelande', 'chat.pin-title': 'Fäst meddelande',
     'chat.unpin-title': 'Ta bort fästning',
@@ -84,6 +85,11 @@ export default {
     'chat.cmd.topic':           'Uppdatera chattämnet — /topic Ny rubrik här',
     'chat.cmd.purge':           'Behåll de N senaste meddelandena, ta bort resten — /purge 20 eller /purge 20 -y',
     'chat.cmd.summarize':       'Be en AI sammanfatta konversationen',
+    'chat.cmd.debug':           'Slå på/av kontextfelsökning — visa tokenkostnaden för varje AI-svar i den här chatten',
+    'chat.cmd.debug-on':        'Kontextfelsökning på — varje AI-svar följs av en tokenuppdelning',
+    'chat.cmd.debug-off':       'Kontextfelsökning av',
+    'chat.cmd.debug-off-cleared': 'Kontextfelsökning av — {count} felsökningsmeddelande(n) borttagna',
+    'chat.cmd.debug-fail':      'Kunde inte växla kontextfelsökning',
     'chat.cmd.ai-job':          'Köa ett långt resonemangsjobb — /aiJob #AiAnvändare din förfrågan',
     'chat.cmd.aijob-usage':     'Användning: /aiJob #AiAnvändare din förfrågan här',
     'chat.cmd.aijob-unknown-ai': 'Ingen AI-användare med namnet "{name}" — skriv /aiUsers för att se listan',
@@ -112,6 +118,7 @@ export default {
 
     'fileops.root': '(Rot)', 'fileops.rename-title': 'Byt namn på "{name}"',
     'fileops.renamed': 'Objektet har bytt namn.', 'fileops.delete-confirm': 'Ta bort "{name}"?',
+    'page.no-start-page': 'Det här utrymmet har ingen startsida. Skapa en sida som heter Main för att använda den som startsida.',
     'fileops.deleted': 'Objektet borttaget.', 'fileops.copy-suffix': '(kopia)',
     'fileops.copied': 'Sidan kopierades!', 'fileops.moved': 'Objektet flyttades!',
 

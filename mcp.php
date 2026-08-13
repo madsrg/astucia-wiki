@@ -84,6 +84,18 @@ if ($_sp !== '') {
 }
 $indexer = new PageIndexer($space_dir);
 
+// Same opportunistic reconcile as api.php's bootstrap: this endpoint is separate, and
+// without it an MCP client would read an index that has not seen changes made outside
+// the wiki. Debounced, so the usual cost is one small stamp-file read.
+$_mcp_search_idx = null;
+if (defined('SEARCH_ENGINE') && SEARCH_ENGINE === 'sqlite') {
+    require_once __DIR__ . '/search_index.php';
+    try { $_mcp_search_idx = new SearchIndex(); } catch (\Throwable $_e) {}
+}
+require_once __DIR__ . '/graph.php';
+require_once __DIR__ . '/index_sync.php';
+try { index_sync_maybe($space_dir, $indexer, $_mcp_search_idx); } catch (\Throwable $_e) {}
+
 switch ($method) {
     case 'initialize':
         echo json_encode([

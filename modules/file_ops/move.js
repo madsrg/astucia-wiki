@@ -3,7 +3,7 @@ import { state } from '../core/state.js';
 import { icons } from '../core/icons.js';
 import { showToast } from '../core/utils.js';
 import { refreshFileTree, revealAndSelectFile } from '../file_tree/index.js';
-import { loadPage } from '../page_view/index.js';
+import { loadPage, showBlankPage } from '../page_view/index.js';
 import { t } from '../i18n/index.js';
 
 const renderFolderTree = (items, parent) => {
@@ -115,11 +115,14 @@ export const init = () => {
             await refreshFileTree();
 
             if (isCrossSpace && wasCurrentPage) {
-                // Item moved to another space — navigate to start page
+                // Item moved to another space — navigate to start page, or show an
+                // empty view when this space has no Main.md.
                 const startResult = await api.call('get_start_page');
-                if (startResult.success) {
+                if (startResult.success && startResult.path) {
                     await loadPage(startResult.path, startResult.id, []);
                     revealAndSelectFile(startResult.path);
+                } else if (startResult.success) {
+                    await showBlankPage();
                 }
             } else {
                 if (wasCurrentPage) {

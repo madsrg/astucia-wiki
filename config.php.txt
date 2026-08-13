@@ -125,6 +125,15 @@ define('LOG_DIR', '/var/log/wiki/');
 // so a value that disagrees with cron produces a wrong estimate.
 define('AGENT_JOB_RUNNER_INTERVAL_MINUTES', 15);
 
+// --- External change detection ---
+// Content changed outside the wiki (rsync, git pull, an editor writing straight into
+// PAGES_DIR) is reconciled with index.json / the graph cache / the FTS index by
+// index_sync.php, from the api.php bootstrap — no cron entry or filesystem watcher.
+// This is the minimum seconds between filesystem scans per space: lower reacts sooner,
+// higher costs less. One scan stats the indexable files of one space; results are
+// cached in WIKI_SYSTEM_DATA/index-sync/ between passes. Set to 0 to use the default.
+define('INDEX_SYNC_INTERVAL_SECONDS', 30);
+
 // --- Diagnostics (optional) ---
 // Absolute paths to server log files shown in Admin → Diagnostics.
 // Leave empty ('') to hide the section.
