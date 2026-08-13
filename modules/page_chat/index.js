@@ -233,15 +233,19 @@ const startPoll = (path, initialMtime = 0) => {
         if (_pcPath !== path) { stopPoll(); return; }
         const msgs  = _pcData?.messages || [];
         const maxId = msgs.length ? msgs[msgs.length - 1].id : 0;
+        // See the same guard in modules/chat: a reply resolves its placeholder by
+        // mutating it, which a since_id poll cannot see, so an outstanding placeholder
+        // must always take the full refetch below.
+        const awaitingReply = msgs.some(m => m.pending);
         const res   = await api.call('chat_messages', { file: path, since_id: maxId });
         if (!res.success) return;
         const newMsgs = res.messages || [];
-        if (newMsgs.length) {
+        if (newMsgs.length && !awaitingReply) {
             _lastMtime = res.mtime || _lastMtime;
             const prevUid = msgs.length ? msgs[msgs.length - 1].uid : null;
             _pcData = { ..._pcData, messages: [...msgs, ...newMsgs] };
             appendMessages(newMsgs, prevUid);
-        } else if ((res.mtime || 0) > _lastMtime) {
+        } else if ((res.mtime || 0) > _lastMtime || (newMsgs.length && awaitingReply)) {
             _lastMtime = res.mtime;
             const full = await api.call('get', { file: path });
             if (!full.success) return;

@@ -533,6 +533,13 @@ export const startPolling = (path, initialMtime = 0) => {
 
         const current = state.currentChatData?.messages || [];
         const maxId   = current.length ? current[current.length - 1].id : 0;
+        // An AI reply resolves its placeholder by mutating that message in place, so it
+        // never shows up in a since_id result. If the same write also appends a new
+        // message — a /debug report does — the incremental path below would append that
+        // and return, leaving the placeholder pending with no later write to correct it:
+        // a spinner that never stops. While a placeholder is outstanding, always take
+        // the full refetch, which sees mutations too.
+        const awaitingReply = current.some(m => m.pending);
 
         const res = await api.call('chat_messages', { file: path, since_id: maxId });
         if (!res.success) return;
@@ -540,7 +547,7 @@ export const startPolling = (path, initialMtime = 0) => {
         const newMsgs = res.messages || [];
         const mtime   = res.mtime || 0;
 
-        if (newMsgs.length) {
+        if (newMsgs.length && !awaitingReply) {
             _lastMtime = mtime;
             const prevUid = current.length ? current[current.length - 1].uid : null;
             state.currentChatData = { ...state.currentChatData, messages: [...current, ...newMsgs] };
@@ -548,7 +555,7 @@ export const startPolling = (path, initialMtime = 0) => {
             return;
         }
 
-        if (mtime > _lastMtime) {
+        if (mtime > _lastMtime || (newMsgs.length && awaitingReply)) {
             _lastMtime = mtime;
             const full = await api.call('get', { file: path });
             if (!full.success) return;

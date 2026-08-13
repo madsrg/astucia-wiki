@@ -6,6 +6,12 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.38] — 2026-08-13
+
+### Fixed
+- **"AI is working" no longer spins forever when `/debug` is on** — with context debugging enabled, an AI reply left the progress dialog running indefinitely and the reply text never appeared, even though the debug report was posted to the thread. The chat poll fetches only messages with ids newer than the last one it holds, but a reply is delivered by rewriting its own pending placeholder in place — same id — so only a full refetch can see it. That refetch is triggered by the file's mtime, and because the reply and the debug report are written together in one operation, the poll saw the report's new id, took the incremental append path, advanced its mtime marker and returned: the placeholder stayed pending with no later write left to correct it, and the dialog closes only once nothing is pending. While a placeholder is outstanding the poll now always takes the full refetch, in both team chat and page chat. Introduced in 2026.7.37.
+
+
 ## [2026.7.37] — 2026-08-13
 
 ### Added
