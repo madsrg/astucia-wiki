@@ -19,6 +19,7 @@ export const state = {
     linkInsertionMode: 'link', // 'link' | 'include'
     sortState: { colId: null, direction: 'asc' },
     currentPageLastUpdated: null,
+    currentPageSize: null,          // byte size of the loaded file; baseline for the on-disk watcher
     editorLineHeight: 0,
     editMode: localStorage.getItem('wiki_editMode') || 'classic', // 'classic' | 'inline'
     inlineBlocks: [],

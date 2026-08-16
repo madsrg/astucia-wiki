@@ -119,6 +119,8 @@ export default {
     'fileops.root': '(Racine)', 'fileops.rename-title': 'Renommer « {name} »',
     'fileops.renamed': 'Élément renommé avec succès.', 'fileops.delete-confirm': 'Supprimer « {name} » ?',
     'page.no-start-page': 'Cet espace n’a pas de page d’accueil. Créez une page nommée Main pour en utiliser une.',
+    'page.reloaded-from-disk': 'La page a changé sur le disque — rechargée',
+    'page.changed-on-disk': 'Cette page a changé sur le disque. Enregistrer écrasera cette modification.',
     'fileops.deleted': 'Élément supprimé.', 'fileops.copy-suffix': '(copie)',
     'fileops.copied': 'Page copiée avec succès !', 'fileops.moved': 'Élément déplacé avec succès !',
 

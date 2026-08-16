@@ -184,6 +184,8 @@ sudo -u www-data git -C /path/to/your/PAGES_DIR commit -m "Initial content"
 
 Because content is plain files, you can work on it however you like — `rsync` a folder in, `git pull` on the content repository, run a script, edit with a desktop editor over a network share. Astucia Wiki notices: added, removed and externally edited pages are reconciled with the page index, the knowledge-graph cache and the search index automatically, and the file tree refreshes on its own.
 
+**The page you are looking at reloads itself** when its file changes underneath — Markdown pages, lists and data pages, within about ten seconds. If you are editing, nothing is touched: you get a notice that the page changed on disk instead, because saving would otherwise overwrite that change without warning.
+
 There is **no cron job and no filesystem watcher to install** — the check runs as part of ordinary requests, is skipped unless `INDEX_SYNC_INTERVAL_SECONDS` (default 30) has elapsed since the last look, and is shared safely between simultaneous visitors. It also runs on the MCP endpoint, so an AI client reconciles before it reads rather than answering from a stale index. Existing pages keep their IDs, so `?pageid=` links and bookmarks survive.
 
 Lower `INDEX_SYNC_INTERVAL_SECONDS` to react sooner, raise it to do less work on a very large content directory. `?action=indexfiles` still forces a full rebuild on demand.

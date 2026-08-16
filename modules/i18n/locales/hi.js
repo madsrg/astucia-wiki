@@ -267,6 +267,8 @@ export default {
     'fileops.renamed': 'आइटम का नाम सफलतापूर्वक बदला गया।',
     'fileops.delete-confirm': '"{name}" हटाएँ?',
     'page.no-start-page': 'इस स्पेस में कोई प्रारंभ पृष्ठ नहीं है। इसके लिए Main नाम का एक पृष्ठ बनाएँ।',
+    'page.reloaded-from-disk': 'पृष्ठ डिस्क पर बदला गया — फिर से लोड किया गया',
+    'page.changed-on-disk': 'यह पृष्ठ डिस्क पर बदला गया है। सहेजने पर वह बदलाव अधिलेखित हो जाएगा।',
     'fileops.deleted': 'आइटम हटा दिया गया।',
     'fileops.copy-suffix': '(कॉपी)',
     'fileops.copied': 'पेज सफलतापूर्वक कॉपी किया गया!',

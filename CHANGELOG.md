@@ -6,6 +6,16 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.39] — 2026-08-16
+
+### Added
+- **The page you are viewing reloads itself when its file changes on disk** — following on from external change detection in 2026.7.37, which kept the index and the file tree current but left the open page showing stale content. A Markdown page, list or data page now re-renders in place within about ten seconds of being changed underneath by a `git pull`, an `rsync`, a script, another person or an AI, with a brief notice. The reload is in-place rather than a full navigation, so scroll position, the table of contents and the open panels are preserved. `.chat` threads already poll themselves; `.drawio` and `.search` pages are deliberately left alone, since re-initialising the draw.io embed mid-view is disruptive and a saved search's results are computed rather than read from the file.
+- **A warning instead of a reload while you are editing** — unsaved work is never touched. If the file changes while the editor is open (or a list or data page has unsaved changes), the page is left exactly as it is and a notice explains that the version on disk has changed and that saving will overwrite it. Until now nothing detected this at all: saving performs no concurrent-change check, so an external edit could be discarded silently. The reload happens as soon as the edit is saved or cancelled. Localized across all eight languages.
+
+### Changed
+- **`get` and `file_mtime` also report file size** — `filemtime` has one-second resolution, so a write landing in the same second as a page load cannot be distinguished by timestamp alone, which is exactly what happens when an AI finishes writing a page as it is being opened. Both actions now return the byte size as well, and the viewer baselines its change detection against the response that rendered the page rather than a separate stat call, which would otherwise race with a write arriving immediately after the load and hide that change indefinitely. Existing callers that read only `mtime` are unaffected.
+
+
 ## [2026.7.38] — 2026-08-13
 
 ### Fixed

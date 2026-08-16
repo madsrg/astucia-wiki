@@ -233,6 +233,8 @@ export default {
     'fileops.renamed': '项目重命名成功。',
     'fileops.delete-confirm': '删除“{name}”？',
     'page.no-start-page': '此空间没有起始页。创建一个名为 Main 的页面作为起始页。',
+    'page.reloaded-from-disk': '页面在磁盘上已更改 — 已重新加载',
+    'page.changed-on-disk': '此页面在磁盘上已更改。保存将覆盖该更改。',
     'fileops.deleted': '项目已删除。',
     'fileops.copy-suffix': '（副本）',
     'fileops.copied': '页面复制成功！',

@@ -218,6 +218,7 @@ export const refreshPageContent = async () => {
 
     state.initialContent = result.data;
     state.currentPageLastUpdated = result.lastUpdated;
+    state.currentPageSize = result.size ?? null;
     document.getElementById('editor-container').value = state.initialContent;
 
     const processedContent = await processIncludes(state.initialContent);
@@ -240,6 +241,100 @@ export const refreshPageContent = async () => {
     updateTocPanel(headings, viewerContent);
 };
 
+// ── On-disk change watcher ───────────────────────────────────────────────────
+//
+// Reloads the page you are looking at when its file changes underneath — a git pull,
+// an rsync, another person, or an AI writing to it. Only for types rendered straight
+// from the file: `.chat` already polls itself, and `.drawio` / `.search` are left
+// alone (re-initialising the draw.io embed mid-view is jarring, and a `.search` file
+// barely changes — its results are computed).
+const FILE_WATCH_MS  = 10000;
+const WATCHED_TYPES  = ['file', 'list', 'json'];
+let _watchTimer  = null;
+let _watchPath   = null;
+let _watchMtime  = 0;
+let _watchSize   = null;   // null = not sampled yet
+let _watchWarned = 0;
+
+export const stopFileWatch = () => {
+    if (_watchTimer) { clearInterval(_watchTimer); _watchTimer = null; }
+    _watchPath = null;
+    _watchMtime = 0;
+    _watchSize = null;
+    _watchWarned = 0;
+};
+
+// Re-render the current page from disk without the rest of loadPage's work (no
+// scroll reset, no visit tracking, no browse-pane rebuild).
+const reloadWatchedPage = async (path) => {
+    if (state.currentPageType === 'file') {
+        await refreshPageContent();
+        return true;
+    }
+    const result = await api.call('get', { file: path });
+    if (!result.success) return false;
+    state.currentPageLastUpdated = result.lastUpdated;
+    state.currentPageSize = result.size ?? null;
+    if (state.currentPageType === 'json') {
+        const { renderJsonView } = await import('../json_view/index.js');
+        await renderJsonView(result.data, path);
+        return true;
+    }
+    try {
+        state.currentListData = JSON.parse(result.data);
+    } catch {
+        return false;                       // invalid JSON mid-write — try again next tick
+    }
+    const { renderListView }  = await import('../list/render.js');
+    const { refreshViewTabs } = await import('../list/index.js');
+    renderListView();
+    refreshViewTabs();
+    return true;
+};
+
+const startFileWatch = (path, mtime, size) => {
+    stopFileWatch();
+    if (!WATCHED_TYPES.includes(state.currentPageType)) return;
+    _watchPath  = path;
+    _watchMtime = mtime || 0;
+    // Baselined from the load response, so it describes exactly the bytes on screen —
+    // a separate stat call here would race with a write landing right after the load,
+    // and that poisoned baseline would hide the change for good.
+    _watchSize  = size ?? null;
+
+    _watchTimer = setInterval(async () => {
+        if (state.currentPagePath !== _watchPath) { stopFileWatch(); return; }
+        const res = await api.call('file_mtime', { file: _watchPath });
+        if (!res.success || !res.mtime) return;      // 0 = gone; deletion is handled elsewhere
+        if (_watchSize === null) _watchSize = res.size ?? 0;   // only if the seed above failed
+        if (!_watchMtime) { _watchMtime = res.mtime; return; }
+        // mtime has 1-second resolution, so a write in the same second as the baseline
+        // would otherwise be invisible — the size check catches it.
+        const changed = res.mtime > _watchMtime || (res.size ?? 0) !== _watchSize;
+        if (!changed) return;
+
+        // Never discard unsaved work. Saving does not detect a concurrent change, so
+        // without this notice an edit in progress would silently overwrite whatever
+        // changed on disk. _watchMtime is deliberately left as it was, so the reload
+        // happens as soon as the edit is saved or cancelled.
+        if (state.isEditing || state.hasUnsavedChanges) {
+            if (_watchWarned !== res.mtime) {
+                _watchWarned = res.mtime;
+                showToast(t('page.changed-on-disk'), 'info');
+            }
+            return;
+        }
+
+        const watched = _watchPath;
+        if (await reloadWatchedPage(watched)) {
+            if (state.currentPagePath !== watched) return;   // navigated away mid-reload
+            _watchMtime = res.mtime;
+            _watchSize  = res.size ?? _watchSize;
+            showToast(t('page.reloaded-from-disk'), 'info');
+        }
+    }, FILE_WATCH_MS);
+};
+
 /**
  * Empty view for "there is no page to show" — currently only when a space has no
  * Main.md start page. Deliberately does not create anything: the space may simply
@@ -247,6 +342,7 @@ export const refreshPageContent = async () => {
  * made deleting it look broken.
  */
 export const showBlankPage = async () => {
+    stopFileWatch();
     const chatMod = await import('../chat/index.js');
     chatMod.stopPolling();
     const pageChatMod = await import('../page_chat/index.js');
@@ -383,6 +479,8 @@ export const loadPage = async (path, id, tags) => {
         if (result.success) {
             loadedGitCommit = false;
             state.initialContent = result.data;
+            state.currentPageLastUpdated = result.lastUpdated;   // baseline for the on-disk watcher
+            state.currentPageSize = result.size ?? null;
             const { renderJsonView } = await import('../json_view/index.js');
             await renderJsonView(result.data, path);
         }
@@ -446,6 +544,8 @@ export const loadPage = async (path, id, tags) => {
         const result = await api.call('get', { file: path });
         if (result.success) {
             loadedGitCommit = result.git_commit ?? false;
+            state.currentPageLastUpdated = result.lastUpdated;   // baseline for the on-disk watcher
+            state.currentPageSize = result.size ?? null;
             try {
                 state.currentListData = JSON.parse(result.data);
                 state.activeListView = null;
@@ -499,6 +599,7 @@ export const loadPage = async (path, id, tags) => {
                 loadedGitCommit = result.git_commit ?? true;
                 state.initialContent = result.data;
                 state.currentPageLastUpdated = result.lastUpdated;
+                state.currentPageSize = result.size ?? null;   // baseline for the on-disk watcher
                 document.getElementById('editor-container').value = state.initialContent;
 
                 const processedContent = await processIncludes(state.initialContent);
@@ -551,4 +652,6 @@ export const loadPage = async (path, id, tags) => {
 
     const parentPath = path.substring(0, path.lastIndexOf('/'));
     renderBrowsePane(findItemsByPath(parentPath), parentPath);
+
+    startFileWatch(path, state.currentPageLastUpdated || 0, state.currentPageSize);
 };

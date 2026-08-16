@@ -119,6 +119,8 @@ export default {
     'fileops.root': '(Wurzel)', 'fileops.rename-title': '„{name}" umbenennen',
     'fileops.renamed': 'Element erfolgreich umbenannt.', 'fileops.delete-confirm': '„{name}" löschen?',
     'page.no-start-page': 'Dieser Space hat keine Startseite. Erstelle eine Seite namens Main, um sie als Startseite zu verwenden.',
+    'page.reloaded-from-disk': 'Seite auf der Festplatte geändert — neu geladen',
+    'page.changed-on-disk': 'Diese Seite wurde auf der Festplatte geändert. Beim Speichern wird diese Änderung überschrieben.',
     'fileops.deleted': 'Element gelöscht.', 'fileops.copy-suffix': '(Kopie)',
     'fileops.copied': 'Seite erfolgreich kopiert!', 'fileops.moved': 'Element erfolgreich verschoben!',
 

@@ -809,8 +809,17 @@ if (isset($_REQUEST['action'])) {
                 break;
 
             case 'file_mtime':
+                // Size is reported alongside mtime because filemtime has 1-second
+                // resolution: a write landing in the same second as the reader's
+                // baseline is invisible to mtime alone. Callers that only read
+                // "mtime" are unaffected.
                 $mtime_path = sanitize_path($_GET['file'] ?? '');
-                echo json_encode(['success' => true, 'mtime' => ($mtime_path !== '' && file_exists($mtime_path)) ? (int)filemtime($mtime_path) : 0]);
+                $mtime_ok   = $mtime_path !== '' && file_exists($mtime_path);
+                echo json_encode([
+                    'success' => true,
+                    'mtime'   => $mtime_ok ? (int)filemtime($mtime_path) : 0,
+                    'size'    => $mtime_ok ? (int)filesize($mtime_path)  : 0,
+                ]);
                 break;
 
             case 'api_schema':
@@ -1142,9 +1151,11 @@ if (isset($_REQUEST['action'])) {
                     } else {
                         $git_commit = false;
                     }
-                    echo json_encode(['success' => true, 'data' => $content, 'lastUpdated' => $last_updated, 'git_commit' => $git_commit]);
+                    // "size" lets a client baseline exactly the bytes it rendered, which
+                    // mtime alone cannot do at 1-second resolution (see file_mtime).
+                    echo json_encode(['success' => true, 'data' => $content, 'lastUpdated' => $last_updated, 'size' => strlen($content), 'git_commit' => $git_commit]);
                 } else {
-                    echo json_encode(['success' => true, 'data' => '', 'lastUpdated' => time(), 'git_commit' => true]);
+                    echo json_encode(['success' => true, 'data' => '', 'lastUpdated' => time(), 'size' => 0, 'git_commit' => true]);
                 }
                 break;
 

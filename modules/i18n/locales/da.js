@@ -120,6 +120,8 @@ export default {
     'fileops.root': '(Rod)', 'fileops.rename-title': 'Omdøb "{name}"',
     'fileops.renamed': 'Element omdøbt.', 'fileops.delete-confirm': 'Slet "{name}"?',
     'page.no-start-page': 'Dette Space har ingen startside. Opret en side med navnet Main for at bruge den som startside.',
+    'page.reloaded-from-disk': 'Siden blev ændret på disken — genindlæst',
+    'page.changed-on-disk': 'Denne side blev ændret på disken. Gemmer du, overskriver du den ændring.',
     'fileops.deleted': 'Element slettet.', 'fileops.copy-suffix': '(kopi)',
     'fileops.copied': 'Side kopieret!', 'fileops.moved': 'Element flyttet!',
 
