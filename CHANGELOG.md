@@ -6,6 +6,12 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.40] — 2026-08-16
+
+### Fixed
+- **The daily digest reported pages as changed that had not been touched in months** — the digest reads the `updated` timestamp from the page index rather than the file itself, and the external-change reconcile added in 2026.7.37 was stamping that field with the current time instead of the file's own modification time. Any index entry that predated timestamping (no `updated` field at all) therefore compared as "modified" the first time its Space was reconciled, and a page last edited in June was recorded as having changed today. Both the reconcile and `?action=indexfiles` now take the timestamp from the file, so a page's recorded `created` and `updated` reflect when it actually changed. This also makes the check self-stabilising: with `updated` equal to the file's mtime, the same page cannot be re-detected as modified on the next pass. Timestamps already written incorrectly are left as they are — they fall outside the digest's 24-hour window and no longer affect it.
+
+
 ## [2026.7.39] — 2026-08-16
 
 ### Added

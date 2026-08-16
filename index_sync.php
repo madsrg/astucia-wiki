@@ -118,7 +118,7 @@ function index_sync_maybe(string $space_dir, PageIndexer $indexer, $search_idx =
             return null;
         }
 
-        $indexer->applyReconcile($added, $removed, $touched);
+        $indexer->applyReconcile($added, $removed, $touched, $scan);
 
         // --- Keep the derived caches in step ---
         if ($added || $removed) {

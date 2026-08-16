@@ -116,18 +116,26 @@ class PageIndexer {
      * quadratic. Used by index_sync.php; ids of existing pages are never reassigned,
      * so ?pageid= links survive.
      *
+     * Timestamps come from the FILE, never from the clock. Stamping "now" would claim a
+     * month-old page had just changed, which the daily digest reads and reports as a
+     * change in the last 24 hours. It is also what makes the touched-check stable: with
+     * 'updated' set to the file's mtime, `mtime > updated` is false on the next pass.
+     *
      * @param string[] $addPaths    Paths on disk with no index entry.
      * @param string[] $removePaths Indexed paths no longer on disk.
      * @param string[] $touchPaths  Indexed paths whose file is newer than 'updated'.
+     * @param array    $mtimes      [path => mtime] from the scan; falls back to now.
      * @return array{added:int,removed:int,touched:int}
      */
-    public function applyReconcile(array $addPaths, array $removePaths, array $touchPaths) {
+    public function applyReconcile(array $addPaths, array $removePaths, array $touchPaths, array $mtimes = []) {
         $now = time();
+        $stamp = fn($path) => (int)($mtimes[$path] ?? 0) ?: $now;
         $added = 0;
         foreach ($addPaths as $path) {
             if ($this->getId($path) !== null) continue;
+            $ts = $stamp($path);
             $this->indexData[$this->generateUniqueId()] =
-                ['path' => $path, 'tags' => [], 'created' => $now, 'updated' => $now];
+                ['path' => $path, 'tags' => [], 'created' => $ts, 'updated' => $ts];
             $added++;
         }
         $removed = 0;
@@ -141,9 +149,7 @@ class PageIndexer {
         foreach ($touchPaths as $path) {
             $id = $this->getId($path);
             if ($id === null) continue;
-            // Stamped with "now" rather than the file's mtime, so a file whose mtime is
-            // in the future can't be re-detected as changed on every pass.
-            $this->indexData[$id]['updated'] = $now;
+            $this->indexData[$id]['updated'] = $stamp($path);
             $touched++;
         }
         if ($added || $removed || $touched) $this->saveIndex();
@@ -237,7 +243,8 @@ class PageIndexer {
     public function rebuildIndex($directory) {
         // Shares scanContent() with index_sync.php so both paths agree on what counts as
         // content. Existing ids are never reassigned, so ?pageid= links survive a rebuild.
-        $foundPaths = array_keys(self::scanContent($directory));
+        $scan       = self::scanContent($directory);
+        $foundPaths = array_keys($scan);
 
         $indexedPaths = [];
         foreach($this->indexData as $data) {
@@ -249,7 +256,8 @@ class PageIndexer {
         $this->applyReconcile(
             array_values(array_diff($foundPaths, $indexedPaths)),
             array_values(array_diff($indexedPaths, $foundPaths)),
-            []
+            [],
+            $scan
         );
         return count($foundPaths);
     }
