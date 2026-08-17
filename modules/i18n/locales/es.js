@@ -120,6 +120,8 @@ export default {
     'fileops.renamed': 'Elemento renombrado correctamente.', 'fileops.delete-confirm': '¿Eliminar "{name}"?',
     'page.no-start-page': 'Este espacio no tiene página de inicio. Crea una página llamada Main para usarla como tal.',
     'page.reloaded-from-disk': 'La página cambió en el disco — recargada',
+    'mermaid.error': 'No se pudo representar el diagrama:',
+    'mermaid.unavailable': 'no se pudo cargar el motor de diagramas.',
     'page.changed-on-disk': 'Esta página cambió en el disco. Al guardar sobrescribirás ese cambio.',
     'fileops.deleted': 'Elemento eliminado.', 'fileops.copy-suffix': '(copia)',
     'fileops.copied': '¡Página copiada correctamente!', 'fileops.moved': '¡Elemento movido correctamente!',

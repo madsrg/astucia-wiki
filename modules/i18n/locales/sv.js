@@ -120,6 +120,8 @@ export default {
     'fileops.renamed': 'Objektet har bytt namn.', 'fileops.delete-confirm': 'Ta bort "{name}"?',
     'page.no-start-page': 'Det här utrymmet har ingen startsida. Skapa en sida som heter Main för att använda den som startsida.',
     'page.reloaded-from-disk': 'Sidan ändrades på disken — laddades om',
+    'mermaid.error': 'Diagrammet kunde inte visas:',
+    'mermaid.unavailable': 'diagrammotorn kunde inte läsas in.',
     'page.changed-on-disk': 'Den här sidan ändrades på disken. Om du sparar skriver du över den ändringen.',
     'fileops.deleted': 'Objektet borttaget.', 'fileops.copy-suffix': '(kopia)',
     'fileops.copied': 'Sidan kopierades!', 'fileops.moved': 'Objektet flyttades!',

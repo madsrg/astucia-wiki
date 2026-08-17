@@ -7,6 +7,14 @@ import { openLinkLightbox, openExternalLinkLightbox } from './link_lightbox.js';
 const svg = (inner, sw = 2) =>
     `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
 
+// Starter blocks for the Insert menu. Each is a diagram that already renders, so the
+// result is visible immediately and can be edited down; the closing fence is passed as
+// the suffix so any selected lines end up inside the block.
+const SEQUENCE_SKELETON = '```mermaid\nsequenceDiagram\n    autonumber\n'
+    + '    Alice->>Bob: Request\n    Bob-->>Alice: Response';
+const FLOWCHART_SKELETON = '```mermaid\nflowchart TD\n'
+    + '    Start([Start]) --> Check{OK?}\n    Check -->|yes| Done([Done])\n    Check -->|no| Start';
+
 export const createEditorToolbar = () => {
     const toolbar = document.getElementById('editor-toolbar');
     if (!toolbar) return;
@@ -177,6 +185,12 @@ export const createEditorToolbar = () => {
         add('Diagram', 'Embed a draw.io diagram ({diagram:ID})', openDiagramInsertLightbox);
         add('List', 'Embed a list as a table ({list:ID:cols})', openListInsertLightbox);
         add('Comment', 'Insert a user comment ({user_comment:uid:text})', openCommentLightbox);
+        // Text-defined diagrams: a ```mermaid block, rendered as SVG in read mode. The
+        // skeleton is a working diagram, so it renders as soon as the page is saved.
+        add('Sequence Diagram', 'Insert a mermaid sequence diagram (rendered in read mode)', () =>
+            insertMarkdown(SEQUENCE_SKELETON, '\n```\n'));
+        add('Flowchart', 'Insert a mermaid flowchart (rendered in read mode)', () =>
+            insertMarkdown(FLOWCHART_SKELETON, '\n```\n'));
     });
 
     // ── Help / keyboard shortcuts dropdown ──────────────────────────────────

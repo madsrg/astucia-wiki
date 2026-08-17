@@ -63,19 +63,30 @@ const initSingleDiagram = async (el) => {
     el.appendChild(img);
 };
 
+// Watches the viewer for content that needs a second pass after Markdown rendering:
+// embedded .drawio previews, and ```mermaid fenced blocks. Observing beats calling the
+// renderers at each site that writes HTML here — page load, in-place refresh, the
+// inline editor's preview and {include:} transclusion all go through this one hook.
 let diagramObserverSetup = false;
 const setupDiagramObserver = () => {
     if (diagramObserverSetup) return;
     diagramObserverSetup = true;
+    const viewer = document.getElementById('viewer-content');
     new MutationObserver(mutations => {
+        let sawMermaid = false;
         for (const m of mutations) {
             for (const node of m.addedNodes) {
                 if (node.nodeType !== 1) continue;
                 if (node.classList.contains('inline-diagram-viewer')) initSingleDiagram(node);
                 node.querySelectorAll('.inline-diagram-viewer:not([data-initialized])').forEach(initSingleDiagram);
+                if (!sawMermaid && (node.querySelector?.('code.language-mermaid')
+                                    || node.matches?.('code.language-mermaid'))) sawMermaid = true;
             }
         }
-    }).observe(document.getElementById('viewer-content'), { childList: true, subtree: true });
+        if (sawMermaid) {
+            import('../mermaid/index.js').then(m => m.scheduleMermaidRender(viewer)).catch(() => {});
+        }
+    }).observe(viewer, { childList: true, subtree: true });
 };
 
 export const processDiagramTags = async (content) => {

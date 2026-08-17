@@ -120,6 +120,8 @@ export default {
     'fileops.renamed': 'Element erfolgreich umbenannt.', 'fileops.delete-confirm': '„{name}" löschen?',
     'page.no-start-page': 'Dieser Space hat keine Startseite. Erstelle eine Seite namens Main, um sie als Startseite zu verwenden.',
     'page.reloaded-from-disk': 'Seite auf der Festplatte geändert — neu geladen',
+    'mermaid.error': 'Diagramm konnte nicht dargestellt werden:',
+    'mermaid.unavailable': 'die Diagramm-Komponente konnte nicht geladen werden.',
     'page.changed-on-disk': 'Diese Seite wurde auf der Festplatte geändert. Beim Speichern wird diese Änderung überschrieben.',
     'fileops.deleted': 'Element gelöscht.', 'fileops.copy-suffix': '(Kopie)',
     'fileops.copied': 'Seite erfolgreich kopiert!', 'fileops.moved': 'Element erfolgreich verschoben!',

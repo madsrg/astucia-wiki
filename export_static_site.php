@@ -234,6 +234,8 @@ function renderHtmlPage(string $pageTitle, string $content, string $navHtml, str
   .sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;flex-shrink:0}
   .main-content{flex:1;min-width:0;overflow-y:auto;padding:2rem}
   .viewer-content img{max-width:100%;height:auto}
+  .mermaid-diagram{margin:1rem 0;overflow-x:auto}
+  .mermaid-diagram svg{max-width:100%;height:auto}
   /* hide interactive chrome */
   .sidebar-toggle-btn,.sidebar-actions,.sidebar-footer,.pane-tabs{display:none}
   .pane-content{display:block!important}
@@ -290,6 +292,25 @@ function toggleFolder(el){
       folder.textContent='▼ '+folder.textContent.slice(2);
     node=node.parentElement&&node.parentElement.closest('.static-nav-children');
   }
+})();
+// ```mermaid blocks: Parsedown leaves them as <pre><code class="language-mermaid">, so the
+// exported page renders them itself. Loaded only when the page actually has one, so a
+// static site without diagrams pulls nothing extra.
+(function(){
+  if(!document.querySelector('pre > code.language-mermaid'))return;
+  import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs').then(function(m){
+    var mermaid=m.default;
+    mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:'default',fontFamily:'inherit'});
+    var i=0;
+    document.querySelectorAll('pre > code.language-mermaid').forEach(function(code){
+      mermaid.render('mermaid-'+(++i),code.textContent||'').then(function(r){
+        var d=document.createElement('div');
+        d.className='mermaid-diagram';
+        d.innerHTML=r.svg;
+        code.closest('pre').replaceWith(d);
+      }).catch(function(){});
+    });
+  }).catch(function(){});
 })();
 </script>
 </body>

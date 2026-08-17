@@ -151,6 +151,23 @@ Keep `AGENT_JOB_RUNNER_INTERVAL_MINUTES` in `config.php` equal to the cron inter
 
 Which model an AI user runs matters here: reasoning-capable models (Claude Opus/Sonnet 4.6 and newer, OpenAI o-series and GPT-5) are asked to think at length for one-off jobs, while older models simply run the prompt normally. Per-model request rules live in `llm_providers.json` under `model_rules` and can be adjusted without code changes.
 
+## Diagrams from text
+
+Write a sequence diagram, flowchart, state chart, ER diagram or gantt chart as a fenced code block in any Markdown page and it renders as a diagram when you read the page:
+
+````markdown
+```mermaid
+sequenceDiagram
+    autonumber
+    Alice->>Bob: Request
+    Bob-->>Alice: Response
+```
+````
+
+The **Insert** menu in the editor has starter blocks for sequence diagrams and flowcharts. Because the diagram is just text in the page, it lives in that page's version history, it shows up in search by its own labels, and editing it is editing the page — no separate editor and no separate file to keep in sync. A page containing only a diagram can be embedded in any other page with `{include:ID}`, which is the way to reuse one diagram in several places. Diagrams also render in exported static sites.
+
+If a diagram has a syntax error, the page shows the error together with the source that caused it rather than dropping the block, so it can be fixed in place. Draw.io diagrams (`.drawio` files) remain available for anything better drawn by hand.
+
 ## Knowledge graph
 
 Every Space can be viewed as a knowledge graph — an interactive map of how its pages relate. It layers three kinds of relationship:

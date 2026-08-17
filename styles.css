@@ -826,6 +826,15 @@ body {
 }
 .inline-diagram-missing { padding: 0.6rem 1rem; color: #744210; background: #fefcbf; border-radius: 4px; font-size: 0.85rem; margin: 0; }
 
+/* Rendered ```mermaid blocks (sequence diagrams, flowcharts, …) — see modules/mermaid */
+.mermaid-diagram { margin: 1rem 0; overflow-x: auto; }
+.mermaid-diagram svg { max-width: 100%; height: auto; }
+/* A diagram that failed to parse keeps its source on screen under the error, so the
+   typo can be fixed instead of the page appearing to lose content. */
+.mermaid-error { padding: 0.6rem 1rem; color: #742a2a; background: #fff5f5; border: 1px solid #feb2b2;
+                 border-radius: 4px 4px 0 0; font-size: 0.85rem; margin: 1rem 0 0; }
+.mermaid-error-source { margin-top: 0; border-radius: 0 0 4px 4px; }
+
 /* Insert media lightboxes */
 .insert-empty-msg {
     color: var(--accent-gray);

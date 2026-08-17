@@ -6,6 +6,17 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.41] — 2026-08-17
+
+### Added
+- **Diagrams written as text in Markdown pages** — a fenced ```` ```mermaid ```` block renders as a diagram when the page is read, and stays plain text in the editor: sequence diagrams, flowcharts, state charts, ER diagrams and gantt charts. Deliberately implemented as part of Markdown rather than as a separate content type, so a diagram lives in the page it documents — it is covered by that page's version history, its labels are searchable through the normal index, and editing it is just editing the page. A page containing only a diagram can be embedded anywhere with `{include:ID}`, which is how one diagram is reused in several places. Draw.io files remain the better choice for anything drawn by hand.
+- **Starter blocks in the editor's Insert menu** — *Sequence Diagram* and *Flowchart* insert a skeleton that already renders, so the result is visible immediately and can be edited down instead of written from memory. With text selected, the selected lines become the body of the block.
+- **Diagrams in exported static sites** — the export renders Markdown server-side, which leaves the block untouched, so exported pages now carry their own renderer and show the same diagrams as the live wiki.
+
+### Changed
+- **A diagram with a syntax error shows the error and keeps its source visible** rather than dropping the block, so the mistake can be found and fixed in place. The renderer itself (~1 MB) is loaded from CDN only when a page actually contains a diagram, so pages without one are unaffected, and it runs with strict sanitisation because page content is user-authored.
+
+
 ## [2026.7.40] — 2026-08-16
 
 ### Fixed

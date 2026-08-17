@@ -373,6 +373,8 @@ export default {
     'fileops.delete-confirm':'Delete "{name}"?',
     'page.no-start-page':  'This space has no start page. Create a page named Main to use as one.',
     'page.reloaded-from-disk': 'Page changed on disk — reloaded',
+    'mermaid.error':       'Diagram could not be rendered:',
+    'mermaid.unavailable': 'the diagram renderer could not be loaded.',
     'page.changed-on-disk':  'This page changed on disk. Saving will overwrite that change.',
     'fileops.deleted':    'Item deleted.',
     'fileops.copy-suffix':'(copy)',
