@@ -23,6 +23,14 @@ mcp_servers.json
 # Rebuilt in the vendor stage; copying the host's copy would defeat that.
 vendor/
 
+# Build tooling the build itself never reads. .dockerignore can exclude itself: the
+# client reads it before sending the context, so it still takes effect.
+# NOTE: docker/ is NOT excluded — the Dockerfile COPYs docker/config.docker.php out of
+# the context. It is deleted from the image afterwards instead.
+.dockerignore
+Dockerfile
+docker-compose.yml
+
 .git
 .gitignore
 .gitattributes

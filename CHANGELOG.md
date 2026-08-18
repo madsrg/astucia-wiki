@@ -6,6 +6,15 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.45] — 2026-08-18
+
+### Added
+- **The published image now runs on ARM as well as Intel** — `madsrotwitt/astucia-wiki` is a multi-architecture manifest for `linux/amd64` and `linux/arm64`, so `docker run` works unchanged on an Apple Silicon Mac, a Raspberry Pi or an ARM cloud instance instead of failing with "no matching manifest". Docker selects the right variant automatically; the tags are unchanged.
+
+### Fixed
+- **`.dockerignore` was shipped inside the image** — harmless (a list of filenames, no secrets) but it is build tooling that has no business in a runtime image. It, the `Dockerfile` and `docker-compose.yml` are now excluded from the build context outright rather than deleted afterwards. `docker/` stays in the context because the Dockerfile reads the container config template from it, and is still removed from the image after the copy.
+
+
 ## [2026.7.44] — 2026-08-18
 
 ### Added
