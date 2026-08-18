@@ -42,6 +42,29 @@ The build installs the Composer dependencies in a separate stage and **fails** i
 required PHP extension is missing (`pdo_sqlite`, `curl`, `mbstring`, `fileinfo`,
 `json`, `session`), so a broken image is caught here rather than at runtime.
 
+### Stamping the image
+
+The image carries OCI metadata — title, description, source, documentation, licence —
+and two values worth supplying so a built image reports what it actually is:
+
+```bash
+docker build \
+    --build-arg VERSION=$(cat VERSION) \
+    --build-arg REVISION=$(git rev-parse --short HEAD) \
+    -t astucia-wiki:local .
+```
+
+Without them the labels read `version=dev` and `revision=unknown`, which is honest but
+unhelpful for anything you distribute. Inspect them with:
+
+```bash
+docker image inspect astucia-wiki:local \
+    --format '{{range $k,$v := .Config.Labels}}{{$k}} = {{$v}}{{"\n"}}{{end}}'
+```
+
+`/var/www/html/VERSION` inside the image is always the authoritative version, whether or
+not the build arg was passed.
+
 For a multi-architecture image:
 
 ```bash
@@ -294,7 +317,9 @@ With `ENABLE_CRON=false` and nothing in its place, scheduled jobs never fire and
 ```bash
 cd /path/to/AstuciaWiki
 git pull
-docker build -t astucia-wiki:local .
+docker build --build-arg VERSION=$(cat VERSION) \
+             --build-arg REVISION=$(git rev-parse --short HEAD) \
+             -t astucia-wiki:local .
 docker rm -f astucia-wiki
 ./docker/create_container.sh
 ```

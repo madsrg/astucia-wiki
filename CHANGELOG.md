@@ -6,6 +6,12 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.43] — 2026-08-18
+
+### Added
+- **Image metadata for the Docker image** — the standard OCI labels (title, description, project URL, source repository, documentation, licence, version, revision), so a published or distributed image identifies itself and links back to where it came from. Version and revision are build arguments: `docker build --build-arg VERSION=$(cat VERSION) --build-arg REVISION=$(git rev-parse --short HEAD) .`. Left unset they read `dev` and `unknown` rather than a hardcoded number that would silently go stale; `/var/www/html/VERSION` inside the image remains authoritative either way. `DOCKER.md` documents the build and upgrade commands with the arguments included.
+
+
 ## [2026.7.42] — 2026-08-18
 
 ### Added

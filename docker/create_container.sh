@@ -10,7 +10,7 @@ set -euo pipefail
 # --- Settings -----------------------------------------------------------------
 
 NAME="astucia-wiki"                       # container name
-IMAGE="astucia-wiki:local"                # built with: docker build -t astucia-wiki:local .
+IMAGE="astucia-wiki:local"                # see "Build" in DOCKER.md (pass VERSION/REVISION build args)
 PORT="8080"                               # host port -> container port 80
 DATA_DIR="/srv/astucia-wiki/data"         # holds pages/, system/ and logs/
 ENV_FILE="/srv/astucia-wiki/wiki.env"     # copied from docker/wiki.env.example

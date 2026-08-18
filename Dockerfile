@@ -46,6 +46,23 @@ RUN php -r 'foreach (["pdo_sqlite","curl","mbstring","fileinfo","json","session"
       if (!extension_loaded($e)) { fwrite(STDERR, "FATAL: PHP extension missing: $e\n"); exit(1); } } \
       echo "PHP extensions present\n";'
 
+# --- Image metadata (OCI) -----------------------------------------------------
+# VERSION/REVISION are build args so a published image reports what it actually is:
+#   docker build --build-arg VERSION=$(cat VERSION) \
+#                --build-arg REVISION=$(git rev-parse --short HEAD) .
+# Left as "dev" when not supplied, which is honest — better than a hardcoded number
+# that silently goes stale. /var/www/html/VERSION inside the image is authoritative.
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="Astucia Wiki" \
+      org.opencontainers.image.description="Flat-file, self-hosted team wiki with AI assistants, MCP server and no database" \
+      org.opencontainers.image.url="https://astucia.wiki" \
+      org.opencontainers.image.source="https://github.com/madsrg/astucia-wiki" \
+      org.opencontainers.image.documentation="https://github.com/madsrg/astucia-wiki/blob/main/DOCKER.md" \
+      org.opencontainers.image.licenses="GPL-3.0-or-later" \
+      org.opencontainers.image.version="$VERSION" \
+      org.opencontainers.image.revision="$REVISION"
+
 WORKDIR /var/www/html
 
 # Application code. .dockerignore keeps config.php, content and .git out.
