@@ -6,6 +6,15 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.42] — 2026-08-18
+
+### Added
+- **Docker support** — a `Dockerfile` and `docker-compose.yml` run the wiki as one container: nginx, PHP-FPM and cron under supervisord, on `php:8.3-fpm-alpine`, about 226 MB. PHP-FPM specifically, because AI replies call `fastcgi_finish_request()` to answer the browser and keep working in the background. Every piece of state — pages, users, the search index, logs — lives under a single `/data` mount, so a backup is an archive of one directory and replacing the container risks nothing. The build installs Composer dependencies in a separate stage and fails if a required PHP extension is missing, so a broken image is caught at build time rather than at runtime.
+- **Configuration entirely from the environment** — the container writes its own `config.php` on first start from environment variables, or leaves a mounted `config.php` alone. `docker/wiki.env.example` documents all 36 settings for use with `--env-file` or Compose's `env_file:`. Every constant the application reads without a `defined()` guard is always declared, so a missing value cannot produce a half-rendered page. The container also adopts the ownership of a bind-mounted content directory, so editing pages from the host with your own tools keeps working instead of the directory being taken over by the image's web user; sets the timezone for the system, PHP *and* cron from one `TZ` variable, since a mismatch would fire scheduled jobs at the wrong hour; and generates the crontab from `AGENT_JOB_RUNNER_INTERVAL_MINUTES`, the same value the application reads for the "your job starts in about N minutes" estimate, so the two cannot disagree.
+- **`DOCKER.md`** — configuring and managing the container: settings, data layout, backup and restore, day-to-day commands, cron management, upgrades, troubleshooting, and next steps covering nginx with Let's Encrypt, authentication, git history for content, hardening, monitoring and splitting the container. `docker/create_container.sh` is a ready-to-edit run script.
+- **A fresh install starts in a Space** — a wiki with no Spaces now creates one called `Main` and selects it, instead of leaving the interface pointed at the content root. This matters because once any Space exists the root is no longer selectable, so a page written there would be unreachable. The check runs before the start-page check, so the start page is created inside the new Space. A wiki whose pages already sit at the root is deliberately left alone rather than having them hidden behind a directory the interface cannot open.
+
+
 ## [2026.7.41] — 2026-08-17
 
 ### Added

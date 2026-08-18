@@ -90,6 +90,72 @@ if (isset($_REQUEST['action'])) {
         return basename(rtrim($space_dir, '/'));
     }
 
+    // Fills a newly created space directory with its start page and a copy of the
+    // app-level templates. Shared by create_space and wiki_ensure_default_space so a
+    // space bootstrapped automatically is indistinguishable from a hand-made one.
+    function wiki_scaffold_space(string $space_dir_new, ?int $uid = null, ?string $user_name = null): void {
+        $main_md = rtrim($space_dir_new, '/') . '/Main.md';
+        if (!file_exists($main_md)) {
+            file_put_contents($main_md,
+                  "# Welcome to " . APP_TITLE . "\n\n"
+                . "This is your wiki's start page.\n\n"
+                . "- Use the **New ...** button in the sidebar to create pages, folders, diagrams and lists\n"
+                . "- Click any page in the left sidebar to open it\n"
+                . "- Use the pencil icon (top right) to edit a Markdown page\n"
+                . "- Embed diagrams and lists in any page using the toolbar insert options\n\n"
+                . "## Help & Documentation\n\n"
+                . "Full documentation is available at [astucia.wiki](https://astucia.wiki).\n");
+            (new PageIndexer($space_dir_new))->addPage('Main.md', $uid, $user_name);
+        }
+        $src_templates = __DIR__ . '/templates';
+        $dst_templates = rtrim($space_dir_new, '/') . '/templates';
+        if (is_dir($src_templates) && !is_dir($dst_templates) && mkdir($dst_templates, 0755)) {
+            foreach (new DirectoryIterator($src_templates) as $tpl) {
+                if ($tpl->isDot() || !$tpl->isFile()) continue;
+                copy($tpl->getPathname(), $dst_templates . '/' . $tpl->getFilename());
+            }
+        }
+    }
+
+    /**
+     * Guarantee that a wiki has at least one Space.
+     *
+     * Content is meant to live in Spaces: once any Space exists the UI can no longer
+     * select PAGES_DIR itself, so anything sitting at the root becomes unreachable.
+     * A fresh install therefore gets a "Main" Space rather than being left pointing at
+     * the root — and because this runs before the start-page check, the start page is
+     * created inside that Space instead of at the root.
+     *
+     * Deliberately does nothing when the root already holds content files: creating a
+     * Space at that point would hide an existing wiki's pages behind a directory the UI
+     * cannot open. Such an install keeps working as it always has.
+     *
+     * @return string|null The Space that was created, or null if nothing was done.
+     */
+    function wiki_ensure_default_space(): ?string {
+        $root = rtrim(PAGES_DIR, '/');
+        $entries = @scandir($root);
+        if ($entries === false) return null;
+
+        $has_root_content = false;
+        foreach ($entries as $e) {
+            if ($e === '.' || $e === '..' || $e[0] === '.') continue;
+            if (is_dir($root . '/' . $e)) return null;              // a Space already exists
+            if ($e === 'index.json' || $e === 'graph.json') continue; // sidecars, not content
+            if (in_array(strtolower(pathinfo($e, PATHINFO_EXTENSION)), PageIndexer::CONTENT_EXTS, true)) {
+                $has_root_content = true;
+            }
+        }
+        if ($has_root_content) return null;   // pre-existing root wiki — leave it alone
+
+        $name = 'Main';
+        $dir  = $root . '/' . $name;
+        if (!is_dir($dir) && !@mkdir($dir, 0755)) return null;
+        $actor = get_current_actor();
+        wiki_scaffold_space($dir, $actor['uid'] ?? null, $actor['name'] ?? null);
+        return $name;
+    }
+
     // Pick up content added/removed/edited outside the wiki (rsync, git pull, an editor
     // writing straight into PAGES_DIR). Debounced and lock-guarded, so the common case
     // is one small stamp-file read; see index_sync.php for why this is here rather than
@@ -3391,6 +3457,10 @@ if (isset($_REQUEST['action'])) {
                 break;
 
             case 'list_spaces':
+                // Runs before anything else the client does on load — in particular
+                // before get_start_page — so a fresh install lands in a real Space and
+                // its start page is created there rather than at the unreachable root.
+                wiki_ensure_default_space();
                 $spaces_list = [];
                 foreach (scandir(PAGES_DIR) as $_sf) {
                     if ($_sf === '.' || $_sf === '..' || $_sf[0] === '.') continue;
@@ -3518,31 +3588,9 @@ if (isset($_REQUEST['action'])) {
                 $new_space_dir = PAGES_DIR . '/' . $safe_space_name;
                 if (is_dir($new_space_dir)) throw new Exception('A space with that name already exists.');
                 if (!mkdir($new_space_dir, 0755)) throw new Exception('Could not create space directory.');
-                // Create Main.md start page and index it
-                $main_md_path = $new_space_dir . '/Main.md';
-                $main_md_content = "# Welcome to " . APP_TITLE . "\n\n"
-                    . "This is your wiki's start page.\n\n"
-                    . "- Use the **New ...** button in the sidebar to create pages, folders, diagrams and lists\n"
-                    . "- Click any page in the left sidebar to open it\n"
-                    . "- Use the pencil icon (top right) to edit a Markdown page\n"
-                    . "- Embed diagrams and lists in any page using the toolbar insert options\n\n"
-                    . "## Help & Documentation\n\n"
-                    . "Full documentation is available at [astucia.wiki](https://astucia.wiki).\n";
-                file_put_contents($main_md_path, $main_md_content);
-                $new_space_indexer = new PageIndexer($new_space_dir);
+                // Start page + a copy of the app templates (see wiki_scaffold_space).
                 $actor = get_current_actor();
-                $new_space_indexer->addPage('Main.md', $actor['uid'], $actor['name']);
-                // Copy app-level templates folder into the new space
-                $src_templates = __DIR__ . '/templates';
-                if (is_dir($src_templates)) {
-                    $dst_templates = $new_space_dir . '/templates';
-                    if (mkdir($dst_templates, 0755)) {
-                        foreach (new DirectoryIterator($src_templates) as $tpl) {
-                            if ($tpl->isDot() || !$tpl->isFile()) continue;
-                            copy($tpl->getPathname(), $dst_templates . '/' . $tpl->getFilename());
-                        }
-                    }
-                }
+                wiki_scaffold_space($new_space_dir, $actor['uid'] ?? null, $actor['name'] ?? null);
                 echo json_encode(['success' => true]);
                 break;
 

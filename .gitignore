@@ -2,3 +2,7 @@ vendor/
 CLAUDE.md
 config.php
 .claude/
+
+# Filled-in container environment (may hold mail credentials); the
+# committed template is docker/wiki.env.example
+docker/wiki.env

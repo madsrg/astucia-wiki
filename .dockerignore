@@ -1,0 +1,32 @@
+# Keep secrets, content and local state out of the image.
+#
+# config.php is the important one: it holds API keys and mail credentials, and the
+# container generates its own from environment variables at first start.
+config.php
+
+# A filled-in env file is passed at run time with --env-file; it must never be
+# baked into a layer.
+docker/wiki.env
+
+# Content and per-install state belong in volumes, never baked into a layer.
+Pages/
+pages/
+userdata/
+*.sqlite
+users.json
+user_requests.json
+agent_jobs.json
+agent_jobs_queue.json
+agent_jobs_heartbeat.json
+mcp_servers.json
+
+# Rebuilt in the vendor stage; copying the host's copy would defeat that.
+vendor/
+
+.git
+.gitignore
+.gitattributes
+CLAUDE.md
+node_modules
+*.log
+.DS_Store

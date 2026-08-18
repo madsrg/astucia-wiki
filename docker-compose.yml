@@ -1,0 +1,81 @@
+# Astucia Wiki — container stack.
+#
+#   docker compose up -d --build
+#   open http://localhost:8080
+#
+# Content and per-install state live in the volumes below, never in the image, so
+# `docker compose pull && docker compose up -d` upgrades the wiki without touching
+# a single page.
+
+services:
+  wiki:
+    build: .
+    image: astucia-wiki:local
+    container_name: astucia-wiki
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      # One volume for everything that must survive an upgrade:
+      #   /data/pages   — your content (PAGES_DIR)
+      #   /data/system  — users.json, AI job queue, search.sqlite (WIKI_SYSTEM_DATA)
+      #   /data/logs    — access, error and cron logs (LOG_DIR)
+      - wiki-data:/data
+      #
+      # To edit content with your own tools instead, bind-mount the pages
+      # directory. The container adopts that directory's owner, so your files stay
+      # yours and no PUID/PGID setting is needed:
+      #   - ./content:/data/pages
+      #
+      # Astucia Wiki notices files that appear this way on its own — no reindex
+      # step, and the open page reloads itself.
+    # Everything below can instead live in a single env file — copy
+    # docker/wiki.env.example to docker/wiki.env, edit it, and replace this whole
+    # `environment:` block with:
+    #   env_file: docker/wiki.env
+    # That same file is what `docker run --env-file docker/wiki.env` expects.
+    environment:
+      APP_TITLE: "My Team Wiki"
+      TZ: "Europe/Copenhagen"
+
+      # Authentication: off | oidc | otp | both.
+      # 'off' means anyone who can reach the port is an admin — fine behind a
+      # private network or a VPN, not on the open internet.
+      AUTHENTICATION: "off"
+      # ANONYMOUS_ACCESS_ENABLED: "true"   # read-only browsing when auth is on
+
+      # Full-text search. 'sqlite' builds an FTS5 index under /data/system.
+      SEARCH_ENGINE: "sqlite"
+
+      # How often to look for content changed outside the wiki (seconds).
+      INDEX_SYNC_INTERVAL_SECONDS: "30"
+
+      # Scheduled AI agent jobs + the /aiJob queue. The entrypoint writes the
+      # crontab from this value, so the schedule and the ETA shown to users agree.
+      AGENT_JOB_RUNNER_INTERVAL_MINUTES: "15"
+      ENABLE_CRON: "true"
+      DAILY_DIGEST_HOUR: "7"
+
+      # Only to override the ownership the container would infer from a bind mount.
+      # PUID: "1000"
+      # PGID: "1000"
+
+      # Email — optional, and only needed for OTP login, page sharing, the daily
+      # digest and agent-job failure alerts.
+      # ADMIN_EMAIL: "you@example.com"
+      # MAIL_PROVIDER: "sendgrid"
+      # SENDGRID_API_KEY: "SG.xxx"
+      # SENDGRID_FROM_EMAIL: "wiki@example.com"
+
+      # OIDC — only when AUTHENTICATION is oidc or both.
+      # APP_BASE_URL: "https://wiki.example.com"
+      # OIDC_PROVIDER_URL: "https://accounts.google.com"
+      # OIDC_CLIENT_ID: "..."
+      # OIDC_CLIENT_SECRET: "..."
+      # OIDC_REDIRECT_URI: "https://wiki.example.com/auth.php"
+
+      # API keys for AI users are NOT set here — they are entered per AI user in
+      # Admin → AI and stored in /data/system/users.json.
+
+volumes:
+  wiki-data:

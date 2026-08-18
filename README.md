@@ -40,6 +40,19 @@ php -S localhost:8000
 
 Open `http://localhost:8000`. No database, no build step.
 
+### Docker
+
+```bash
+docker build -t astucia-wiki:local .
+cp docker/wiki.env.example /srv/astucia-wiki/wiki.env   # edit it
+./docker/create_container.sh
+```
+
+One container (nginx + PHP-FPM + cron), with all pages, settings and logs on the host so
+a backup is a `tar` of one directory and deleting the container loses nothing.
+**[DOCKER.md](DOCKER.md)** covers configuration, management, cron, backup/restore, and
+putting it behind nginx with Let's Encrypt.
+
 ### Configuration
 
 `config.php.txt` is a template committed to the repository. Copy it to `config.php` and fill in your values before first use. Because `config.php` is excluded from version control, running `git pull` to update the wiki will never overwrite your live configuration.
