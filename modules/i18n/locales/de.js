@@ -1,3 +1,6 @@
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 export default {
     'btn.save': 'Speichern', 'btn.create': 'Erstellen', 'btn.cancel': 'Abbrechen', 'btn.ok': 'OK', 'btn.confirm': 'Bestätigen',
     'btn.delete': 'Löschen', 'btn.edit-item': 'Element bearbeiten', 'btn.insert': 'Einfügen',

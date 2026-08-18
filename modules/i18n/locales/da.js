@@ -1,3 +1,6 @@
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 export default {
     'btn.save': 'Gem', 'btn.create': 'Opret', 'btn.cancel': 'Annuller', 'btn.ok': 'OK', 'btn.confirm': 'Bekræft',
     'btn.delete': 'Slet', 'btn.edit-item': 'Rediger element', 'btn.insert': 'Indsæt',

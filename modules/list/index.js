@@ -1,3 +1,6 @@
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { openItemModal, saveItem, deleteItem, saveColumn, openItemViewModal, openListPropsModal, saveListProps } from './modals.js';
 import { init as initSettings } from './settings.js';
 import { init as initExport } from './export.js';

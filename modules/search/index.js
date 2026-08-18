@@ -1,3 +1,6 @@
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { loadPage } from '../page_view/index.js';

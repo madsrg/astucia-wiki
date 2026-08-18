@@ -1,3 +1,6 @@
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 // Compact editing toolbar for mobile mode. Reuses the same textarea
 // (#editor-container, classic mode) and formatting primitives as the desktop
 // toolbar, but exposes only the essentials: H1–H3, bold, italic, ordered /

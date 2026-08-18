@@ -1,3 +1,6 @@
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 // "Save as markdown page" / "Append to markdown page" for chat messages.
 // Shows a Space + Folder + Filename picker (same shape as the copy dialog),
 // then writes the message text to a page via the `save_message_page` action.

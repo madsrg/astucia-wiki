@@ -1,4 +1,7 @@
 <?php
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 // =================================================================
 // WIKI AI TOOLS — shared by api.php (chat @mentions) and mcp.php (MCP tools/call)
 // Defines the wiki_* tool set and executes it against a PageIndexer/space_dir.

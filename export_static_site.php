@@ -1,5 +1,8 @@
 #!/usr/bin/env php
 <?php
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 // =================================================================
 // AstuciaWiki — Static Site Exporter
 // Usage: php export_static_site.php <destination_folder>

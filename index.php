@@ -1,4 +1,7 @@
 <?php
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 require_once 'config.php';
 require_once 'mailer.php';
 session_start();

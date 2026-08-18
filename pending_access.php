@@ -1,4 +1,7 @@
 <?php
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 /**
  * Shown to users after authentication when they are not yet in users.json.
  * Collects a contact email (mandatory, since OAuth does not provide one) before

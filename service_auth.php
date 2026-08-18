@@ -1,4 +1,7 @@
 <?php
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 // =================================================================
 // SERVICE TOKEN AUTH — shared by api.php (session + token) and mcp.php (token-only)
 // Resolves an AI user (wk_ai_…) or API account (wk_sys_…) from the Authorization header.

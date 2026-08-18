@@ -1,4 +1,7 @@
 #!/bin/bash
+# Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+# Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+# or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 # Create and start the Astucia Wiki container.
 #
 # All wiki data lives in a directory on the host, so it is trivial to back up and

@@ -1,3 +1,6 @@
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 // Editable viewer for .json data pages (statistics, reports, query results).
 // Uses vanilla-jsoneditor (josdejong, ISC) loaded from CDN as a native ES module:
 // tree mode for nested data, table mode for arrays of objects, text mode for raw.

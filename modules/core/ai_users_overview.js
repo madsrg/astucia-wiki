@@ -1,3 +1,6 @@
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 // Shared /aiUsers command overview — a table of the wiki's AI users showing the
 // model each uses and the MCP servers enabled for it. Used by both team chat and
 // Page Chat so the two stay identical.

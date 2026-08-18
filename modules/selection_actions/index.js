@@ -1,3 +1,6 @@
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 // Read-mode text-selection toolbar. When the user selects text inside a rendered
 // Markdown page (read mode only), a small floating toolbar appears above the
 // selection offering: Quote in Chat, Ask AI, Copy, Search wiki, New page, Explain.

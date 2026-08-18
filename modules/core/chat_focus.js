@@ -1,3 +1,6 @@
+// Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+// Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+// or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 // Chat "focus" mode — stay in the context of talking to one AI user without
 // re-mentioning it in every message. Focus is per-chat and remembered across
 // reloads. It reuses the existing #mention routing: when focused, a plain
