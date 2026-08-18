@@ -10,7 +10,7 @@
 services:
   wiki:
     build: .
-    image: astucia-wiki:local
+    image: astucia-wiki:latest
     container_name: astucia-wiki
     restart: unless-stopped
     ports:

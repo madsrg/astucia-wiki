@@ -43,7 +43,7 @@ Open `http://localhost:8000`. No database, no build step.
 ### Docker
 
 ```bash
-docker build -t astucia-wiki:local .
+./docker/build.sh
 cp docker/wiki.env.example /srv/astucia-wiki/wiki.env   # edit it
 ./docker/create_container.sh
 ```

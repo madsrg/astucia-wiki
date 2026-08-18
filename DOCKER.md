@@ -35,40 +35,63 @@ it — see [Next steps](#next-steps).
 
 ```bash
 git clone <your-repo> AstuciaWiki && cd AstuciaWiki
-docker build -t astucia-wiki:local .
+./docker/build.sh
 ```
+
+That produces **two tags** from one build:
+
+| Tag | Purpose |
+|-----|---------|
+| `astucia-wiki:latest` | What `docker-compose.yml` and `create_container.sh` reference, so a rebuild is picked up without editing anything |
+| `astucia-wiki:<version>` | Accumulates, so the local image repository keeps a history: `docker image ls astucia-wiki` |
+
+Keeping the version tags means you can always go back to a known-good build — recreate the
+container against `astucia-wiki:2026.7.41` and you are running exactly that release.
 
 The build installs the Composer dependencies in a separate stage and **fails** if a
 required PHP extension is missing (`pdo_sqlite`, `curl`, `mbstring`, `fileinfo`,
 `json`, `session`), so a broken image is caught here rather than at runtime.
 
-### Stamping the image
+### What the build script does, and why not to do it by hand
 
-The image carries OCI metadata — title, description, source, documentation, licence —
-and two values worth supplying so a built image reports what it actually is:
+The image carries OCI metadata — title, description, source, documentation, licence — plus
+a version and revision, which are build arguments. `docker/build.sh` reads them from
+`VERSION` and `git`, so they cannot disagree with the code in the image:
 
 ```bash
 docker build \
     --build-arg VERSION=$(cat VERSION) \
     --build-arg REVISION=$(git rev-parse --short HEAD) \
-    -t astucia-wiki:local .
+    -t astucia-wiki:latest -t astucia-wiki:$(cat VERSION) .
 ```
 
-Without them the labels read `version=dev` and `revision=unknown`, which is honest but
-unhelpful for anything you distribute. Inspect them with:
+Building by hand without those args leaves the labels reading `version=dev` /
+`revision=unknown`. Worse, passing a version by hand is how an image ends up *claiming* a
+release it does not contain. The script also appends `-dirty` to the revision when the
+working tree has uncommitted changes, so an image built from unsaved edits says so.
+
+Inspect the result:
 
 ```bash
-docker image inspect astucia-wiki:local \
+docker image inspect astucia-wiki:latest \
     --format '{{range $k,$v := .Config.Labels}}{{$k}} = {{$v}}{{"\n"}}{{end}}'
 ```
 
-`/var/www/html/VERSION` inside the image is always the authoritative version, whether or
-not the build arg was passed.
+Before you distribute or `docker save` an image, check that its `revision` label matches
+`git rev-parse --short HEAD`. `/var/www/html/VERSION` inside the image is authoritative
+either way.
+
+Other environment overrides:
+
+```bash
+IMAGE_NAME=madsrg/astucia-wiki ./docker/build.sh    # tags ready to push
+./docker/build.sh --no-cache                        # extra args go to docker build
+```
 
 For a multi-architecture image:
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t astucia-wiki:local .
+docker buildx build --platform linux/amd64,linux/arm64 -t astucia-wiki:latest .
 ```
 
 ## Run
@@ -94,7 +117,7 @@ docker run -d \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
     -m 1g \
-    astucia-wiki:local
+    astucia-wiki:latest
 ```
 
 - **`--restart=always`** brings the wiki back after a reboot or a crash. Verified: killing
@@ -317,9 +340,7 @@ With `ENABLE_CRON=false` and nothing in its place, scheduled jobs never fire and
 ```bash
 cd /path/to/AstuciaWiki
 git pull
-docker build --build-arg VERSION=$(cat VERSION) \
-             --build-arg REVISION=$(git rev-parse --short HEAD) \
-             -t astucia-wiki:local .
+./docker/build.sh
 docker rm -f astucia-wiki
 ./docker/create_container.sh
 ```
