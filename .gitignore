@@ -6,3 +6,6 @@ config.php
 # Filled-in container environment (may hold mail credentials); the
 # committed template is docker/wiki.env.example
 docker/wiki.env
+
+# Written by docker/build.sh: the exact image tag it produced
+docker/.image-tag

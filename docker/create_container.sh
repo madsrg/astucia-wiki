@@ -13,7 +13,21 @@ set -euo pipefail
 # --- Settings -----------------------------------------------------------------
 
 NAME="astucia-wiki"                       # container name
-IMAGE="astucia-wiki:latest"               # built by docker/build.sh
+# Which image to run, most specific first:
+#   1. $WIKI_IMAGE            an explicit pin, e.g. astucia-wiki:sha-4c7919a
+#   2. docker/.image-tag      written by build.sh — the exact build it produced
+#   3. astucia-wiki:latest    fallback, and a warning: :latest moves, so the container
+#                             will not record which build it is actually running
+_tagfile="$(dirname "$0")/.image-tag"
+if [ -n "${WIKI_IMAGE:-}" ]; then
+    IMAGE="$WIKI_IMAGE"
+elif [ -s "$_tagfile" ]; then
+    IMAGE="$(tr -d '[:space:]' < "$_tagfile")"
+else
+    IMAGE="astucia-wiki:latest"
+    echo "NOTE: no pinned image found (run docker/build.sh first)." >&2
+    echo "      Falling back to astucia-wiki:latest, a tag that moves." >&2
+fi
 PORT="8080"                               # host port -> container port 80
 DATA_DIR="/srv/astucia-wiki/data"         # holds pages/, system/ and logs/
 ENV_FILE="/srv/astucia-wiki/wiki.env"     # copied from docker/wiki.env.example

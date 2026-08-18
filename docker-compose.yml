@@ -10,7 +10,11 @@
 services:
   wiki:
     build: .
-    image: astucia-wiki:latest
+    # Pin a specific build rather than a moving tag:
+    #   WIKI_IMAGE=$(cat docker/.image-tag) docker compose up -d
+    # :latest is only the fallback; it moves on every build, so a container started from
+    # it cannot tell you which build it runs (the image's OCI labels still can).
+    image: ${WIKI_IMAGE:-astucia-wiki:latest}
     container_name: astucia-wiki
     restart: unless-stopped
     ports:
