@@ -6,6 +6,17 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.7.44] — 2026-08-18
+
+### Added
+- **The project's licence is now declared where tools and people look for it** — a `LICENSE` file with the verbatim GNU GPL v3 text, the copyright notice (`Copyright (C) 2026 Mads Rotwitt`) with the FSF's recommended wording in the README, a `license` field in `composer.json`, and a short notice at the top of all 94 source files: the copyright line plus a pointer to the full text, which is what the GPL's own "How to Apply These Terms" appendix asks for. Previously the licence was stated only on the website, so the repository showed none and a distributed copy carried no statement at all.
+- **`docker/build.sh` — one command that builds and tags the image correctly.** It reads the version from `VERSION` and the revision from git, so a built image cannot claim to be something it is not, and it fails if a tag it was asked to create does not exist afterwards.
+- **Multi-architecture images** — `PLATFORMS=linux/amd64,linux/arm64 IMAGE_NAME=you/astucia-wiki ./docker/build.sh` builds for Intel and ARM and pushes a manifest list, since a multi-platform image cannot exist in the local image store. The prerequisites (a container-driver buildx builder, QEMU registered for the non-native architecture) are checked before the build starts, with the one-time commands printed, rather than failing after several minutes of emulated compilation.
+
+### Changed
+- **Deployments pin an immutable image tag instead of `:latest`.** Each build now produces three tags with deliberately different mutability: `:sha-<commit>` never changes meaning and is the one to deploy; `:<version>` moves if a release is rebuilt; `:latest` moves on every build and exists for discovery. This was not theoretical — during development a single version tag came to name four different images, and a container started from `:latest` reported that tag while it had since moved to a different image, so nothing on the container said what was actually running. `build.sh` records the tag it produced and `create_container.sh` and `docker-compose.yml` deploy that, so a container names the exact build it runs. A build from a working tree with uncommitted changes gets no immutable tag at all, because those edits have no identity to name.
+
+
 ## [2026.7.43] — 2026-08-18
 
 ### Added
