@@ -1,4 +1,5 @@
 {
+    "license": "GPL-3.0-or-later",
     "require": {
         "jumbojett/openid-connect-php": "^1.0",
         "erusev/parsedown": "^1.8"

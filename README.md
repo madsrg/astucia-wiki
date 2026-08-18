@@ -261,3 +261,16 @@ Full documentation, feature guides, and a step-by-step installation guide for De
 - **Diagrams:** Embedded [draw.io](https://www.diagrams.net)
 - **Markdown:** [marked.js](https://marked.js.org) (CDN)
 - **Static export:** `export_static_site.php` — generates a self-contained HTML site from all pages
+
+## License
+
+Astucia Wiki is free software, released under the **GNU General Public License v3 or
+later** (`GPL-3.0-or-later`). The full text is in [LICENSE](LICENSE).
+
+In short: you may use, study, modify and redistribute it, including commercially. The
+obligations attach to *distribution* — if you give others a copy of a modified version,
+they must be able to get the corresponding source under the same licence, with copyright
+and licence notices intact. Hosting it as a service, where users never receive a copy, is
+not distribution under GPL v3 (that would be the AGPL). See the
+[licence page](https://astucia.wiki/license.html) for a plain-language summary.
+
