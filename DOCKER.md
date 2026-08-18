@@ -38,15 +38,33 @@ git clone <your-repo> AstuciaWiki && cd AstuciaWiki
 ./docker/build.sh
 ```
 
-That produces **two tags** from one build:
+That produces **three tags**, and they are not interchangeable — only one of them
+identifies a build:
 
-| Tag | Purpose |
-|-----|---------|
-| `astucia-wiki:latest` | What `docker-compose.yml` and `create_container.sh` reference, so a rebuild is picked up without editing anything |
-| `astucia-wiki:<version>` | Accumulates, so the local image repository keeps a history: `docker image ls astucia-wiki` |
+| Tag | Mutability | Use |
+|-----|-----------|-----|
+| `astucia-wiki:sha-<commit>` | **immutable** — one commit builds one tree | **Deploy and pin this.** Rollback is picking an older SHA tag |
+| `astucia-wiki:<version>` | moves if a release is rebuilt | "the current 2026.7.43" |
+| `astucia-wiki:latest` | moves on every build | discovery, casual `docker run` |
 
-Keeping the version tags means you can always go back to a known-good build — recreate the
-container against `astucia-wiki:2026.7.41` and you are running exactly that release.
+Why it matters, from real experience with this project: in one day of development
+`:2026.7.43` pointed at **four different images**, and a container started from `:latest`
+reported `Config.Image = astucia-wiki:latest` while `:latest` had since moved elsewhere —
+the tag could not say what was deployed. The image's OCI labels still could, which is a
+mitigation, not a fix.
+
+No `sha-` tag is created from a dirty working tree: uncommitted edits have no identity to
+name, so an immutable tag would be a lie. Such a build still gets `:latest` and
+`:<version>`, with a warning.
+
+`build.sh` writes the tag it produced to `docker/.image-tag`, and `create_container.sh`
+reads it, so a deploy pins the exact build without you copying hashes around:
+
+```bash
+./docker/build.sh                                   # -> docker/.image-tag
+./docker/create_container.sh                        # runs that exact image
+WIKI_IMAGE=astucia-wiki:sha-eb7e64c docker compose up -d    # or pin explicitly
+```
 
 The build installs the Composer dependencies in a separate stage and **fails** if a
 required PHP extension is missing (`pdo_sqlite`, `curl`, `mbstring`, `fileinfo`,
@@ -88,11 +106,30 @@ IMAGE_NAME=madsrg/astucia-wiki ./docker/build.sh    # tags ready to push
 ./docker/build.sh --no-cache                        # extra args go to docker build
 ```
 
-For a multi-architecture image:
+### Multi-architecture images
+
+A single-platform image only runs on the architecture it was built for; anyone on Apple
+Silicon or an ARM server gets "no matching manifest". To publish for both:
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t astucia-wiki:latest .
+PLATFORMS=linux/amd64,linux/arm64 IMAGE_NAME=youruser/astucia-wiki ./docker/build.sh
 ```
+
+This **pushes** rather than loads, because a multi-platform manifest list cannot live in
+the classic local image store — there is no such thing as a local multi-arch image to run.
+So `IMAGE_NAME` must be a repository you can push to; the script refuses the plain local
+name rather than failing at the end of a long build.
+
+One-time host setup, which the script checks for and explains if missing:
+
+```bash
+docker buildx create --use --name astucia                        # container-driver builder
+docker run --privileged --rm tonistiigi/binfmt --install arm64    # QEMU, re-run per boot
+```
+
+Expect the non-native leg to be slow — `pdo_sqlite` is compiled under emulation. The
+script verifies each tag landed in the registry afterwards and prints the platforms in the
+published manifest.
 
 ## Run
 
