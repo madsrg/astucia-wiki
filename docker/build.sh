@@ -46,6 +46,13 @@ docker build \
     "$@" \
     .
 
+# Assert both tags resolve. A tag has silently gone missing here before — a version
+# tag that does not exist is discovered at `docker push`, or worse, not at all.
+for t in latest "${VERSION}"; do
+    docker image inspect "${IMAGE_NAME}:${t}" >/dev/null 2>&1 \
+        || { echo "ERROR: ${IMAGE_NAME}:${t} was not created" >&2; exit 1; }
+done
+
 echo
 docker image ls "${IMAGE_NAME}" --format '  {{.Repository}}:{{.Tag}}  {{.Size}}  {{.CreatedSince}}'
 echo
