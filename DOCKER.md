@@ -4,6 +4,7 @@ Configuring, running and maintaining the containerised wiki. Everything here was
 executed against Docker 29.7 before being written down.
 
 - [What the image is](#what-the-image-is)
+- [Get the image](#get-the-image)
 - [Build](#build)
 - [Run](#run)
 - [Configuration](#configuration)
@@ -30,6 +31,41 @@ One container running three processes under supervisord:
 Base image `php:8.3-fpm-alpine`, about **226 MB**. A wiki is an appliance: one image
 that runs beats three services to wire together. Split them if your platform prefers
 it — see [Next steps](#next-steps).
+
+## Get the image
+
+Published on Docker Hub, so running the wiki needs no checkout and no build:
+
+```bash
+docker pull madsrotwitt/astucia-wiki:2026.7.44
+```
+
+| Tag | Mutability | Use |
+|-----|-----------|-----|
+| `madsrotwitt/astucia-wiki:sha-<commit>` | **immutable** | pin this in production |
+| `madsrotwitt/astucia-wiki:<version>` | moves only if that release is rebuilt | track a release |
+| `madsrotwitt/astucia-wiki:latest` | moves on every release | trying it out |
+
+Then run it — nothing else is required:
+
+```bash
+docker run -d --name astucia-wiki --restart=always \
+    -p 8080:80 -v /srv/astucia-wiki/data:/data \
+    madsrotwitt/astucia-wiki:2026.7.44
+```
+
+Verify what you pulled, rather than trusting the tag:
+
+```bash
+docker image inspect madsrotwitt/astucia-wiki:2026.7.44 \
+    --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+```
+
+That revision is a commit in the source repository, so a published image is always traceable
+to the exact tree it was built from.
+
+Currently published for `linux/amd64` only. **Build it yourself** if you need another
+architecture, want to modify the wiki, or would rather not depend on a registry.
 
 ## Build
 
@@ -130,6 +166,23 @@ docker run --privileged --rm tonistiigi/binfmt --install arm64    # QEMU, re-run
 Expect the non-native leg to be slow — `pdo_sqlite` is compiled under emulation. The
 script verifies each tag landed in the registry afterwards and prints the platforms in the
 published manifest.
+
+### Publishing your own image
+
+```bash
+docker login
+IMAGE_NAME=youruser/astucia-wiki ./docker/build.sh
+docker push youruser/astucia-wiki:sha-<commit>
+docker push youruser/astucia-wiki:<version>
+docker push youruser/astucia-wiki:latest
+```
+
+Push the immutable and version tags as well as `latest`, and tell people to pull one of
+those — `latest` will move under them. Before publishing, check the image is what you think:
+its `revision` label should equal `git rev-parse --short HEAD`, and it should contain no
+`config.php` (the `.dockerignore` keeps secrets and content out, but it is worth verifying
+once). `docker/hub-description.md` is the text for the registry's repository description;
+Docker Hub does not read a repository's README on its own.
 
 ## Run
 
