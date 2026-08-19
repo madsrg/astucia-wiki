@@ -158,18 +158,33 @@ the classic local image store — there is no such thing as a local multi-arch i
 So `IMAGE_NAME` must be a repository you can push to; the script refuses the plain local
 name rather than failing at the end of a long build.
 
-One-time host setup, which the script checks for and explains if missing:
+Host setup, needed **once**:
 
 ```bash
-# QEMU, so a non-native architecture can be emulated (re-run after a reboot)
-docker run --privileged --rm tonistiigi/binfmt --install arm64
-
 # A builder that can cross-build. network=host matters: without it the builder
 # container failed DNS resolution ("dl-cdn.alpinelinux.org: DNS: transient error"),
-# so every apk install inside the build failed.
+# so every apk install inside the arm64 build failed.
 docker buildx create --use --name astucia \
     --driver docker-container --driver-opt network=host
 ```
+
+That builder persists — it is a container with `restart-policy=unless-stopped`, and the
+`network=host` option is stored with it, so it survives a reboot and needs no attention.
+
+QEMU, which lets a non-native architecture be emulated, is **kernel state** in
+`/proc/sys/fs/binfmt_misc` and is therefore lost on reboot. `build.sh` notices and
+re-registers it for you, so after a reboot there is still nothing to remember:
+
+```
+Registering QEMU for arm64 (kernel state, lost on reboot)…
+  done
+```
+
+Set `SKIP_QEMU_SETUP=1` if you would rather it never ran a privileged container, in which
+case it prints the command instead. To make the registration permanent, install your
+distribution's static QEMU package (`apt install qemu-user-static` on Debian/Ubuntu), which
+ships `binfmt.d` entries that systemd registers at boot; the `binfmt` container is then
+unnecessary.
 
 Expect the non-native leg to be slow — Composer and `pdo_sqlite` run under emulation, so
 budget ten minutes or more rather than the usual seconds. The script verifies each tag

@@ -92,14 +92,29 @@ ERROR: the active buildx builder cannot build more than one platform (the defaul
 EOF
         exit 1
     fi
+    # QEMU handlers live in the kernel (/proc/sys/fs/binfmt_misc), so they are lost on
+    # reboot. Registering them is one idempotent command, so just do it rather than
+    # failing a ten-minute build or making it a step to remember. Set
+    # SKIP_QEMU_SETUP=1 to opt out, or install the qemu-user-static package to have
+    # systemd register them at boot instead.
     native="$(docker version --format '{{.Server.Arch}}')"
     for p in ${PLATFORMS//,/ }; do
         arch="${p#*/}"
         [ "$arch" = "$native" ] && continue
-        ls /proc/sys/fs/binfmt_misc/ 2>/dev/null | grep -qi "qemu" || {
-            echo "WARNING: no QEMU handlers registered, so ${arch} cannot be emulated." >&2
+        if ls /proc/sys/fs/binfmt_misc/ 2>/dev/null | grep -qi "qemu-"; then continue; fi
+        if [ -n "${SKIP_QEMU_SETUP:-}" ]; then
+            echo "WARNING: no QEMU handler for ${arch} and SKIP_QEMU_SETUP is set." >&2
             echo "         docker run --privileged --rm tonistiigi/binfmt --install ${arch}" >&2
-        }
+            continue
+        fi
+        echo "Registering QEMU for ${arch} (kernel state, lost on reboot)…"
+        docker run --privileged --rm tonistiigi/binfmt --install "$arch" >/dev/null 2>&1 || true
+        ls /proc/sys/fs/binfmt_misc/ 2>/dev/null | grep -qi "qemu-" \
+            || { echo "ERROR: could not register QEMU for ${arch}." >&2
+                 echo "       docker run --privileged --rm tonistiigi/binfmt --install ${arch}" >&2
+                 exit 1; }
+        echo "  done"
+        echo
     done
 
     echo "Building and pushing a manifest list: ${PLATFORMS}"
