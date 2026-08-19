@@ -203,6 +203,10 @@ export const startTreePolling = (space) => {
     }, TREE_POLL_MS);
 };
 
+// Ctrl/Cmd+click gives the page a tab of its own instead of reusing the preview slot —
+// the same gesture that opens a link in a new tab in the browser around us.
+const openIntent = (e) => ((e.ctrlKey || e.metaKey) ? 'permanent' : 'preview');
+
 export const init = ({ onLoadPage, onGenerateTagCloud }) => {
     _onLoadPage = onLoadPage;
     _onGenerateTagCloud = onGenerateTagCloud;
@@ -225,7 +229,7 @@ export const init = ({ onLoadPage, onGenerateTagCloud }) => {
         } else {
             const id = target.dataset.id;
             const tags = JSON.parse(target.dataset.tags || '[]');
-            _onLoadPage(path, id, tags);
+            _onLoadPage(path, id, tags, { intent: openIntent(e) });
             revealAndSelectFile(path);
         }
     });
@@ -244,7 +248,7 @@ export const init = ({ onLoadPage, onGenerateTagCloud }) => {
         contentTarget.closest('.file-item').classList.add('active');
 
         if (type === 'file' || type === 'diagram' || type === 'list' || type === 'chat' || type === 'search') {
-            _onLoadPage(path, id, tags);
+            _onLoadPage(path, id, tags, { intent: openIntent(e) });
         } else if (type === 'filesfolder') {
             loadFilesFolder(path);
         } else if (type === 'folder') {

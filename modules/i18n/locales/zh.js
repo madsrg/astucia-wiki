@@ -460,5 +460,14 @@ export default {
     'select.explain-failed': '无法解释所选内容。',
     'select.no-ai': '没有可用的 AI 用户。',
     'select.only-md': '请先打开一个 Markdown 页面。',
-    'select.title-empty': '所选内容不是有效的页面名称。'
+    'select.title-empty': '所选内容不是有效的页面名称。',
+
+    'page.load-failed':      '无法打开此页面。',
+    // Page tabs
+    'tabs.new-tab':          '新标签页',
+    'tabs.close':            '关闭',
+    'tabs.close-others':     '关闭其他标签页',
+    'tabs.close-right':      '关闭右侧标签页',
+    'tabs.close-all':        '关闭所有标签页',
+    'tabs.close-discard':    '此标签页有未保存的更改。要关闭并放弃这些更改吗？',
 };

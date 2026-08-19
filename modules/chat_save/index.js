@@ -165,7 +165,7 @@ export const init = () => {
         if (space === state.currentSpace) {
             await refreshFileTree();
             const fileEl = document.querySelector(`[data-path="${res.path}"]`);
-            if (fileEl) { revealAndSelectFile(res.path); loadPage(res.path, fileEl.dataset.id, []); }
+            if (fileEl) { revealAndSelectFile(res.path); loadPage(res.path, fileEl.dataset.id, [], { intent: 'permanent' }); }
         }
     };
 

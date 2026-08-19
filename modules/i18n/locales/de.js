@@ -273,4 +273,13 @@ export default {
     'select.no-ai':         'Kein KI-Benutzer verfügbar.',
     'select.only-md':       'Öffne zuerst eine Markdown-Seite.',
     'select.title-empty':   'Auswahl ist kein gültiger Seitenname.',
+
+    'page.load-failed':      'Diese Seite konnte nicht geöffnet werden.',
+    // Page tabs
+    'tabs.new-tab':          'Neuer Tab',
+    'tabs.close':            'Schließen',
+    'tabs.close-others':     'Andere schließen',
+    'tabs.close-right':      'Rechts davon schließen',
+    'tabs.close-all':        'Alle schließen',
+    'tabs.close-discard':    'Dieser Tab hat nicht gespeicherte Änderungen. Schließen und verwerfen?',
 };

@@ -2,7 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
-import { state } from '../core/state.js';
+import { state, notifyPageState } from '../core/state.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { activateInlineMode, deactivateInlineMode, discardInlineMode, getInlineContent } from './inline_editor.js';
@@ -20,7 +20,13 @@ export const updateLineIndicator = () => {
     indicator.style.top = `${newTop}px`;
 };
 
-export const setEditingMode = async (editing) => {
+/**
+ * @param {boolean} editing
+ * @param {{silent?: boolean}} [opts] `silent` skips the "how to use the editor" hint. The
+ *        tab manager re-enters edit mode every time you switch back to a tab with unsaved
+ *        work, and a hint on each switch would be noise rather than help.
+ */
+export const setEditingMode = async (editing, opts = {}) => {
     state.isEditing = editing;
     const editor = document.getElementById('editor-container');
     const editorWrapper = document.querySelector('.editor-container-wrapper');
@@ -64,13 +70,13 @@ export const setEditingMode = async (editing) => {
             viewerContainer.classList.remove('hidden');
             searchBtn.classList.add('hidden');
             if (indicator) indicator.style.visibility = 'hidden';
-            showToast(t('edit.click-hint'), 'info');
+            if (!opts.silent) showToast(t('edit.click-hint'), 'info');
             await activateInlineMode(state.initialContent);
         } else {
             viewerContainer.classList.add('hidden');
             editorWrapper.classList.remove('hidden');
             searchBtn.classList.remove('hidden');
-            showToast(t('edit.hotkey-hint'), 'info');
+            if (!opts.silent) showToast(t('edit.hotkey-hint'), 'info');
 
             if (indicator) indicator.style.visibility = 'visible';
 
@@ -112,6 +118,7 @@ export const setEditingMode = async (editing) => {
             editor.removeEventListener('input', updateLineIndicator);
         }
     }
+    notifyPageState();
 };
 
 const renderCurrentPage = async (markdown) => {
@@ -224,8 +231,10 @@ export const init = () => {
 
     editor.addEventListener('input', () => {
         if (state.isEditing && editor.value !== state.initialContent) {
+            const wasClean = !state.hasUnsavedChanges;
             state.hasUnsavedChanges = true;
             saveBtn.disabled = false;
+            if (wasClean) notifyPageState();   // only the clean→dirty edge is news
         }
     });
 

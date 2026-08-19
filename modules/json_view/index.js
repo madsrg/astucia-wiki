@@ -6,7 +6,7 @@
 // tree mode for nested data, table mode for arrays of objects, text mode for raw.
 // Falls back to a read-only pretty-printed view if the CDN is unavailable.
 
-import { state } from '../core/state.js';
+import { state, notifyPageState } from '../core/state.js';
 import { showToast } from '../core/utils.js';
 import { t } from '../i18n/index.js';
 
@@ -75,6 +75,7 @@ const saveJson = async (saveBtn) => {
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.message || 'Failed to save');
         state.hasUnsavedChanges = false;
+        notifyPageState();
         showToast(t('edit.saved'), 'success');
         saveBtn.textContent = t('btn.save');
         // leave disabled until the next edit
@@ -156,8 +157,10 @@ export const renderJsonView = async (rawText, path) => {
             navigationBar: true,
             readOnly: !editable,
             onChange: editable ? () => {
+                const wasClean = !state.hasUnsavedChanges;
                 state.hasUnsavedChanges = true;
                 if (saveBtn) saveBtn.disabled = false;
+                if (wasClean) notifyPageState();
             } : undefined,
         },
     });

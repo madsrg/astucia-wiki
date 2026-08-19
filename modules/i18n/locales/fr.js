@@ -273,4 +273,13 @@ export default {
     'select.no-ai':         'Aucun utilisateur IA disponible.',
     'select.only-md':       'Ouvrez d\'abord une page Markdown.',
     'select.title-empty':   'La sélection n\'est pas un nom de page valide.',
+
+    'page.load-failed':      'Impossible d’ouvrir cette page.',
+    // Page tabs
+    'tabs.new-tab':          'Nouvel onglet',
+    'tabs.close':            'Fermer',
+    'tabs.close-others':     'Fermer les autres',
+    'tabs.close-right':      'Fermer ceux de droite',
+    'tabs.close-all':        'Tout fermer',
+    'tabs.close-discard':    'Cet onglet contient des modifications non enregistrées. Le fermer et les abandonner ?',
 };

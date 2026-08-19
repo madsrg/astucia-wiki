@@ -108,7 +108,7 @@ export const init = () => {
             if (!isCrossSpace) {
                 await refreshFileTree();
                 const newFileEl = document.querySelector(`[data-path="${newPath}"]`);
-                if (newFileEl) { revealAndSelectFile(newPath); loadPage(newPath, newFileEl.dataset.id, []); }
+                if (newFileEl) { revealAndSelectFile(newPath); loadPage(newPath, newFileEl.dataset.id, [], { intent: 'permanent' }); }
             }
         }
     });

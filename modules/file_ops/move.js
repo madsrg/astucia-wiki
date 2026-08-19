@@ -7,6 +7,7 @@ import { icons } from '../core/icons.js';
 import { showToast } from '../core/utils.js';
 import { refreshFileTree, revealAndSelectFile } from '../file_tree/index.js';
 import { loadPage, showBlankPage } from '../page_view/index.js';
+import { retarget as retargetTab, forget as forgetTab } from '../tabs/index.js';
 import { t } from '../i18n/index.js';
 
 const renderFolderTree = (items, parent) => {
@@ -108,6 +109,12 @@ export const init = () => {
             const wasCurrentPage = state.currentPagePath === state.sourcePathToMove;
             const savedId   = state.currentPageId;
             const savedTags = state.currentPageTags;
+
+            // A move within the space keeps the tab (and its draft) on the file; a move out
+            // of the space leaves nothing here to open, so the tab goes with it. Both must
+            // happen before currentPagePath changes, since the tab is found by its old path.
+            if (isCrossSpace) forgetTab(state.sourcePathToMove);
+            else retargetTab(state.sourcePathToMove, newPath);
 
             if (!isCrossSpace && wasCurrentPage) {
                 // Update state immediately so any active chat poll stops at its next tick

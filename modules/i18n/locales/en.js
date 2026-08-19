@@ -780,4 +780,13 @@ export default {
     'select.no-ai':         'No AI user is available.',
     'select.only-md':       'Open a Markdown page first.',
     'select.title-empty':   'Selection is not a valid page name.',
+
+    'page.load-failed':      'Could not open this page.',
+    // Page tabs
+    'tabs.new-tab':          'New tab',
+    'tabs.close':            'Close',
+    'tabs.close-others':     'Close others',
+    'tabs.close-right':      'Close to the right',
+    'tabs.close-all':        'Close all',
+    'tabs.close-discard':    'This tab has unsaved changes. Close it and discard them?',
 };

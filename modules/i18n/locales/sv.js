@@ -273,4 +273,13 @@ export default {
     'select.no-ai':         'Ingen AI-användare tillgänglig.',
     'select.only-md':       'Öppna en Markdown-sida först.',
     'select.title-empty':   'Markeringen är inte ett giltigt sidnamn.',
+
+    'page.load-failed':      'Sidan kunde inte öppnas.',
+    // Page tabs
+    'tabs.new-tab':          'Ny flik',
+    'tabs.close':            'Stäng',
+    'tabs.close-others':     'Stäng övriga',
+    'tabs.close-right':      'Stäng till höger',
+    'tabs.close-all':        'Stäng alla',
+    'tabs.close-discard':    'Den här fliken har osparade ändringar. Vill du stänga den och kasta dem?',
 };

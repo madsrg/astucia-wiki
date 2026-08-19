@@ -48,6 +48,7 @@ import { init as initAdvancedSearch } from './modules/advanced_search/index.js';
 import { init as initMcpExplorer } from './modules/mcp_explorer/index.js';
 import { init as initGraph } from './modules/graph/index.js';
 import { init as initSelectionActions } from './modules/selection_actions/index.js';
+import { init as initTabs, onSpaceChange as tabsOnSpaceChange, resumeTarget as tabsResumeTarget } from './modules/tabs/index.js';
 import { api } from './modules/core/api.js';
 import { state } from './modules/core/state.js';
 
@@ -137,7 +138,15 @@ const init = async () => {
         onSpaceChange: async () => {
             await checkSpaceGit();
             await refreshFileTree();
-            await loadStartPage();
+            // Each space keeps its own tabs, so re-entering one reopens the page it was
+            // left on rather than bouncing back to its start page.
+            const resume = tabsOnSpaceChange();
+            if (resume) {
+                await loadPage(resume.path, resume.id, resume.tags, { intent: 'permanent' });
+                revealAndSelectFile(resume.path);
+            } else {
+                await loadStartPage();
+            }
             startTreePolling(state.currentSpace);
         },
     });
@@ -200,11 +209,23 @@ const init = async () => {
     await refreshFileTree();
     startTreePolling(state.currentSpace);
 
-    // Navigate to page from URL param, otherwise load the start page
+    // After the tree, because restoring persisted tabs means dropping the ones whose
+    // file has since been deleted — which needs state.fullFileTree. Also before the
+    // first loadPage below, since that is what puts the opening page in the tab bar.
+    initTabs();
+
+    // Navigate to page from URL param, otherwise reopen the last tab, otherwise the
+    // start page. An explicit ?pageid= always wins — it is a deliberate destination.
     if (_initialPageId) {
         await navigateToPageId(_initialPageId);
     } else {
-        await loadStartPage();
+        const resume = tabsResumeTarget();
+        if (resume) {
+            await loadPage(resume.path, resume.id, resume.tags, { intent: 'permanent' });
+            revealAndSelectFile(resume.path);
+        } else {
+            await loadStartPage();
+        }
     }
 
     // Intercept clicks on internal ?pageid= links in the viewer for SPA navigation.

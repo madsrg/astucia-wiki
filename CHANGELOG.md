@@ -6,6 +6,54 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.8.1] — 2026-08-19
+
+> **Version numbering:** the middle number is the month and the last resets with it, as it did
+> from `2026.6.3` to `2026.7.1`. That rollover was missed on 1 August, so `2026.7.35`–`2026.7.45`
+> were released during August under a July number. Those tags are left as published; numbering
+> resumes tracking the month here.
+
+### Added
+- **Page tabs.** Open pages sit in a strip above the page header: click to switch, `×` or
+  middle-click to close, drag to reorder, `+` for an empty tab, and right-click for close
+  others / close to the right / close all. A plain click from the file tree reuses one italic
+  *preview* tab so browsing does not leave fifteen tabs behind; editing it, double-clicking it,
+  or opening with Ctrl/Cmd+click makes it permanent. Switching tabs never asks about unsaved
+  work — the edit is held and put back, with the caret where you left it — and closing a tab is
+  the only action that prompts. Tabs are per Space and kept in memory, so leaving a Space and
+  returning restores that workspace; the open list is saved so a browser reload reopens where
+  you were rather than the start page. Renaming or moving a page follows its tab, deleting one
+  closes it. `Alt`+`1`–`9` jumps, `Ctrl`+`Alt`+`←`/`→` steps. Hidden in the mobile layout.
+
+  *Inspired by the tabs in [Kai-Syuan Tseng's plugin bundle](https://github.com/kaisyuan-tseng/astucia-wiki-plugins),
+  which is where the behaviour was worked out. Written independently rather than adopted: that
+  version caches each tab's rendered DOM, which needs hand-maintained lists of every container,
+  button and state field plus a bespoke rebuild path per content type. A tab here holds only
+  identity plus a small resume record and re-renders through the normal page load, so new
+  content types need no per-type handling and nothing has to be kept in step by hand.*
+
+- **AI users are told which Markdown extensions this wiki has.** The built-in instructions now
+  state that a ` ```mermaid ` block renders as a diagram, that `{include:ID}` embeds another
+  page, that `{toc}` builds a table of contents, and that `{filename}` / `{lastUpdated}` are
+  substituted on render — for chat replies, agent jobs and API accounts alike. Previously an AI
+  asked for a sequence diagram produced ASCII art, because nothing told it the feature existed;
+  worse, an AI asked to tidy a page containing a mermaid block or a transclusion had no reason
+  to think either was meaningful and could remove it. The instructions now say to preserve them
+  verbatim. Adds about 108 tokens to the built-in prompt, visible in `/debug` and in agent-job
+  run logs under *Wiki instructions*.
+
+### Fixed
+- **Navigation no longer flickers.** Every page load hid the outgoing pane and revealed the
+  incoming one *before* fetching the content, and that wait is a point at which the browser
+  paints — so each navigation drew twice: an empty pane (Markdown → list, Markdown → data
+  page), or the pane's previously rendered content (list → Markdown briefly showed the last
+  Markdown page you had open), before the real page arrived. The content is now read first and
+  the swap happens once. For the same reason `{include:ID}` transclusions are resolved before
+  the swap, and a page that cannot be read leaves the current one on screen with a toast
+  instead of half-switching to a page that is not there. This affected every way of opening a
+  page, not only tabs; tabs made it obvious by making switching a single click.
+
+
 ## [2026.7.45] — 2026-08-18
 
 ### Added

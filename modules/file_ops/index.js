@@ -7,6 +7,7 @@ import { showToast, promptModal, confirmModal } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { refreshFileTree, revealAndSelectFile } from '../file_tree/index.js';
 import { loadPage, showBlankPage } from '../page_view/index.js';
+import { retarget as retargetTab, forget as forgetTab } from '../tabs/index.js';
 import { openCopyLightbox, init as initCopy } from './copy.js';
 import { openMoveLightbox, init as initMove } from './move.js';
 import { t } from '../i18n/index.js';
@@ -34,6 +35,9 @@ export const handleRename = async () => {
         // Update path immediately so any active chat poll stops before it requests the old path
         const savedId   = state.currentPageId;
         const savedTags = state.currentPageTags;
+        // Before the path moves: the open tab follows the file (keeping any draft) rather
+        // than being left pointing at a name that no longer exists.
+        retargetTab(state.currentPagePath, newPath);
         state.currentPagePath = newPath;
         await refreshFileTree();
         if (state.currentPageType === 'chat') {
@@ -54,6 +58,7 @@ export const handleDelete = async () => {
     api.call('delete', { path: state.currentPagePath }, 'POST').then(async res => {
         if (res.success) {
             showToast(t('fileops.deleted'), 'success');
+            forgetTab(state.currentPagePath);   // no tab may outlive the file it opens
             await refreshFileTree();
             // Falls back to an empty view when the space has no Main.md — including
             // when Main.md is the page that was just deleted.

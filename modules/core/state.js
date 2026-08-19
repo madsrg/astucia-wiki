@@ -32,3 +32,15 @@ export const state = {
     isMobile: false, // effective mobile layout (from viewport + user override)
     displayMode: localStorage.getItem('wiki_displayMode') || 'auto', // 'auto' | 'desktop' | 'mobile'
 };
+
+/**
+ * Announce that `isEditing` or `hasUnsavedChanges` just changed.
+ *
+ * A plain object cannot notify anyone when it is mutated, so anything that has to react
+ * to edit state — the tab bar's unsaved marker — listens for `wiki:pagestate` instead of
+ * polling this object or intercepting its properties. Call it directly after flipping
+ * either flag; it is cheap and listeners are expected to be idempotent.
+ */
+export const notifyPageState = () => {
+    document.dispatchEvent(new CustomEvent('wiki:pagestate'));
+};

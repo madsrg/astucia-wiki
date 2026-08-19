@@ -405,15 +405,33 @@ export const showBlankPage = async () => {
     updateTocPanel([], null);
 };
 
-export const loadPage = async (path, id, tags) => {
+/**
+ * Optional hooks for the tabs module (modules/tabs). loadPage is the single funnel every
+ * page open goes through, so the tab bar observes it here instead of wrapping ~20 call
+ * sites. Both are no-ops when tabs are not initialised.
+ *
+ *   beforeLoad(nextPath) → snapshots the page being navigated away from; returns true
+ *       when its unsaved work is now held as a draft and will be restored, which makes
+ *       the discard prompt below wrong to show.
+ *   afterLoad(detail)    → the page that was just rendered, for the tab bar to follow.
+ */
+let _tabHooks = {};
+export const setTabHooks = (hooks) => { _tabHooks = hooks || {}; };
+
+export const loadPage = async (path, id, tags, opts = {}) => {
     setupDiagramObserver();
 
     // Stop any active chat poll before loading a new page
     const chatMod = await import('../chat/index.js');
     chatMod.stopPolling();
 
+    // With tabs open, switching away keeps the edit in the outgoing tab, so asking to
+    // discard it would be a lie. Without tabs (or for an edit that cannot be held as a
+    // draft) this falls through to the prompt exactly as before.
+    const draftKept = _tabHooks.beforeLoad ? _tabHooks.beforeLoad(path) : false;
+
     // A .json page edits inline without toggling state.isEditing, so guard it on the page type too.
-    if ((state.isEditing || state.currentPageType === 'json') && state.hasUnsavedChanges && !await confirmModal(t('edit.discard-confirm'), { message: t('edit.discard-nav'), confirmLabel: t('btn.discard'), dangerous: true, icon: icons.warning })) {
+    if (!draftKept && (state.isEditing || state.currentPageType === 'json') && state.hasUnsavedChanges && !await confirmModal(t('edit.discard-confirm'), { message: t('edit.discard-nav'), confirmLabel: t('btn.discard'), dangerous: true, icon: icons.warning })) {
         return;
     }
 
@@ -422,6 +440,30 @@ export const loadPage = async (path, id, tags) => {
     const isChat    = path.endsWith('.chat');
     const isSearch  = path.endsWith('.search');
     const isJson    = path.endsWith('.json');
+
+    // Read the content BEFORE touching the DOM, and use it in every branch below.
+    //
+    // This used to be one fetch per branch, *after* the branch had already hidden the
+    // outgoing page's pane and shown the incoming one. That await is a paint boundary, so
+    // every navigation rendered twice: first an empty pane (md → list, md → json) or the
+    // previously rendered content of the pane being reused (list → md showed the last
+    // Markdown page), then the real page. Fetching first collapses a switch into a single
+    // paint. It also means a page that cannot be read leaves the current one alone
+    // instead of half-switching to it.
+    const result = await api.call(isChat ? 'chat_messages' : 'get', { file: path });
+    if (!result.success) {
+        showToast(t('page.load-failed'), 'error');
+        return;
+    }
+
+    // Warm the renderer for this content type before the pane swap. A dynamic import that
+    // has to hit the network is a paint boundary too, so on the first visit to a type the
+    // new pane would appear empty for as long as the module took to arrive. Once loaded it
+    // is cached, and the awaits inside the branches below resolve without yielding a frame.
+    // (chat is already warm — its module was imported above to stop the poll.)
+    if (isJson)        await import('../json_view/index.js');
+    else if (isSearch) await import('../advanced_search/index.js');
+    else if (isList)   await Promise.all([import('../list/render.js'), import('../list/index.js')]);
 
     state.currentPagePath = path;
     state.currentPageId = id;
@@ -489,15 +531,12 @@ export const loadPage = async (path, id, tags) => {
         state.isEditing = false;
         updateTocPanel([], null);
 
-        const result = await api.call('get', { file: path });
-        if (result.success) {
-            loadedGitCommit = false;
-            state.initialContent = result.data;
-            state.currentPageLastUpdated = result.lastUpdated;   // baseline for the on-disk watcher
-            state.currentPageSize = result.size ?? null;
-            const { renderJsonView } = await import('../json_view/index.js');
-            await renderJsonView(result.data, path);
-        }
+        loadedGitCommit = false;
+        state.initialContent = result.data;
+        state.currentPageLastUpdated = result.lastUpdated;   // baseline for the on-disk watcher
+        state.currentPageSize = result.size ?? null;
+        const { renderJsonView } = await import('../json_view/index.js');
+        await renderJsonView(result.data, path);
         renderTags();
     } else if (isSearch) {
         viewerContainer.classList.add('hidden');
@@ -513,13 +552,10 @@ export const loadPage = async (path, id, tags) => {
         pageActionsGroup.classList.remove('hidden');
         state.isEditing = false;
         updateTocPanel([], null);
-        const result = await api.call('get', { file: path });
-        if (result.success) {
-            loadedGitCommit = false;
-            const { renderSearchView } = await import('../advanced_search/index.js');
-            renderSearchView(result.data, path);
-            document.getElementById('adv-search-results').scrollTop = 0;
-        }
+        loadedGitCommit = false;
+        const { renderSearchView } = await import('../advanced_search/index.js');
+        renderSearchView(result.data, path);
+        document.getElementById('adv-search-results').scrollTop = 0;
     } else if (isChat) {
         viewerContainer.classList.add('hidden');
         listViewContainer.classList.add('hidden');
@@ -535,19 +571,16 @@ export const loadPage = async (path, id, tags) => {
         state.isEditing = false;
 
         updateTocPanel([], null);
-        const result = await api.call('chat_messages', { file: path });
-        if (result.success) {
-            loadedGitCommit = result.git_commit ?? false;
-            state.currentChatData = {
-                messages:      result.messages || [],
-                topic:         result.topic || '',
-                git_commit:    result.git_commit ?? false,
-                nextMessageId: result.nextMessageId ?? 1,
-            };
-            const { renderChatView, startPolling } = await import('../chat/index.js');
-            renderChatView(state.currentChatData, result.has_more);
-            startPolling(path, result.mtime || 0);
-        }
+        loadedGitCommit = result.git_commit ?? false;
+        state.currentChatData = {
+            messages:      result.messages || [],
+            topic:         result.topic || '',
+            git_commit:    result.git_commit ?? false,
+            nextMessageId: result.nextMessageId ?? 1,
+        };
+        const { renderChatView, startPolling } = await import('../chat/index.js');
+        renderChatView(state.currentChatData, result.has_more);
+        startPolling(path, result.mtime || 0);
     } else if (isList) {
         viewerContainer.classList.add('hidden');
         listViewContainer.classList.remove('hidden');
@@ -555,23 +588,20 @@ export const loadPage = async (path, id, tags) => {
         searchViewContainer.classList.add('hidden');
         state.sortState = { colId: null, direction: 'asc' };
 
-        const result = await api.call('get', { file: path });
-        if (result.success) {
-            loadedGitCommit = result.git_commit ?? false;
-            state.currentPageLastUpdated = result.lastUpdated;   // baseline for the on-disk watcher
-            state.currentPageSize = result.size ?? null;
-            try {
-                state.currentListData = JSON.parse(result.data);
-                state.activeListView = null;
-                const { renderListView } = await import('../list/render.js');
-                const { refreshViewTabs } = await import('../list/index.js');
-                renderListView();
-                refreshViewTabs();
-                document.getElementById('list-items-table').scrollTop = 0;
-            } catch (e) {
-                showToast(t('view.invalid-list'), 'error');
-                document.getElementById('list-items-table').innerHTML = `<p style="padding: 1rem;">${t('view.parse-error')}</p>`;
-            }
+        loadedGitCommit = result.git_commit ?? false;
+        state.currentPageLastUpdated = result.lastUpdated;   // baseline for the on-disk watcher
+        state.currentPageSize = result.size ?? null;
+        try {
+            state.currentListData = JSON.parse(result.data);
+            state.activeListView = null;
+            const { renderListView } = await import('../list/render.js');
+            const { refreshViewTabs } = await import('../list/index.js');
+            renderListView();
+            refreshViewTabs();
+            document.getElementById('list-items-table').scrollTop = 0;
+        } catch (e) {
+            showToast(t('view.invalid-list'), 'error');
+            document.getElementById('list-items-table').innerHTML = `<p style="padding: 1rem;">${t('view.parse-error')}</p>`;
         }
         updateTocPanel([], null);
         editorWrapper.classList.add('hidden');
@@ -583,6 +613,34 @@ export const loadPage = async (path, id, tags) => {
         editBtn.disabled = true;
         state.isEditing = false;
     } else {
+        // Markdown: resolve everything that can yield — `{include:ID}` transclusions and
+        // the diagram/list/comment tags, all of which fetch — into finished HTML *before*
+        // the pane swap below. Rendering after the swap would let a page with includes
+        // show the previously rendered page for the length of those requests.
+        let mdHtml = null, mdHeadings = null;
+        if (!isDiagram) {
+            loadedGitCommit = result.git_commit ?? true;
+            state.initialContent = result.data;
+            state.currentPageLastUpdated = result.lastUpdated;
+            state.currentPageSize = result.size ?? null;   // baseline for the on-disk watcher
+            document.getElementById('editor-container').value = state.initialContent;
+
+            const processedContent = await processIncludes(state.initialContent);
+            const withDiagrams = await processDiagramTags(processedContent);
+            const withLists = await processListTags(withDiagrams);
+            const withComments = await processUserCommentTags(withLists);
+            mdHeadings = extractHeadings(withComments);
+            const withToc = processTocTag(withComments, mdHeadings);
+            mdHtml = marked.parse(withToc);
+
+            const filename = path.split('/').pop().replace(/\.(md|drawio|list)$/, '');
+            mdHtml = mdHtml.replaceAll('{filename}', filename);
+            if (state.currentPageLastUpdated) {
+                const updatedDate = new Date(state.currentPageLastUpdated * 1000);
+                mdHtml = mdHtml.replaceAll('{lastUpdated}', updatedDate.toLocaleString());
+            }
+        }
+
         viewerContainer.classList.remove('hidden');
         listViewContainer.classList.add('hidden');
         chatViewContainer.classList.add('hidden');
@@ -592,10 +650,9 @@ export const loadPage = async (path, id, tags) => {
 
         if (isDiagram) {
             diagramViewer.innerHTML = `<iframe src="about:blank" frameborder="0"></iframe>`;
-            const result = await api.call('get', { file: path });
-            if (result.success) {
-                loadedGitCommit = result.git_commit ?? true;
-                state.initialContent = result.data; // diagram module reads this on init/edit
+            loadedGitCommit = result.git_commit ?? true;
+            state.initialContent = result.data; // diagram module reads this on init/edit
+            {
                 const iframe = diagramViewer.querySelector('iframe');
                 iframe.style.opacity = '0';
                 iframe.style.transition = 'opacity 0.15s';
@@ -608,41 +665,16 @@ export const loadPage = async (path, id, tags) => {
             setEditingMode(false);
             editBtn.disabled = false;
         } else {
-            const result = await api.call('get', { file: path });
-            if (result.success) {
-                loadedGitCommit = result.git_commit ?? true;
-                state.initialContent = result.data;
-                state.currentPageLastUpdated = result.lastUpdated;
-                state.currentPageSize = result.size ?? null;   // baseline for the on-disk watcher
-                document.getElementById('editor-container').value = state.initialContent;
-
-                const processedContent = await processIncludes(state.initialContent);
-                const withDiagrams = await processDiagramTags(processedContent);
-                const withLists = await processListTags(withDiagrams);
-                const withComments = await processUserCommentTags(withLists);
-                const headings = extractHeadings(withComments);
-                const withToc = processTocTag(withComments, headings);
-                let renderedHTML = marked.parse(withToc);
-
-                const filename = path.split('/').pop().replace(/\.(md|drawio|list)$/, '');
-                renderedHTML = renderedHTML.replaceAll('{filename}', filename);
-
-                if (state.currentPageLastUpdated) {
-                    const updatedDate = new Date(state.currentPageLastUpdated * 1000);
-                    renderedHTML = renderedHTML.replaceAll('{lastUpdated}', updatedDate.toLocaleString());
-                }
-
-                viewerContent.innerHTML = renderedHTML;
-                // Start a freshly loaded page at the top — replacing innerHTML
-                // keeps the old scrollTop when the new page is also tall enough.
-                viewerContent.scrollTop = 0;
-                addHeadingIds(viewerContent, headings);
-                updateTocPanel(headings, viewerContent);
-                renderTags();
-                await renderAttachments();
-                setEditingMode(false);
-                editBtn.disabled = false;
-            }
+            viewerContent.innerHTML = mdHtml;
+            // Start a freshly loaded page at the top — replacing innerHTML
+            // keeps the old scrollTop when the new page is also tall enough.
+            viewerContent.scrollTop = 0;
+            addHeadingIds(viewerContent, mdHeadings);
+            updateTocPanel(mdHeadings, viewerContent);
+            renderTags();
+            await renderAttachments();
+            setEditingMode(false);
+            editBtn.disabled = false;
         }
     }
 
@@ -668,4 +700,12 @@ export const loadPage = async (path, id, tags) => {
     renderBrowsePane(findItemsByPath(parentPath), parentPath);
 
     startFileWatch(path, state.currentPageLastUpdated || 0, state.currentPageSize);
+
+    // Last, so the tab bar only ever reflects a page that finished rendering. `intent`
+    // distinguishes a peek (a plain click, which reuses the preview slot) from a page
+    // that should get a tab of its own — e.g. one the user just created.
+    _tabHooks.afterLoad?.({
+        path, id, tags: tags || [], type: state.currentPageType,
+        intent: opts.intent || 'preview',
+    });
 };

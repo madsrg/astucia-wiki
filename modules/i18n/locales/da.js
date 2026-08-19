@@ -274,4 +274,13 @@ export default {
     'select.no-ai':         'Ingen AI-bruger tilgængelig.',
     'select.only-md':       'Åbn en Markdown-side først.',
     'select.title-empty':   'Markeringen er ikke et gyldigt sidenavn.',
+
+    'page.load-failed':      'Siden kunne ikke åbnes.',
+    // Page tabs
+    'tabs.new-tab':          'Ny fane',
+    'tabs.close':            'Luk',
+    'tabs.close-others':     'Luk de andre',
+    'tabs.close-right':      'Luk til højre',
+    'tabs.close-all':        'Luk alle',
+    'tabs.close-discard':    'Denne fane har ikke-gemte ændringer. Vil du lukke den og forkaste dem?',
 };

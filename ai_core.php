@@ -243,6 +243,28 @@ function ai_debug_report_text(array $blocks, array $usage, string $model, int $a
     return $out;
 }
 
+/**
+ * The wiki's Markdown extensions, as stated to every AI that writes pages.
+ *
+ * Shared by the chat-reply prompt (api.php) and the agent-job prompt in this file, which are
+ * otherwise near-copies of each other — the features would drift if each spelled them out.
+ *
+ * Deliberately terse: it is part of the built-in instructions sent on *every* request, and
+ * `/debug` prices it inside the "Wiki instructions" line (~108 tokens as written).
+ *
+ * The closing sentence carries as much weight as the rest. Without being told these are
+ * meaningful, an AI asked to tidy a page treats a ```mermaid block or an {include:ID} as
+ * stray text to clean up, so the omission could damage existing pages and not merely stop
+ * new diagrams being written.
+ */
+function wiki_markdown_features_prompt(): string {
+    return "Page content is Markdown with these wiki extensions: a ```mermaid fenced block renders as a "
+         . "diagram (flowchart, sequence, state, ER, gantt) — use one instead of describing a diagram in "
+         . "prose or linking an image; {include:ID} embeds another page; {toc} inserts a table of contents; "
+         . "{filename} and {lastUpdated} are substituted when the page renders. "
+         . "Preserve these constructs verbatim when editing a page that already uses them. ";
+}
+
 // Resolves an AI user's effective system prompt. When a system-prompt page is
 // configured (space + relative .md path), its Markdown content is used — so
 // Editors can view and edit the AI's instructions as an ordinary wiki page,
@@ -913,6 +935,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
         . "Use wiki_list_pages to discover pages, wiki_read_page to read content, "
         . "and wiki_write_page to create or update .md pages. "
         . "When calling wiki_write_page you MUST include the complete markdown content in the \"content\" field. "
+        . wiki_markdown_features_prompt()
         . "Proceed with tasks directly using tools — do not describe what you are about to do before doing it.\n\n";
     $full_system = $wiki_ctx . $sys_prompt;
 

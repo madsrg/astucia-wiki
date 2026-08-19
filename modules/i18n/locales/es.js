@@ -273,4 +273,13 @@ export default {
     'select.no-ai':         'No hay ningún usuario de IA disponible.',
     'select.only-md':       'Abre primero una página Markdown.',
     'select.title-empty':   'La selección no es un nombre de página válido.',
+
+    'page.load-failed':      'No se pudo abrir esta página.',
+    // Page tabs
+    'tabs.new-tab':          'Nueva pestaña',
+    'tabs.close':            'Cerrar',
+    'tabs.close-others':     'Cerrar las demás',
+    'tabs.close-right':      'Cerrar las de la derecha',
+    'tabs.close-all':        'Cerrar todas',
+    'tabs.close-discard':    'Esta pestaña tiene cambios sin guardar. ¿Cerrarla y descartarlos?',
 };

@@ -1,7 +1,7 @@
 // Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
-import { state } from '../core/state.js';
+import { state, notifyPageState } from '../core/state.js';
 
 // Splits markdown into blocks on blank lines, keeping fenced code blocks atomic.
 export const splitIntoBlocks = (markdown) => {
@@ -64,9 +64,11 @@ const restoreToolbar = () => {
 };
 
 const markChanged = () => {
+    const wasClean = !state.hasUnsavedChanges;
     state.hasUnsavedChanges = true;
     const saveBtn = document.getElementById('save-btn');
     if (saveBtn) saveBtn.disabled = false;
+    if (wasClean) notifyPageState();
 };
 
 let activeBlockEl = null;

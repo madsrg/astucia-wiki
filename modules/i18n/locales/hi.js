@@ -534,4 +534,13 @@ export default {
     'select.no-ai': 'कोई AI उपयोगकर्ता उपलब्ध नहीं है।',
     'select.only-md': 'पहले एक Markdown पेज खोलें।',
     'select.title-empty': 'चयन एक मान्य पेज नाम नहीं है।',
+
+    'page.load-failed':      'यह पृष्ठ नहीं खोला जा सका।',
+    // Page tabs
+    'tabs.new-tab':          'नया टैब',
+    'tabs.close':            'बंद करें',
+    'tabs.close-others':     'अन्य बंद करें',
+    'tabs.close-right':      'दाईं ओर के बंद करें',
+    'tabs.close-all':        'सभी बंद करें',
+    'tabs.close-discard':    'इस टैब में सहेजे न गए बदलाव हैं। इसे बंद करें और बदलाव छोड़ दें?',
 };

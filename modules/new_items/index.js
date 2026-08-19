@@ -43,7 +43,7 @@ const createAndOpen = async (ext, apiAction, promptKey, defaultKey, createdKey, 
         await refreshFileTree();
         switchToTreePane();
         const newFileEl = document.querySelector(`[data-path="${path}"]`);
-        if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
+        if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, [], { intent: 'permanent' }); }
     }
 };
 
@@ -61,7 +61,7 @@ export const createPageNamed = async (rawName) => {
         await refreshFileTree();
         switchToTreePane();
         const newFileEl = document.querySelector(`[data-path="${path}"]`);
-        if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
+        if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, [], { intent: 'permanent' }); }
     } else {
         showToast(res.message || 'Failed to create page.', 'error');
     }
@@ -106,7 +106,7 @@ export const init = () => {
             await refreshFileTree();
             switchToTreePane();
             const newFileEl = document.querySelector(`[data-path="${path}"]`);
-            if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
+            if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, [], { intent: 'permanent' }); }
         }
     };
 
@@ -128,7 +128,7 @@ export const init = () => {
                 await refreshFileTree();
                 switchToTreePane();
                 const newFileEl = document.querySelector(`[data-path="${path}"]`);
-                if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
+                if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, [], { intent: 'permanent' }); }
             }
             return;
         }
@@ -188,7 +188,7 @@ export const init = () => {
             await refreshFileTree();
             switchToTreePane();
             const newFileEl = document.querySelector(`[data-path="${path}"]`);
-            if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
+            if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, [], { intent: 'permanent' }); }
         }
     };
 
@@ -209,7 +209,7 @@ export const init = () => {
                 await refreshFileTree();
                 switchToTreePane();
                 const newFileEl = document.querySelector(`[data-path="${path}"]`);
-                if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
+                if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, [], { intent: 'permanent' }); }
             }
             return;
         }
@@ -259,7 +259,7 @@ export const init = () => {
             await refreshFileTree();
             switchToTreePane();
             const newFileEl = document.querySelector(`[data-path="${path}"]`);
-            if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
+            if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, [], { intent: 'permanent' }); }
         }
     };
 
@@ -290,7 +290,7 @@ export const init = () => {
             await refreshFileTree();
             switchToTreePane();
             const newFileEl = document.querySelector(`[data-path="${path}"]`);
-            if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, []); }
+            if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, [], { intent: 'permanent' }); }
         } else {
             showToast(res.message || t('new.search-failed'), 'error');
         }

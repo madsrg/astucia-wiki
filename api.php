@@ -367,6 +367,7 @@ if (isset($_REQUEST['action'])) {
             . "When calling wiki_write_page you MUST include the complete markdown content in the \"content\" field in the same tool call — never call it with an empty or missing content field. "
             . "When the user asks you to create or modify wiki content, call the appropriate tool immediately — do not describe what you are about to do before doing it. "
             . "Only invoke tools when the user's request actually requires wiki content. "
+            . wiki_markdown_features_prompt()
             . "When writing internal links to other wiki pages, use the Markdown syntax [Page Title](?pageid=ID&space=SPACE) "
             . "where ID and SPACE come from the wiki_list_pages results. Never use file paths as link targets for internal pages.\n\n";
         // If a .md page with the same name exists in the same folder, inject its content as context.
@@ -1062,6 +1063,17 @@ if (isset($_REQUEST['action'])) {
 "All responses are JSON: {\"success\":true,...} or {\"success\":false,\"message\":\"reason\"}\n" .
 "File paths are always relative to the space root, e.g. \"Folder/Page.md\"\n" .
 "File types: .md (Markdown page), .chat (chat thread), .list (structured list)\n" .
+"\n" .
+"## Page content\n" .
+"\n" .
+".md pages are Markdown with these wiki extensions:\n" .
+"  ```mermaid fenced block  renders as a diagram (flowchart, sequence, state, ER, gantt).\n" .
+"                           Write one instead of ASCII art or an image link.\n" .
+"  {include:ID}             embeds the page with that numeric id at this position.\n" .
+"  {toc}                    inserts a table of contents built from the page's headings.\n" .
+"  {filename} {lastUpdated} substituted when the page renders.\n" .
+"Preserve these constructs verbatim when rewriting a page that already uses them.\n" .
+"Internal links use [Page Title](?pageid=ID&space=SPACE), never a file path.\n" .
 "\n" .
 "## Actions\n" .
 "\n" .
