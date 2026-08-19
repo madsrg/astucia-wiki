@@ -15,7 +15,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.7.44
+    madsrotwitt/astucia-wiki:2026.7.45
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -29,7 +29,7 @@ page in it — no setup wizard, no migrations.
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.7.44` | moves only if that release is rebuilt |
+| `2026.7.45` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
@@ -86,4 +86,5 @@ keep working in the background.
 - **Website:** <https://astucia.wiki>
 - **Licence:** GPL-3.0-or-later. Copyright (C) 2026 Mads Rotwitt
 
-Currently published for `linux/amd64`.
+Published for **linux/amd64** and **linux/arm64** — the same command works on an Intel
+server, an Apple Silicon Mac or a Raspberry Pi.

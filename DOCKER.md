@@ -64,8 +64,10 @@ docker image inspect madsrotwitt/astucia-wiki:2026.7.44 \
 That revision is a commit in the source repository, so a published image is always traceable
 to the exact tree it was built from.
 
-Currently published for `linux/amd64` only. **Build it yourself** if you need another
-architecture, want to modify the wiki, or would rather not depend on a registry.
+Published for **`linux/amd64` and `linux/arm64`**, so the same command works on an Intel
+server, an Apple Silicon Mac or a Raspberry Pi — Docker selects the right variant. **Build
+it yourself** if you want to modify the wiki, target another architecture, or would rather
+not depend on a registry.
 
 ## Build
 
@@ -159,13 +161,26 @@ name rather than failing at the end of a long build.
 One-time host setup, which the script checks for and explains if missing:
 
 ```bash
-docker buildx create --use --name astucia                        # container-driver builder
-docker run --privileged --rm tonistiigi/binfmt --install arm64    # QEMU, re-run per boot
+# QEMU, so a non-native architecture can be emulated (re-run after a reboot)
+docker run --privileged --rm tonistiigi/binfmt --install arm64
+
+# A builder that can cross-build. network=host matters: without it the builder
+# container failed DNS resolution ("dl-cdn.alpinelinux.org: DNS: transient error"),
+# so every apk install inside the build failed.
+docker buildx create --use --name astucia \
+    --driver docker-container --driver-opt network=host
 ```
 
-Expect the non-native leg to be slow — `pdo_sqlite` is compiled under emulation. The
-script verifies each tag landed in the registry afterwards and prints the platforms in the
-published manifest.
+Expect the non-native leg to be slow — Composer and `pdo_sqlite` run under emulation, so
+budget ten minutes or more rather than the usual seconds. The script verifies each tag
+landed in the registry and prints the platforms in the published manifest.
+
+Verify a published variant actually runs, rather than trusting the manifest:
+
+```bash
+docker run --rm --platform linux/arm64 madsrotwitt/astucia-wiki:2026.7.45 \
+    php -r 'echo php_uname("m"), " ", extension_loaded("pdo_sqlite") ? "ok" : "missing", "\n";'
+```
 
 ### Publishing your own image
 
