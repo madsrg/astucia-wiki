@@ -130,10 +130,25 @@ EOF
 
     echo
     echo "Published:"
+    # Existing in the registry is not enough: a tag is a mutable pointer, and the whole point
+    # of pushing :latest and :<version> alongside :sha-<commit> is that all three name the same
+    # image. Compare digests and fail loudly if they have come apart — otherwise a stale
+    # :latest looks exactly like a successful publish.
+    digest_of() {
+        docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}' 2>/dev/null
+    }
+    REF_TAG="${SHA_TAG:-${IMAGE_NAME}:${VERSION}}"
+    REF_DIGEST="$(digest_of "$REF_TAG")"
+    [ -n "$REF_DIGEST" ] || { echo "ERROR: ${REF_TAG} is not in the registry" >&2; exit 1; }
     for t in latest "${VERSION}" ${SHA_TAG:+"sha-${REVISION}"}; do
-        docker buildx imagetools inspect "${IMAGE_NAME}:${t}" >/dev/null 2>&1 \
-            || { echo "ERROR: ${IMAGE_NAME}:${t} is not in the registry" >&2; exit 1; }
-        echo "  ${IMAGE_NAME}:${t}"
+        d="$(digest_of "${IMAGE_NAME}:${t}")"
+        [ -n "$d" ] || { echo "ERROR: ${IMAGE_NAME}:${t} is not in the registry" >&2; exit 1; }
+        if [ "$d" != "$REF_DIGEST" ]; then
+            echo "ERROR: ${IMAGE_NAME}:${t} points at ${d}" >&2
+            echo "       but this build is ${REF_DIGEST} (${REF_TAG})" >&2
+            exit 1
+        fi
+        echo "  ${IMAGE_NAME}:${t}  ->  ${d}"
     done
     echo
     docker buildx imagetools inspect "$PINNED" | awk '/Platform:/{print "  "$0}' | sort -u

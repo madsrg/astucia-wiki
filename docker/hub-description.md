@@ -15,7 +15,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.7.45
+    madsrotwitt/astucia-wiki:2026.8.2
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -24,12 +24,36 @@ page in it — no setup wizard, no migrations.
 > **`AUTHENTICATION` defaults to `off`, which means every visitor has full admin rights.**
 > Fine on a private network; set `AUTHENTICATION=otp` or `oidc` before exposing it.
 
+## All settings in one file
+
+Rather than accumulating `-e` flags, download the annotated sample and edit it. It documents
+every variable with its default, so it doubles as the configuration reference:
+
+```bash
+mkdir -p /srv/astucia-wiki
+curl -o /srv/astucia-wiki/wiki.env \
+  https://raw.githubusercontent.com/madsrg/astucia-wiki/main/docker/wiki.env.example
+$EDITOR /srv/astucia-wiki/wiki.env
+
+docker run -d \
+    --name astucia-wiki \
+    --restart=always \
+    -p 8080:80 \
+    -v /srv/astucia-wiki/data:/data \
+    --env-file /srv/astucia-wiki/wiki.env \
+    madsrotwitt/astucia-wiki:2026.8.2
+```
+
+Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
+`APP_TITLE="My Wiki"`), and there are no inline comments — everything after the first `=` is the
+value. Back the file up separately from the data volume; it may hold mail credentials.
+
 ## Tags
 
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.7.45` | moves only if that release is rebuilt |
+| `2026.8.2` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
