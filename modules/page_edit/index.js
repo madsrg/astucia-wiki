@@ -3,6 +3,7 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state, notifyPageState } from '../core/state.js';
+import { processWikiLinks } from '../wikilinks/index.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { activateInlineMode, deactivateInlineMode, discardInlineMode, getInlineContent } from './inline_editor.js';
@@ -124,7 +125,7 @@ export const setEditingMode = async (editing, opts = {}) => {
 const renderCurrentPage = async (markdown) => {
     const { processIncludes, processDiagramTags, processListTags, processUserCommentTags } = await import('../page_view/index.js');
     const { extractHeadings, processTocTag } = await import('../toc/index.js');
-    let content = await processIncludes(markdown);
+    let content = await processIncludes(processWikiLinks(markdown));
     content = await processDiagramTags(content);
     content = await processListTags(content);
     content = await processUserCommentTags(content);

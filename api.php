@@ -12,6 +12,7 @@ require_once 'mailer.php';
 require_once __DIR__ . '/ai_core.php';
 require_once __DIR__ . '/agent_jobs.php';
 require_once __DIR__ . '/service_auth.php';
+require_once __DIR__ . '/wikilinks.php';
 
 session_start();
 
@@ -839,7 +840,8 @@ if (isset($_REQUEST['action'])) {
                       'post_chat_message', 'queue_agent_job', 'toggle_chat_debug', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'purge_chat_messages', 'toggle_sticky',
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags',
-                      'save_diagram_svg', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore'];
+                      'save_diagram_svg', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
+                      'retarget_wikilinks'];
     $admin_actions = ['admin_get_users', 'admin_save_users', 'admin_get_user_requests',
                       'admin_approve_request', 'admin_deny_request',
                       'admin_get_logs', 'admin_get_log_content',
@@ -1069,6 +1071,13 @@ if (isset($_REQUEST['action'])) {
 ".md pages are Markdown with these wiki extensions:\n" .
 "  ```mermaid fenced block  renders as a diagram (flowchart, sequence, state, ER, gantt).\n" .
 "                           Write one instead of ASCII art or an image link.\n" .
+"  > [!note] Title          a blockquote starting with [!type] renders as a callout box. Types:\n" .
+"                           note, info, abstract, todo, tip, success, question, warning, failure,\n" .
+"                           danger, bug, important, example, quote. Suffix the type with - to\n" .
+"                           start it collapsed, + to make it foldable but open.\n" .
+"  [[Page]] / ![[Page]]     link to, or embed, a page in this space by name. These render,\n" .
+"                           but write new links as [Title](?pageid=ID&space=SPACE): that form\n" .
+"                           also reaches other spaces and survives the target being renamed.\n" .
 "  {include:ID}             embeds the page with that numeric id at this position.\n" .
 "  {toc}                    inserts a table of contents built from the page's headings.\n" .
 "  {filename} {lastUpdated} substituted when the page renders.\n" .
@@ -1893,6 +1902,51 @@ if (isset($_REQUEST['action'])) {
                 }
                 break;
             
+            case 'retarget_wikilinks':
+                // After a page is renamed or moved, `[[Old name]]` elsewhere in the space no
+                // longer resolves — a wikilink names its target instead of identifying it. This
+                // finds those links and, only when apply=1, rewrites them.
+                //
+                // The one place wikilink source text is modified, and never without being asked:
+                // the client calls this first with apply=0 to get a count for the confirmation.
+                $rw_old = ltrim(str_replace('..', '', $_POST['old_path'] ?? $_GET['old_path'] ?? ''), '/');
+                $rw_new = ltrim(str_replace('..', '', $_POST['new_path'] ?? $_GET['new_path'] ?? ''), '/');
+                $rw_apply = !empty($_POST['apply']) || !empty($_GET['apply']);
+                if ($rw_old === '' || $rw_new === '') throw new Exception('old_path and new_path are required.');
+
+                $rw_pages = $indexer->getAllPages();
+                $rw_files = [];
+                $rw_total = 0;
+                foreach ($rw_pages as $rw_id => $rw_data) {
+                    $rw_rel = (string)($rw_data['path'] ?? '');
+                    // Only Markdown bodies carry wikilinks; a .list or .chat is structured JSON
+                    // and rewriting inside it would corrupt the file.
+                    if ($rw_rel === '' || strtolower(pathinfo($rw_rel, PATHINFO_EXTENSION)) !== 'md') continue;
+                    if ($rw_rel === $rw_new) continue;                 // the renamed page itself
+                    $rw_abs = sanitize_path($rw_rel);
+                    if (!is_file($rw_abs)) continue;
+                    $rw_body = file_get_contents($rw_abs);
+                    if (strpos($rw_body, '[[') === false) continue;    // cheap reject
+                    [$rw_out, $rw_n] = wikilink_retarget($rw_body, $rw_old, $rw_new);
+                    if ($rw_n === 0) continue;
+                    $rw_total += $rw_n;
+                    $rw_files[] = ['id' => (string)$rw_id, 'path' => $rw_rel, 'links' => $rw_n];
+                    if (!$rw_apply) continue;
+                    if (file_put_contents($rw_abs, $rw_out) === false) continue;
+                    // Same bookkeeping as a normal save, so the change is not invisible to the
+                    // index, full-text search or the modified-by column.
+                    $rw_actor = get_current_actor();
+                    $indexer->updateModified($rw_rel, $rw_actor['uid'], $rw_actor['name']);
+                    if ($search_idx) {
+                        try { $search_idx->upsertPage(_sidx_space(), $rw_rel, $rw_out); } catch (\Throwable $_e) {}
+                    }
+                }
+                echo json_encode([
+                    'success' => true, 'applied' => $rw_apply,
+                    'links'   => $rw_total, 'pages' => count($rw_files), 'files' => $rw_files,
+                ]);
+                break;
+
             case 'get_backlinks':
                 $target_id = intval($_GET['pageid'] ?? 0);
                 if (!$target_id) {
@@ -1902,11 +1956,17 @@ if (isset($_REQUEST['action'])) {
                 $pattern    = 'pageid=' . $target_id;
                 $all_pages  = $indexer->getAllPages();
                 $backlinks  = [];
+                // A wikilink names its target rather than carrying its id, so the substring
+                // search below cannot see one. Resolving every wikilink in a candidate page and
+                // comparing ids is what makes an imported Obsidian vault show backlinks at all.
+                $bl_resolve = wikilink_resolver($all_pages);
                 foreach ($all_pages as $bl_id => $bl_data) {
                     if (!isset($bl_data['path'])) continue;
                     $bl_path = sanitize_path($bl_data['path']);
                     if (!file_exists($bl_path)) continue;
-                    if (strpos(file_get_contents($bl_path), $pattern) !== false) {
+                    $bl_body = file_get_contents($bl_path);
+                    if (strpos($bl_body, $pattern) !== false
+                        || in_array((string)$target_id, wikilink_ids($bl_body, $bl_resolve), true)) {
                         $backlinks[] = [
                             'id'    => $bl_id,
                             'path'  => $bl_data['path'],

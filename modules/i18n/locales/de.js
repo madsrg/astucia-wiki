@@ -275,8 +275,13 @@ export default {
     'select.title-empty':   'Auswahl ist kein gültiger Seitenname.',
 
     'page.load-failed':      'Diese Seite konnte nicht geöffnet werden.',
+    // Wikilinks
+    'wikilinks.retarget-title':  'Links auf diese Seite aktualisieren?',
+    'wikilinks.retarget-msg':    '{links} Wikilinks auf {pages} Seiten verweisen noch auf den alten Namen. Auf „{name}“ aktualisieren?',
+    'wikilinks.retarget-confirm': 'Links aktualisieren',
+    'wikilinks.retargeted':      '{links} Wikilinks auf {pages} Seiten aktualisiert.',
+    'wikilinks.retarget-failed': 'Die Wikilinks konnten nicht aktualisiert werden.',
     // Page tabs
-    'tabs.new-tab':          'Neuer Tab',
     'tabs.close':            'Schließen',
     'tabs.close-others':     'Andere schließen',
     'tabs.close-right':      'Rechts davon schließen',

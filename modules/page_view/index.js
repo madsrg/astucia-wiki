@@ -12,7 +12,8 @@ import { renderAttachments } from '../attachments/index.js';
 import { getUsers } from '../core/users.js';
 import { t } from '../i18n/index.js';
 import { updateBreadcrumb, trackPageVisit, updateFavoriteBtn } from '../nav/index.js';
-import { extractHeadings, processTocTag, addHeadingIds, updateTocPanel } from '../toc/index.js';
+import { extractHeadings, processTocTag, addHeadingIds, updateTocPanel, headingSlug } from '../toc/index.js';
+import { processWikiLinks } from '../wikilinks/index.js';
 
 // ── User comment tag processing ──────────────────────────────────────────────
 
@@ -76,7 +77,7 @@ const setupDiagramObserver = () => {
     diagramObserverSetup = true;
     const viewer = document.getElementById('viewer-content');
     new MutationObserver(mutations => {
-        let sawMermaid = false;
+        let sawMermaid = false, sawQuote = false;
         for (const m of mutations) {
             for (const node of m.addedNodes) {
                 if (node.nodeType !== 1) continue;
@@ -84,10 +85,18 @@ const setupDiagramObserver = () => {
                 node.querySelectorAll('.inline-diagram-viewer:not([data-initialized])').forEach(initSingleDiagram);
                 if (!sawMermaid && (node.querySelector?.('code.language-mermaid')
                                     || node.matches?.('code.language-mermaid'))) sawMermaid = true;
+                // Any blockquote is a candidate; the callout pass itself decides which ones
+                // carry a [!type] marker. Converting one replaces it with a <div>, so this
+                // cannot re-trigger itself.
+                if (!sawQuote && (node.querySelector?.('blockquote')
+                                  || node.matches?.('blockquote'))) sawQuote = true;
             }
         }
         if (sawMermaid) {
             import('../mermaid/index.js').then(m => m.scheduleMermaidRender(viewer)).catch(() => {});
+        }
+        if (sawQuote) {
+            import('../callouts/index.js').then(m => m.scheduleCalloutRender(viewer)).catch(() => {});
         }
     }).observe(viewer, { childList: true, subtree: true });
 };
@@ -188,14 +197,40 @@ export const processListTags = async (content) => {
 
 // ── Include transclusion ─────────────────────────────────────────────────────
 
+/**
+ * One section of a Markdown document: from the heading whose anchor is `slug` up to the next
+ * heading at the same or a higher level. Returns null when no heading matches.
+ *
+ * Only reachable through `![[Page#Heading]]`, which the wikilink pass rewrites to
+ * `{include:ID#slug}` — the plain `{include:ID}` tag has no section form, so nothing that
+ * a user typed changes meaning.
+ */
+const sliceSection = (markdown, slug) => {
+    const lines = markdown.split('\n');
+    let start = -1, startLevel = 0, inCode = false;
+    for (let i = 0; i < lines.length; i++) {
+        if (/^\s{0,3}(```|~~~)/.test(lines[i])) { inCode = !inCode; continue; }
+        if (inCode) continue;
+        const m = /^(#{1,6})\s+(.+)$/.exec(lines[i]);
+        if (!m) continue;
+        if (start === -1) {
+            if (headingSlug(m[2]) === slug) { start = i; startLevel = m[1].length; }
+        } else if (m[1].length <= startLevel) {
+            return lines.slice(start, i).join('\n');
+        }
+    }
+    return start === -1 ? null : lines.slice(start).join('\n');
+};
+
 export const processIncludes = async (content, processedIds = []) => {
-    const includeRegex = /{include:(\d+)}/g;
+    const includeRegex = /{include:(\d+)(?:#([^}]*))?}/g;
     let processedContent = content;
     const matches = [...content.matchAll(includeRegex)];
 
     for (const match of matches) {
         const includeTag = match[0];
         const pageId = match[1];
+        const section = match[2] || null;
 
         if (processedIds.includes(pageId)) {
             processedContent = processedContent.replace(includeTag, `[Error: Circular Reference for page ID ${pageId}]`);
@@ -206,7 +241,21 @@ export const processIncludes = async (content, processedIds = []) => {
         if (pathResult.success && pathResult.path) {
             const contentResult = await api.call('get', { file: pathResult.path });
             if (contentResult.success) {
-                let subContent = await processIncludes(contentResult.data, [...processedIds, pageId]);
+                let raw = contentResult.data;
+                if (section) {
+                    const cut = sliceSection(raw, section);
+                    if (cut === null) {
+                        processedContent = processedContent.replace(includeTag,
+                            () => `[Error: no section "${section}" in page ID ${pageId}]`);
+                        continue;
+                    }
+                    raw = cut;
+                }
+                // Render the included page's own wikilinks too, against its own path so its
+                // attachments resolve. Without this an embedded page shows raw [[…]] text,
+                // which is glaring now that an embed is visibly framed.
+                let subContent = await processIncludes(
+                    processWikiLinks(raw, pathResult.path), [...processedIds, pageId]);
                 // Resolve {filename} and {lastUpdated} relative to the included page, not the parent
                 const includedFilename = pathResult.path.split('/').pop().replace(/\.(md|drawio|list)$/, '');
                 subContent = subContent.replaceAll('{filename}', includedFilename);
@@ -235,7 +284,11 @@ export const refreshPageContent = async () => {
     state.currentPageSize = result.size ?? null;
     document.getElementById('editor-container').value = state.initialContent;
 
-    const processedContent = await processIncludes(state.initialContent);
+    // Wikilinks first: a `![[Page]]` embed becomes an `{include:ID}` tag, which the next
+    // call expands, so page embeds reuse the transclusion machinery and its
+    // circular-reference guard rather than repeating it.
+    const withWikiLinks = processWikiLinks(state.initialContent);
+    const processedContent = await processIncludes(withWikiLinks);
     const withDiagrams = await processDiagramTags(processedContent);
     const withLists = await processListTags(withDiagrams);
     const withComments = await processUserCommentTags(withLists);
@@ -625,7 +678,11 @@ export const loadPage = async (path, id, tags, opts = {}) => {
             state.currentPageSize = result.size ?? null;   // baseline for the on-disk watcher
             document.getElementById('editor-container').value = state.initialContent;
 
-            const processedContent = await processIncludes(state.initialContent);
+            // Wikilinks first: a `![[Page]]` embed becomes an `{include:ID}` tag, which the next
+            // call expands, so page embeds reuse the transclusion machinery and its
+            // circular-reference guard rather than repeating it.
+            const withWikiLinks = processWikiLinks(state.initialContent);
+            const processedContent = await processIncludes(withWikiLinks);
             const withDiagrams = await processDiagramTags(processedContent);
             const withLists = await processListTags(withDiagrams);
             const withComments = await processUserCommentTags(withLists);

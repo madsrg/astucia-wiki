@@ -21,6 +21,16 @@ const makeSlug = (text) =>
         .replace(/-+/g, '-')
         .replace(/^-|-$/g, '') || 'heading';
 
+/**
+ * The anchor a heading gets in the rendered page, from its raw Markdown text.
+ *
+ * Exported so `[[Page#Heading]]` wikilinks and `![[Page#Heading]]` section embeds target the
+ * same ids `addHeadingIds` assigns — computed in one place, or a link would point at an anchor
+ * that does not exist. Note this does not disambiguate repeated headings (the "-2" suffix
+ * below), so a link to the second "Notes" on a page lands on the first.
+ */
+export const headingSlug = (rawHeadingText) => makeSlug(stripInlineMarkdown(rawHeadingText));
+
 export const extractHeadings = (markdown, maxLevels = 6) => {
     const headings = [];
     const counts   = {};

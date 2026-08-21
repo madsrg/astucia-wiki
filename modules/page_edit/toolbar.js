@@ -2,7 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { state } from '../core/state.js';
-import { insertMarkdown, insertHeading, prependLines, deleteCurrentLine } from './editor.js';
+import { insertMarkdown, insertBlock, insertSmart, insertHeading, prependLines, deleteCurrentLine } from './editor.js';
 import { openIncludeLightbox, openImageLightbox, openDiagramInsertLightbox, openListInsertLightbox } from './insert_media.js';
 import { openCommentLightbox } from './insert_comment.js';
 import { openLinkLightbox, openExternalLinkLightbox } from './link_lightbox.js';
@@ -17,6 +17,13 @@ const SEQUENCE_SKELETON = '```mermaid\nsequenceDiagram\n    autonumber\n'
     + '    Alice->>Bob: Request\n    Bob-->>Alice: Response';
 const FLOWCHART_SKELETON = '```mermaid\nflowchart TD\n'
     + '    Start([Start]) --> Check{OK?}\n    Check -->|yes| Done([Done])\n    Check -->|no| Start';
+
+// Callouts. The type word is the only thing that differs, so one builder covers the menu
+// entries; a reader can change `note` to any of the supported types by editing that word.
+// Appending "-" folds it shut by default and "+" makes it foldable but open.
+const callout = (type, title) => `> [!${type}] ${title}\n> `;
+const CALLOUT_TYPES = 'note, info, abstract, todo, tip, success, question, warning, '
+    + 'failure, danger, bug, important, example, quote';
 
 export const createEditorToolbar = () => {
     const toolbar = document.getElementById('editor-toolbar');
@@ -65,7 +72,7 @@ export const createEditorToolbar = () => {
     addBtn(
         svg('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'),
         'Code block (Alt+C)',
-        () => insertMarkdown(hk('alt+c').prefix, hk('alt+c').suffix)
+        () => insertSmart(hk('alt+c').prefix, hk('alt+c').suffix)
     );
 
     // ── Lists ───────────────────────────────────────────────────────────────
@@ -88,18 +95,20 @@ export const createEditorToolbar = () => {
     // ── Block formatting ────────────────────────────────────────────────────
     addBtn(
         svg('<path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/>'),
-        'Blockquote',
-        () => insertMarkdown('> ')
+        'Blockquote — prepends "> " to each selected line',
+        // prependLines, like the list buttons beside it: "> " only quotes when it starts a line,
+        // and a multi-line selection needs the marker on every line, not just the first.
+        () => prependLines('> ')
     );
     addBtn(
         svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>'),
         'Table (Alt+T)',
-        () => insertMarkdown(hk('alt+t').prefix, hk('alt+t').suffix)
+        () => insertSmart(hk('alt+t').prefix, hk('alt+t').suffix)
     );
     addBtn(
         svg('<line x1="3" y1="12" x2="21" y2="12"/>', 2.5),
         'Horizontal rule',
-        () => insertMarkdown('\n\n---\n\n')
+        () => insertBlock('---')
     );
 
     // ── New paragraph ───────────────────────────────────────────────────────
@@ -174,10 +183,10 @@ export const createEditorToolbar = () => {
     makeDropdown('Metadata', add => {
         add('Filename', 'Insert {filename} placeholder', () => insertMarkdown('{filename}'));
         add('Last Updated', 'Insert {lastUpdated} placeholder', () => insertMarkdown('{lastUpdated}'));
-        add('Table of Contents', 'Insert {toc} tag', () => insertMarkdown('{toc maxLevels:3}'));
+        add('Table of Contents', 'Insert {toc} tag', () => insertBlock('{toc maxLevels:3}'));
         add('Comment', 'Insert Markdown comment', () => {
             const k = hk('alt+k');
-            if (k.prefix !== undefined) insertMarkdown(k.prefix, k.suffix);
+            if (k.prefix !== undefined) insertSmart(k.prefix, k.suffix);
         });
     });
 
@@ -191,9 +200,18 @@ export const createEditorToolbar = () => {
         // Text-defined diagrams: a ```mermaid block, rendered as SVG in read mode. The
         // skeleton is a working diagram, so it renders as soon as the page is saved.
         add('Sequence Diagram', 'Insert a mermaid sequence diagram (rendered in read mode)', () =>
-            insertMarkdown(SEQUENCE_SKELETON, '\n```\n'));
+            insertBlock(SEQUENCE_SKELETON, '\n```'));
         add('Flowchart', 'Insert a mermaid flowchart (rendered in read mode)', () =>
-            insertMarkdown(FLOWCHART_SKELETON, '\n```\n'));
+            insertBlock(FLOWCHART_SKELETON, '\n```'));
+        // Callouts render as coloured boxes in read mode. Same syntax as Obsidian, GitHub and
+        // GitLab, so a page carrying one displays correctly in all of them.
+        add('Callout: Note', `Insert a note callout — change the type word to any of: ${CALLOUT_TYPES}`,
+            () => insertBlock(callout('note', 'Note')));
+        add('Callout: Tip', 'Insert a tip callout (green)', () => insertBlock(callout('tip', 'Tip')));
+        add('Callout: Warning', 'Insert a warning callout (orange)', () => insertBlock(callout('warning', 'Warning')));
+        add('Callout: Danger', 'Insert a danger callout (red)', () => insertBlock(callout('danger', 'Danger')));
+        add('Callout: Foldable', 'Insert a callout that starts collapsed (the "-" suffix)',
+            () => insertBlock('> [!note]- Click to expand\n> '));
     });
 
     // ── Help / keyboard shortcuts dropdown ──────────────────────────────────

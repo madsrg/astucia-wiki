@@ -8,6 +8,7 @@ import { showToast } from '../core/utils.js';
 import { refreshFileTree, revealAndSelectFile } from '../file_tree/index.js';
 import { loadPage, showBlankPage } from '../page_view/index.js';
 import { retarget as retargetTab, forget as forgetTab } from '../tabs/index.js';
+import { offerRetarget } from '../wikilinks/index.js';
 import { t } from '../i18n/index.js';
 
 const renderFolderTree = (items, parent) => {
@@ -106,6 +107,7 @@ export const init = () => {
             showToast(t('fileops.moved'), 'success');
             close();
 
+            const movedFrom = state.sourcePathToMove;
             const wasCurrentPage = state.currentPagePath === state.sourcePathToMove;
             const savedId   = state.currentPageId;
             const savedTags = state.currentPageTags;
@@ -140,6 +142,9 @@ export const init = () => {
                     await loadPage(newPath, savedId, savedTags);
                 }
                 revealAndSelectFile(newPath);
+                // Same-space move only: a wikilink cannot name a page in another Space, so
+                // after a cross-space move there is nothing to retarget to.
+                await offerRetarget(movedFrom, newPath);
             }
         }
     });

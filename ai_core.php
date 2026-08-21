@@ -258,11 +258,13 @@ function ai_debug_report_text(array $blocks, array $usage, string $model, int $a
  * new diagrams being written.
  */
 function wiki_markdown_features_prompt(): string {
-    return "Page content is Markdown with these wiki extensions: a ```mermaid fenced block renders as a "
-         . "diagram (flowchart, sequence, state, ER, gantt) — use one instead of describing a diagram in "
-         . "prose or linking an image; {include:ID} embeds another page; {toc} inserts a table of contents; "
-         . "{filename} and {lastUpdated} are substituted when the page renders. "
-         . "Preserve these constructs verbatim when editing a page that already uses them. ";
+    return "This wiki's Markdown extensions: a ```mermaid block renders as a diagram (flowchart, "
+         . "sequence, state, ER, gantt) — prefer one to ASCII art; a blockquote starting "
+         . "\"> [!warning] Title\" is a callout box (note, tip, warning, danger, info, example; add - "
+         . "to start it collapsed); {include:ID} embeds a page; {toc} inserts a table of contents; "
+         . "{filename} and {lastUpdated} are substituted on render; [[Page]] links and ![[Page]] "
+         . "embeds a page by name in this space, but write new links in the pageid form above. "
+         . "Keep all of these verbatim when editing a page that uses them. ";
 }
 
 // Resolves an AI user's effective system prompt. When a system-prompt page is

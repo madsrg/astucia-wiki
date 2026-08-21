@@ -276,8 +276,13 @@ export default {
     'select.title-empty':   'Markeringen er ikke et gyldigt sidenavn.',
 
     'page.load-failed':      'Siden kunne ikke åbnes.',
+    // Wikilinks
+    'wikilinks.retarget-title':  'Opdatér links til denne side?',
+    'wikilinks.retarget-msg':    '{links} wikilinks på {pages} sider bruger stadig det gamle navn. Skal de opdateres til “{name}”?',
+    'wikilinks.retarget-confirm': 'Opdatér links',
+    'wikilinks.retargeted':      'Opdaterede {links} wikilinks på {pages} sider.',
+    'wikilinks.retarget-failed': 'Wikilinks kunne ikke opdateres.',
     // Page tabs
-    'tabs.new-tab':          'Ny fane',
     'tabs.close':            'Luk',
     'tabs.close-others':     'Luk de andre',
     'tabs.close-right':      'Luk til højre',

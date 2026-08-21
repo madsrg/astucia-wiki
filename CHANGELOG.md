@@ -6,6 +6,75 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.8.2] — 2026-08-21
+
+Obsidian compatibility. A vault could already be dropped into `PAGES_DIR` and be indexed, but
+its pages rendered wrong; the syntax below is now understood, so moving notes in — or back out
+— no longer means rewriting them. Nothing changes on disk: all of it is resolved while the page
+renders, so a page keeps the exact text Obsidian wrote.
+
+### Added
+- **Callouts.** A blockquote beginning `> [!note] Title` renders as a coloured admonition box —
+  14 types across 6 tones, all of Obsidian's aliases (`caution`, `tldr`, `check`, …) and
+  GitHub's uppercase forms. `-` after the type starts it collapsed, `+` makes it foldable but
+  open, and the unsaved-work dot and the fold chevron share the same click target. The syntax is
+  identical in Obsidian, GitHub and GitLab, so a page carrying one displays correctly in all
+  three. Five entries in the editor's **Insert** menu, and a plain blockquote or an unknown type
+  is left exactly as it was rather than rendering a broken box.
+- **Wikilinks and embeds** — `[[Page]]`, `[[Page|alias]]`, `[[Page#Heading]]`, `[[#Heading]]`,
+  `![[Page]]`, `![[Page#Heading]]` and `![[image.png|300]]`. Names resolve by exact relative
+  path, then by unique filename, then by shortest path, ignoring case and an optional extension;
+  a name that matches nothing renders as a marked *unresolved* link instead of a dead one.
+  Resolution uses the file tree the sidebar has already loaded, so a whole page of links costs
+  no extra requests.
+- **Embeds are framed like Obsidian's** — the embedded page's name as a clickable heading, with
+  a rule down the left margin showing how far the transcluded content reaches. A hand-written
+  `{include:ID}` deliberately keeps no chrome: that tag exists to quote a fragment as though it
+  were part of the host page.
+- **`![[Page#Heading]]` embeds one section**, from that heading to the next of the same or a
+  higher level, reusing the existing transclusion machinery and its circular-reference guard.
+- **Backlinks and the knowledge graph see wikilinks.** Both previously scanned page bodies for
+  `pageid=`, so an imported vault would have rendered its links correctly and still shown no
+  backlinks and nothing in the graph. A wikilink names its target instead of carrying its id, so
+  the server resolves them the same way the renderer does.
+- **A rename offers to update the wikilinks that named the page** — counted first, so the
+  question says how many links in how many pages, and applied only if you agree. Aliases,
+  headings and embed markers are preserved, a path-shaped target stays a path, and a link shown
+  as an example inside a code fence is never touched. This is the one place wikilink source text
+  is modified.
+
+### Changed
+- **Wikilinks are within-space only, and read-only.** `[[Space:Page]]` would look like Obsidian
+  compatibility while being a dialect Obsidian shows as broken, which throws away the
+  portability that is the whole point; cross-space links keep the `?pageid=ID&space=Name` form,
+  which reaches another Space and survives a rename. For the same reason the editor keeps
+  inserting that form: a wikilink is rendered faithfully but never propagated.
+- **Page tabs: the "+" tab is gone** and long labels are abbreviated to 20 characters, keeping
+  the end — the filename — and marking the cut with a leading ellipsis. The full relative path
+  is on the tab's tooltip. Removing the button also retired the blank-tab handling it was the
+  only entry point for, so the module is smaller than it was before the feature existed.
+- **AI users are told about callouts and wikilinks** as well as the diagram, transclusion and
+  placeholder syntax, and are told to keep all of it verbatim when editing a page that uses it —
+  otherwise an AI asked to tidy a page has no reason to treat a mermaid block or a `[[link]]` as
+  meaningful. The built-in instructions grew by about 70 tokens per request after trimming;
+  `/debug` and the agent-job run logs price them under *Wiki instructions*.
+- **The transcluded content of a page now renders its own wikilinks**, resolving image embeds
+  against the *included* page's attachments rather than the page being viewed.
+
+### Fixed
+- **Insert put block constructs on the wrong line.** With the caret at the end of a line,
+  `Insert → Callout` produced `Some text> [!note] Note`, which renders as literal text; the same
+  applied to the mermaid skeletons, the `{toc}` tag, and — beyond the Insert menu — the code
+  fence (`Alt+C`), table (`Alt+T`) and link-reference (`Alt+K`) shortcuts. Block insertions now
+  add only the newlines that are actually missing, on both sides, so nothing is stacked up when
+  the caret is already on an empty line and nothing is indented at the top of an empty page. The
+  caret still lands inside the new block, ready to type.
+- **The Blockquote button now prefixes every selected line**, like the list buttons beside it,
+  instead of inserting a single `> ` wherever the caret happened to be.
+- **A page link with a heading anchor could fail to switch Space.** `?pageid=5&space=Docs#intro`
+  was parsed as a whole query string, so the Space came out as `Docs#intro` and did not match.
+
+
 ## [2026.8.1] — 2026-08-19
 
 > **Version numbering:** the middle number is the month and the last resets with it, as it did

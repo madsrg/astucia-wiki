@@ -835,6 +835,70 @@ body {
                  border-radius: 4px 4px 0 0; font-size: 0.85rem; margin: 1rem 0 0; }
 .mermaid-error-source { margin-top: 0; border-radius: 0 0 4px 4px; }
 
+/* Wikilinks — `[[Page]]`, see modules/wikilinks. A resolved link is an ordinary internal link,
+   so it inherits the anchor styling; only the two special states need rules. */
+#viewer-content .wikilink-missing {
+    color: var(--accent-danger); border-bottom: 1px dashed var(--accent-danger);
+    cursor: help; opacity: 0.85;
+}
+#viewer-content .wikilink-embed { max-width: 100%; height: auto; display: block; margin: 0.5rem 0; }
+
+/* An `![[Page]]` embed, styled like Obsidian's: the source page's name on top, and a rule down
+   the left margin showing how far the embedded content reaches. A hand-written {include:ID}
+   deliberately gets none of this — it is meant to read as part of the host page. */
+#viewer-content .wiki-embed {
+    margin: 1rem 0; padding: 0.1rem 0 0.1rem 0.9rem;
+    border-left: 2px solid var(--accent-blue);
+}
+#viewer-content .wiki-embed-title {
+    display: block; margin-bottom: 0.35rem;
+    font-weight: 600; color: var(--text-color); text-decoration: none;
+}
+#viewer-content .wiki-embed-title:hover { color: var(--accent-blue); text-decoration: underline; }
+/* The rule supplies the spacing, so the content must not add its own at either end. */
+#viewer-content .wiki-embed > :nth-child(2) { margin-top: 0; }
+#viewer-content .wiki-embed > :last-child { margin-bottom: 0; }
+/* A page embedded inside an embedded page: lighten the rule so the nesting reads as depth
+   rather than as several unrelated embeds. */
+#viewer-content .wiki-embed .wiki-embed { border-left-color: var(--border-color); }
+
+/* Callouts — `> [!note] Title` blockquotes, see modules/callouts. Each tone sets two custom
+   properties and the shared rules below use them, so a new tone is one line. The tints are
+   written out rather than derived with color-mix() so they render the same everywhere. */
+.callout-blue   { --callout-accent: var(--accent-blue);   --callout-bg: #ebf4fd; }
+.callout-green  { --callout-accent: var(--accent-green);  --callout-bg: #eaf7ef; }
+.callout-orange { --callout-accent: var(--accent-orange); --callout-bg: #fdf1e7; }
+.callout-red    { --callout-accent: var(--accent-danger); --callout-bg: #fdecec; }
+.callout-purple { --callout-accent: var(--accent-purple); --callout-bg: #f2edfb; }
+.callout-gray   { --callout-accent: var(--accent-gray);   --callout-bg: #f2f4f7; }
+#viewer-content .callout {
+    margin: 1rem 0; padding: 0.6rem 0.9rem; border-radius: 6px;
+    background: var(--callout-bg); border-left: 4px solid var(--callout-accent);
+}
+#viewer-content .callout-title {
+    display: flex; align-items: center; gap: 0.5rem;
+    font-weight: 600; color: var(--callout-accent);
+}
+#viewer-content .callout-icon { display: flex; flex-shrink: 0; }
+#viewer-content .callout-icon svg { width: 17px; height: 17px; }
+#viewer-content .callout-content { margin-top: 0.4rem; }
+/* The box supplies the outer spacing, so the first and last child must not add their own. */
+#viewer-content .callout-content > :first-child { margin-top: 0; }
+#viewer-content .callout-content > :last-child { margin-bottom: 0; }
+/* A callout nested in a callout drops the tint so the two do not stack into a muddy block. */
+#viewer-content .callout .callout { background: transparent; }
+#viewer-content .callout-foldable > .callout-title { cursor: pointer; user-select: none; }
+#viewer-content .callout-fold { display: flex; margin-left: auto; transition: transform 0.15s ease; }
+#viewer-content .callout-fold svg { width: 16px; height: 16px; }
+#viewer-content .callout-collapsed .callout-content { display: none; }
+#viewer-content .callout-collapsed .callout-fold { transform: rotate(-90deg); }
+@media print {
+    /* Never print a hidden section: on paper there is no way to expand it. */
+    #viewer-content .callout-collapsed .callout-content { display: block; }
+    #viewer-content .callout-fold { display: none; }
+    #viewer-content .callout { break-inside: avoid; }
+}
+
 /* Insert media lightboxes */
 .insert-empty-msg {
     color: var(--accent-gray);
@@ -1729,11 +1793,6 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 .wiki-tab.dirty .wiki-tab-close .tab-dot { display: inline; }
 .wiki-tab.dirty .wiki-tab-close:hover .tab-x { display: inline; }
 .wiki-tab.dirty .wiki-tab-close:hover .tab-dot { display: none; }
-.wiki-tab-add {
-    flex-shrink: 0; width: 30px; border: none; background: none;
-    color: var(--accent-gray); font-size: 1.05rem; cursor: pointer;
-}
-.wiki-tab-add:hover { background: #edf2f7; color: var(--text-color); }
 .wiki-tab-menu {
     position: fixed; z-index: 3000; display: flex; flex-direction: column; min-width: 175px;
     padding: 4px; background: white; border: 1px solid var(--border-color); border-radius: 4px;

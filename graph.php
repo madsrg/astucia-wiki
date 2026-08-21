@@ -17,7 +17,14 @@
 // hook every save/move/delete site.
 // =================================================================
 
+require_once __DIR__ . '/wikilinks.php';
+
 class WikiGraph {
+    // Bumped whenever the body scanner learns a new link form, so existing caches are
+    // discarded once instead of keeping their old edges until each file happens to change.
+    // v2 added `[[wikilink]]` and `![[embed]]` references.
+    private const SCAN_VERSION = 2;
+
     private $spaceDir;
     private $indexer;
     private $cacheFile;
@@ -36,13 +43,17 @@ class WikiGraph {
     private function loadCache(): array {
         if (file_exists($this->cacheFile)) {
             $data = json_decode(file_get_contents($this->cacheFile), true);
-            if (is_array($data) && isset($data['links']) && is_array($data['links'])) return $data['links'];
+            // A cache written by an older scanner is dropped wholesale: its entries look valid
+            // (the mtimes still match) but were built without the link forms added since.
+            if (is_array($data) && isset($data['links']) && is_array($data['links'])
+                && (int)($data['v'] ?? 1) === self::SCAN_VERSION) return $data['links'];
         }
         return [];
     }
 
     private function saveCache(array $links) {
-        file_put_contents($this->cacheFile, json_encode(['links' => $links], JSON_PRETTY_PRINT));
+        file_put_contents($this->cacheFile,
+            json_encode(['v' => self::SCAN_VERSION, 'links' => $links], JSON_PRETTY_PRINT));
     }
 
     // Absolute path for a page, or null if it no longer exists on disk.
@@ -65,6 +76,9 @@ class WikiGraph {
         $cache   = $this->loadCache();
         $fresh   = [];
         $changed = false;
+        // Built once for the whole space rather than per file: a wikilink names its target, so
+        // resolving one needs the index of every page.
+        $resolve = wikilink_resolver($pages);
 
         foreach ($pages as $id => $data) {
             $id = (string)$id;
@@ -79,11 +93,14 @@ class WikiGraph {
                 continue;
             }
 
-            // Changed / new — re-scan body for ?pageid=<n> references.
-            $out = [];
-            if (preg_match_all('/pageid=(\d+)/', file_get_contents($abs), $m)) {
-                $out = array_values(array_unique($m[1]));
+            // Changed / new — re-scan the body for both link forms: explicit ?pageid=<n>
+            // links and `[[wikilinks]]` / `![[embeds]]`, which name their target instead.
+            $body = file_get_contents($abs);
+            $out  = [];
+            if (preg_match_all('/pageid=(\d+)/', $body, $m)) {
+                $out = $m[1];
             }
+            $out = array_values(array_unique(array_merge($out, wikilink_ids($body, $resolve))));
             $fresh[$id] = ['mtime' => (int)$mtime, 'out' => $out];
             $changed    = true;
         }

@@ -463,8 +463,13 @@ export default {
     'select.title-empty': '所选内容不是有效的页面名称。',
 
     'page.load-failed':      '无法打开此页面。',
+    // Wikilinks
+    'wikilinks.retarget-title':  '更新指向此页面的链接？',
+    'wikilinks.retarget-msg':    '{pages} 个页面中的 {links} 个维基链接仍使用旧名称。要将它们更新为“{name}”吗？',
+    'wikilinks.retarget-confirm': '更新链接',
+    'wikilinks.retargeted':      '已更新 {pages} 个页面中的 {links} 个维基链接。',
+    'wikilinks.retarget-failed': '无法更新维基链接。',
     // Page tabs
-    'tabs.new-tab':          '新标签页',
     'tabs.close':            '关闭',
     'tabs.close-others':     '关闭其他标签页',
     'tabs.close-right':      '关闭右侧标签页',

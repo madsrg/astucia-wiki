@@ -1,7 +1,7 @@
 // Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
-import { insertMarkdown } from './editor.js';
+import { insertMarkdown, insertBlock } from './editor.js';
 import { getUsers, getMentionableUsers } from '../core/users.js';
 
 const EMOJIS = ['😀','😂','😍','🤔','😢','😮','😡','👍','👎','👋','🙏','❤️','🎉','🔥','✅','❌','⭐','💡','🚀','📝','🎯','👀','💬','🤝'];
@@ -98,7 +98,7 @@ export const init = () => {
             if (user?.uid && !mentionedUids.includes(user.uid)) mentionedUids.push(user.uid);
         }
 
-        insertMarkdown(`{user_comment:${uid}:${encoded}:${mentionedUids.join(',')}}`);
+        insertBlock(`{user_comment:${uid}:${encoded}:${mentionedUids.join(',')}}`);
         close();
     };
 

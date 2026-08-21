@@ -5,7 +5,7 @@ import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { icons } from '../core/icons.js';
 import { renderTree } from '../file_tree/index.js';
-import { insertMarkdown } from './editor.js';
+import { insertMarkdown, insertBlock } from './editor.js';
 
 const closeLinkLightbox = () => {
     document.getElementById('link-lightbox').classList.add('hidden');
@@ -75,7 +75,7 @@ export const init = () => {
 
         if (type === 'file') {
             if (state.linkInsertionMode === 'include') {
-                insertMarkdown(`{include:${id}}`);
+                insertBlock(`{include:${id}}`);
             } else {
                 const linkText = editor.value.substring(editor.selectionStart, editor.selectionEnd)
                     || contentTarget.querySelector('span:last-child').textContent.trim();

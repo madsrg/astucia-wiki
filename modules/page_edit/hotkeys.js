@@ -2,7 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { state } from '../core/state.js';
-import { insertMarkdown, insertHeading } from './editor.js';
+import { insertMarkdown, insertHeading, insertSmart } from './editor.js';
 import { savePage } from './index.js';
 import { openSearchReplace } from './search.js';
 import { openLinkLightbox } from './link_lightbox.js';
@@ -30,10 +30,10 @@ const handleLightboxHotkey = (e) => {
         '3': () => insertHeading(3),
         'b': () => insertMarkdown('**', '**'),
         'i': () => insertMarkdown('*', '*'),
-        'c': () => insertMarkdown('```\n', '\n```'),
+        'c': () => insertSmart('```\n', '\n```'),
         'n': () => insertMarkdown('{filename}'),
-        't': () => insertMarkdown(state.hotkeys['alt+t']?.prefix || ''),
-        'k': () => insertMarkdown(state.hotkeys['alt+k']?.prefix || '', state.hotkeys['alt+k']?.suffix || ''),
+        't': () => insertSmart(state.hotkeys['alt+t']?.prefix || ''),
+        'k': () => insertSmart(state.hotkeys['alt+k']?.prefix || '', state.hotkeys['alt+k']?.suffix || ''),
     };
 
     if (actions[key]) {
@@ -110,7 +110,7 @@ export const init = () => {
                     e.preventDefault(); insertHeading(parseInt(key, 10));
                 } else {
                     const hotkey = state.hotkeys[`alt+${key}`];
-                    if (hotkey) { e.preventDefault(); insertMarkdown(hotkey.prefix, hotkey.suffix); }
+                    if (hotkey) { e.preventDefault(); insertSmart(hotkey.prefix, hotkey.suffix); }
                 }
             }
         } else if (activeTag !== 'INPUT') {

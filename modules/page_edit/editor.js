@@ -69,6 +69,59 @@ export const deleteCurrentLine = () => {
     editor.dispatchEvent(new Event('input'));
 };
 
+/**
+ * Insert a **block** construct, padded so it starts a line and is separated by a blank line.
+ *
+ * `insertMarkdown` splices at the caret with no idea what a line is, which is right for `**bold**`
+ * and wrong for everything block-level: with the caret at the end of "Some text", inserting a
+ * callout produced `Some text> [!note] Note`, and a fence, table or `{toc}` tag mid-line does not
+ * render either. The fix is context-sensitive rather than a fixed `\n\n` — that would pile up
+ * blank lines when the caret is already on an empty line, and indent the top of an empty page.
+ *
+ * Only as many newlines as are missing are added, on both sides: before, so the block starts
+ * cleanly; after, so the text that followed the caret is not absorbed into the block.
+ * Newlines are LF — the editor's content is a file, and the repo normalises to LF.
+ */
+export const insertBlock = (prefix, suffix = '') => {
+    const editor = getEditor();
+    if (!editor) return;
+    const start = editor.selectionStart;
+    const end   = editor.selectionEnd;
+    const value = editor.value;
+    const selected = value.substring(start, end);
+
+    const before = value.slice(0, start);
+    const after  = value.slice(end);
+    // At the very start or end of the document nothing needs separating.
+    const lead  = before === '' ? '' : '\n'.repeat(Math.max(0, 2 - before.match(/\n*$/)[0].length));
+    const trail = after  === '' ? '' : '\n'.repeat(Math.max(0, 2 - after.match(/^\n*/)[0].length));
+
+    const text = lead + prefix + selected + suffix + trail;
+    editor.setRangeText(text, start, end, 'select');
+    // Same caret convention as insertMarkdown: after the prefix when inserting (so you are
+    // typing inside the new block), after the whole thing when wrapping a selection.
+    const caret = start + lead.length + prefix.length + (selected ? selected.length + suffix.length : 0);
+    editor.setSelectionRange(caret, caret);
+
+    editor.focus();
+    editor.dispatchEvent(new Event('input'));
+};
+
+/**
+ * Does this snippet have to start its own line to mean anything?
+ *
+ * Used for the paths that insert whatever is configured in hotkeys.json, where the caller cannot
+ * know: a fence, a table row, a blockquote or callout marker, a heading, or a link-reference
+ * definition — plus anything spanning more than one line, which cannot be inline by definition.
+ */
+export const looksLikeBlock = (prefix) =>
+    typeof prefix === 'string' && prefix !== ''
+    && (prefix.includes('\n') || /^(```|~~~|\||>|#{1,6}\s|\[\/\/\]:)/.test(prefix));
+
+/** Routes to insertBlock or insertMarkdown depending on what the snippet is. */
+export const insertSmart = (prefix, suffix = '') =>
+    (looksLikeBlock(prefix) ? insertBlock : insertMarkdown)(prefix, suffix);
+
 // Core text-insertion helper used by toolbar, hotkeys, search/replace, and link lightbox.
 export const insertMarkdown = (prefix, suffix = '') => {
     const editor = getEditor();

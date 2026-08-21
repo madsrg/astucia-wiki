@@ -782,8 +782,13 @@ export default {
     'select.title-empty':   'Selection is not a valid page name.',
 
     'page.load-failed':      'Could not open this page.',
+    // Wikilinks
+    'wikilinks.retarget-title':  'Update links to this page?',
+    'wikilinks.retarget-msg':    '{links} wikilinks in {pages} pages still name the old title. Update them to “{name}”?',
+    'wikilinks.retarget-confirm': 'Update links',
+    'wikilinks.retargeted':      'Updated {links} wikilinks in {pages} pages.',
+    'wikilinks.retarget-failed': 'Could not update the wikilinks.',
     // Page tabs
-    'tabs.new-tab':          'New tab',
     'tabs.close':            'Close',
     'tabs.close-others':     'Close others',
     'tabs.close-right':      'Close to the right',

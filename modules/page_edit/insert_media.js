@@ -4,7 +4,7 @@
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { icons } from '../core/icons.js';
-import { insertMarkdown } from './editor.js';
+import { insertMarkdown, insertBlock } from './editor.js';
 import { showToast } from '../core/utils.js';
 
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'avif']);
@@ -189,7 +189,7 @@ export const init = () => {
     document.getElementById('include-file-tree').addEventListener('click', e => {
         const item = e.target.closest('[data-type="file"]');
         if (!item?.dataset.id) return;
-        insertMarkdown(`{include:${item.dataset.id}}`);
+        insertBlock(`{include:${item.dataset.id}}`);
         closeEl('include-lightbox');
     });
 
@@ -244,7 +244,7 @@ export const init = () => {
     document.getElementById('insert-diagram-tree').addEventListener('click', e => {
         const item = e.target.closest('[data-type="diagram"]');
         if (!item?.dataset.id) return;
-        insertMarkdown(`{diagram:${item.dataset.id}}`);
+        insertBlock(`{diagram:${item.dataset.id}}`);
         closeEl('insert-diagram-lightbox');
     });
 
@@ -266,7 +266,7 @@ export const init = () => {
         const selected = document.querySelector('#insert-list-views input[name="insert-list-view"]:checked');
         const viewName = selected?.value ?? '';
         const tag = viewName ? `{list:${pendingListId}:${viewName}}` : `{list:${pendingListId}}`;
-        insertMarkdown(tag);
+        insertBlock(tag);
         closeEl('insert-list-lightbox');
     });
 };

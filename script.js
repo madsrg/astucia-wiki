@@ -234,9 +234,21 @@ const init = async () => {
         const a = e.target.closest('a[href]');
         if (!a) return;
         const href = a.getAttribute('href') || '';
+
+        // A bare fragment — from `[[#Heading]]` or a hand-written anchor. The scroller is
+        // #viewer-content, not the window, so the browser's own fragment jump does the wrong
+        // thing and has to be replaced.
+        if (href.startsWith('#')) {
+            e.preventDefault();
+            scrollToAnchor(href.slice(1));
+            return;
+        }
         if (!href.includes('pageid=')) return;
         e.preventDefault();
-        const params = new URLSearchParams(href.startsWith('?') ? href.slice(1) : href);
+        // Split the fragment off before parsing: `?pageid=5&space=Docs#heading` would otherwise
+        // yield a space of "Docs#heading" and fail to switch space.
+        const [query, hash] = href.replace(/^\?/, '').split('#');
+        const params = new URLSearchParams(query);
         const linkedPageId = params.get('pageid');
         const linkedSpace  = params.get('space');
         if (!linkedPageId) return;
@@ -247,9 +259,26 @@ const init = async () => {
             startTreePolling(state.currentSpace);
         }
         await navigateToPageId(linkedPageId);
+        if (hash) scrollToAnchor(hash);      // `[[Page#Heading]]` lands on the heading
     });
 
     document.getElementById('logo-btn').addEventListener('click', loadStartPage);
+};
+
+/**
+ * Scroll a heading into view inside the viewer.
+ *
+ * Ids come from addHeadingIds via toc's headingSlug, and a wikilink builds its fragment with
+ * the same function, so the two always agree. Encoded because a slug can contain characters
+ * that had to be percent-encoded into the href.
+ */
+const scrollToAnchor = (rawSlug) => {
+    const viewer = document.getElementById('viewer-content');
+    if (!viewer || !rawSlug) return;
+    let slug = rawSlug;
+    try { slug = decodeURIComponent(rawSlug); } catch { /* keep it as-is */ }
+    const target = viewer.querySelector(`#${CSS.escape(slug)}`);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
 const findItemByPath = (items, path) => {

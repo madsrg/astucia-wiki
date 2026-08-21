@@ -147,22 +147,6 @@ const snapshotOutgoing = (nextPath) => {
     return true;
 };
 
-/**
- * Leave the current page for something that is *not* a loadPage (a blank tab).
- *
- * loadPage asks before discarding an edit it cannot keep; showBlankPage does not, so
- * without this an unsaved inline or `.json` edit would disappear when you clicked "+".
- * Returns false if the user chose to keep editing.
- */
-const leaveCurrent = async (nextPath) => {
-    if (snapshotOutgoing(nextPath)) return true;
-    if (!state.hasUnsavedChanges) return true;
-    return confirmModal(t('edit.discard-confirm'), {
-        message: t('edit.discard-nav'), confirmLabel: t('btn.discard'),
-        dangerous: true, icon: icons.warning,
-    });
-};
-
 const resumeTab = async (tab) => {
     if (tab.draft) {
         const { setEditingMode } = await import('../page_edit/index.js');
@@ -262,13 +246,19 @@ const ensureBar = () => {
 // Two tabs can hold the same filename in different folders — show the parent folder
 // on both so they can be told apart.
 const labelFor = (tab, all) => {
-    const base = tab.title || t('tabs.new-tab');
-    if (!tab.path) return base;
+    const base = tab.title;
     if (!all.some(other => other !== tab && other.title === base)) return base;
     const parts = tab.path.split('/').filter(Boolean);
     parts.pop();
     return parts.length ? `${parts[parts.length - 1]} / ${base}` : base;
 };
+
+// Longest label a tab shows. Beyond it the *end* is kept and the front replaced with an
+// ellipsis: the filename is the part you are looking for, and it sits at the end once a
+// parent folder has been prepended for disambiguation. The full relative path is always on
+// the tab's tooltip, so nothing is actually lost.
+const MAX_LABEL = 20;
+const shorten = (label) => (label.length > MAX_LABEL ? '…' + label.slice(-MAX_LABEL) : label);
 
 const render = () => {
     const bar = ensureBar();
@@ -289,7 +279,7 @@ const render = () => {
             + (dirty || tab.draft ? ' dirty' : '');
         el.draggable = true;
         el.dataset.idx = String(idx);
-        el.title = tab.path || t('tabs.new-tab');
+        el.title = tab.path;          // the tooltip is where the full path lives
 
         const icon = document.createElement('span');
         icon.className = 'wiki-tab-icon';
@@ -298,7 +288,7 @@ const render = () => {
 
         const name = document.createElement('span');
         name.className = 'wiki-tab-name';
-        name.textContent = labelFor(tab, w.tabs);
+        name.textContent = shorten(labelFor(tab, w.tabs));
         el.appendChild(name);
 
         const close = document.createElement('button');
@@ -327,15 +317,6 @@ const render = () => {
         });
         strip.appendChild(el);
     });
-
-    const add = document.createElement('button');
-    add.className = 'wiki-tab-add';
-    add.type = 'button';
-    add.title = t('tabs.new-tab');
-    add.setAttribute('aria-label', t('tabs.new-tab'));
-    add.textContent = '+';
-    add.addEventListener('click', () => openBlank());
-    strip.appendChild(add);
 
     wireDrag(strip);
     scrollActiveIntoView(strip);
@@ -436,14 +417,6 @@ export const activate = async (idx) => {
     const tab = w.tabs[idx];
     if (!tab || idx === w.activeIdx) return;
 
-    if (!tab.path) {                       // an empty "+" tab
-        if (!await leaveCurrent(null)) return;
-        w.activeIdx = idx;
-        render(); persist();
-        await showBlankPage();
-        return;
-    }
-
     _resuming = tab;
     try {
         // beforeLoad snapshots the outgoing tab; afterLoad marks this one active.
@@ -454,16 +427,6 @@ export const activate = async (idx) => {
     } finally {
         _resuming = null;
     }
-};
-
-export const openBlank = async () => {
-    const w = ws();
-    if (!await leaveCurrent(null)) return;
-    const tab = makeTab(null, null, [], false);
-    w.tabs.splice(w.activeIdx + 1, 0, tab);
-    w.activeIdx = w.tabs.indexOf(tab);
-    render(); persist();
-    await showBlankPage();
 };
 
 export const closeAt = async (idx) => {
@@ -533,13 +496,11 @@ const afterLoad = ({ path, id, tags, type, intent }) => {
 
     const preview = intent !== 'permanent';
     const active  = activeTab();
-    // What counts as a slot to reuse rather than another tab to accumulate:
-    //   - an empty "+" tab, whatever the intent — that is what it is there for;
-    //   - the preview tab, but only for another peek. "Open in new tab" must never
-    //     consume the preview slot, or the page you were peeking at disappears.
-    // A tab holding a draft is never reused. (An outgoing page that was dirty but
-    // could not be drafted has already been discarded through loadPage's prompt.)
-    const reusable = active && !active.draft && (!active.path || (preview && active.isPreview));
+    // The preview tab is the only slot ever reused, and only for another peek: "open in new
+    // tab" must not consume it, or the page you were peeking at disappears. A tab holding a
+    // draft is never reused. (An outgoing page that was dirty but could not be drafted has
+    // already been discarded through loadPage's own prompt.)
+    const reusable = active && !active.draft && preview && active.isPreview;
 
     if (reusable) {
         active.path      = path;

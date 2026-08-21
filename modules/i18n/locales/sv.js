@@ -275,8 +275,13 @@ export default {
     'select.title-empty':   'Markeringen är inte ett giltigt sidnamn.',
 
     'page.load-failed':      'Sidan kunde inte öppnas.',
+    // Wikilinks
+    'wikilinks.retarget-title':  'Uppdatera länkar till den här sidan?',
+    'wikilinks.retarget-msg':    '{links} wikilänkar på {pages} sidor använder fortfarande det gamla namnet. Uppdatera dem till ”{name}”?',
+    'wikilinks.retarget-confirm': 'Uppdatera länkar',
+    'wikilinks.retargeted':      'Uppdaterade {links} wikilänkar på {pages} sidor.',
+    'wikilinks.retarget-failed': 'Wikilänkarna kunde inte uppdateras.',
     // Page tabs
-    'tabs.new-tab':          'Ny flik',
     'tabs.close':            'Stäng',
     'tabs.close-others':     'Stäng övriga',
     'tabs.close-right':      'Stäng till höger',

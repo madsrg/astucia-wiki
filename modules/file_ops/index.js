@@ -8,6 +8,7 @@ import { icons } from '../core/icons.js';
 import { refreshFileTree, revealAndSelectFile } from '../file_tree/index.js';
 import { loadPage, showBlankPage } from '../page_view/index.js';
 import { retarget as retargetTab, forget as forgetTab } from '../tabs/index.js';
+import { offerRetarget } from '../wikilinks/index.js';
 import { openCopyLightbox, init as initCopy } from './copy.js';
 import { openMoveLightbox, init as initMove } from './move.js';
 import { t } from '../i18n/index.js';
@@ -29,6 +30,7 @@ export const handleRename = async () => {
     pathParts.pop();
     const newPath = (pathParts.length > 0 ? pathParts.join('/') + '/' : '') + newName;
 
+    const oldPath = state.currentPagePath;
     const res = await api.call('move', { old_path: state.currentPagePath, new_path: newPath }, 'POST');
     if (res.success) {
         showToast(t('fileops.renamed'), 'success');
@@ -47,6 +49,9 @@ export const handleRename = async () => {
             document.getElementById('current-page-title').textContent = newPath.replace(/\.(md|drawio|list|chat)$/, '');
         }
         revealAndSelectFile(newPath);
+        // Wikilinks name their target, so a rename leaves them pointing at nothing. Ask before
+        // rewriting them — this is the one place wikilink source text changes.
+        await offerRetarget(oldPath, newPath);
     }
 };
 

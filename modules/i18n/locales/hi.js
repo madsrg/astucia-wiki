@@ -536,8 +536,13 @@ export default {
     'select.title-empty': 'चयन एक मान्य पेज नाम नहीं है।',
 
     'page.load-failed':      'यह पृष्ठ नहीं खोला जा सका।',
+    // Wikilinks
+    'wikilinks.retarget-title':  'इस पृष्ठ के लिंक अपडेट करें?',
+    'wikilinks.retarget-msg':    '{pages} पृष्ठों में {links} विकिलिंक अभी भी पुराने नाम का उपयोग करते हैं। उन्हें “{name}” पर अपडेट करें?',
+    'wikilinks.retarget-confirm': 'लिंक अपडेट करें',
+    'wikilinks.retargeted':      '{pages} पृष्ठों में {links} विकिलिंक अपडेट किए गए।',
+    'wikilinks.retarget-failed': 'विकिलिंक अपडेट नहीं किए जा सके।',
     // Page tabs
-    'tabs.new-tab':          'नया टैब',
     'tabs.close':            'बंद करें',
     'tabs.close-others':     'अन्य बंद करें',
     'tabs.close-right':      'दाईं ओर के बंद करें',
