@@ -5,6 +5,7 @@ import { state } from '../core/state.js';
 import { saveListData } from './data.js';
 import { confirmModal } from '../core/utils.js';
 import { icons } from '../core/icons.js';
+import { t } from '../i18n/index.js';
 
 export const openItemViewModal = (itemData) => {
     const itemViewModalContent = document.getElementById('item-view-modal-content');
@@ -27,7 +28,7 @@ export const openItemModal = (itemId = null) => {
     const itemModalTitle = document.getElementById('item-modal-title');
     itemModalForm.innerHTML = '';
     const itemData = itemId ? state.currentListData.items.find(i => i.id === itemId) : null;
-    itemModalTitle.textContent = itemData ? 'Edit Item' : 'Add Item';
+    itemModalTitle.textContent = itemData ? t('btn.edit-item') : t('list.add-item');
 
     state.currentListData.columns.forEach(col => {
         if (col.type === 'autoincrement') return;
@@ -87,7 +88,7 @@ export const saveItem = async () => {
 };
 
 export const deleteItem = async (itemId) => {
-    if (!await confirmModal('Delete this item?', { confirmLabel: 'Delete', dangerous: true, icon: icons.trash })) return;
+    if (!await confirmModal(t('list.item-delete-confirm'), { confirmLabel: t('btn.delete'), dangerous: true, icon: icons.trash })) return;
     state.currentListData.items = state.currentListData.items.filter(i => i.id !== itemId);
     await saveListData();
 };
@@ -127,7 +128,8 @@ export const openListPropsModal = () => {
     const colsContainer = document.getElementById('list-props-columns');
     colsContainer.innerHTML = '';
 
-    const typeLabels = { autoincrement: 'Auto ID', text_single: 'Text', text_multi: 'Multi-line', date: 'Date', choice: 'Choice' };
+    const typeLabels = { autoincrement: t('list.type-auto'), text_single: t('list.type-text'),
+                         text_multi: t('list.type-multi'), date: t('list.type-date'), choice: t('list.type-choice') };
 
     const xIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
 
@@ -143,7 +145,7 @@ export const openListPropsModal = () => {
             <div class="list-props-header-row">
                 <input class="form-control list-props-name-input" type="text" value="${safeName}">
                 <span class="list-props-type-badge">${typeLabel}</span>
-                <button type="button" class="btn btn-sm btn-danger list-props-delete-btn" title="Delete column">${xIcon}</button>
+                <button type="button" class="btn btn-sm btn-danger list-props-delete-btn" title="${t('list.delete-column')}">${xIcon}</button>
             </div>
             <div>
                 <label class="list-props-desc-label" data-i18n="col.desc-label">Description</label>

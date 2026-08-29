@@ -151,7 +151,7 @@ const loadTools = async () => {
     syncFilterVisibility();
     if (!res.success) {
         toolSel().innerHTML = '';
-        resultsEl().insertAdjacentHTML('beforeend', `<div class="adv-turn adv-turn-result"><p class="adv-error">${esc(res.message || 'Failed to list tools.')}</p></div>`);
+        resultsEl().insertAdjacentHTML('beforeend', `<div class="adv-turn adv-turn-result"><p class="adv-error">${esc(res.message || t('explorer.list-failed'))}</p></div>`);
         return;
     }
     renderToolOptions();
@@ -387,7 +387,7 @@ const invoke = async () => {
     } else {
         out = document.createElement('div');
         out.className = 'adv-turn adv-turn-result';
-        out.innerHTML = `<p class="adv-error">${esc(res.message || 'Invocation failed.')}</p>`;
+        out.innerHTML = `<p class="adv-error">${esc(res.message || t('explorer.invoke-failed'))}</p>`;
     }
     resultsEl().appendChild(out);
     scrollDown();

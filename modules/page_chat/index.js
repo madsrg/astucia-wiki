@@ -179,7 +179,7 @@ const buildRow = (msg, grouped) => {
                 _pcData = res.data;
                 renderMessages(_pcData.messages || [], false);
             } else {
-                showToast(res.message || 'Failed to delete', 'error');
+                showToast(res.message || t('chat.delete-failed'), 'error');
             }
         });
         bubble.appendChild(del);
@@ -676,8 +676,11 @@ const showCreateConfirm = (chatPath) => {
     const lb = document.getElementById('page-chat-confirm-lightbox');
     if (!lb) return;
 
-    const nameEl = document.getElementById('pcl-chat-name');
-    if (nameEl) nameEl.textContent = chatPath.split('/').pop();
+    // The message names the file inside a sentence, so the whole sentence is one
+    // translatable string with the name substituted as bold markup.
+    const msgEl = document.getElementById('pcl-message');
+    if (msgEl) msgEl.innerHTML = t('page-chat.create-msg',
+        { name: `<strong id="pcl-chat-name">${esc(chatPath.split('/').pop())}</strong>` });
 
     const confirmBtn = document.getElementById('pcl-confirm-btn');
     const cancelBtn  = document.getElementById('pcl-cancel-btn');

@@ -2,6 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from './api.js';
+import { t } from '../i18n/index.js';
 
 let _active     = false;
 let _closeTimer = null;
@@ -27,10 +28,10 @@ const _stopTimer = () => {
 };
 
 const _stepLabel = s => ({
-    preparing:      'Preparing context…',
-    calling_api:    'Calling API…',
-    received:       'Processing response…',
-    executing_tool: 'Executing tool…',
+    preparing:      t('ai.step-preparing'),
+    calling_api:    t('ai.step-calling'),
+    received:       t('ai.step-received'),
+    executing_tool: t('ai.step-tool'),
 }[s] || s || '');
 
 export const isActive = () => _active;
@@ -59,7 +60,7 @@ export const startStatusPoll = (filePath, pendingId) => {
     const metaEl = document.getElementById('ai-status-meta');
     if (!panel) return;
     panel.classList.remove('hidden');
-    if (stepEl) stepEl.textContent = 'Starting…';
+    if (stepEl) stepEl.textContent = t('ai.starting');
     if (metaEl) metaEl.textContent = '';
     _pollTimer = setInterval(async () => {
         if (!_active) { _stopTimer(); return; }
@@ -67,7 +68,7 @@ export const startStatusPoll = (filePath, pendingId) => {
         try { res = await api.call('get_ai_status', { file: filePath, id: pendingId }); }
         catch (e) { console.warn('[ai-status] poll error', e); return; }
         if (!res?.success) return;
-        if (!res.data) { if (stepEl && !stepEl.textContent) stepEl.textContent = 'Starting…'; return; }
+        if (!res.data) { if (stepEl && !stepEl.textContent) stepEl.textContent = t('ai.starting'); return; }
         const d = res.data;
         let step = _stepLabel(d.step);
         if (d.step === 'calling_api' || d.step === 'received')

@@ -56,7 +56,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
 
     <?php if (defined('ENVIRONMENT') && ENVIRONMENT !== 'production'): ?>
     <div class="env-banner env-banner-<?php echo htmlspecialchars(ENVIRONMENT); ?>">
-        <?php echo strtoupper(htmlspecialchars(ENVIRONMENT)); ?> ENVIRONMENT — changes here are not live
+        <?php echo strtoupper(htmlspecialchars(ENVIRONMENT)); ?> <span data-i18n="env.banner">ENVIRONMENT — changes here are not live</span>
     </div>
     <?php endif; ?>
 
@@ -184,6 +184,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <button class="lang-option" data-lang="de">🇩🇪 Deutsch</button>
                             <button class="lang-option" data-lang="zh">🇨🇳 简体中文</button>
                             <button class="lang-option" data-lang="hi">🇮🇳 हिन्दी</button>
+                            <button class="lang-option" data-lang="ja">🇯🇵 日本語</button>
                         </div>
                     </div>
                     <?php endif; ?>
@@ -511,7 +512,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
         <div class="lightbox-content lightbox-content-sm" style="padding:1.5rem">
             <button id="pcl-close-btn" class="lightbox-close">&times;</button>
             <h3 style="margin:0 0 1rem" data-i18n="page-chat.create-title">Create Page Chat</h3>
-            <p style="margin:0 0 .65rem">A chat named <strong id="pcl-chat-name"></strong> will be created in the same folder as this page.</p>
+            <p id="pcl-message" style="margin:0 0 .65rem">A chat named <strong id="pcl-chat-name"></strong> will be created in the same folder as this page.</p>
             <p style="margin:0 0 1.5rem;font-size:.85rem;color:var(--text-muted)" data-i18n="page-chat.create-hint">When you mention an AI user in this chat, the linked page content is automatically used as context for its reply.</p>
             <div class="lightbox-footer">
                 <button id="pcl-cancel-btn" class="btn btn-secondary" data-i18n="btn.cancel">Cancel</button>
@@ -647,10 +648,10 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
     <div id="item-modal" class="lightbox-overlay hidden">
         <div class="lightbox-content">
             <button id="item-modal-close-btn" class="lightbox-close">&times;</button>
-            <h3 id="item-modal-title">Add Item</h3>
+            <h3 id="item-modal-title" data-i18n="list.add-item">Add Item</h3>
             <form id="item-modal-form" class="modal-form"></form>
             <div class="lightbox-footer">
-                <button id="item-modal-save-btn" class="btn btn-green">Save Item</button>
+                <button id="item-modal-save-btn" class="btn btn-green" data-i18n="list.save-item">Save Item</button>
             </div>
         </div>
     </div>
@@ -986,24 +987,24 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
     <div id="clone-ai-lightbox" class="lightbox-overlay hidden">
         <div class="lightbox-content" style="max-width:520px;height:auto;max-height:82vh;overflow-y:auto">
             <button id="clone-ai-close-btn" class="lightbox-close">&times;</button>
-            <h3 style="margin:0 0 0.9rem">Clone AI User</h3>
+            <h3 style="margin:0 0 0.9rem" data-i18n="admin.ai.clone-title">Clone AI User</h3>
             <div style="font-size:0.85rem;line-height:1.6;color:var(--text-muted);background:var(--bg-alt);border:1px solid var(--border-color);border-radius:6px;padding:0.75rem 0.9rem;margin-bottom:1rem">
-                <p style="margin:0 0 0.5rem"><strong style="color:var(--text-color)">Why clone an AI User?</strong></p>
-                <p style="margin:0 0 0.5rem">Cloning lets you create multiple AI Users backed by the same model, each with a different <em>System Prompt</em> that defines a specific role or area of expertise. That way, the AI already knows its job the moment you #mention it — no need to re-explain in every message.</p>
-                <p style="margin:0 0 0.4rem">Examples:</p>
+                <p style="margin:0 0 0.5rem"><strong style="color:var(--text-color)" data-i18n="admin.ai.clone-why">Why clone an AI User?</strong></p>
+                <p style="margin:0 0 0.5rem" data-i18n-html="admin.ai.clone-p1">Cloning lets you create multiple AI Users backed by the same model, each with a different <em>System Prompt</em> that defines a specific role or area of expertise. That way, the AI already knows its job the moment you #mention it — no need to re-explain in every message.</p>
+                <p style="margin:0 0 0.4rem" data-i18n="admin.ai.clone-examples">Examples:</p>
                 <ul style="margin:0 0 0 1.1rem;padding:0">
-                    <li style="margin-bottom:0.25rem"><strong>#botPO</strong> — <em>"Think like a Product Owner. Focus on user value, acceptance criteria and backlog priorities. Stay within the product domain."</em></li>
-                    <li style="margin-bottom:0.25rem"><strong>#botDev</strong> — <em>"You are a senior backend developer. Prefer code over prose. Be concise."</em></li>
-                    <li><strong>#botQA</strong> — <em>"You are a QA engineer. Think in test cases, edge cases and failure modes."</em></li>
+                    <li style="margin-bottom:0.25rem" data-i18n-html="admin.ai.clone-ex-po"><strong>#botPO</strong> — <em>"Think like a Product Owner. Focus on user value, acceptance criteria and backlog priorities. Stay within the product domain."</em></li>
+                    <li style="margin-bottom:0.25rem" data-i18n-html="admin.ai.clone-ex-dev"><strong>#botDev</strong> — <em>"You are a senior backend developer. Prefer code over prose. Be concise."</em></li>
+                    <li data-i18n-html="admin.ai.clone-ex-qa"><strong>#botQA</strong> — <em>"You are a QA engineer. Think in test cases, edge cases and failure modes."</em></li>
                 </ul>
             </div>
             <div class="form-group" style="margin-bottom:1.1rem">
-                <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:0.35rem">Name for the new AI User</label>
-                <input type="text" id="clone-ai-name" class="form-control" placeholder="e.g. botPO" autocomplete="off">
+                <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:0.35rem" data-i18n="admin.ai.clone-name-label">Name for the new AI User</label>
+                <input type="text" id="clone-ai-name" class="form-control" placeholder="e.g. botPO" data-i18n-placeholder="admin.ai.clone-name-ph" autocomplete="off">
             </div>
             <div style="display:flex;justify-content:flex-end;gap:0.5rem">
-                <button id="clone-ai-cancel-btn" class="btn btn-secondary">Cancel</button>
-                <button id="clone-ai-confirm-btn" class="btn btn-green">Clone</button>
+                <button id="clone-ai-cancel-btn" class="btn btn-secondary" data-i18n="btn.cancel">Cancel</button>
+                <button id="clone-ai-confirm-btn" class="btn btn-green" data-i18n="admin.ai.clone-confirm">Clone</button>
             </div>
         </div>
     </div>
@@ -1165,6 +1166,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     <button class="lang-option" data-lang="de">🇩🇪 Deutsch</button>
                     <button class="lang-option" data-lang="zh">🇨🇳 简体中文</button>
                     <button class="lang-option" data-lang="hi">🇮🇳 हिन्दी</button>
+                    <button class="lang-option" data-lang="ja">🇯🇵 日本語</button>
                 </div>
             </div>
             <?php if ($mailConfigured === '1'): ?>
@@ -1194,10 +1196,10 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <div class="admin-header">
                 <h3 data-i18n="admin.title">Admin</h3>
                 <div class="admin-group-bar">
-                    <button class="admin-group active" data-group="users">Users</button>
-                    <button class="admin-group" data-group="ai">AI</button>
-                    <button class="admin-group" data-group="monitoring">Monitoring</button>
-                    <button class="admin-group" data-group="content">Content</button>
+                    <button class="admin-group active" data-group="users" data-i18n="admin.group.users">Users</button>
+                    <button class="admin-group" data-group="ai" data-i18n="admin.group.ai">AI</button>
+                    <button class="admin-group" data-group="monitoring" data-i18n="admin.group.monitoring">Monitoring</button>
+                    <button class="admin-group" data-group="content" data-i18n="admin.group.content">Content</button>
                 </div>
             </div>
             <div class="admin-tab-bar">
@@ -1235,7 +1237,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <div id="admin-pane-logs" class="admin-pane hidden">
                 <div class="admin-log-toolbar">
                     <select id="admin-log-date" class="form-control admin-log-date-select"></select>
-                    <button id="admin-log-refresh-btn" class="btn btn-sm btn-secondary">&#8635; Refresh</button>
+                    <button id="admin-log-refresh-btn" class="btn btn-sm btn-secondary" data-i18n="btn.refresh">&#8635; Refresh</button>
                 </div>
                 <div id="admin-log-entries" class="admin-scroll-area"></div>
             </div>
@@ -1244,7 +1246,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <div id="admin-pane-errorlog" class="admin-pane hidden">
                 <div class="admin-log-toolbar">
                     <select id="admin-diag-error-log-select" class="form-control admin-log-date-select"></select>
-                    <button id="admin-diag-error-log-refresh-btn" class="btn btn-sm btn-secondary">&#8635; Refresh</button>
+                    <button id="admin-diag-error-log-refresh-btn" class="btn btn-sm btn-secondary" data-i18n="btn.refresh">&#8635; Refresh</button>
                 </div>
                 <div id="admin-diag-error-log-output" class="admin-scroll-area"></div>
             </div>
@@ -1293,29 +1295,29 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <div class="admin-scroll-area admin-diag-scroll">
                 <div class="admin-diag-section">
                     <div class="admin-diag-header">
-                        <strong>Test Email</strong>
-                        <button id="admin-diag-email-btn" class="btn btn-sm btn-secondary">Send test email to my address</button>
+                        <strong data-i18n="admin.diag.email-section">Test Email</strong>
+                        <button id="admin-diag-email-btn" class="btn btn-sm btn-secondary" data-i18n="admin.diag.email-btn">Send test email to my address</button>
                     </div>
                     <div id="admin-diag-email-status" class="admin-diag-status"></div>
                 </div>
                 <div class="admin-diag-section">
                     <div class="admin-diag-header">
-                        <strong>PHP Error Log</strong>
-                        <button class="btn btn-sm btn-secondary admin-diag-refresh-btn" data-log-type="php" data-output="admin-diag-php-output">&#8635; Refresh</button>
+                        <strong data-i18n="admin.diag.php-log">PHP Error Log</strong>
+                        <button class="btn btn-sm btn-secondary admin-diag-refresh-btn" data-log-type="php" data-output="admin-diag-php-output" data-i18n="btn.refresh">&#8635; Refresh</button>
                     </div>
                     <div id="admin-diag-php-output" class="admin-diag-output"></div>
                 </div>
                 <div class="admin-diag-section">
                     <div class="admin-diag-header">
-                        <strong>NGINX Error Log</strong>
-                        <button class="btn btn-sm btn-secondary admin-diag-refresh-btn" data-log-type="nginx_error" data-output="admin-diag-nginx-error-output">&#8635; Refresh</button>
+                        <strong data-i18n="admin.diag.nginx-error">NGINX Error Log</strong>
+                        <button class="btn btn-sm btn-secondary admin-diag-refresh-btn" data-log-type="nginx_error" data-output="admin-diag-nginx-error-output" data-i18n="btn.refresh">&#8635; Refresh</button>
                     </div>
                     <div id="admin-diag-nginx-error-output" class="admin-diag-output"></div>
                 </div>
                 <div class="admin-diag-section">
                     <div class="admin-diag-header">
-                        <strong>NGINX Access Log</strong>
-                        <button class="btn btn-sm btn-secondary admin-diag-refresh-btn" data-log-type="nginx_access" data-output="admin-diag-nginx-access-output">&#8635; Refresh</button>
+                        <strong data-i18n="admin.diag.nginx-access">NGINX Access Log</strong>
+                        <button class="btn btn-sm btn-secondary admin-diag-refresh-btn" data-log-type="nginx_access" data-output="admin-diag-nginx-access-output" data-i18n="btn.refresh">&#8635; Refresh</button>
                     </div>
                     <div id="admin-diag-nginx-access-output" class="admin-diag-output"></div>
                 </div>
@@ -1326,7 +1328,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <div class="lightbox-footer">
                 <div id="admin-footer-users" class="admin-footer-pane">
                     <span id="admin-dirty-notice" class="admin-dirty-notice hidden" data-i18n="admin.unsaved">Unsaved changes</span>
-                    <button id="admin-otp-add-btn" class="btn btn-blue btn-sm hidden">+ Add OTP User</button>
+                    <button id="admin-otp-add-btn" class="btn btn-blue btn-sm hidden" data-i18n="admin.users.add-otp-btn">+ Add OTP User</button>
                     <button id="admin-save-btn" class="btn btn-green" data-i18n="admin.save-btn" disabled>Save Changes</button>
                 </div>
                 <div id="admin-footer-requests" class="admin-footer-pane hidden">
@@ -1347,7 +1349,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     <button id="admin-jobs-add-btn" class="btn btn-blue btn-sm" data-i18n="admin.jobs.add-btn">+ New Agent Job</button>
                 </div>
                 <div id="admin-footer-mcp" class="admin-footer-pane hidden">
-                    <button id="admin-mcp-add-btn" class="btn btn-blue btn-sm">+ New MCP Server</button>
+                    <button id="admin-mcp-add-btn" class="btn btn-blue btn-sm" data-i18n="admin.mcp.new-btn">+ New MCP Server</button>
                 </div>
                 <div id="admin-footer-deleted" class="admin-footer-pane hidden">
                     <span id="admin-deleted-count" class="admin-log-count"></span>

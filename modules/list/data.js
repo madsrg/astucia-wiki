@@ -4,6 +4,7 @@
 import { state } from '../core/state.js';
 import { showToast } from '../core/utils.js';
 import { renderListView } from './render.js';
+import { t } from '../i18n/index.js';
 
 export const saveListData = async () => {
     try {
@@ -13,10 +14,10 @@ export const saveListData = async () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(state.currentListData, null, 4),
         });
-        if (!response.ok) throw new Error('Failed to save list data.');
+        if (!response.ok) throw new Error(t('list.save-failed'));
         const result = await response.json();
         if (result.success) {
-            showToast('List updated successfully!', 'success');
+            showToast(t('list.saved'), 'success');
             renderListView();
         } else {
             throw new Error(result.message);

@@ -127,7 +127,7 @@ const toggleReaction = async (msgId, emoji) => {
         const savedTop = msgEl ? msgEl.scrollTop : 0;
         renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
         if (msgEl) msgEl.scrollTop = atBottom ? msgEl.scrollHeight : savedTop;
-    } else showToast(res.message || 'Failed to react', 'error');
+    } else showToast(res.message || t('chat.react-failed'), 'error');
 };
 
 const buildReactionBar = (msg) => {
@@ -159,7 +159,7 @@ const buildMsgActions = (msg) => {
 
     const replyBtn = document.createElement('button');
     replyBtn.className = 'chat-reply-btn';
-    replyBtn.title = t('chat.reply-title', { name: msg.name || 'this message' });
+    replyBtn.title = t('chat.reply-title', { name: msg.name || t('chat.this-message') });
     replyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>';
     replyBtn.addEventListener('click', () => {
         const textarea = document.getElementById('chat-input');
@@ -228,12 +228,12 @@ const buildStickyArea = (messages) => {
         if (msg.uid === currentUid || currentRole === 'admin') {
             const close = document.createElement('button');
             close.className = 'chat-sticky-close';
-            close.title = 'Unpin message';
+            close.title = t('chat.unpin-title');
             close.innerHTML = '&times;';
             close.addEventListener('click', async () => {
                 const res = await api.call('toggle_sticky', { file: _chatPath, id: msg.id }, 'POST');
                 if (res.success) renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
-                else showToast(res.message || 'Failed to unpin', 'error');
+                else showToast(res.message || t('chat.unpin-failed'), 'error');
             });
             row.appendChild(close);
         }
@@ -357,7 +357,7 @@ const buildRow = (msg, grouped) => {
                 const savedTop = msgEl ? msgEl.scrollTop : 0;
                 renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
                 if (msgEl) msgEl.scrollTop = atBottom ? msgEl.scrollHeight : savedTop;
-            } else showToast(res.message || 'Failed to delete', 'error');
+            } else showToast(res.message || t('chat.delete-failed'), 'error');
         });
         bubble.appendChild(del);
     }
@@ -374,7 +374,7 @@ const buildRow = (msg, grouped) => {
         pin.addEventListener('click', async () => {
             const res = await api.call('toggle_sticky', { file: _chatPath, id: msg.id }, 'POST');
             if (res.success) renderChatView(_applyFullDataToWindow(res.data), _hasMore, false);
-            else showToast(res.message || 'Failed to pin', 'error');
+            else showToast(res.message || t('chat.pin-failed'), 'error');
         });
         actions.appendChild(pin);
     }
@@ -937,7 +937,7 @@ export const init = () => {
             }
         } else {
             closeAiModal();
-            showToast(res.message || 'Failed to send', 'error');
+            showToast(res.message || t('chat.send-failed'), 'error');
         }
     };
 
@@ -1009,7 +1009,7 @@ export const init = () => {
                 updateTopicBar(topic);
                 closeTopicLightbox();
             } else {
-                showToast(res.message || 'Failed to update topic', 'error');
+                showToast(res.message || t('chat.cmd.topic-fail'), 'error');
             }
         };
 

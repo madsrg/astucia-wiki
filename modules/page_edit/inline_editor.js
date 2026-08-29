@@ -2,6 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { state, notifyPageState } from '../core/state.js';
+import { t } from '../i18n/index.js';
 
 // Splits markdown into blocks on blank lines, keeping fenced code blocks atomic.
 export const splitIntoBlocks = (markdown) => {
@@ -189,10 +190,10 @@ export const activateBlock = (blockEl) => {
         return btn;
     };
 
-    toolbar.appendChild(makeBtn('Move up', '↑', false, () => moveBlock(blockEl, -1)));
-    toolbar.appendChild(makeBtn('Move down', '↓', false, () => moveBlock(blockEl, 1)));
-    toolbar.appendChild(makeBtn('Add section below', '+', false, () => addBlockAfter(blockEl)));
-    toolbar.appendChild(makeBtn('Delete section', '×', true, () => deleteBlock(blockEl)));
+    toolbar.appendChild(makeBtn(t('btn.move-up'), '↑', false, () => moveBlock(blockEl, -1)));
+    toolbar.appendChild(makeBtn(t('btn.move-down'), '↓', false, () => moveBlock(blockEl, 1)));
+    toolbar.appendChild(makeBtn(t('inline.add-below'), '+', false, () => addBlockAfter(blockEl)));
+    toolbar.appendChild(makeBtn(t('inline.delete'), '×', true, () => deleteBlock(blockEl)));
 
     const ta = document.createElement('textarea');
     ta.className = 'inline-block-textarea';

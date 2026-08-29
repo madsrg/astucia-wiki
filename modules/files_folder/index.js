@@ -5,6 +5,7 @@ import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { icons } from '../core/icons.js';
 import { showToast, confirmModal } from '../core/utils.js';
+import { t } from '../i18n/index.js';
 
 // ── File type icons ───────────────────────────────────────────────────────────
 
@@ -75,10 +76,10 @@ const renderFiles = (files) => {
     const reload = () => loadFilesFolder(state.currentPagePath);
 
     const deleteFile = async (path, name) => {
-        if (!await confirmModal(`Delete "${name}"?`, { confirmLabel: 'Delete', dangerous: true, icon: icons.trash })) return;
+        if (!await confirmModal(t('fileops.delete-confirm', { name }), { confirmLabel: t('btn.delete'), dangerous: true, icon: icons.trash })) return;
         const res = await api.call('delete_folder_file', { path }, 'POST');
-        if (res.success) { showToast('File deleted', 'success'); reload(); }
-        else showToast(res.message || 'Delete failed', 'error');
+        if (res.success) { showToast(t('files.deleted'), 'success'); reload(); }
+        else showToast(res.message || t('files.delete-failed'), 'error');
     };
 
     if (currentViewMode === 'simple') {

@@ -27,6 +27,26 @@ $otpEmail   = $_SESSION['otp_pending']['email'] ?? '';
 $error      = $_SESSION['login_error']  ?? null; unset($_SESSION['login_error']);
 $notice     = $_SESSION['login_notice'] ?? null; unset($_SESSION['login_notice']);
 
+// auth.php stores an i18n key (not prose) in login_error / login_notice, so the
+// message can be translated client-side like the rest of the page. The English
+// text here is the no-JS fallback; anything not in this map is shown verbatim.
+$LOGIN_MSGS = [
+    'login.err.invalid-email'    => 'Please enter a valid email address.',
+    'login.notice.code-sent'     => 'If that address is registered, a 6-digit code has been sent.',
+    'login.err.session-expired'  => 'Session expired. Please start again.',
+    'login.err.code-expired'     => 'The code has expired. Please request a new one.',
+    'login.err.too-many'         => 'Too many failed attempts. Please request a new code.',
+    'login.err.invalid-code'     => 'Invalid code. Please try again.',
+    'login.err.no-account'       => 'Account not found.',
+    'login.err.otp-account'      => 'This account uses email code (OTP) login. Please use the email field below.',
+];
+$msgAttr = function (?string $msg) use ($LOGIN_MSGS): string {
+    return isset($LOGIN_MSGS[$msg]) ? ' data-i18n="' . htmlspecialchars($msg) . '"' : '';
+};
+$msgText = function (?string $msg) use ($LOGIN_MSGS): string {
+    return htmlspecialchars($LOGIN_MSGS[$msg] ?? (string) $msg);
+};
+
 $showOidc = in_array(AUTHENTICATION, ['oidc', 'both']);
 $showOtp  = in_array(AUTHENTICATION, ['otp', 'both']);
 
@@ -114,83 +134,91 @@ function mask_email(string $email): string {
 <body>
     <?php if (defined('ENVIRONMENT') && ENVIRONMENT !== 'production'): ?>
     <div class="env-banner env-banner-<?php echo htmlspecialchars(ENVIRONMENT); ?>">
-        <?php echo strtoupper(htmlspecialchars(ENVIRONMENT)); ?> ENVIRONMENT — changes here are not live
+        <?php echo strtoupper(htmlspecialchars(ENVIRONMENT)); ?> <span data-i18n="env.banner">ENVIRONMENT — changes here are not live</span>
     </div>
     <?php endif; ?>
     <div class="login-center">
     <div class="login-card<?php echo ($showOidc && $showOtp && !$otpStep) ? ' login-card-wide' : ''; ?>">
         <img src="logo.png" alt="Logo" class="login-logo">
         <h1 class="login-title"><?php echo htmlspecialchars(APP_TITLE); ?></h1>
-        <p class="login-subtitle">Sign in to continue</p>
+        <p class="login-subtitle" data-i18n="login.subtitle">Sign in to continue</p>
 
         <?php if ($loggedOut): ?>
-        <div class="login-msg login-msg-success">You have been logged out.</div>
+        <div class="login-msg login-msg-success" data-i18n="login.logged-out">You have been logged out.</div>
         <?php endif; ?>
 
         <?php if ($error): ?>
-        <div class="login-msg login-msg-error"><?php echo htmlspecialchars($error); ?></div>
+        <div class="login-msg login-msg-error"<?php echo $msgAttr($error); ?>><?php echo $msgText($error); ?></div>
         <?php endif; ?>
 
         <?php if ($notice && !$error): ?>
-        <div class="login-msg login-msg-success"><?php echo htmlspecialchars($notice); ?></div>
+        <div class="login-msg login-msg-success"<?php echo $msgAttr($notice); ?>><?php echo $msgText($notice); ?></div>
         <?php endif; ?>
 
         <?php if ($showOidc && $showOtp && !$otpStep): ?>
         <div class="login-both">
             <div class="login-col login-col-oidc">
-                <p class="login-col-label">Single Sign-On</p>
+                <p class="login-col-label" data-i18n="login.sso-label">Single Sign-On</p>
                 <div class="login-col-oidc-center">
                     <a href="auth.php" class="btn-login btn-login-square">
                         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-                        Sign In
+                        <span data-i18n="login.sso-btn">Sign In</span>
                     </a>
                 </div>
             </div>
-            <div class="login-col-divider">or</div>
+            <div class="login-col-divider" data-i18n="login.or">or</div>
             <div class="login-col login-col-otp">
-                <p class="login-col-label">Email code</p>
+                <p class="login-col-label" data-i18n="login.email-label">Email code</p>
                 <form method="POST" action="auth.php?action=otp_send" style="display:flex;flex-direction:column;flex:1">
                     <div class="login-form-group">
-                        <input class="login-input" type="email" id="otp-email" name="email" required placeholder="your@email.com">
+                        <input class="login-input" type="email" id="otp-email" name="email" required placeholder="you@example.com" data-i18n-placeholder="login.email-ph">
                     </div>
-                    <button type="submit" class="btn-login-secondary login-col-btn">Send code</button>
+                    <button type="submit" class="btn-login-secondary login-col-btn" data-i18n="login.send-code">Send code</button>
                 </form>
             </div>
         </div>
         <?php elseif ($showOidc && !$otpStep): ?>
         <a href="auth.php" class="btn-login">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-            Sign In
+            <span data-i18n="login.sso-btn">Sign In</span>
         </a>
         <?php elseif ($showOtp && !$otpStep): ?>
         <form method="POST" action="auth.php?action=otp_send">
             <div class="login-form-group">
-                <label class="login-label" for="otp-email">Email address</label>
-                <input class="login-input" type="email" id="otp-email" name="email" required autofocus placeholder="you@example.com">
+                <label class="login-label" for="otp-email" data-i18n="login.email-address">Email address</label>
+                <input class="login-input" type="email" id="otp-email" name="email" required autofocus placeholder="you@example.com" data-i18n-placeholder="login.email-ph">
             </div>
-            <button type="submit" class="btn-login">Send code</button>
+            <button type="submit" class="btn-login" data-i18n="login.send-code">Send code</button>
         </form>
         <?php endif; ?>
 
         <?php if ($showOtp && $otpStep): ?>
-            <p class="login-otp-target">Enter the 6-digit code sent to<br><strong><?php echo htmlspecialchars(mask_email($otpEmail)); ?></strong></p>
+            <p class="login-otp-target"><span data-i18n="login.code-sent">Enter the 6-digit code sent to</span><br><strong><?php echo htmlspecialchars(mask_email($otpEmail)); ?></strong></p>
             <form method="POST" action="auth.php?action=otp_verify">
                 <div class="login-form-group">
-                    <label class="login-label" for="otp-code">Login code</label>
+                    <label class="login-label" for="otp-code" data-i18n="login.code-label">Login code</label>
                     <input class="login-input login-otp-code-input" type="text" id="otp-code" name="code" required autofocus maxlength="6" pattern="[0-9]{6}" inputmode="numeric" placeholder="000000" autocomplete="one-time-code">
                 </div>
-                <button type="submit" class="btn-login">Sign in</button>
+                <button type="submit" class="btn-login" data-i18n="login.signin">Sign in</button>
             </form>
             <?php if ($showOidc): ?>
-            <div class="login-or">or</div>
+            <div class="login-or" data-i18n="login.or">or</div>
             <a href="auth.php" class="btn-login-secondary">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-                Sign In with SSO instead
+                <span data-i18n="login.sso-instead">Sign In with SSO instead</span>
             </a>
             <?php endif; ?>
-            <a href="login.php?action=otp_cancel" class="login-back">← Use a different email</a>
+            <a href="login.php?action=otp_cancel" class="login-back" data-i18n="login.other-email">← Use a different email</a>
         <?php endif; ?>
     </div>
     </div>
+
+    <!-- The login page is server-rendered, so the i18n module is loaded just for its
+         data-i18n pass: same localStorage key as the app, so a user's chosen language
+         carries over. The English markup above is the no-JS fallback. -->
+    <script type="module">
+        import { init } from './modules/i18n/index.js';
+        init();
+    </script>
 </body>
 </html>

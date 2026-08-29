@@ -6,6 +6,7 @@ import { insertMarkdown, insertBlock, insertSmart, insertHeading, prependLines, 
 import { openIncludeLightbox, openImageLightbox, openDiagramInsertLightbox, openListInsertLightbox } from './insert_media.js';
 import { openCommentLightbox } from './insert_comment.js';
 import { openLinkLightbox, openExternalLinkLightbox } from './link_lightbox.js';
+import { t } from '../i18n/index.js';
 
 const svg = (inner, sw = 2) =>
     `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
@@ -49,72 +50,72 @@ export const createEditorToolbar = () => {
     const hk = key => state.hotkeys[key] || {};
 
     // ── Headings ────────────────────────────────────────────────────────────
-    addBtn('H1', 'Heading 1 (Alt+1)', () => insertHeading(1));
-    addBtn('H2', 'Heading 2 (Alt+2)', () => insertHeading(2));
-    addBtn('H3', 'Heading 3 (Alt+3)', () => insertHeading(3));
+    addBtn('H1', t('tb.h1'), () => insertHeading(1));
+    addBtn('H2', t('tb.h2'), () => insertHeading(2));
+    addBtn('H3', t('tb.h3'), () => insertHeading(3));
 
     // ── Inline formatting ───────────────────────────────────────────────────
     addBtn(
         svg('<path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/>', 2.5),
-        'Bold (Alt+B)',
+        t('tb.bold'),
         () => insertMarkdown(hk('alt+b').prefix, hk('alt+b').suffix)
     );
     addBtn(
         svg('<line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/>', 2.5),
-        'Italic (Alt+I)',
+        t('tb.italic'),
         () => insertMarkdown(hk('alt+i').prefix, hk('alt+i').suffix)
     );
     addBtn(
         svg('<line x1="5" y1="12" x2="19" y2="12"/><path d="M16 6.5C14.5 5 12.5 4.5 11 4.5c-2.5 0-4 1.2-4 3 0 1.3.9 2.2 2.5 2.5"/><path d="M8 17.5C9.5 19 11.5 19.5 13 19.5c2.5 0 4-1.2 4-3 0-1.3-.9-2.2-2.5-2.5"/>'),
-        'Strikethrough',
+        t('tb.strikethrough'),
         () => insertMarkdown('~~', '~~')
     );
     addBtn(
         svg('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'),
-        'Code block (Alt+C)',
+        t('tb.code'),
         () => insertSmart(hk('alt+c').prefix, hk('alt+c').suffix)
     );
 
     // ── Lists ───────────────────────────────────────────────────────────────
     addBtn(
         svg('<line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/>'),
-        'Unordered list — prepends "- " to each selected line',
+        t('tb.ul'),
         () => prependLines('- ')
     );
     addBtn(
         svg('<line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>'),
-        'Ordered list — prepends "1. " to each selected line',
+        t('tb.ol'),
         () => prependLines('1. ')
     );
     addBtn(
         svg('<rect x="2" y="5" width="6" height="6" rx="1"/><polyline points="3.5 8 5 9.5 7.5 6.5"/><line x1="11" y1="8" x2="22" y2="8"/><rect x="2" y="14" width="6" height="6" rx="1"/><line x1="11" y1="17" x2="22" y2="17"/>'),
-        'Checkbox list — prepends "- [ ] " to each selected line',
+        t('tb.checklist'),
         () => prependLines('- [ ] ')
     );
 
     // ── Block formatting ────────────────────────────────────────────────────
     addBtn(
         svg('<path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/>'),
-        'Blockquote — prepends "> " to each selected line',
+        t('tb.quote'),
         // prependLines, like the list buttons beside it: "> " only quotes when it starts a line,
         // and a multi-line selection needs the marker on every line, not just the first.
         () => prependLines('> ')
     );
     addBtn(
         svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>'),
-        'Table (Alt+T)',
+        t('tb.table'),
         () => insertSmart(hk('alt+t').prefix, hk('alt+t').suffix)
     );
     addBtn(
         svg('<line x1="3" y1="12" x2="21" y2="12"/>', 2.5),
-        'Horizontal rule',
+        t('tb.hr'),
         () => insertBlock('---')
     );
 
     // ── New paragraph ───────────────────────────────────────────────────────
     addBtn(
         svg('<path d="M13 4v16"/><path d="M17 4v16"/><path d="M6 4h7a4 4 0 0 1 0 8H6"/>'),
-        'New paragraph (3 blank lines, cursor on 2nd)',
+        t('tb.new-para'),
         () => {
             const editor = document.getElementById('editor-container');
             if (!editor) return;
@@ -129,7 +130,7 @@ export const createEditorToolbar = () => {
     // ── Delete current line ─────────────────────────────────────────────────
     const deleteBtn = addBtn(
         svg('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>'),
-        'Delete current line',
+        t('tb.del-line'),
         deleteCurrentLine
     );
     deleteBtn.classList.add('toolbar-btn-danger');
@@ -174,43 +175,43 @@ export const createEditorToolbar = () => {
     };
 
     // ── Link dropdown ───────────────────────────────────────────────────────
-    makeDropdown('Link', add => {
-        add('Internal Link', 'Link to another page in the wiki (Alt+L)', openLinkLightbox);
-        add('External Link', 'Link to an external URL', openExternalLinkLightbox);
+    makeDropdown(t('tb.menu-link'), add => {
+        add(t('tb.link-internal'), t('tb.link-internal-title'), openLinkLightbox);
+        add(t('tb.link-external'), t('tb.link-external-title'), openExternalLinkLightbox);
     });
 
     // ── Metadata dropdown ───────────────────────────────────────────────────
-    makeDropdown('Metadata', add => {
-        add('Filename', 'Insert {filename} placeholder', () => insertMarkdown('{filename}'));
-        add('Last Updated', 'Insert {lastUpdated} placeholder', () => insertMarkdown('{lastUpdated}'));
-        add('Table of Contents', 'Insert {toc} tag', () => insertBlock('{toc maxLevels:3}'));
-        add('Comment', 'Insert Markdown comment', () => {
+    makeDropdown(t('tb.menu-metadata'), add => {
+        add(t('tb.meta-filename'), t('tb.meta-filename-title'), () => insertMarkdown('{filename}'));
+        add(t('tb.meta-updated'), t('tb.meta-updated-title'), () => insertMarkdown('{lastUpdated}'));
+        add(t('tb.meta-toc'), t('tb.meta-toc-title'), () => insertBlock('{toc maxLevels:3}'));
+        add(t('tb.meta-comment'), t('tb.meta-comment-title'), () => {
             const k = hk('alt+k');
             if (k.prefix !== undefined) insertSmart(k.prefix, k.suffix);
         });
     });
 
     // ── Insert dropdown ─────────────────────────────────────────────────────
-    makeDropdown('Insert', add => {
-        add('Include Page', 'Embed content from another page ({include:ID})', openIncludeLightbox);
-        add('Image', 'Insert an image from attachments', openImageLightbox);
-        add('Diagram', 'Embed a draw.io diagram ({diagram:ID})', openDiagramInsertLightbox);
-        add('List', 'Embed a list as a table ({list:ID:cols})', openListInsertLightbox);
-        add('Comment', 'Insert a user comment ({user_comment:uid:text})', openCommentLightbox);
+    makeDropdown(t('tb.menu-insert'), add => {
+        add(t('tb.insert-include'), t('tb.insert-include-title'), openIncludeLightbox);
+        add(t('tb.insert-image'), t('tb.insert-image-title'), openImageLightbox);
+        add(t('tb.insert-diagram'), t('tb.insert-diagram-title'), openDiagramInsertLightbox);
+        add(t('tb.insert-list'), t('tb.insert-list-title'), openListInsertLightbox);
+        add(t('tb.insert-comment'), t('tb.insert-comment-title'), openCommentLightbox);
         // Text-defined diagrams: a ```mermaid block, rendered as SVG in read mode. The
         // skeleton is a working diagram, so it renders as soon as the page is saved.
-        add('Sequence Diagram', 'Insert a mermaid sequence diagram (rendered in read mode)', () =>
+        add(t('tb.insert-sequence'), t('tb.insert-sequence-title'), () =>
             insertBlock(SEQUENCE_SKELETON, '\n```'));
-        add('Flowchart', 'Insert a mermaid flowchart (rendered in read mode)', () =>
+        add(t('tb.insert-flowchart'), t('tb.insert-flowchart-title'), () =>
             insertBlock(FLOWCHART_SKELETON, '\n```'));
         // Callouts render as coloured boxes in read mode. Same syntax as Obsidian, GitHub and
         // GitLab, so a page carrying one displays correctly in all of them.
-        add('Callout: Note', `Insert a note callout — change the type word to any of: ${CALLOUT_TYPES}`,
+        add(t('tb.callout-note'), t('tb.callout-note-title', { types: CALLOUT_TYPES }),
             () => insertBlock(callout('note', 'Note')));
-        add('Callout: Tip', 'Insert a tip callout (green)', () => insertBlock(callout('tip', 'Tip')));
-        add('Callout: Warning', 'Insert a warning callout (orange)', () => insertBlock(callout('warning', 'Warning')));
-        add('Callout: Danger', 'Insert a danger callout (red)', () => insertBlock(callout('danger', 'Danger')));
-        add('Callout: Foldable', 'Insert a callout that starts collapsed (the "-" suffix)',
+        add(t('tb.callout-tip'), t('tb.callout-tip-title'), () => insertBlock(callout('tip', 'Tip')));
+        add(t('tb.callout-warning'), t('tb.callout-warning-title'), () => insertBlock(callout('warning', 'Warning')));
+        add(t('tb.callout-danger'), t('tb.callout-danger-title'), () => insertBlock(callout('danger', 'Danger')));
+        add(t('tb.callout-foldable'), t('tb.callout-foldable-title'),
             () => insertBlock('> [!note]- Click to expand\n> '));
     });
 
@@ -221,27 +222,27 @@ export const createEditorToolbar = () => {
     const helpButton = document.createElement('button');
     helpButton.className = 'btn btn-sm btn-secondary';
     helpButton.textContent = '?';
-    helpButton.title = 'Keyboard shortcuts';
+    helpButton.title = t('tb.help-title');
 
     const helpContent = document.createElement('div');
     helpContent.className = 'dropdown-content editor-help-dropdown hidden';
     allDropdowns.push(helpContent);
 
     [
-        ['Alt+S', 'Save'],
-        ['Alt+F', 'Find & Replace'],
-        ['Alt+L', 'Insert Link'],
-        ['Alt+P', 'Include Page'],
-        ['Alt+1', 'Heading 1'],
-        ['Alt+2', 'Heading 2'],
-        ['Alt+3', 'Heading 3'],
-        ['Alt+B', 'Bold'],
-        ['Alt+I', 'Italic'],
-        ['Alt+C', 'Code Block'],
-        ['Alt+T', 'Insert Table'],
-        ['Alt+N', 'Filename'],
-        ['Alt+K', 'Comment'],
-        ['Alt+A', 'Shortcut menu'],
+        ['Alt+S', t('hk.save')],
+        ['Alt+F', t('hk.find')],
+        ['Alt+L', t('hk.link')],
+        ['Alt+P', t('hk.include')],
+        ['Alt+1', t('mobile.ed.h1')],
+        ['Alt+2', t('mobile.ed.h2')],
+        ['Alt+3', t('mobile.ed.h3')],
+        ['Alt+B', t('mobile.ed.bold')],
+        ['Alt+I', t('mobile.ed.italic')],
+        ['Alt+C', t('hk.code')],
+        ['Alt+T', t('hk.table')],
+        ['Alt+N', t('tb.meta-filename')],
+        ['Alt+K', t('hk.comment')],
+        ['Alt+A', t('hk.menu')],
     ].forEach(([key, label]) => {
         const row = document.createElement('div');
         row.className = 'editor-help-row';
@@ -257,7 +258,7 @@ export const createEditorToolbar = () => {
     mdRef.href = 'https://www.markdownguide.org/';
     mdRef.target = '_blank';
     mdRef.rel = 'noopener';
-    mdRef.textContent = 'Markdown reference ↗';
+    mdRef.textContent = t('tb.md-ref');
     mdRef.style.cssText = 'display:block;padding:4px 8px;font-size:0.8rem';
     helpContent.appendChild(mdRef);
 

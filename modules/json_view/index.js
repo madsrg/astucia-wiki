@@ -73,7 +73,7 @@ const saveJson = async (saveBtn) => {
             body: text,
         });
         const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.message || 'Failed to save');
+        if (!res.ok || !data.success) throw new Error(data.message || t('edit.save-error'));
         state.hasUnsavedChanges = false;
         notifyPageState();
         showToast(t('edit.saved'), 'success');

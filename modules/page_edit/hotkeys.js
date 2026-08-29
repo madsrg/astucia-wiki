@@ -6,6 +6,7 @@ import { insertMarkdown, insertHeading, insertSmart } from './editor.js';
 import { savePage } from './index.js';
 import { openSearchReplace } from './search.js';
 import { openLinkLightbox } from './link_lightbox.js';
+import { t } from '../i18n/index.js';
 
 export const loadHotkeys = async () => {
     try {
@@ -46,10 +47,10 @@ const openHotkeyLightbox = () => {
     const hotkeyList = document.getElementById('hotkey-list');
     hotkeyList.innerHTML = '';
     const actionLabels = {
-        'S': 'Save Page', 'F': 'Find & Replace', 'L': 'Insert Link',
-        'P': 'Include Page', 'N': 'Include Filename', '1': 'Heading 1',
-        '2': 'Heading 2', '3': 'Heading 3', 'B': 'Bold', 'I': 'Italic',
-        'C': 'Code Block', 'T': 'Insert Table', 'K': 'Comment',
+        'S': t('hk.save'), 'F': t('hk.find'), 'L': t('hk.link'),
+        'P': t('hk.include'), 'N': t('hk.filename'), '1': t('mobile.ed.h1'),
+        '2': t('mobile.ed.h2'), '3': t('mobile.ed.h3'), 'B': t('mobile.ed.bold'), 'I': t('mobile.ed.italic'),
+        'C': t('hk.code'), 'T': t('hk.table'), 'K': t('hk.comment'),
     };
     for (const [key, action] of Object.entries(actionLabels)) {
         hotkeyList.innerHTML += `

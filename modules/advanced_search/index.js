@@ -65,7 +65,7 @@ const appendResultTurn = (res, isLocal, srcSlug = null) => {
     div.className = 'adv-turn adv-turn-result';
 
     if (!res.success) {
-        div.innerHTML = `<p class="adv-error">${esc(res.message || 'Search failed.')}</p>`;
+        div.innerHTML = `<p class="adv-error">${esc(res.message || t('asearch.failed'))}</p>`;
         resultsEl().appendChild(div); scrollDown(); return;
     }
 
@@ -129,7 +129,7 @@ const openRemotePage = async (srcSlug, row) => {
     const res = await api.call('advanced_search_read', { src: srcSlug, path: row.path, remote_space: row.space || '' });
     if (!res.success) {
         _remote = null;
-        body.innerHTML = `<p class="adv-error">${esc(res.message || 'Could not load page.')}</p>`;
+        body.innerHTML = `<p class="adv-error">${esc(res.message || t('asearch.page-failed'))}</p>`;
         return;
     }
     _remote = { content: res.content || '', path: row.path, source: srcMeta?.name || srcSlug };

@@ -24,6 +24,7 @@
 import { state } from '../core/state.js';
 import { mapOutsideCode } from '../core/md_text.js';
 import { headingSlug } from '../toc/index.js';
+import { t } from '../i18n/index.js';
 
 // Optional "!" for an embed, then [[target#heading|alias]]. Target may be empty ([[#Heading]]).
 const LINK_RE = /(!?)\[\[([^\]|#]*)(?:#([^\]|]*))?(?:\|([^\]]*))?\]\]/g;
@@ -154,7 +155,7 @@ const renderEmbed = (idx, target, heading, alias, basePath) => {
 
 
 const missing = (raw) =>
-    `<span class="wikilink-missing" title="This page does not exist in this Space">${esc(raw)}</span>`;
+    `<span class="wikilink-missing" title="${esc(t('wikilinks.missing-title'))}">${esc(raw)}</span>`;
 
 /**
  * Replace every wikilink and embed in `content`. Runs before `processIncludes`, so a page embed

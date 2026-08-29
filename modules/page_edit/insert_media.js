@@ -6,6 +6,7 @@ import { state } from '../core/state.js';
 import { icons } from '../core/icons.js';
 import { insertMarkdown, insertBlock } from './editor.js';
 import { showToast } from '../core/utils.js';
+import { t } from '../i18n/index.js';
 
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'avif']);
 const isImageFile = (name) => IMAGE_EXTS.has(name.split('.').pop().toLowerCase());
@@ -157,7 +158,7 @@ const showListViewPicker = async (id, path) => {
         viewsEl.appendChild(lbl);
     };
 
-    makeOption('', 'All Items', true);
+    makeOption('', t('list.all-items'), true);
     views.forEach(v => makeOption(v.name, v.name, false));
 
     document.getElementById('insert-list-step-1').classList.add('hidden');
@@ -210,10 +211,10 @@ export const init = () => {
         const resp = await fetch(`api.php?action=upload_attachment${spaceQs}`, { method: 'POST', body: formData });
         const result = await resp.json();
         if (result.success) {
-            showToast('Image uploaded!', 'success');
+            showToast(t('img.uploaded'), 'success');
             await renderImageList(state.currentPagePath + '.uploads/' + file.name);
         } else {
-            showToast(result.message || 'Upload failed.', 'error');
+            showToast(result.message || t('img.upload-failed'), 'error');
         }
         imageUploadInput.value = '';
     });

@@ -156,9 +156,9 @@ const readSpacesField = (prefix) => {
 // and read back as a {name,value}[] list by readExtraHeadersField at save time.
 const extraHeaderRowHtml = (prefix, name = '', value = '') => `
     <div class="admin-xhdr-row" style="display:flex;gap:0.4rem;margin-bottom:0.35rem">
-        <input type="text" class="${prefix}-xhdr-name form-control" value="${escHtml(name)}" placeholder="Header name" style="flex:1">
-        <input type="text" class="${prefix}-xhdr-value form-control" value="${escHtml(value)}" placeholder="Value" style="flex:1.4">
-        <button type="button" class="${prefix}-xhdr-del btn btn-icon btn-secondary" title="Remove header" aria-label="Remove header">&times;</button>
+        <input type="text" class="${prefix}-xhdr-name form-control" value="${escHtml(name)}" placeholder="${t('admin.xhdr.name-ph')}" style="flex:1">
+        <input type="text" class="${prefix}-xhdr-value form-control" value="${escHtml(value)}" placeholder="${t('admin.xhdr.value-ph')}" style="flex:1.4">
+        <button type="button" class="${prefix}-xhdr-del btn btn-icon btn-secondary" title="${t('admin.xhdr.remove')}" aria-label="${t('admin.xhdr.remove')}">&times;</button>
     </div>`;
 
 const extraHeadersFieldHtml = (prefix, headers) => {
@@ -166,7 +166,7 @@ const extraHeadersFieldHtml = (prefix, headers) => {
         .map(h => extraHeaderRowHtml(prefix, h?.name ?? '', h?.value ?? '')).join('');
     return `
         <div id="${prefix}-xhdr-rows">${rows}</div>
-        <button type="button" id="${prefix}-xhdr-add" class="btn btn-sm btn-secondary">+ Add header</button>`;
+        <button type="button" id="${prefix}-xhdr-add" class="btn btn-sm btn-secondary">${t('admin.xhdr.add')}</button>`;
 };
 
 const wireExtraHeadersField = (prefix) => {
@@ -284,7 +284,7 @@ const renderUsers = () => {
 
     const table = document.createElement('table');
     table.className = 'admin-table';
-    table.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Auth</th><th>Role</th><th>Spaces</th><th></th></tr></thead>';
+    table.innerHTML = `<thead><tr><th>${t('admin.col.name')}</th><th>${t('admin.col.email')}</th><th>${t('admin.col.auth')}</th><th>${t('admin.col.role')}</th><th>${t('admin.col.spaces')}</th><th></th></tr></thead>`;
     const tbody = document.createElement('tbody');
 
     users.forEach((u, i) => {
@@ -299,7 +299,7 @@ const renderUsers = () => {
             inp.type = 'text';
             inp.className = 'form-control admin-inline-input';
             inp.value = u.name || '';
-            inp.placeholder = 'Name';
+            inp.placeholder = t('admin.users.name-ph');
             inp.addEventListener('input', () => { users[i] = { ...users[i], name: inp.value }; markDirty(); inp.style.borderColor = ''; });
             tdName.appendChild(inp);
         } else {
@@ -319,7 +319,7 @@ const renderUsers = () => {
             inp.type = 'email';
             inp.className = 'form-control admin-inline-input';
             inp.value = u.email || '';
-            inp.placeholder = 'email@example.com';
+            inp.placeholder = t('admin.users.email-ph');
             inp.addEventListener('input', () => { users[i] = { ...users[i], email: inp.value }; markDirty(); inp.style.borderColor = ''; });
             tdEmail.appendChild(inp);
         } else {
@@ -490,7 +490,7 @@ const renderRequests = () => {
                     await loadUsers();
                 } else {
                     approveBtn.disabled = false;
-                    showToast(res.message || 'Failed to approve', 'error');
+                    showToast(res.message || t('admin.err.approve'), 'error');
                 }
             });
 
@@ -509,7 +509,7 @@ const renderRequests = () => {
                     await loadRequests();
                 } else {
                     denyBtn.disabled = false;
-                    showToast(res.message || 'Failed to deny', 'error');
+                    showToast(res.message || t('admin.err.deny'), 'error');
                 }
             });
 
@@ -530,7 +530,7 @@ const renderRequests = () => {
                     await loadUsers();
                 } else {
                     reApproveBtn.disabled = false;
-                    showToast(res.message || 'Failed', 'error');
+                    showToast(res.message || t('admin.err.generic'), 'error');
                 }
             });
             tdActions.appendChild(reApproveBtn);
@@ -543,7 +543,7 @@ const renderRequests = () => {
     if (requests.length) {
         const table = document.createElement('table');
         table.className = 'admin-table';
-        table.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Requested</th><th>Status</th><th></th></tr></thead>';
+        table.innerHTML = `<thead><tr><th>${t('admin.col.name')}</th><th>${t('admin.col.email')}</th><th>${t('admin.col.requested')}</th><th>${t('admin.col.status')}</th><th></th></tr></thead>`;
         const tbody = document.createElement('tbody');
         requests.forEach(r => tbody.appendChild(buildRow(r)));
         table.appendChild(tbody);
@@ -589,7 +589,7 @@ const renderLogEntries = (entries) => {
 
     const table = document.createElement('table');
     table.className = 'admin-log-table';
-    table.innerHTML = '<thead><tr><th>Time</th><th>Event</th><th>Source</th><th>Name</th><th>IP</th><th>Detail</th></tr></thead>';
+    table.innerHTML = `<thead><tr><th>${t('admin.col.time')}</th><th>${t('admin.col.event')}</th><th>${t('admin.col.source')}</th><th>${t('admin.col.name')}</th><th>${t('admin.col.ip')}</th><th>${t('admin.col.detail')}</th></tr></thead>`;
     const tbody = document.createElement('tbody');
 
     entries.forEach(e => {
@@ -719,7 +719,7 @@ const loadErrorLogContent = async (filename) => {
     if (!result.data.length) { out.innerHTML = `<p class="admin-empty">${t('admin.errlog.no-entries')}</p>`; return; }
     const table = document.createElement('table');
     table.className = 'admin-table';
-    table.innerHTML = '<thead><tr><th>Time</th><th>Page</th><th>Actor</th><th>IP</th><th>Message</th></tr></thead>';
+    table.innerHTML = `<thead><tr><th>${t('admin.col.time')}</th><th>${t('admin.col.page')}</th><th>${t('admin.col.actor')}</th><th>${t('admin.col.ip')}</th><th>${t('admin.col.message')}</th></tr></thead>`;
     const tbody = document.createElement('tbody');
     result.data.forEach(e => {
         const tr = document.createElement('tr');
@@ -747,7 +747,7 @@ const showAgentInstructions = async (token) => {
     if (result.success) {
         textarea.value = result.instructions;
     } else {
-        textarea.value = result.message || 'Failed to load instructions.';
+        textarea.value = result.message || t('admin.ai.instructions-failed');
     }
 
     const close = () => lightbox.classList.add('hidden');
@@ -785,7 +785,7 @@ const renderAiUserList = () => {
 
     const table = document.createElement('table');
     table.className = 'admin-table';
-    table.innerHTML = `<thead><tr><th>${t('admin.ai.name')}</th><th>${t('admin.ai.role')}</th><th>Spaces</th><th>Model</th><th>API URL</th><th></th></tr></thead>`;
+    table.innerHTML = `<thead><tr><th>${t('admin.ai.name')}</th><th>${t('admin.ai.role')}</th><th>${t('admin.col.spaces')}</th><th>${t('admin.ai.model')}</th><th>${t('admin.ai.url')}</th><th></th></tr></thead>`;
     const tbody = document.createElement('tbody');
 
     aiUsers.forEach(u => {
@@ -820,12 +820,12 @@ const renderAiUserList = () => {
 
         const editBtn = document.createElement('button');
         editBtn.className = 'btn btn-sm btn-secondary';
-        editBtn.textContent = 'Edit';
+        editBtn.textContent = t('admin.btn.edit');
         editBtn.addEventListener('click', () => openAiUserForm(u));
 
         const delBtn = document.createElement('button');
         delBtn.className = 'btn btn-sm btn-danger admin-del-btn';
-        delBtn.title = 'Delete AI user';
+        delBtn.title = t('admin.ai.delete-title');
         delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
         delBtn.addEventListener('click', () => deleteAiUser(u));
 
@@ -888,7 +888,7 @@ const openAiUserForm = async (u) => {
                 <div class="admin-ai-form-row">
                     <div class="form-group">
                         <label>${t('admin.ai.name')}</label>
-                        <input type="text" id="ai-f-name" class="form-control" value="${escHtml(u?.name || '')}" placeholder="e.g. Atlas">
+                        <input type="text" id="ai-f-name" class="form-control" value="${escHtml(u?.name || '')}" placeholder="${t('admin.ai.name-ph')}">
                     </div>
                     <div class="form-group">
                         <label>${t('admin.ai.role')}</label>
@@ -898,9 +898,9 @@ const openAiUserForm = async (u) => {
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>Spaces</label>
+                    <label>${t('admin.spaces-label')}</label>
                     ${spacesFieldHtml('ai-f', u?.spaces ?? null)}
-                    <p class="form-hint">Which Spaces this AI user can access (chat @mentions, Page Chat, Agent Jobs, and MCP all respect this). Defaults to all Spaces.</p>
+                    <p class="form-hint">${t('admin.ai.spaces-hint')}</p>
                 </div>
             </div>
             <div class="admin-ai-form-section-header">${t('admin.ai.api-cfg')}</div>
@@ -918,7 +918,7 @@ const openAiUserForm = async (u) => {
                 <div class="admin-ai-form-row">
                     <div class="form-group">
                         <label>${t('admin.ai.key')} ${cfg.api_key_set && !isClone ? `<span class="admin-ai-key-set">${t('admin.ai.key-set')}</span>` : ''}</label>
-                        <input type="password" id="ai-f-key" class="form-control" placeholder="${isClone ? 'Leave blank to copy key from source' : cfg.api_key_set ? 'Leave blank to keep existing key' : 'sk-…'}">
+                        <input type="password" id="ai-f-key" class="form-control" placeholder="${isClone ? t('admin.ai.key-ph-clone') : cfg.api_key_set ? t('admin.ai.key-ph-keep') : 'sk-…'}">
                         ${isClone ? `<input type="hidden" id="ai-f-source-uid" value="${escHtml(String(u._cloneSourceUid))}">` : '<input type="hidden" id="ai-f-source-uid" value="">'}
                     </div>
                     <div class="form-group">
@@ -933,7 +933,7 @@ const openAiUserForm = async (u) => {
                 <div class="form-group">
                     <label>${t('admin.ai.context')} — <span id="ai-f-context-display" class="admin-ai-temp-val">${cfg.context_messages ?? 10}</span></label>
                     <input type="range" id="ai-f-context" class="admin-ai-temp-slider" value="${cfg.context_messages ?? 10}" min="0" max="20" step="1">
-                    <p class="form-hint"><strong>0</strong> sends only the current message — the AI has no memory of earlier exchanges. <strong>10</strong> (default) covers a short focused thread. <strong>20</strong> (maximum) gives the most context but risks confusing the AI with unrelated earlier topics — use <code>/newTopic</code> to reset when switching subjects.</p>
+                    <p class="form-hint">${t('admin.ai.context-hint')}</p>
                 </div>
                 <div class="admin-ai-form-row">
                     <div class="form-group">
@@ -944,12 +944,12 @@ const openAiUserForm = async (u) => {
                 <div class="form-group">
                     <label>${t('admin.ai.temp')} — <span id="ai-f-temperature-display" class="admin-ai-temp-val">${cfg.temperature ?? 0.7}</span></label>
                     <input type="range" id="ai-f-temperature" class="admin-ai-temp-slider" value="${cfg.temperature ?? 0.7}" min="0" max="2" step="0.05">
-                    <p class="form-hint">Controls randomness. <strong>0.7</strong> (default) balances creativity with coherence — good for most tasks. Lower values (0–0.4) produce more focused, deterministic replies; useful for factual Q&amp;A or structured output. Higher values (1.0–2.0) increase variety and creativity but risk incoherent or off-topic replies.</p>
+                    <p class="form-hint">${t('admin.ai.temp-hint')}</p>
                 </div>
                 <div class="form-group">
-                    <label>Extra request headers <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                    <label>${t('admin.xhdr.label')} <span style="font-weight:400;color:var(--text-muted)">${t('admin.optional')}</span></label>
                     ${extraHeadersFieldHtml('ai-f', cfg.extra_headers ?? [])}
-                    <p class="form-hint">Additional HTTP headers sent on every request to the model endpoint — on top of the provider's auth. Useful for a gateway in front of a self-hosted model, e.g. a Cloudflare Access tunnel needing <code>CF-Access-Client-Id</code> and <code>CF-Access-Client-Secret</code>.</p>
+                    <p class="form-hint">${t('admin.ai.xhdr-hint')}</p>
                 </div>
             </div>
             <div class="admin-ai-form-section-header">${t('admin.ai.behaviour')}</div>
@@ -982,7 +982,7 @@ const openAiUserForm = async (u) => {
             </div>` : ''}
             <div class="admin-ai-form-actions">
                 <button type="button" id="ai-f-cancel-btn" class="btn btn-secondary">${t('btn.cancel')}</button>
-                ${!isNew ? `<button type="button" id="ai-f-clone-btn" class="btn btn-secondary">Clone…</button>` : ''}
+                ${!isNew ? `<button type="button" id="ai-f-clone-btn" class="btn btn-secondary">${t('admin.ai.clone-btn')}</button>` : ''}
                 <button type="button" id="ai-f-save-btn" class="btn btn-green">${t('admin.ai.save-btn')}</button>
             </div>
         </div>`;
@@ -1016,11 +1016,11 @@ const openAiUserForm = async (u) => {
         const model    = document.getElementById('ai-f-model')?.value.trim() || '';
         const btn = document.getElementById('ai-f-test-btn');
         const out = document.getElementById('ai-f-test-result');
-        if (!api_url) { showToast('Enter an API URL first.', 'error'); return; }
-        if (!model)   { showToast('Enter a model first.', 'error'); return; }
-        if (!api_key && !cfg.api_key_set) { showToast('Enter an API key first.', 'error'); return; }
+        if (!api_url) { showToast(t('admin.ai.test-url-req'), 'error'); return; }
+        if (!model)   { showToast(t('admin.ai.test-model-req'), 'error'); return; }
+        if (!api_key && !cfg.api_key_set) { showToast(t('admin.ai.test-key-req'), 'error'); return; }
         btn.disabled = true;
-        btn.textContent = 'Testing…';
+        btn.textContent = t('admin.btn.testing');
         const params = { provider, api_url, model, extra_headers: JSON.stringify(readExtraHeadersField('ai-f')) };
         if (api_key) params.api_key = api_key;
         else if (u?.uid) params.uid = String(u.uid);
@@ -1028,8 +1028,8 @@ const openAiUserForm = async (u) => {
         btn.disabled = false;
         btn.textContent = t('admin.ai.test-btn');
         out.innerHTML = res.success
-            ? `<p style="color:#48bb78;font-size:0.85rem">✓ Connected — reply: "${escHtml(res.reply)}"</p>`
-            : `<p style="color:#fc8181;font-size:0.85rem">✗ ${escHtml(res.message || 'Connection failed')}</p>`;
+            ? `<p style="color:#48bb78;font-size:0.85rem">✓ ${escHtml(t('admin.ai.test-ok', { reply: res.reply }))}</p>`
+            : `<p style="color:#fc8181;font-size:0.85rem">✗ ${escHtml(res.message || t('admin.ai.test-failed'))}</p>`;
     });
 
     // "System prompt from page" — Space -> Folder -> Markdown page picker (opens a
@@ -1075,9 +1075,9 @@ const openAiUserForm = async (u) => {
         const activeMcpIds    = cfg.mcp_server_ids   ?? [];
         const activeMcpInstrs = cfg.mcp_instructions ?? {};
         section.innerHTML = `
-            <div class="admin-ai-form-section-header">MCP Servers</div>
+            <div class="admin-ai-form-section-header">${t('admin.ai.mcp-section')}</div>
             <div class="admin-ai-form-section">
-                <p class="form-hint" style="margin-bottom:0.75rem">Select which MCP servers this AI user can call as tools. Add instructions to guide the AI on when and how to use each server's tools.</p>
+                <p class="form-hint" style="margin-bottom:0.75rem">${t('admin.ai.mcp-hint')}</p>
                 ${servers.map(s => {
                     const active = activeMcpIds.includes(s.id);
                     return `<div class="ai-f-mcp-row" style="margin-bottom:0.6rem">
@@ -1088,7 +1088,7 @@ const openAiUserForm = async (u) => {
                         </label>
                         <div class="ai-f-mcp-instr-wrap" style="margin-top:0.35rem;padding-left:1.4rem;${active ? '' : 'display:none'}">
                             <textarea class="form-control ai-f-mcp-instr" data-mcp-id="${escHtml(s.id)}" rows="2"
-                                placeholder="When should the AI use this server? E.g. &quot;Search Microsoft Learn whenever the user asks about Azure, .NET, or any Microsoft technology.&quot;"
+                                placeholder="${escHtml(t('admin.ai.mcp-instr-ph'))}"
                                 style="font-size:0.82rem">${escHtml(activeMcpInstrs[s.id] || '')}</textarea>
                         </div>
                     </div>`;
@@ -1144,7 +1144,7 @@ const openPromptPagePicker = async (initSpace, initPath, onSelect) => {
                 <button type="button" id="pp-close-btn" class="lightbox-close">&times;</button>
                 <h3>${t('admin.ai.prompt-page-choose')}</h3>
                 <div class="form-group">
-                    <label>Space</label>
+                    <label>${t('admin.ai.picker-space')}</label>
                     <select id="pp-space-select" class="form-control"></select>
                 </div>
                 <div class="form-group">
@@ -1252,7 +1252,7 @@ const saveAiUser = async (uid) => {
     const spaces = readSpacesField('ai-f');
 
     if (!name)    { showToast(t('admin.ai.name-req'), 'error'); return; }
-    if (!api_url) { showToast('API URL is required.', 'error'); return; }
+    if (!api_url) { showToast(t('admin.ai.url-req'), 'error'); return; }
 
     const saveBtn = document.getElementById('ai-f-save-btn');
     saveBtn.disabled = true;
@@ -1275,7 +1275,7 @@ const saveAiUser = async (uid) => {
         invalidateUsers();
         await loadAiUsers();
     } else {
-        showToast(result.message || 'Failed to save', 'error');
+        showToast(result.message || t('admin.err.save'), 'error');
     }
 };
 
@@ -1328,7 +1328,7 @@ const deleteAiUser = async (u) => {
         showToast(t('admin.ai.deleted', { name: u.name }), 'success');
         await loadAiUsers();
     } else {
-        showToast(result.message || 'Failed to delete', 'error');
+        showToast(result.message || t('admin.err.delete'), 'error');
     }
 };
 
@@ -1341,7 +1341,7 @@ const regenerateAiToken = async (uid) => {
         if (tokenEl) tokenEl.textContent = result.token;
         showToast(t('admin.ai.regenerated'), 'success');
     } else {
-        showToast(result.message || 'Failed to regenerate', 'error');
+        showToast(result.message || t('admin.err.regen'), 'error');
     }
 };
 
@@ -1359,7 +1359,7 @@ const renderApiAccountList = () => {
 
     const table = document.createElement('table');
     table.className = 'admin-table';
-    table.innerHTML = `<thead><tr><th>Name</th><th>Role</th><th>Spaces</th><th>${t('admin.api.token-col')}</th><th></th></tr></thead>`;
+    table.innerHTML = `<thead><tr><th>${t('admin.col.name')}</th><th>${t('admin.col.role')}</th><th>${t('admin.col.spaces')}</th><th>${t('admin.api.token-col')}</th><th></th></tr></thead>`;
     const tbody = document.createElement('tbody');
 
     apiAccounts.forEach(u => {
@@ -1387,12 +1387,12 @@ const renderApiAccountList = () => {
 
         const editBtn = document.createElement('button');
         editBtn.className = 'btn btn-sm btn-secondary';
-        editBtn.textContent = 'Edit';
+        editBtn.textContent = t('admin.btn.edit');
         editBtn.addEventListener('click', () => openApiAccountForm(u));
 
         const delBtn = document.createElement('button');
         delBtn.className = 'btn btn-sm btn-danger admin-del-btn';
-        delBtn.title = 'Delete API account';
+        delBtn.title = t('admin.api.delete-title');
         delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
         delBtn.addEventListener('click', () => deleteApiAccount(u));
 
@@ -1441,7 +1441,7 @@ const openApiAccountForm = (u) => {
             <div class="admin-ai-form-section">
                 <div class="form-group">
                     <label>${t('admin.api.name-label')}</label>
-                    <input type="text" id="api-f-name" class="form-control" value="${escHtml(u?.name || '')}" placeholder="e.g. CI Bot">
+                    <input type="text" id="api-f-name" class="form-control" value="${escHtml(u?.name || '')}" placeholder="${t('admin.api.name-ph')}">
                 </div>
                 <div class="form-group">
                     <label>${t('admin.api.role-label')}</label>
@@ -1450,9 +1450,9 @@ const openApiAccountForm = (u) => {
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Spaces</label>
+                    <label>${t('admin.spaces-label')}</label>
                     ${spacesFieldHtml('api-f', u?.spaces ?? null)}
-                    <p class="form-hint">Which Spaces this API account can access. Defaults to all Spaces.</p>
+                    <p class="form-hint">${t('admin.api.spaces-hint')}</p>
                 </div>
             </div>
             ${!isNew ? `
@@ -1503,7 +1503,7 @@ const saveApiAccount = async (uid) => {
         showToast(t('admin.api.saved'), 'success');
         await loadApiAccounts();
     } else {
-        showToast(result.message || 'Failed to save', 'error');
+        showToast(result.message || t('admin.err.save'), 'error');
     }
 };
 
@@ -1515,7 +1515,7 @@ const deleteApiAccount = async (u) => {
         showToast(t('admin.api.deleted', { name: u.name }), 'success');
         await loadApiAccounts();
     } else {
-        showToast(result.message || 'Failed to delete', 'error');
+        showToast(result.message || t('admin.err.delete'), 'error');
     }
 };
 
@@ -1528,7 +1528,7 @@ const regenerateApiToken = async (uid) => {
         if (tokenEl) tokenEl.textContent = result.token;
         showToast(t('admin.ai.regenerated'), 'success');
     } else {
-        showToast(result.message || 'Failed to regenerate', 'error');
+        showToast(result.message || t('admin.err.regen'), 'error');
     }
 };
 
@@ -1545,18 +1545,21 @@ let oneoffQueued    = 0;
 let runnerHeartbeat = null;
 let runnerInterval  = 15;
 
-const DOW_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// Weekday names are read through t() at call time, not cached at module load —
+// the admin panel is built after i18n.init() and rebuilt on a language change.
+const dowNames = () => ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].map(d => t(`admin.dow.${d}`));
 
 const formatSchedule = (sched) => {
     if (!sched || !sched.type) return '—';
     const time = sched.time || '?';
     switch (sched.type) {
-        case 'daily':   return `Daily at ${time}`;
+        case 'daily':   return t('admin.jobs.sched-daily-at', { time });
         case 'weekly': {
-            const days = (sched.days || []).map(d => DOW_NAMES[d] || d).join(', ');
-            return `${days || '?'} at ${time}`;
+            const names = dowNames();
+            const days = (sched.days || []).map(d => names[d] || d).join(', ');
+            return t('admin.jobs.sched-weekly-at', { days: days || '?', time });
         }
-        case 'monthly': return `${sched.day || 1}. of month at ${time}`;
+        case 'monthly': return t('admin.jobs.sched-monthly-at', { day: sched.day || 1, time });
         default:        return '—';
     }
 };
@@ -1614,8 +1617,8 @@ const renderAgentJobList = () => {
             ? `<span class="admin-job-status admin-job-status-${job.last_status === 'ok' ? 'ok' : 'err'}">${job.last_status}</span>`
             : '';
         const enabledBadge = job.enabled
-            ? `<span class="admin-ai-badge" style="background:#48bb78">enabled</span>`
-            : `<span class="admin-ai-badge" style="background:#a0aec0">disabled</span>`;
+            ? `<span class="admin-ai-badge" style="background:#48bb78">${t('admin.jobs.enabled-badge')}</span>`
+            : `<span class="admin-ai-badge" style="background:#a0aec0">${t('admin.jobs.disabled-badge')}</span>`;
 
         tr.innerHTML = `
             <td class="admin-td-name">${escHtml(job.name)} ${enabledBadge}</td>
@@ -1773,7 +1776,7 @@ const openJobForm = (job) => {
         .join('');
     const schedDays = sched.days || [];
 
-    const dowCheckboxes = DOW_NAMES.map((name, i) =>
+    const dowCheckboxes = dowNames().map((name, i) =>
         `<label><input type="checkbox" class="job-f-dow" value="${i}" ${schedDays.includes(i) ? 'checked' : ''}> ${name}</label>`
     ).join('');
 
@@ -1831,7 +1834,7 @@ const openJobForm = (job) => {
             <div class="job-form-grid" style="padding-top:0.5rem">
                 <label>${t('admin.jobs.last-run-label')}</label>
                 <span style="font-size:0.85rem">${new Date(job.last_run).toLocaleString()}</span>
-                <label>Status</label>
+                <label>${t('admin.jobs.status-label')}</label>
                 <span style="font-size:0.85rem">${escHtml(job.last_status || '—')}</span>
                 ${(job.last_log_file || job.last_log_page) ? `
                 <label>${t('admin.jobs.log-file-label')}</label>
@@ -1922,7 +1925,7 @@ const buildScheduleObject = () => {
 const saveJob = async (jobId) => {
     const name   = document.getElementById('job-f-name')?.value.trim();
     const prompt = document.getElementById('job-f-prompt')?.value.trim();
-    if (!name || !prompt) { showToast('Name and prompt are required.', 'error'); return; }
+    if (!name || !prompt) { showToast(t('admin.jobs.name-prompt-req'), 'error'); return; }
     const params = {
         id:          jobId || '',
         name,
@@ -1936,7 +1939,7 @@ const saveJob = async (jobId) => {
     if (result.success) {
         await loadAgentJobs();
     } else {
-        showToast(result.message || 'Failed to save job.', 'error');
+        showToast(result.message || t('admin.jobs.save-failed'), 'error');
     }
 };
 
@@ -1958,15 +1961,15 @@ const runJobNow = async (job, btn) => {
         if (statusEl) {
             statusEl.style.display = '';
             statusEl.innerHTML = `<div class="admin-job-run-result ${ok ? 'admin-job-run-ok' : 'admin-job-run-err'}">
-                <strong>${ok ? '✓ Success' : '✗ Error'}</strong>
+                <strong>${ok ? '✓ ' + t('admin.jobs.run-success') : '✗ ' + t('admin.jobs.run-error')}</strong>
                 <pre class="admin-job-run-pre">${escHtml(msg)}</pre>
                 ${logFile ? `<div style="margin-top:0.4rem;font-size:0.8rem;color:var(--accent-gray)">${t('admin.jobs.log-file-label')}: <code>${escHtml(logFile)}</code></div>` : ''}
             </div>`;
         }
-        showToast(ok ? t('admin.jobs.run-ok') : (msg || 'Job failed.'), ok ? 'success' : 'error');
+        showToast(ok ? t('admin.jobs.run-ok') : (msg || t('admin.jobs.run-failed')), ok ? 'success' : 'error');
     };
     const showErr = (msg) => {
-        if (statusEl) { statusEl.style.display = ''; statusEl.innerHTML = `<div class="admin-job-run-result admin-job-run-err"><strong>✗ Error</strong><pre class="admin-job-run-pre">${escHtml(msg)}</pre></div>`; }
+        if (statusEl) { statusEl.style.display = ''; statusEl.innerHTML = `<div class="admin-job-run-result admin-job-run-err"><strong>✗ ${t('admin.jobs.run-error')}</strong><pre class="admin-job-run-pre">${escHtml(msg)}</pre></div>`; }
         else showToast(msg, 'error');
     };
 
@@ -1974,7 +1977,7 @@ const runJobNow = async (job, btn) => {
     const started = await api.call('admin_run_agent_job', { id: job.id }, 'POST');
     if (!started || !started.success) {
         resetBtn();
-        showErr(started?.message || 'Failed to start job.');
+        showErr(started?.message || t('admin.jobs.start-failed'));
         return;
     }
 
@@ -1985,7 +1988,7 @@ const runJobNow = async (job, btn) => {
     _jobPollTimer = setInterval(async () => {
         if (++polls > MAX_POLLS) {
             stopJobPoll(); resetBtn();
-            showErr('Still running after 15 minutes — check the job list and logs.');
+            showErr(t('admin.jobs.timeout'));
             return;
         }
         const st = await api.call('admin_agent_job_status', { id: job.id });
@@ -1993,7 +1996,7 @@ const runJobNow = async (job, btn) => {
         stopJobPoll();
         resetBtn();
         const ok = st.state === 'ok';
-        showResult(ok, ok ? (st.reply || '(no reply)') : (st.error || 'Error'), st.log_file);
+        showResult(ok, ok ? (st.reply || t('admin.jobs.no-reply')) : (st.error || t('admin.jobs.run-error')), st.log_file);
         await loadAgentJobs();
     }, 2000);
 };
@@ -2001,7 +2004,7 @@ const runJobNow = async (job, btn) => {
 const deleteJob = async (job) => {
     const { confirmModal } = await import('../core/utils.js');
     const { icons } = await import('../core/icons.js');
-    if (!await confirmModal(`Delete job "${job.name}"?`, { confirmLabel: 'Delete', dangerous: true, icon: icons.trash })) return;
+    if (!await confirmModal(t('admin.jobs.del-confirm', { name: job.name }), { confirmLabel: t('btn.delete'), dangerous: true, icon: icons.trash })) return;
     const result = await api.call('admin_delete_agent_job', { id: job.id }, 'POST');
     if (result.success) {
         await loadAgentJobs();
@@ -2030,13 +2033,13 @@ const renderMcpServerList = () => {
     document.getElementById('admin-mcp-add-btn')?.classList.remove('hidden'); // see renderAiUserList
 
     if (!mcpServers.length) {
-        container.innerHTML = '<p class="admin-empty">No MCP servers configured. Add one to give AI users access to external tools.</p>';
+        container.innerHTML = `<p class="admin-empty">${t('admin.mcp.none')}</p>`;
         return;
     }
 
     const table = document.createElement('table');
     table.className = 'admin-table';
-    table.innerHTML = '<thead><tr><th>Name</th><th>URL</th><th>Auth</th><th></th></tr></thead>';
+    table.innerHTML = `<thead><tr><th>${t('admin.col.name')}</th><th>${t('admin.col.url')}</th><th>${t('admin.col.auth')}</th><th></th></tr></thead>`;
     const tbody = document.createElement('tbody');
 
     mcpServers.forEach(s => {
@@ -2053,20 +2056,20 @@ const renderMcpServerList = () => {
 
         const tdAuth = document.createElement('td');
         tdAuth.innerHTML = s.auth_token_set
-            ? '<span class="admin-auth-badge" style="background:#667eea;color:#fff">TOKEN</span>'
-            : '<span style="color:var(--text-muted);font-size:0.8rem">none</span>';
+            ? `<span class="admin-auth-badge" style="background:#667eea;color:#fff">${t('admin.mcp.auth-token-badge')}</span>`
+            : `<span style="color:var(--text-muted);font-size:0.8rem">${t('admin.mcp.auth-none')}</span>`;
 
         const tdActions = document.createElement('td');
         tdActions.style.cssText = 'white-space:nowrap;display:flex;gap:4px;align-items:center;';
 
         const editBtn = document.createElement('button');
         editBtn.className = 'btn btn-sm btn-secondary';
-        editBtn.textContent = 'Edit';
+        editBtn.textContent = t('admin.btn.edit');
         editBtn.addEventListener('click', () => openMcpServerForm(s));
 
         const delBtn = document.createElement('button');
         delBtn.className = 'btn btn-sm btn-danger admin-del-btn';
-        delBtn.title = 'Delete';
+        delBtn.title = t('admin.mcp.delete-title');
         delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
         delBtn.addEventListener('click', () => deleteMcpServer(s));
 
@@ -2089,50 +2092,50 @@ const openMcpServerForm = (s) => {
         <div class="admin-ai-form">
             <div class="admin-ai-form-section">
                 <div class="form-group">
-                    <label>Name</label>
-                    <input type="text" id="mcp-f-name" class="form-control" value="${escHtml(s?.name || '')}" placeholder="e.g. My Tool Server">
+                    <label>${t('admin.col.name')}</label>
+                    <input type="text" id="mcp-f-name" class="form-control" value="${escHtml(s?.name || '')}" placeholder="${t('admin.mcp.name-ph')}">
                 </div>
                 <div class="form-group">
-                    <label>URL</label>
+                    <label>${t('admin.col.url')}</label>
                     <input type="url" id="mcp-f-url" class="form-control" value="${escHtml(s?.url || '')}" placeholder="https://mcp.example.com">
-                    <p class="form-hint">Base URL of the MCP server. Must support HTTP transport with <code>/tools/list</code> and <code>/tools/call</code> endpoints.</p>
+                    <p class="form-hint">${t('admin.mcp.url-hint')}</p>
                 </div>
                 <div class="form-group">
-                    <label>Auth Token ${s?.auth_token_set ? '<span class="admin-ai-key-set">(set)</span>' : ''}</label>
-                    <input type="password" id="mcp-f-token" class="form-control" placeholder="${isNew ? 'Optional token' : 'Leave blank to keep existing'}">
+                    <label>${t('admin.mcp.token-label')} ${s?.auth_token_set ? `<span class="admin-ai-key-set">${t('admin.mcp.token-set')}</span>` : ''}</label>
+                    <input type="password" id="mcp-f-token" class="form-control" placeholder="${isNew ? t('admin.mcp.token-ph-new') : t('admin.mcp.token-ph-keep')}">
                 </div>
                 <div class="form-group">
-                    <label>Auth header</label>
+                    <label>${t('admin.mcp.auth-header-label')}</label>
                     <input type="text" id="mcp-f-auth-header" class="form-control" value="${escHtml(s?.auth_header || 'Authorization')}" placeholder="Authorization">
-                    <label style="margin-top:0.5rem">Auth scheme <span style="font-weight:400;color:var(--text-muted)">(prefix)</span></label>
+                    <label style="margin-top:0.5rem">${t('admin.mcp.auth-scheme-label')} <span style="font-weight:400;color:var(--text-muted)">${t('admin.mcp.auth-scheme-suffix')}</span></label>
                     <input type="text" id="mcp-f-auth-prefix" class="form-control" value="${escHtml(s?.auth_prefix ?? 'Bearer')}" placeholder="Bearer">
-                    <p class="form-hint">How the token is sent: <code>&lt;header&gt;: &lt;scheme&gt; &lt;token&gt;</code>. Defaults to <code>Authorization: Bearer …</code>. For a server that authenticates with a custom header, set the header name (e.g. <code>X-API-Key</code>) and clear the scheme to send the raw token.</p>
+                    <p class="form-hint">${t('admin.mcp.auth-hint')}</p>
                 </div>
                 <div class="form-group">
-                    <label>Extra request headers <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                    <label>${t('admin.xhdr.label')} <span style="font-weight:400;color:var(--text-muted)">${t('admin.optional')}</span></label>
                     ${extraHeadersFieldHtml('mcp-f', s?.extra_headers ?? [])}
-                    <p class="form-hint">Additional HTTP headers sent on every request to this server, alongside the auth header above. Useful for a gateway such as a Cloudflare Access tunnel needing <code>CF-Access-Client-Id</code> and <code>CF-Access-Client-Secret</code>.</p>
+                    <p class="form-hint">${t('admin.mcp.xhdr-hint')}</p>
                 </div>
                 <div class="form-group">
                     <label style="display:flex;align-items:center;gap:0.45rem;font-weight:600;cursor:pointer">
-                        <input type="checkbox" id="mcp-f-native" ${s?.wiki_native ? 'checked' : ''} style="width:auto"> This server is an Astucia Wiki
+                        <input type="checkbox" id="mcp-f-native" ${s?.wiki_native ? 'checked' : ''} style="width:auto"> ${t('admin.mcp.native-label')}
                     </label>
-                    <p class="form-hint">Enables <code>tag:</code> / <code>updated:</code> filters and native page results in saved searches. Leave off for generic MCP servers.</p>
+                    <p class="form-hint">${t('admin.mcp.native-hint')}</p>
                 </div>
                 <div class="form-group" id="mcp-f-search-group">
-                    <label>Search tool <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
-                    <input type="text" id="mcp-f-search-tool" class="form-control" value="${escHtml(s?.search_tool || '')}" placeholder="e.g. search_docs">
-                    <p class="form-hint">Which tool a <code>.search</code> saved search invokes on this server. Blank = auto-detect (a tool named like search/find/query). Ignored for Astucia Wiki servers.</p>
-                    <label style="margin-top:0.5rem">Query argument <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
-                    <input type="text" id="mcp-f-search-arg" class="form-control" value="${escHtml(s?.search_arg || '')}" placeholder="e.g. query">
-                    <p class="form-hint">The argument that receives the search text. Blank = auto-detect (<code>query</code>, else the tool's first parameter).</p>
+                    <label>${t('admin.mcp.search-tool-label')} <span style="font-weight:400;color:var(--text-muted)">${t('admin.optional')}</span></label>
+                    <input type="text" id="mcp-f-search-tool" class="form-control" value="${escHtml(s?.search_tool || '')}" placeholder="${t('admin.mcp.search-tool-ph')}">
+                    <p class="form-hint">${t('admin.mcp.search-tool-hint')}</p>
+                    <label style="margin-top:0.5rem">${t('admin.mcp.search-arg-label')} <span style="font-weight:400;color:var(--text-muted)">${t('admin.optional')}</span></label>
+                    <input type="text" id="mcp-f-search-arg" class="form-control" value="${escHtml(s?.search_arg || '')}" placeholder="${t('admin.mcp.search-arg-ph')}">
+                    <p class="form-hint">${t('admin.mcp.search-arg-hint')}</p>
                 </div>
             </div>
             <div id="mcp-f-test-result" style="margin-bottom:0.5rem"></div>
             <div class="admin-ai-form-actions">
-                <button type="button" id="mcp-f-cancel-btn" class="btn btn-secondary">Cancel</button>
-                <button type="button" id="mcp-f-test-btn" class="btn btn-secondary">Test Connection</button>
-                <button type="button" id="mcp-f-save-btn" class="btn btn-green">Save</button>
+                <button type="button" id="mcp-f-cancel-btn" class="btn btn-secondary">${t('btn.cancel')}</button>
+                <button type="button" id="mcp-f-test-btn" class="btn btn-secondary">${t('admin.ai.test-btn')}</button>
+                <button type="button" id="mcp-f-save-btn" class="btn btn-green">${t('btn.save')}</button>
             </div>
         </div>`;
 
@@ -2145,9 +2148,9 @@ const openMcpServerForm = (s) => {
         const token = document.getElementById('mcp-f-token')?.value;
         const btn   = document.getElementById('mcp-f-test-btn');
         const out   = document.getElementById('mcp-f-test-result');
-        if (!url) { showToast('Enter a URL first.', 'error'); return; }
+        if (!url) { showToast(t('admin.mcp.url-req'), 'error'); return; }
         btn.disabled = true;
-        btn.textContent = 'Testing…';
+        btn.textContent = t('admin.btn.testing');
         const params = {
             url,
             auth_header: document.getElementById('mcp-f-auth-header')?.value.trim() || '',
@@ -2158,16 +2161,16 @@ const openMcpServerForm = (s) => {
         else if (s?.id) params.id = s.id;
         const res = await api.call('admin_test_mcp_server', params, 'POST');
         btn.disabled = false;
-        btn.textContent = 'Test Connection';
+        btn.textContent = t('admin.ai.test-btn');
         if (res.success) {
             const tools = res.tools || [];
             const rows  = tools.map(t =>
                 `<tr><td style="font-weight:600;vertical-align:top;width:30%;word-break:break-all">${escHtml(t.name)}</td><td style="color:var(--text-muted)">${escHtml(t.description)}</td></tr>`
             ).join('');
-            out.innerHTML = `<p style="color:#48bb78;font-size:0.85rem;margin-bottom:${tools.length ? '0.5rem' : '0'}">✓ Connected — ${res.tool_count} tool${res.tool_count !== 1 ? 's' : ''} found</p>`
+            out.innerHTML = `<p style="color:#48bb78;font-size:0.85rem;margin-bottom:${tools.length ? '0.5rem' : '0'}">✓ ${escHtml(t('admin.mcp.test-ok', { n: res.tool_count }))}</p>`
                 + (tools.length ? `<div style="max-height:220px;overflow-y:auto"><table class="admin-table">${rows}</table></div>` : '');
         } else {
-            out.innerHTML = `<p style="color:#fc8181;font-size:0.85rem">✗ ${escHtml(res.message || 'Connection failed')}</p>`;
+            out.innerHTML = `<p style="color:#fc8181;font-size:0.85rem">✗ ${escHtml(res.message || t('admin.ai.test-failed'))}</p>`;
         }
     });
 
@@ -2196,39 +2199,39 @@ const saveMcpServer = async (id) => {
     const native = document.getElementById('mcp-f-native')?.checked ? '1' : '0';
     const searchTool = document.getElementById('mcp-f-search-tool')?.value.trim() || '';
     const searchArg  = document.getElementById('mcp-f-search-arg')?.value.trim() || '';
-    if (!name) { showToast('Name is required.', 'error'); return; }
-    if (!url)  { showToast('URL is required.', 'error'); return; }
+    if (!name) { showToast(t('admin.mcp.name-required'), 'error'); return; }
+    if (!url)  { showToast(t('admin.mcp.url-required'), 'error'); return; }
 
     const saveBtn = document.getElementById('mcp-f-save-btn');
     saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving…';
+    saveBtn.textContent = t('btn.saving');
 
     const result = await api.call('admin_save_mcp_server',
         { id: id || '', name, url, auth_token: token, auth_header: authHeader, auth_prefix: authPrefix,
           extra_headers: JSON.stringify(extraHeaders),
           wiki_native: native, search_tool: searchTool, search_arg: searchArg }, 'POST');
     saveBtn.disabled = false;
-    saveBtn.textContent = 'Save';
+    saveBtn.textContent = t('btn.save');
 
     if (result.success) {
-        showToast('MCP server saved.', 'success');
+        showToast(t('admin.mcp.saved'), 'success');
         invalidateMcpServers();
         await loadMcpServers();
     } else {
-        showToast(result.message || 'Failed to save.', 'error');
+        showToast(result.message || t('admin.mcp.save-failed'), 'error');
     }
 };
 
 const deleteMcpServer = async (s) => {
-    const ok = await confirmModal(`Delete MCP server "${s.name}"?`, { confirmLabel: 'Delete', dangerous: true });
+    const ok = await confirmModal(t('admin.mcp.del-confirm', { name: s.name }), { confirmLabel: t('btn.delete'), dangerous: true });
     if (!ok) return;
     const result = await api.call('admin_delete_mcp_server', { id: s.id }, 'POST');
     if (result.success) {
-        showToast('MCP server deleted.', 'success');
+        showToast(t('admin.mcp.deleted'), 'success');
         invalidateMcpServers();
         await loadMcpServers();
     } else {
-        showToast(result.message || 'Failed to delete.', 'error');
+        showToast(result.message || t('admin.mcp.delete-failed'), 'error');
     }
 };
 
@@ -2252,10 +2255,10 @@ const testMcpServer = async (s, btn) => {
         const rows  = tools.map(t =>
             `<tr><td style="font-weight:600;vertical-align:top;width:30%;word-break:break-all">${escHtml(t.name)}</td><td style="color:var(--text-muted)">${escHtml(t.description)}</td></tr>`
         ).join('');
-        panel.innerHTML = `<span style="color:#48bb78">✓ ${res.tool_count} tool${res.tool_count !== 1 ? 's' : ''} found</span>`
+        panel.innerHTML = `<span style="color:#48bb78">✓ ${escHtml(t('admin.mcp.test-count', { n: res.tool_count }))}</span>`
             + (tools.length ? `<div style="max-height:180px;overflow-y:auto;margin-top:6px"><table class="admin-table">${rows}</table></div>` : '');
     } else {
-        panel.innerHTML = `<span style="color:#fc8181">✗ ${escHtml(res.message || 'Connection failed')}</span>`;
+        panel.innerHTML = `<span style="color:#fc8181">✗ ${escHtml(res.message || t('admin.ai.test-failed'))}</span>`;
     }
 
     btn.parentElement.appendChild(panel);
@@ -2517,7 +2520,7 @@ export const init = () => {
         if (statusEl) {
             statusEl.innerHTML = result.success
                 ? `<span class="admin-diag-ok">${result.message}</span>`
-                : `<span class="admin-diag-err">${result.message || 'Failed to send email.'}</span>`;
+                : `<span class="admin-diag-err">${result.message || t('admin.err.email')}</span>`;
         }
     });
 

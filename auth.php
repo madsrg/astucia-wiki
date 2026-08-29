@@ -79,11 +79,13 @@ if ($_action === 'logout') {
 
 // ── OTP: Send code ────────────────────────────────────────────────────────────
 
+// login_error / login_notice hold an i18n key, not prose — login.php maps it to
+// English (the no-JS fallback) and the i18n module translates it in the browser.
 if ($_action === 'otp_send' && in_array(AUTHENTICATION, ['otp', 'both'])) {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') { header('Location: login.php'); exit; }
     $email = strtolower(trim($_POST['email'] ?? ''));
     if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $_SESSION['login_error'] = 'Please enter a valid email address.';
+        $_SESSION['login_error'] = 'login.err.invalid-email';
         header('Location: login.php');
         exit;
     }
@@ -104,7 +106,7 @@ if ($_action === 'otp_send' && in_array(AUTHENTICATION, ['otp', 'both'])) {
         send_email($email, $user['name'] ?? '', 'Your login code for ' . APP_TITLE, $html);
         write_access_log('OTP_SENT', $email, $user['name'] ?? '');
     }
-    $_SESSION['login_notice'] = 'If that address is registered, a 6-digit code has been sent.';
+    $_SESSION['login_notice'] = 'login.notice.code-sent';
     header('Location: login.php?step=verify');
     exit;
 }
@@ -115,26 +117,26 @@ if ($_action === 'otp_verify' && in_array(AUTHENTICATION, ['otp', 'both'])) {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') { header('Location: login.php'); exit; }
     $pending = $_SESSION['otp_pending'] ?? null;
     if (!$pending) {
-        $_SESSION['login_error'] = 'Session expired. Please start again.';
+        $_SESSION['login_error'] = 'login.err.session-expired';
         header('Location: login.php');
         exit;
     }
     if (time() > ($pending['expires'] ?? 0)) {
         unset($_SESSION['otp_pending']);
-        $_SESSION['login_error'] = 'The code has expired. Please request a new one.';
+        $_SESSION['login_error'] = 'login.err.code-expired';
         header('Location: login.php');
         exit;
     }
     if (($pending['attempts'] ?? 0) >= 5) {
         unset($_SESSION['otp_pending']);
-        $_SESSION['login_error'] = 'Too many failed attempts. Please request a new code.';
+        $_SESSION['login_error'] = 'login.err.too-many';
         header('Location: login.php');
         exit;
     }
     $submitted = trim($_POST['code'] ?? '');
     if (!$submitted || !password_verify($submitted, $pending['code'] ?? '')) {
         $_SESSION['otp_pending']['attempts'] = ($pending['attempts'] ?? 0) + 1;
-        $_SESSION['login_error'] = 'Invalid code. Please try again.';
+        $_SESSION['login_error'] = 'login.err.invalid-code';
         header('Location: login.php?step=verify');
         exit;
     }
@@ -144,7 +146,7 @@ if ($_action === 'otp_verify' && in_array(AUTHENTICATION, ['otp', 'both'])) {
     $users = load_users();
     $user  = find_otp_user($users, $email);
     if (!$user) {
-        $_SESSION['login_error'] = 'Account not found.';
+        $_SESSION['login_error'] = 'login.err.no-account';
         header('Location: login.php');
         exit;
     }
@@ -205,7 +207,7 @@ try {
             if (($u['auth'] ?? 'oidc') === 'otp') {
                 write_access_log('LOGIN_DENIED', $sub, $name, 'OTP user attempted OIDC login');
                 session_destroy();
-                $_SESSION['login_error'] = 'This account uses email code (OTP) login. Please use the email field below.';
+                $_SESSION['login_error'] = 'login.err.otp-account';
                 header('Location: login.php');
                 exit;
             }

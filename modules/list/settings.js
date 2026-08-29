@@ -3,6 +3,7 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { state } from '../core/state.js';
 import { saveListData } from './data.js';
+import { t } from '../i18n/index.js';
 
 // ── Filter rows ───────────────────────────────────────────────────────────────
 
@@ -24,7 +25,7 @@ const appendFilterRow = (container, colId, value) => {
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'filter-value-input form-control';
-    input.placeholder = 'Contains…';
+    input.placeholder = t('list.filter-contains-ph');
     input.value = value;
 
     const removeBtn = document.createElement('button');
@@ -57,7 +58,7 @@ const buildFiltersSection = (activeView) => {
     addBtn.type = 'button';
     addBtn.className = 'btn btn-sm btn-secondary';
     addBtn.style.marginTop = '4px';
-    addBtn.textContent = '+ Add Filter';
+    addBtn.textContent = t('list.add-filter');
     addBtn.addEventListener('click', () => appendFilterRow(list, state.currentListData.columns[0]?.id || '', ''));
     section.appendChild(addBtn);
 };
@@ -75,7 +76,7 @@ const appendSettingsRow = (container, col, isChecked) => {
     const upBtn = document.createElement('button');
     upBtn.type = 'button';
     upBtn.className = 'settings-move-btn';
-    upBtn.title = 'Move up';
+    upBtn.title = t('btn.move-up');
     upBtn.textContent = '↑';
     upBtn.addEventListener('click', () => {
         const prev = row.previousElementSibling;
@@ -85,7 +86,7 @@ const appendSettingsRow = (container, col, isChecked) => {
     const downBtn = document.createElement('button');
     downBtn.type = 'button';
     downBtn.className = 'settings-move-btn';
-    downBtn.title = 'Move down';
+    downBtn.title = t('btn.move-down');
     downBtn.textContent = '↓';
     downBtn.addEventListener('click', () => {
         const next = row.nextElementSibling;
@@ -115,7 +116,7 @@ const buildSettingsForm = () => {
     const activeView = activeViewId ? (data.views || []).find(v => v.id === activeViewId) : null;
 
     document.getElementById('view-settings-title').textContent =
-        activeView ? `View: ${activeView.name}` : 'All Items';
+        activeView ? t('list.view-prefix', { name: activeView.name }) : t('list.all-items');
     document.getElementById('delete-view-btn').classList.toggle('hidden', !activeView);
 
     const form = document.getElementById('view-settings-form');

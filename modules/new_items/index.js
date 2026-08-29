@@ -63,7 +63,7 @@ export const createPageNamed = async (rawName) => {
         const newFileEl = document.querySelector(`[data-path="${path}"]`);
         if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, [], { intent: 'permanent' }); }
     } else {
-        showToast(res.message || 'Failed to create page.', 'error');
+        showToast(res.message || t('new.page-failed'), 'error');
     }
     return res;
 };

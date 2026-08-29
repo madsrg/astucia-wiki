@@ -162,7 +162,7 @@ export const savePage = async () => {
 
         if (!saveResponse.ok) {
             const errorData = await saveResponse.json();
-            throw new Error(errorData.message || 'Failed to save');
+            throw new Error(errorData.message || t('edit.save-error'));
         }
 
         const resultData = await saveResponse.json();
