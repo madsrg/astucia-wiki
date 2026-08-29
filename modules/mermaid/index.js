@@ -30,12 +30,44 @@ const loadMermaid = () => {
                     securityLevel: 'strict',
                     theme:         'default',
                     fontFamily:    'inherit',
+                    // Without this, a diagram with a typo makes mermaid render its own
+                    // "Syntax error in text" graphic into the temporary container it
+                    // appends to <body> — and leave it there, so the whole page grows a
+                    // bomb SVG and a leaked <style> block at the bottom, detached from
+                    // the block that caused it. Suppressed, render() simply cleans up and
+                    // rethrows, which is what showError() below turns into an inline
+                    // message beside the source.
+                    suppressErrorRendering: true,
                 });
                 return mermaid;
             })
             .catch(err => { _lib = null; throw err; });   // let a later attempt retry
     }
     return _lib;
+};
+
+/**
+ * Strip the diagram source out of a mermaid error message.
+ *
+ * Mermaid quotes the source back at you in two shapes — "…for text:" followed by the
+ * whole block, or a quoted snippet with a caret ruler under the offending token. Both
+ * are redundant here: the source is left on screen directly below this box, so the echo
+ * only doubles the page's noise. The diagnosis (which line, what it expected, what it
+ * got) is kept as mermaid wrote it.
+ */
+const CARET_RULER = /^\s*-*\^\s*$/;
+
+const cleanMessage = (raw) => {
+    const full = String(raw ?? '').trim();
+    // "No diagram type detected matching given configuration for text: <whole block>"
+    const lines = full.replace(/\s*for text:[\s\S]*$/, '').split('\n');
+    // "Parse error on line 5:" / "...quoted source..." / "-------^" / "Expecting …, got …"
+    const kept = lines.filter((line, i) => {
+        if (CARET_RULER.test(line)) return false;                 // the ruler itself
+        const next = lines[i + 1];                                // and the line it points at
+        return next === undefined || !CARET_RULER.test(next);
+    });
+    return kept.join(' ').replace(/\s+/g, ' ').trim() || full;
 };
 
 const showError = (pre, message) => {
@@ -79,7 +111,7 @@ export const renderMermaidIn = async (root) => {
             wrap.innerHTML = svg;
             pre.replaceWith(wrap);
         } catch (err) {
-            showError(pre, err?.message || String(err));
+            showError(pre, cleanMessage(err?.message || err));
         }
     }
 };
