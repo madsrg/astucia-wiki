@@ -6,6 +6,65 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.8.3] — 2026-08-29
+
+Space-level administration. A Space could be created and renamed, but not frozen and not
+dissolved — so an archived project stayed exactly as editable as a live one, and a Space made
+by mistake stayed forever. Both now sit behind a gear beside the Space selector, administrators
+only. Japanese joins the interface languages, and the English string literals still scattered
+through the UI were routed through the translation layer.
+
+### Added
+- **Space settings** — a gear beside the Space selector, for administrators only, holding the
+  three operations that shape a wiki rather than edit it: rename, read-only, and merge into
+  another Space. The per-row rename pencil in the switcher stays where it was, so editors keep
+  the rename they already had.
+- **Read-only Spaces.** A frozen Space cannot be changed by anyone — administrators, AI Users,
+  API Accounts and MCP clients included. A mode that exempted the people most likely to edit by
+  reflex would not be a freeze; turning it off in the dialog is the way back. Chat threads stay
+  readable with the message box hidden, and a move or copy *into* a frozen Space is refused as
+  the write it is. Scheduled and one-off agent jobs targeting one are skipped rather than run
+  and discarded. The flag lives in `WIKI_SYSTEM_DATA/spaces.json` — configuration, not content,
+  so it is never committed to a Space's git repository and never travels with an rsync of
+  `PAGES_DIR`.
+- **Merge a Space into another, then delete it.** The dialog shows the real plan before anything
+  moves: how many pages travel, how many are renamed, how many identical duplicates are dropped.
+  Same-named folders merge and only colliding *files* become `name (1).ext` — renaming the
+  folder instead would split related content across two trees because one file inside it
+  clashed. A colliding file identical to its twin is dropped rather than duplicated, which
+  matters more than it sounds: every Space is scaffolded with the same `templates/` and start
+  page, and the first real merge dropped twelve of them. Attachments and a cached `.drawio.svg`
+  follow their page through a rename. Page ids are carried across when free in the target index,
+  along with tags and authorship, so `?pageid=` links, `{include:ID}` transclusions and
+  wikilinks pointing into the merged Space keep working.
+- **A Space that is its own git repository refuses to be merged away**, because deleting it
+  would take its history with it — remove the repository first. A repository at `PAGES_DIR` is
+  fine: both Spaces already share that history, and the merge lands as a single commit.
+- **Japanese (日本語)** — the ninth interface language, selectable from the sidebar globe and My
+  Preferences.
+
+### Changed
+- **The interface is translated wherever it was still English.** Labels, placeholders, titles,
+  confirm prompts and error fallbacks moved to `t()` across the admin panel, the login and auth
+  pages, the editor toolbar and its insert menu, the list views and their modals, chat, the JSON
+  viewer, the file-tree panes and the advanced-search builder. All nine locales are at key
+  parity, so the fallback to English is a safety net rather than the plan.
+- **A Space rename now carries the Space with it** — its settings entry and its
+  external-change stamp, the latter of which was previously left behind on every rename.
+- **Move and copy no longer offer a read-only Space as a destination**, rather than letting the
+  write be refused after the fact.
+
+### Fixed
+- **A mermaid syntax error no longer takes over the bottom of the page.** Mermaid rendered its
+  own "Syntax error in text" graphic into a container it appends to `<body>` and left it there,
+  so a page with one bad diagram grew a detached bomb SVG and a leaked `<style>` block far from
+  the block that caused it. The inline message beside the source — which is fixable in place —
+  is unchanged.
+- **A mermaid error no longer quotes the diagram back at you.** The message carried either the
+  whole block after "…for text:" or a snippet with a caret ruler, both sitting directly above
+  the same source in the page. The diagnosis is kept; the echo is not.
+
+
 ## [2026.8.2] — 2026-08-21
 
 Obsidian compatibility. A vault could already be dropped into `PAGES_DIR` and be indexed, but
