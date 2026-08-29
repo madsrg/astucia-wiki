@@ -3,16 +3,34 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
-import { showToast, promptModal } from '../core/utils.js';
+import { showToast, promptModal, confirmModal } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { t } from '../i18n/index.js';
 import { renameSpaceInStorage, setAvailableSpaces } from '../nav/index.js';
+import { openSpaceSettings } from './settings.js';
 
 const STORAGE_KEY = 'wiki_currentSpace';
 let _onSpaceChange = null;
 let _allSpaces = [];
+// Names of the spaces that are frozen. Read from list_spaces, which every client
+// calls on load — a reader has to know too, since the flag hides the edit UI.
+let _readOnly = new Set();
 
 export const getAllSpaces = () => _allSpaces;
+export const isSpaceReadOnly = (name) => _readOnly.has(name);
+
+/**
+ * Reflect the active space's read-only flag in `state` and on <body>.
+ *
+ * Role-based hiding is decided by PHP at page render (`body class="role-reader"`),
+ * but a space switch never reloads the page — so the frozen-space equivalent has to
+ * be a class this function keeps in step. styles.css hides the same controls for
+ * `.space-readonly` as it does for `.role-reader`.
+ */
+const _applyReadOnly = () => {
+    state.spaceReadOnly = !!state.currentSpace && _readOnly.has(state.currentSpace);
+    document.body.classList.toggle('space-readonly', state.spaceReadOnly);
+};
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -22,6 +40,7 @@ export const initSpaces = async ({ onSpaceChange }) => {
     const result = await api.call('list_spaces');
     const spaces = result.data || [];
     _allSpaces = spaces;
+    _readOnly  = new Set(result.readonly || []);
     setAvailableSpaces(spaces);
 
     // Determine active space: URL param → localStorage → first available
@@ -34,6 +53,7 @@ export const initSpaces = async ({ onSpaceChange }) => {
     state.currentSpace = active;
     _render(spaces, active);
     _updateUrl(active);
+    _applyReadOnly();
 
     return { spaces, activeSpace: active };
 };
@@ -47,6 +67,7 @@ const switchSpace = async (name, spaces) => {
     _updateUrl(name);
     _updateLabel(name);
     _markActive(name);
+    _applyReadOnly();
     if (_onSpaceChange) await _onSpaceChange(name);
 };
 
@@ -59,6 +80,7 @@ export const switchSpaceSilently = (name) => {
     _updateUrl(name);
     _updateLabel(name);
     _markActive(name);
+    _applyReadOnly();
 };
 
 // ── URL sync ──────────────────────────────────────────────────────────────────
@@ -76,12 +98,60 @@ const _updateUrl = (name) => {
 const _updateLabel = (name) => {
     const el = document.getElementById('space-current-label');
     if (el) el.textContent = name || t('spaces.empty');
+    const lock = document.getElementById('space-current-lock');
+    if (lock) lock.classList.toggle('hidden', !name || !_readOnly.has(name));
 };
 
 const _markActive = (name) => {
     document.querySelectorAll('.space-dropdown-item[data-space]').forEach(el => {
         el.classList.toggle('active', el.dataset.space === name);
     });
+};
+
+// Re-read the space list from the server and repaint the switcher. Used after every
+// change that can add, remove, rename or freeze a space.
+const _reload = async (activeName) => {
+    const refreshed = await api.call('list_spaces');
+    _allSpaces = refreshed.data || [];
+    _readOnly  = new Set(refreshed.readonly || []);
+    setAvailableSpaces(_allSpaces);
+    const container = document.getElementById('space-switcher');
+    if (container) {
+        container.innerHTML = '';
+        _render(_allSpaces, activeName);
+    }
+    _applyReadOnly();
+    return _allSpaces;
+};
+
+// Shared by the per-row rename pencil and the Space settings dialog.
+const _afterRename = async (oldName, newName) => {
+    renameSpaceInStorage(oldName, newName);
+    const wasActive = oldName === state.currentSpace;
+    if (wasActive) {
+        state.currentSpace = newName;
+        localStorage.setItem(STORAGE_KEY, newName);
+        _updateUrl(newName);
+    }
+    await _reload(state.currentSpace);
+    if (wasActive && _onSpaceChange) await _onSpaceChange(newName);
+};
+
+// The source space no longer exists: its content, and anyone looking at it, moves on.
+const _afterMerge = async (source, target) => {
+    // Recents and favourites are repointed rather than dropped. A page the merge had
+    // to rename ("todo (1).md") will 404 when clicked, which is visible and fixable;
+    // silently deleting someone's favourites would not be.
+    renameSpaceInStorage(source, target);
+    try { localStorage.removeItem(`wikiTabs:${source}`); } catch {}
+    const wasActive = source === state.currentSpace;
+    if (wasActive) {
+        state.currentSpace = target;
+        localStorage.setItem(STORAGE_KEY, target);
+        _updateUrl(target);
+    }
+    await _reload(state.currentSpace);
+    if (wasActive && _onSpaceChange) await _onSpaceChange(target);
 };
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -92,6 +162,7 @@ const _render = (spaces, active) => {
 
     const role = window.WIKI_ROLE || '';
     const canCreate = role === 'admin' || role === 'editor';
+    const isAdmin   = role === 'admin';
 
     // Header: icon + current name + chevron
     const header = document.createElement('div');
@@ -99,6 +170,7 @@ const _render = (spaces, active) => {
     header.innerHTML = `
         <span class="space-switcher-icon">${icons.space}</span>
         <span id="space-current-label" class="space-current-label">${active || t('spaces.empty')}</span>
+        <span id="space-current-lock" class="space-lock${active && _readOnly.has(active) ? '' : ' hidden'}" title="${t('spaces.settings.readonly-label')}">${icons.lock}</span>
         <svg class="space-chevron" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
     `;
 
@@ -117,6 +189,14 @@ const _render = (spaces, active) => {
         label.textContent = name;
         item.appendChild(label);
 
+        if (_readOnly.has(name)) {
+            const lock = document.createElement('span');
+            lock.className = 'space-lock';
+            lock.title = t('spaces.settings.readonly-label');
+            lock.innerHTML = icons.lock;
+            item.appendChild(lock);
+        }
+
         // Switch on a click anywhere in the row, not just on the label text — the
         // row's vertical padding isn't covered by the label, so a label-only
         // handler silently ignored clicks near a row's top/bottom edge. The
@@ -134,7 +214,6 @@ const _render = (spaces, active) => {
             renameBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 dropdown.classList.add('hidden');
-                const { confirmModal } = await import('../core/utils.js');
                 const ok = await confirmModal(t('spaces.rename-warn'), {
                     confirmLabel: t('spaces.rename-confirm-btn'),
                     icon: icons.space,
@@ -145,18 +224,7 @@ const _render = (spaces, active) => {
                 const res = await api.call('rename_space', { old_name: name, new_name: newName }, 'POST');
                 if (res.success) {
                     showToast(t('spaces.renamed', { name: newName }), 'success');
-                    renameSpaceInStorage(name, newName);
-                    const refreshed = await api.call('list_spaces');
-                    const newSpaces = refreshed.data || [];
-                    container.innerHTML = '';
-                    const nextActive = name === active ? newName : active;
-                    _render(newSpaces, nextActive);
-                    if (name === active) {
-                        state.currentSpace = newName;
-                        localStorage.setItem(STORAGE_KEY, newName);
-                        _updateUrl(newName);
-                        if (_onSpaceChange) await _onSpaceChange(newName);
-                    }
+                    await _afterRename(name, newName);
                 } else {
                     showToast(res.message || t('spaces.rename-failed'), 'error');
                 }
@@ -190,10 +258,7 @@ const _render = (spaces, active) => {
             const res = await api.call('create_space', { name }, 'POST');
             if (res.success) {
                 showToast(t('spaces.created', { name }), 'success');
-                const refreshed = await api.call('list_spaces');
-                const newSpaces = refreshed.data || [];
-                container.innerHTML = '';
-                _render(newSpaces, name);
+                const newSpaces = await _reload(name);
                 await switchSpace(name, newSpaces);
             } else {
                 showToast(res.message || t('spaces.failed'), 'error');
@@ -209,6 +274,32 @@ const _render = (spaces, active) => {
     });
 
     container.appendChild(header);
+
+    // Space settings — administrators only. Renaming, freezing and dissolving a
+    // space are wiki-shaping operations, so they sit behind their own control
+    // rather than in the switcher rows.
+    if (isAdmin) {
+        const gear = document.createElement('button');
+        gear.id = 'space-settings-btn';
+        gear.className = 'space-settings-btn';
+        gear.title = t('spaces.settings.btn');
+        gear.innerHTML = icons.cog;
+        gear.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdown.classList.add('hidden');
+            if (!state.currentSpace) return;
+            openSpaceSettings(state.currentSpace, {
+                onRenamed: (oldName, newName) => _afterRename(oldName, newName),
+                onMerged:  (source, target)   => _afterMerge(source, target),
+                onReadOnly: async (name, readonly) => {
+                    if (readonly) _readOnly.add(name); else _readOnly.delete(name);
+                    await _reload(state.currentSpace);
+                },
+            });
+        });
+        header.appendChild(gear);
+    }
+
     container.appendChild(dropdown);
 
     // Close dropdown when clicking elsewhere (attached once on document)

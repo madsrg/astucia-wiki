@@ -28,6 +28,13 @@ export const updateLineIndicator = () => {
  *        work, and a hint on each switch would be noise rather than help.
  */
 export const setEditingMode = async (editing, opts = {}) => {
+    // A frozen Space has no edit mode. CSS hides the controls, but the Ctrl+E hotkey
+    // clicks #edit-btn directly and a display:none button still fires its handler —
+    // so the one function every route into edit mode goes through says no.
+    if (editing && state.spaceReadOnly) {
+        showToast(t('spaces.readonly-toast', { name: state.currentSpace || '' }), 'error');
+        return;
+    }
     state.isEditing = editing;
     const editor = document.getElementById('editor-container');
     const editorWrapper = document.querySelector('.editor-container-wrapper');

@@ -28,6 +28,7 @@ export const state = {
     inlineBlocks: [],
     lastApiCallTime: Date.now(),
     currentSpaceHasGit: false,
+    spaceReadOnly: false,           // the active space is frozen (see modules/spaces)
     pageChatPath: null,
     isMobile: false, // effective mobile layout (from viewport + user override)
     displayMode: localStorage.getItem('wiki_displayMode') || 'auto', // 'auto' | 'desktop' | 'mobile'

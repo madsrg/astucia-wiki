@@ -9,6 +9,7 @@ ignore_user_abort(true);
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/indexer.php';
+require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/ai_core.php';
 require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/agent_jobs.php';
@@ -109,6 +110,14 @@ foreach ($jobs as $idx => &$job) {
     $safe_space = basename($job['space'] ?? basename(PAGES_DIR));
     $space_dir  = rtrim(PAGES_DIR, '/') . '/' . $safe_space;
     if (!is_dir($space_dir)) $space_dir = rtrim(PAGES_DIR, '/');
+
+    // A frozen Space is frozen for the runner too. Skipping the whole job — rather
+    // than letting it run and refusing each write tool — keeps it from burning an
+    // LLM call on work it cannot save.
+    if (wiki_space_dir_is_readonly($space_dir)) {
+        echo date('c') . " [agent-jobs] Space '{$safe_space}' is read-only. Skipping job '{$job_name}'.\n";
+        continue;
+    }
 
     // Run
     $indexer = new PageIndexer($space_dir);
@@ -230,10 +239,16 @@ foreach ($oneoff_batch as $oj) {
     $oj_reply = null;
     $oj_error = null;
     $oj_debug = '';
+    $oj_space_dir = agent_job_space_dir((string)($oj['space'] ?? ''));
     if (!$oj_ai) {
         $oj_error = 'The AI user for this job no longer exists.';
+    } elseif (wiki_space_dir_is_readonly($oj_space_dir)) {
+        // Fail the job rather than run it: it could not save its result. The error
+        // still travels back into the thread, which resolves the pending placeholder
+        // that was written before the Space was frozen — leaving that spinning
+        // forever would be the worse outcome.
+        $oj_error = 'The space "' . basename(rtrim($oj_space_dir, '/')) . '" is read-only, so this job was not run.';
     } else {
-        $oj_space_dir = agent_job_space_dir((string)($oj['space'] ?? ''));
         try {
             $oj_result = run_agent_job($oj, $oj_ai, new PageIndexer($oj_space_dir), $oj_space_dir);
             $oj_reply  = $oj_result['reply'] ?? null;

@@ -105,6 +105,27 @@ body {
 .space-dropdown-new { color: var(--accent-blue); display: flex; align-items: center; gap: 0.4rem; }
 .space-dropdown-sep { border-top: 1px solid var(--border-color); margin: 3px 0; }
 .space-dropdown-empty { padding: 0.5rem 0.75rem; font-size: 0.8rem; color: var(--accent-gray); font-style: italic; }
+
+/* Frozen space: a lock beside the name, in the header and in the dropdown rows */
+.space-lock { display: flex; align-items: center; flex-shrink: 0; opacity: 0.75; }
+.space-dropdown-item .space-lock { color: var(--accent-gray); }
+
+/* Space settings (admin only) */
+.space-settings-btn { background: none; border: none; padding: 2px; margin: -2px -2px -2px 0; cursor: pointer; color: rgba(255,255,255,0.7); border-radius: 4px; display: flex; align-items: center; flex-shrink: 0; }
+.space-settings-btn:hover { background: rgba(255,255,255,0.15); color: white; }
+.space-settings-content { width: 520px; max-width: 95vw; }
+.space-settings-body { display: flex; flex-direction: column; gap: 1.1rem; margin: 0.75rem 0 0.25rem; }
+.space-settings-section { display: flex; flex-direction: column; gap: 0.35rem; }
+.space-settings-title { margin: 0; font-size: 0.85rem; font-weight: 600; }
+.space-settings-hint { margin: 0; font-size: 0.78rem; color: var(--accent-gray); line-height: 1.45; }
+.space-settings-row { display: flex; gap: 0.5rem; align-items: center; }
+.space-settings-row .form-control { flex: 1; min-width: 0; }
+.space-settings-row .btn { flex-shrink: 0; }
+.space-settings-switch-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; cursor: pointer; }
+.space-settings-switch { width: 16px; height: 16px; cursor: pointer; }
+.space-settings-status { font-size: 0.78rem; color: var(--accent-gray); line-height: 1.45; min-height: 1.1em; }
+.space-settings-status.is-blocked { color: var(--accent-danger); }
+.space-settings-renames { margin: 0.35rem 0 0; padding-left: 1.1rem; font-size: 0.75rem; color: var(--accent-gray); word-break: break-all; }
 .user-info {
     font-size: 0.8rem;
     display: flex;
@@ -1020,35 +1041,38 @@ body {
 /* Icon wrappers */
 .ff-icon-sm svg, .ff-icon-lg svg { display: block; }
 
-/* ── Role: Reader — hide all editing controls ─────────────────────────────── */
-.role-reader #page-meta-row,
-.role-reader #new-item-btn,
-.role-reader #edit-btn,
-.role-reader #diagram-edit-btn,
-.role-reader #page-actions-group,
-.role-reader #editor-mode-group,
-.role-reader #favorite-btn,
-.role-reader .pane-tab[data-pane="saved"],
-.role-reader #delete-btn,
-.role-reader #copy-btn,
-.role-reader #move-btn,
-.role-reader #rename-btn,
-.role-reader #search-btn,
-.role-reader #attach-file-btn,
-.role-reader #tag-input,
-.role-reader #add-item-btn,
-.role-reader #view-settings-btn,
-.role-reader .view-tab-new,
-.role-reader #list-props-btn,
-.role-reader .chat-input-area,
-.role-reader .chat-focus-chip,
-.role-reader #chat-topic-btn,
-.role-reader #add-column-btn,
-.role-reader #ff-upload-btn,
-.role-reader .ff-del-btn,
-.role-reader .ff-icon-del,
-.role-reader .tag-remove,
-.role-reader .remove-attachment-btn { display: none !important; }
+/* ── Read-only surfaces — hide every editing control ──────────────────────────
+   Two conditions share one list: the Reader role (set by PHP on <body> at render)
+   and a frozen Space (`.space-readonly`, toggled by modules/spaces on every space
+   switch, since switching never reloads the page). ────────────────────────────── */
+:is(.role-reader, .space-readonly) #page-meta-row,
+:is(.role-reader, .space-readonly) #new-item-btn,
+:is(.role-reader, .space-readonly) #edit-btn,
+:is(.role-reader, .space-readonly) #diagram-edit-btn,
+:is(.role-reader, .space-readonly) #page-actions-group,
+:is(.role-reader, .space-readonly) #editor-mode-group,
+:is(.role-reader, .space-readonly) #favorite-btn,
+:is(.role-reader, .space-readonly) .pane-tab[data-pane="saved"],
+:is(.role-reader, .space-readonly) #delete-btn,
+:is(.role-reader, .space-readonly) #copy-btn,
+:is(.role-reader, .space-readonly) #move-btn,
+:is(.role-reader, .space-readonly) #rename-btn,
+:is(.role-reader, .space-readonly) #search-btn,
+:is(.role-reader, .space-readonly) #attach-file-btn,
+:is(.role-reader, .space-readonly) #tag-input,
+:is(.role-reader, .space-readonly) #add-item-btn,
+:is(.role-reader, .space-readonly) #view-settings-btn,
+:is(.role-reader, .space-readonly) .view-tab-new,
+:is(.role-reader, .space-readonly) #list-props-btn,
+:is(.role-reader, .space-readonly) .chat-input-area,
+:is(.role-reader, .space-readonly) .chat-focus-chip,
+:is(.role-reader, .space-readonly) #chat-topic-btn,
+:is(.role-reader, .space-readonly) #add-column-btn,
+:is(.role-reader, .space-readonly) #ff-upload-btn,
+:is(.role-reader, .space-readonly) .ff-del-btn,
+:is(.role-reader, .space-readonly) .ff-icon-del,
+:is(.role-reader, .space-readonly) .tag-remove,
+:is(.role-reader, .space-readonly) .remove-attachment-btn { display: none !important; }
 
 /* ── Admin lightbox ───────────────────────────────────────────────────────── */
 .admin-lightbox-content { width: 900px; max-width: 95vw; height: min(680px, 88vh); }

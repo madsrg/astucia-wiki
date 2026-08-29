@@ -176,6 +176,16 @@ class SearchIndex {
         } catch (\Throwable $e) {}
     }
 
+    // Drop every row belonging to a space — used when a space is dissolved by a merge.
+    // Self-contained: the FTS side is reissued from the pages table, so a caller that
+    // does nothing else afterwards still leaves a consistent index.
+    public function deleteSpace(string $space): void {
+        try {
+            $this->pdo->prepare("DELETE FROM pages WHERE space=?")->execute([$space]);
+            $this->pdo->exec("INSERT INTO pages_fts(pages_fts) VALUES('rebuild')");
+        } catch (\Throwable $e) {}
+    }
+
     // Batch-update paths when a folder is renamed (same space).
     public function moveFolderPaths(string $space, string $oldPrefix, string $newPrefix): void {
         try {

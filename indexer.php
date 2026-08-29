@@ -159,6 +159,35 @@ class PageIndexer {
         return ['added' => $added, 'removed' => $removed, 'touched' => $touched];
     }
 
+    /**
+     * Adopt index entries from another space's index, in a single write.
+     *
+     * Used by the space merge. Each entry keeps its **id** whenever that number is
+     * still free here — ids are random 6-digit integers scoped to one index, so most
+     * of a space's pages keep theirs, and with them every `?pageid=` link,
+     * `{include:ID}` tag and wikilink href pointing into the merged space. The whole
+     * record travels (tags, created, createdBy, updated, updatedBy); reusing addPage()
+     * would reset all of that as well as the id.
+     *
+     * @param array $entries [oldId => entry] where entry['path'] is already the path
+     *                       the file now has *in this space*.
+     * @return array [oldId => newId] for every entry adopted.
+     */
+    public function importPages(array $entries) {
+        $map = [];
+        foreach ($entries as $oldId => $entry) {
+            $path = $entry['path'] ?? '';
+            if ($path === '' || $this->getId($path) !== null) continue;
+            $oldId = (int)$oldId;
+            $newId = ($oldId > 0 && !isset($this->indexData[$oldId])) ? $oldId : $this->generateUniqueId();
+            if (!isset($entry['tags']) || !is_array($entry['tags'])) $entry['tags'] = [];
+            $this->indexData[$newId] = $entry;
+            $map[$oldId] = $newId;
+        }
+        if ($map) $this->saveIndex();
+        return $map;
+    }
+
     public function removePage($path) {
         $id = $this->getId($path);
         if ($id !== null) {

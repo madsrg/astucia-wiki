@@ -49,7 +49,10 @@ export const openCopyLightbox = async () => {
     const spacesResult = await api.call('list_spaces');
     spaceSelect.innerHTML = '';
     if (spacesResult.success && spacesResult.data?.length > 0) {
+        // A frozen space would refuse the write, so it is not offered as a target.
+        const frozen = new Set(spacesResult.readonly || []);
         for (const sp of spacesResult.data) {
+            if (frozen.has(sp) && sp !== state.currentSpace) continue;
             const opt = document.createElement('option');
             opt.value = sp;
             opt.textContent = sp;

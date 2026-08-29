@@ -12,6 +12,7 @@ require_once 'mailer.php';
 require_once __DIR__ . '/ai_core.php';
 require_once __DIR__ . '/agent_jobs.php';
 require_once __DIR__ . '/service_auth.php';
+require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/wikilinks.php';
 
 session_start();
@@ -855,7 +856,8 @@ if (isset($_REQUEST['action'])) {
                       'admin_get_oneoff_job_log',
                       'git_deleted_files', 'git_restore_deleted',
                       'admin_reindex',
-                      'admin_get_mcp_servers', 'admin_save_mcp_server', 'admin_delete_mcp_server', 'admin_test_mcp_server'];
+                      'admin_get_mcp_servers', 'admin_save_mcp_server', 'admin_delete_mcp_server', 'admin_test_mcp_server',
+                      'admin_space_settings', 'admin_set_space_readonly', 'admin_merge_space_preflight', 'admin_merge_space'];
     $requested_action = $_REQUEST['action'];
     $current_role     = get_current_role();
 
@@ -866,6 +868,40 @@ if (isset($_REQUEST['action'])) {
     if (in_array($requested_action, $admin_actions) && $current_role !== 'admin') {
         echo json_encode(['success' => false, 'message' => 'Admin access required.']);
         exit;
+    }
+
+    // Read-only Spaces: refuse every content-mutating action, whoever the actor is —
+    // administrators included, since the mode exists to freeze a space rather than to
+    // hint at it. One rule here covers browser sessions, AI Users, API Accounts and
+    // chat posting alike, because every content write is an action in $edit_actions;
+    // mcp.php and run_ai_agent_jobs.php reach content by their own routes and carry
+    // the same check. Space *management* is exempt: create/rename are settings rather
+    // than content, and an admin must be able to rename a frozen space.
+    // Read-only is stricter than the reader role, so it needs one action the reader
+    // role deliberately allows: a chat reaction rewrites the .chat file. Everything
+    // else that writes outside $edit_actions is bookkeeping, not content — the
+    // pending-message sweep in chat_messages (which would otherwise leave a
+    // placeholder spinning forever) and the addPage() calls in list/get_start_page
+    // that give an existing file an id.
+    $readonly_actions = array_merge($edit_actions, ['toggle_reaction']);
+    if (in_array($requested_action, $readonly_actions, true)
+        && !in_array($requested_action, ['create_space', 'rename_space'], true)) {
+        $_ro_names = [];
+        if (rtrim($space_dir, '/') !== rtrim(PAGES_DIR, '/')) {
+            $_ro_names[] = basename(rtrim($space_dir, '/'));
+        }
+        // move/copy into a frozen space is a write to that space, not to this one.
+        $_ro_target = trim($_REQUEST['target_space'] ?? '');
+        if ($_ro_target !== '') $_ro_names[] = basename($_ro_target);
+        foreach ($_ro_names as $_ro_name) {
+            if (!wiki_space_is_readonly($_ro_name)) continue;
+            echo json_encode([
+                'success'        => false,
+                'readonly_space' => $_ro_name,
+                'message'        => 'The space "' . $_ro_name . '" is read-only.',
+            ]);
+            exit;
+        }
     }
 
     try {
@@ -3549,7 +3585,11 @@ if (isset($_REQUEST['action'])) {
                         $spaces_list = array_values(array_filter($spaces_list, fn($s) => in_array($s, $_ls_allowed, true)));
                     }
                 }
-                echo json_encode(['success' => true, 'data' => $spaces_list]);
+                // `readonly` rides along as a separate array so `data` stays a plain
+                // list of names for its nine existing callers. Every client needs the
+                // flag, not just admins: it drives the frozen-space UI.
+                $_ls_readonly = array_values(array_filter($spaces_list, 'wiki_space_is_readonly'));
+                echo json_encode(['success' => true, 'data' => $spaces_list, 'readonly' => $_ls_readonly]);
                 break;
 
             case 'get_all_tags':
@@ -3651,6 +3691,17 @@ if (isset($_REQUEST['action'])) {
                 if ($search_idx) {
                     try { $search_idx->renameSpace($rs_safe_old, $rs_safe_new); } catch (\Throwable $_e) {}
                 }
+                // Per-space settings are keyed by name, so they have to follow it.
+                wiki_space_settings_rename($rs_safe_old, $rs_safe_new);
+                // So is the external-change stamp: without this the renamed space
+                // starts with no stamp (one needless full scan) and the old one is
+                // left behind forever, one more with every rename.
+                $rs_stamp_old = index_sync_stamp_path($rs_old_dir);
+                $rs_stamp_new = index_sync_stamp_path($rs_new_dir);
+                if ($rs_stamp_old && $rs_stamp_new && is_file($rs_stamp_old)) {
+                    @rename($rs_stamp_old, $rs_stamp_new);
+                }
+                if ($rs_stamp_old) @unlink($rs_stamp_old . '.lock');
                 echo json_encode(['success' => true]);
                 break;
 
@@ -3667,6 +3718,91 @@ if (isset($_REQUEST['action'])) {
                 $actor = get_current_actor();
                 wiki_scaffold_space($new_space_dir, $actor['uid'] ?? null, $actor['name'] ?? null);
                 echo json_encode(['success' => true]);
+                break;
+
+            case 'admin_space_settings':
+                // Everything the Space settings dialog needs, for every space, in one
+                // call: the read-only flag, a page count, and whether the space is its
+                // own git repository — which is what blocks it from being merged away.
+                $ss_out = [];
+                foreach (scandir(PAGES_DIR) as $ss_f) {
+                    if ($ss_f === '.' || $ss_f === '..' || $ss_f[0] === '.') continue;
+                    $ss_dir = rtrim(PAGES_DIR, '/') . '/' . $ss_f;
+                    if (!is_dir($ss_dir)) continue;
+                    $ss_index = $ss_dir . '/index.json';
+                    $ss_out[] = [
+                        'name'     => $ss_f,
+                        'readonly' => wiki_space_is_readonly($ss_f),
+                        'own_git'  => is_dir($ss_dir . '/.git'),
+                        'pages'    => is_file($ss_index)
+                            ? count(json_decode((string)file_get_contents($ss_index), true) ?: [])
+                            : 0,
+                    ];
+                }
+                echo json_encode([
+                    'success'  => true,
+                    'data'     => $ss_out,
+                    'root_git' => is_dir(rtrim(PAGES_DIR, '/') . '/.git'),
+                ]);
+                break;
+
+            case 'admin_set_space_readonly':
+                $sro_name = basename(trim($_POST['space_name'] ?? ''));
+                $sro_on   = in_array($_POST['readonly'] ?? '', ['1', 'true'], true);
+                if ($sro_name === '' || !is_dir(rtrim(PAGES_DIR, '/') . '/' . $sro_name)) {
+                    throw new Exception('Space not found.');
+                }
+                if (!wiki_space_set_readonly($sro_name, $sro_on)) {
+                    throw new Exception('Could not save space settings — is WIKI_SYSTEM_DATA writable?');
+                }
+                echo json_encode(['success' => true, 'readonly' => $sro_on]);
+                break;
+
+            case 'admin_merge_space_preflight':
+                // Dry run: works out where every file would land and reports the
+                // collisions, so the confirmation dialog can show the real numbers.
+                require_once __DIR__ . '/space_merge.php';
+                $mp_src   = trim($_REQUEST['source'] ?? '');
+                $mp_tgt   = trim($_REQUEST['target'] ?? '');
+                $mp_block = space_merge_blocker($mp_src, $mp_tgt);
+                if ($mp_block !== null) {
+                    echo json_encode(['success' => true, 'blocked' => $mp_block]);
+                    break;
+                }
+                $mp_plan    = space_merge_plan($mp_src, $mp_tgt);
+                $mp_renames = [];
+                foreach ($mp_plan['moves'] as $mp_m) {
+                    if (!$mp_m['renamed'] || count($mp_renames) >= 50) continue;
+                    $mp_renames[] = ['from' => $mp_m['from'], 'to' => $mp_m['to']];
+                }
+                echo json_encode([
+                    'success' => true,
+                    'blocked' => null,
+                    'pages'   => $mp_plan['pages'],
+                    'files'   => count($mp_plan['moves']),
+                    'renamed' => $mp_plan['renamed'],
+                    'skipped' => count($mp_plan['skips']),
+                    'renames' => $mp_renames,
+                    'git'     => space_merge_git_root(basename($mp_tgt)) !== null,
+                ]);
+                break;
+
+            case 'admin_merge_space':
+                require_once __DIR__ . '/space_merge.php';
+                // A large space is hundreds of renames plus a search-index rebuild.
+                @set_time_limit(600);
+                $ms_src   = trim($_POST['source'] ?? '');
+                $ms_tgt   = trim($_POST['target'] ?? '');
+                $ms_block = space_merge_blocker($ms_src, $ms_tgt);
+                if ($ms_block !== null) {
+                    echo json_encode(['success' => false, 'blocked' => $ms_block]);
+                    break;
+                }
+                $ms_actor = get_current_actor();
+                $ms_actor['email'] = (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email']))
+                    ? $_SESSION['user']['email'] : 'wiki@localhost';
+                $ms_plan = space_merge_plan($ms_src, $ms_tgt);
+                echo json_encode(space_merge_execute($ms_src, $ms_tgt, $ms_plan, $search_idx, $ms_actor));
                 break;
 
             case 'admin_get_ai_users':

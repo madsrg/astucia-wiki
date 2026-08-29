@@ -8,6 +8,7 @@
 // =================================================================
 
 require_once __DIR__ . '/git_helpers.php';
+require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/search_index.php';
 require_once __DIR__ . '/graph.php';
 require_once __DIR__ . '/llm_providers.php';
@@ -265,7 +266,18 @@ function parse_search_query(string $raw): array {
     ];
 }
 
+// The tools that write. Named here because the read-only check below and any future
+// per-space write rule need the same list, and adding a tool without adding it here
+// would silently exempt it.
+const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_add_tags', 'wiki_set_tags'];
+
 function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir) {
+    // A read-only Space is read-only for agents too. api.php's guard already covers
+    // chat @mentions, but mcp.php and run_ai_agent_jobs.php call this function
+    // directly — this is the one point all three routes share.
+    if (in_array($tool_name, WIKI_AI_WRITE_TOOLS, true) && wiki_space_dir_is_readonly($space_dir)) {
+        return 'Error: the space "' . basename(rtrim($space_dir, '/')) . '" is read-only; nothing in it can be changed.';
+    }
     switch ($tool_name) {
         case 'wiki_list_pages':
             $pages = $indexer->getAllPages();
