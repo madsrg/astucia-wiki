@@ -357,22 +357,11 @@ if (isset($_REQUEST['action'])) {
         // next to the chat they were asked in — so state the folder and spell out
         // the resulting path, since the tool takes a relative path string.
         $chat_dir_rel = ltrim(str_replace(rtrim($space_dir, '/'), '', dirname($chat_file)), '/');
-        $loc_ctx = ($chat_dir_rel === ''
-                ? "The current folder is the root of this space, so a new page named Example belongs at \"Example.md\". "
-                : "The current folder is \"{$chat_dir_rel}\", so a new page named Example belongs at \"{$chat_dir_rel}/Example.md\". ")
-            . "Create new pages in the current folder unless the request asks for a different location. ";
+        // Prepend wiki context so the AI knows where it is and what tools are available.
+        // Built by ai_core so the admin panel can show the same text (see
+        // admin_ai_builtin_instructions) instead of a copy that drifts.
+        $wiki_ctx = wiki_chat_context_prompt($space_name, $chat_name, $chat_dir_rel);
 
-        // Prepend wiki context so the AI knows where it is and what tools are available
-        $wiki_ctx = "You are operating in the \"{$space_name}\" wiki space (current chat: \"{$chat_name}\"). "
-            . $loc_ctx
-            . "Use wiki_list_pages to discover available pages, wiki_read_page to read content, "
-            . "and wiki_write_page to create or update .md pages. "
-            . "When calling wiki_write_page you MUST include the complete markdown content in the \"content\" field in the same tool call — never call it with an empty or missing content field. "
-            . "When the user asks you to create or modify wiki content, call the appropriate tool immediately — do not describe what you are about to do before doing it. "
-            . "Only invoke tools when the user's request actually requires wiki content. "
-            . wiki_markdown_features_prompt()
-            . "When writing internal links to other wiki pages, use the Markdown syntax [Page Title](?pageid=ID&space=SPACE) "
-            . "where ID and SPACE come from the wiki_list_pages results. Never use file paths as link targets for internal pages.\n\n";
         // If a .md page with the same name exists in the same folder, inject its content as context.
         // Kept in its own variable rather than appended to $wiki_ctx so /debug can price it
         // separately — it is unbounded and frequently the largest block in the payload.

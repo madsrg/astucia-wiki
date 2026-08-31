@@ -20,6 +20,14 @@ function wiki_is_template_path(?string $path): bool {
     return $path !== null && str_starts_with(ltrim($path, '/'), 'templates/');
 }
 
+// Every user record, or an empty list when there is no user file (auth disabled).
+function wiki_all_users(): array {
+    if (!defined('WIKI_SYSTEM_DATA')) return [];
+    $f = rtrim(WIKI_SYSTEM_DATA, '/') . '/users.json';
+    if (!is_file($f)) return [];
+    return json_decode((string)file_get_contents($f), true)['users'] ?? [];
+}
+
 function wiki_tool_definitions(): array {
     return [
         [
@@ -107,6 +115,24 @@ function wiki_tool_definitions(): array {
                     'tags' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Array of tag strings. Completely replaces existing tags.'],
                 ],
                 'required'   => ['path', 'tags'],
+            ],
+        ],
+        [
+            'name'        => 'wiki_list_people',
+            'description' => 'List the people who can be mentioned in this wiki (human users — AI users and API accounts are excluded). Returns a JSON array of objects with "name" and "role". Call this before wiki_mention_users so the names are spelled exactly right; a mention that misspells a name reaches nobody.',
+            'params'      => ['type' => 'object', 'properties' => (object)[], 'required' => []],
+        ],
+        [
+            'name'        => 'wiki_mention_users',
+            'description' => 'Notify one or more people by posting a message that mentions them, so it appears in their "My Mentions" list. Use this to tell someone a job is finished or that a page needs their attention. "target" is the chat thread (.chat) or page (.md) the message is appended to — a chat thread is usually the right place. Names must match wiki_list_people exactly. Only available when the AI user has editor role.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => [
+                    'users'   => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Names of the people to mention, exactly as wiki_list_people returns them.'],
+                    'message' => ['type' => 'string', 'description' => 'What to tell them, e.g. "the quarterly report is ready for review".'],
+                    'target'  => ['type' => 'string', 'description' => 'Relative path of the .chat thread or .md page to post into, e.g. Team.chat or Reports/Q3.md'],
+                ],
+                'required'   => ['users', 'message', 'target'],
             ],
         ],
     ];
@@ -269,7 +295,7 @@ function parse_search_query(string $raw): array {
 // The tools that write. Named here because the read-only check below and any future
 // per-space write rule need the same list, and adding a tool without adding it here
 // would silently exempt it.
-const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_add_tags', 'wiki_set_tags'];
+const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_add_tags', 'wiki_set_tags', 'wiki_mention_users'];
 
 function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir) {
     // A read-only Space is read-only for agents too. api.php's guard already covers
@@ -327,11 +353,11 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
             $ai_git_email = !empty($ai_user['email']) ? $ai_user['email'] : 'ai@wiki.localhost';
             if ($is_new) {
                 $indexer->addPage($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
-                git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Create ' . basename($rel));
+                git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Create ' . basename($rel), $space_dir);
                 return "Page created: {$rel}";
             }
             $indexer->updateModified($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
-            git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Update ' . basename($rel));
+            git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Update ' . basename($rel), $space_dir);
             return "Page updated: {$rel}";
 
         case 'wiki_write_json':
@@ -359,12 +385,87 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
             $ai_git_email = !empty($ai_user['email']) ? $ai_user['email'] : 'ai@wiki.localhost';
             if ($is_new) {
                 $indexer->addPage($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
-                git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Create ' . basename($rel));
+                git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Create ' . basename($rel), $space_dir);
                 return "JSON page created: {$rel}";
             }
             $indexer->updateModified($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
-            git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Update ' . basename($rel));
+            git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Update ' . basename($rel), $space_dir);
             return "JSON page updated: {$rel}";
+
+        case 'wiki_list_people':
+            // Names only, plus role. An AI has no business with anyone's email address,
+            // and a mention needs nothing more than the name.
+            $lp_out = [];
+            foreach (wiki_all_users() as $lp_u) {
+                if (!empty($lp_u['is_ai']) || !empty($lp_u['is_system'])) continue;
+                if (empty($lp_u['name'])) continue;
+                $lp_out[] = ['name' => $lp_u['name'], 'role' => $lp_u['role'] ?? 'editor'];
+            }
+            return json_encode($lp_out, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        case 'wiki_mention_users':
+            if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot post mentions.';
+            $mu_names = $tool_input['users'] ?? [];
+            if (is_string($mu_names)) $mu_names = [$mu_names];
+            if (!is_array($mu_names) || !$mu_names) return 'Error: "users" is required and must be a non-empty array of names.';
+            $mu_message = trim((string)($tool_input['message'] ?? ''));
+            if ($mu_message === '') return 'Error: "message" is required.';
+            $mu_rel = ltrim(str_replace('..', '', (string)($tool_input['target'] ?? '')), '/');
+            if ($mu_rel === '') return 'Error: "target" is required — the .chat or .md path to post into.';
+            $mu_ext = strtolower(pathinfo($mu_rel, PATHINFO_EXTENSION));
+            if (!in_array($mu_ext, ['chat', 'md'], true)) return 'Error: target must be a .chat thread or a .md page.';
+
+            // Resolve every name before writing anything: a half-delivered notification
+            // that silently drops the one person who mattered is worse than an error the
+            // model can correct.
+            $mu_people = [];
+            foreach (wiki_all_users() as $mu_u) {
+                if (!empty($mu_u['is_ai']) || !empty($mu_u['is_system']) || empty($mu_u['name'])) continue;
+                $mu_people[mb_strtolower($mu_u['name'])] = $mu_u['name'];
+            }
+            $mu_resolved = [];
+            $mu_unknown  = [];
+            foreach ($mu_names as $mu_n) {
+                $mu_key = mb_strtolower(trim(ltrim((string)$mu_n, '@#')));
+                if (isset($mu_people[$mu_key])) $mu_resolved[] = $mu_people[$mu_key];
+                else                            $mu_unknown[]  = (string)$mu_n;
+            }
+            if ($mu_unknown) {
+                return 'Error: no such user: ' . implode(', ', $mu_unknown)
+                     . '. Call wiki_list_people for the exact names. Nothing was posted.';
+            }
+            $mu_resolved = array_values(array_unique($mu_resolved));
+            // @ is the sigil that addresses a person; # would aim at an AI user.
+            $mu_line = implode(' ', array_map(fn($n) => '@' . $n, $mu_resolved)) . ' ' . $mu_message;
+
+            $mu_abs = rtrim($space_dir, '/') . '/' . $mu_rel;
+            if (!file_exists($mu_abs)) return 'Error: target not found: ' . $mu_rel;
+            $mu_git_name  = $ai_user['name'] ?? 'AI';
+            $mu_git_email = !empty($ai_user['email']) ? $ai_user['email'] : 'ai@wiki.localhost';
+
+            if ($mu_ext === 'chat') {
+                $mu_data = json_decode((string)file_get_contents($mu_abs), true);
+                if (!is_array($mu_data) || !isset($mu_data['messages'])) return 'Error: not a valid chat thread: ' . $mu_rel;
+                $mu_data['messages'][] = [
+                    'id'        => $mu_data['nextMessageId'] ?? (count($mu_data['messages']) + 1),
+                    'uid'       => (int)($ai_user['uid'] ?? 0),
+                    'name'      => $ai_user['name'] ?? 'AI',
+                    'timestamp' => date('c'),
+                    'text'      => $mu_line,
+                ];
+                $mu_data['nextMessageId'] = ($mu_data['nextMessageId'] ?? count($mu_data['messages'])) + 1;
+                if (file_put_contents($mu_abs, json_encode($mu_data, JSON_PRETTY_PRINT)) === false) {
+                    return 'Error: could not write to ' . $mu_rel;
+                }
+            } else {
+                if (file_put_contents($mu_abs, "\n\n" . $mu_line . "\n", FILE_APPEND) === false) {
+                    return 'Error: could not write to ' . $mu_rel;
+                }
+            }
+            $indexer->updateModified($mu_rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
+            git_auto_commit($mu_abs, $mu_git_name, $mu_git_email, 'Mention ' . implode(', ', $mu_resolved) . ' in ' . basename($mu_rel), $space_dir);
+            return 'Mentioned ' . implode(', ', $mu_resolved) . ' in ' . $mu_rel
+                 . '. They will see it in their My Mentions list.';
 
         case 'wiki_related_pages':
             $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');

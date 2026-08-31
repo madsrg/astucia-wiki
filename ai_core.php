@@ -267,6 +267,81 @@ function wiki_markdown_features_prompt(): string {
          . "Keep all of these verbatim when editing a page that uses them. ";
 }
 
+/**
+ * How to reach a person, for the same two prompts.
+ *
+ * Kept out of wiki_markdown_features_prompt() because it is not Markdown syntax, and
+ * shared for the same reason that one is: the chat-reply and agent-job prompts are
+ * near-copies, and a rule spelled out in only one of them drifts.
+ *
+ * Both halves are things the model cannot work out for itself. The sigil split is a
+ * convention of this wiki — an AI writing "#Alice" is addressing an AI user, and reaches
+ * no person. And a model will not reach for a notification tool unprompted: told to
+ * "let Alice know when the report is done", it writes "Done, Alice!" into a page nobody
+ * is watching. ~45 tokens; `/debug` prices it inside "Wiki instructions".
+ */
+function wiki_mentions_prompt(): string {
+    return "To notify a person, mention them as @Name — # addresses an AI user, not a person. "
+         . "wiki_list_people gives the exact names, and wiki_mention_users posts the mention "
+         . "into a chat thread or page so it reaches their My Mentions list. ";
+}
+
+/**
+ * Where the AI is, in words. Shared by both context builders below.
+ *
+ * Without an explicit current folder, models invent a plausible-looking path ("Notes/…")
+ * for a new page instead of writing it next to what they were asked about — so state the
+ * folder and spell out the resulting path, since the tool takes a relative path string.
+ */
+function wiki_location_prompt(string $dir_rel, string $asker = 'request'): string {
+    return ($dir_rel === ''
+            ? "The current folder is the root of this space, so a new page named Example belongs at \"Example.md\". "
+            : "The current folder is \"{$dir_rel}\", so a new page named Example belongs at \"{$dir_rel}/Example.md\". ")
+        . "Create new pages in the current folder unless the {$asker} asks for a different location. ";
+}
+
+/**
+ * The built-in context sent ahead of an AI user's own system prompt, for a chat reply.
+ *
+ * Extracted from api.php so the admin panel can show an AI user exactly what it is told,
+ * without a second copy of the wording: a preview assembled separately would drift from
+ * the real thing the first time either was edited, which is the whole reason for showing
+ * it at all.
+ */
+function wiki_chat_context_prompt(string $space_name, string $chat_name, string $chat_dir_rel): string {
+    return "You are operating in the \"{$space_name}\" wiki space (current chat: \"{$chat_name}\"). "
+        . "Each message below is prefixed with its author's name, so \"me\" is whoever wrote the message you are answering. "
+        . wiki_location_prompt($chat_dir_rel, 'request')
+        . "Use wiki_list_pages to discover available pages, wiki_read_page to read content, "
+        . "and wiki_write_page to create or update .md pages. "
+        . "When calling wiki_write_page you MUST include the complete markdown content in the \"content\" field in the same tool call — never call it with an empty or missing content field. "
+        . "When the user asks you to create or modify wiki content, call the appropriate tool immediately — do not describe what you are about to do before doing it. "
+        . "Only invoke tools when the user's request actually requires wiki content. "
+        . wiki_markdown_features_prompt()
+        . wiki_mentions_prompt()
+        . "When writing internal links to other wiki pages, use the Markdown syntax [Page Title](?pageid=ID&space=SPACE) "
+        . "where ID and SPACE come from the wiki_list_pages results. Never use file paths as link targets for internal pages.\n\n";
+}
+
+/** The same, for an agent job. $requester is '' for a scheduled job, which has none. */
+function wiki_job_context_prompt(string $space_name, string $dir_rel, string $requester = ''): string {
+    // Who asked. Without it "mention me when you are done" — the natural way to ask —
+    // has no referent, since the model sees the prompt text and never the queue entry
+    // around it.
+    $who_ctx = $requester !== ''
+        ? "This job was requested by {$requester}; \"me\" and \"the requester\" mean @{$requester}. "
+        : '';
+    return "You are an AI agent operating in the \"{$space_name}\" wiki space. "
+        . $who_ctx
+        . wiki_location_prompt($dir_rel, 'task')
+        . "Use wiki_list_pages to discover pages, wiki_read_page to read content, "
+        . "and wiki_write_page to create or update .md pages. "
+        . "When calling wiki_write_page you MUST include the complete markdown content in the \"content\" field. "
+        . wiki_markdown_features_prompt()
+        . wiki_mentions_prompt()
+        . "Proceed with tasks directly using tools — do not describe what you are about to do before doing it.\n\n";
+}
+
 // Resolves an AI user's effective system prompt. When a system-prompt page is
 // configured (space + relative .md path), its Markdown content is used — so
 // Editors can view and edit the AI's instructions as an ordinary wiki page,
@@ -924,21 +999,12 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     // otherwise the model invents a plausible path for a new page.
     $job_chat_rel = ltrim(str_replace('..', '', (string)($job['reply_to']['chat'] ?? '')), '/');
     $job_dir_rel  = $job_chat_rel !== '' ? trim(dirname($job_chat_rel), '/.') : '';
-    $loc_ctx = ($job_dir_rel === ''
-            ? "The current folder is the root of this space, so a new page named Example belongs at \"Example.md\". "
-            : "The current folder is \"{$job_dir_rel}\", so a new page named Example belongs at \"{$job_dir_rel}/Example.md\". ")
-        . "Create new pages in the current folder unless the task asks for a different location. ";
-
     // --- Build system prompt with wiki context ---
     // Held in its own variable so the run log can price the built-in instructions
     // separately from the AI user's own system prompt.
-    $wiki_ctx = "You are an AI agent operating in the \"{$space_name}\" wiki space. "
-        . $loc_ctx
-        . "Use wiki_list_pages to discover pages, wiki_read_page to read content, "
-        . "and wiki_write_page to create or update .md pages. "
-        . "When calling wiki_write_page you MUST include the complete markdown content in the \"content\" field. "
-        . wiki_markdown_features_prompt()
-        . "Proceed with tasks directly using tools — do not describe what you are about to do before doing it.\n\n";
+    $wiki_ctx = wiki_job_context_prompt($space_name, $job_dir_rel,
+                                        trim((string)($job['requested_by']['name'] ?? '')));
+
     $full_system = $wiki_ctx . $sys_prompt;
 
     // --- Tool executor closure ---

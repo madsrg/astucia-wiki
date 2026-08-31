@@ -9,10 +9,19 @@
 // =================================================================
 
 // Returns ['root' => $dir, 'prefix' => $relpath_prefix] or null if no git repo found.
-// Checks $space_dir first, then PAGES_DIR — stops there (never climbs higher).
-function find_git_root(): ?array {
-    global $space_dir;
-    $space = rtrim($space_dir, '/');
+// Checks the space first, then PAGES_DIR — stops there (never climbs higher).
+//
+// $for_space is passed explicitly by callers that have a space in hand, and must be by
+// anything reachable from the cron job runner: there the `$space_dir` global belongs to
+// whichever scheduled job ran last, or is unset entirely during a one-off job, so a
+// commit would be staged against the wrong repository. Web callers pass nothing and keep
+// reading the current request's space exactly as before.
+function find_git_root(?string $for_space = null): ?array {
+    if ($for_space === null) {
+        global $space_dir;
+        $for_space = (string)$space_dir;
+    }
+    $space = rtrim($for_space, '/');
     if (is_dir($space . '/.git')) {
         return ['root' => $space, 'prefix' => ''];
     }
@@ -40,11 +49,15 @@ function git_run(array $args, string $cwd): array {
     return ['output' => trim($out), 'code' => proc_close($proc)];
 }
 
-function git_auto_commit(string $abs_path, string $git_name, string $git_email, string $commit_msg): void {
-    global $space_dir;
-    $git_root = find_git_root();
+function git_auto_commit(string $abs_path, string $git_name, string $git_email, string $commit_msg,
+                         ?string $for_space = null): void {
+    if ($for_space === null) {
+        global $space_dir;
+        $for_space = (string)$space_dir;
+    }
+    $git_root = find_git_root($for_space);
     if (!$git_root) return;
-    $rel         = ltrim(str_replace(rtrim($space_dir, '/') . '/', '', $abs_path), '/');
+    $rel         = ltrim(str_replace(rtrim($for_space, '/') . '/', '', $abs_path), '/');
     $git_relpath = $git_root['prefix'] . $rel;
     git_run(['add', $git_relpath], $git_root['root']);
     git_run([
