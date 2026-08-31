@@ -69,7 +69,7 @@ export default {
     'search.no-results': 'No se encontraron páginas.', 'search.tag-results': 'Páginas etiquetadas con \"{tag}\"', 'search.all-spaces': 'Todos los espacios',
     'search.prev': '← Anterior', 'search.next': 'Siguiente →', 'search.page-of': 'Página {page} de {total}',
 
-    'chat.send': 'Enviar', 'chat.placeholder': 'Escribe un mensaje… (Enter para enviar, Mayús+Enter para nueva línea, # para mencionar, / para comandos)',
+    'chat.send': 'Enviar', 'chat.placeholder': 'Escribe un mensaje… (Enter para enviar, Mayús+Enter para nueva línea, @ para personas, # para IA, / para comandos)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Responder a {name}',
     'chat.new-topic-toggle': 'Nuevo tema', 'chat.new-topic-toggle-title': 'Iniciar un nuevo tema (Alt+C) — reinicia el contexto de la IA para el próximo mensaje',
     'chat.copy-title': 'Copiar mensaje',
@@ -143,7 +143,7 @@ export default {
     'insert-list.hint2': 'Selecciona la vista a mostrar:', 'insert-list.back-btn': '← Volver',
     'insert-list.insert-btn': 'Insertar lista',
 
-    'comment.title': 'Insertar comentario', 'comment.placeholder': 'Escribe un comentario… usa # para mencionar a alguien',
+    'comment.title': 'Insertar comentario', 'comment.placeholder': 'Escribe un comentario… usa @ para mencionar a alguien',
     'comment.hint': 'Ctrl+Enter para insertar', 'comment.cancel-btn': 'Cancelar', 'comment.insert-btn': 'Insertar',
 
     'git.title': 'Historial de versiones', 'git.loading': 'Cargando historial…',
@@ -548,6 +548,10 @@ export default {
     'spaces.created': 'Space "{name}" creado', 'spaces.failed': 'No se pudo crear el space',
 
     'mentions.my': 'Mis menciones', 'comments.my': 'Mis comentarios',
+    'mentions.new': 'Nuevo',
+    'mentions.new-count': '{n} mención(es) nueva(s) desde la última vez que miraste',
+    'mentions.toast-one': 'Te han mencionado en «{where}»',
+    'mentions.toast-many': '{n} menciones nuevas',
 
     'session.warning': 'La sesión expira en {time} — sigue trabajando o haz clic en Mantener sesión.',
     'session.stay': 'Mantener sesión',

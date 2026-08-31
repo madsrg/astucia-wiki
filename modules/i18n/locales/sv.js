@@ -69,7 +69,7 @@ export default {
     'search.no-results': 'Inga sidor hittades.', 'search.tag-results': 'Sidor taggade med "{tag}"', 'search.all-spaces': 'Alla utrymmen',
     'search.prev': '← Föregående', 'search.next': 'Nästa →', 'search.page-of': 'Sida {page} av {total}',
 
-    'chat.send': 'Skicka', 'chat.placeholder': 'Skriv ett meddelande… (Enter för att skicka, Skift+Enter för ny rad, # för att nämna, / för kommandon)',
+    'chat.send': 'Skicka', 'chat.placeholder': 'Skriv ett meddelande… (Enter för att skicka, Skift+Enter för ny rad, @ för personer, # för AI, / för kommandon)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Svara {name}',
     'chat.new-topic-toggle': 'Nytt ämne', 'chat.new-topic-toggle-title': 'Starta ett nytt ämne (Alt+C) — återställer AI:ns kontext för nästa meddelande',
     'chat.copy-title': 'Kopiera meddelande',
@@ -143,7 +143,7 @@ export default {
     'insert-list.hint2': 'Välj vy att visa:', 'insert-list.back-btn': '← Tillbaka',
     'insert-list.insert-btn': 'Infoga lista',
 
-    'comment.title': 'Infoga kommentar', 'comment.placeholder': 'Skriv en kommentar… använd # för att nämna någon',
+    'comment.title': 'Infoga kommentar', 'comment.placeholder': 'Skriv en kommentar… använd @ för att nämna någon',
     'comment.hint': 'Ctrl+Enter för att infoga', 'comment.cancel-btn': 'Avbryt', 'comment.insert-btn': 'Infoga',
 
     'git.title': 'Versionshistorik', 'git.loading': 'Laddar historik…',
@@ -548,6 +548,10 @@ export default {
     'spaces.created': 'Space "{name}" skapat', 'spaces.failed': 'Det gick inte att skapa space',
 
     'mentions.my': 'Mina omnämnanden', 'comments.my': 'Mina kommentarer',
+    'mentions.new': 'Ny',
+    'mentions.new-count': '{n} nya omnämnanden sedan du senast tittade',
+    'mentions.toast-one': 'Du nämndes i ”{where}”',
+    'mentions.toast-many': '{n} nya omnämnanden',
 
     'session.warning': 'Sessionen går ut om {time} — fortsätt arbeta eller klicka på Håll mig inloggad.',
     'session.stay': 'Håll mig inloggad',

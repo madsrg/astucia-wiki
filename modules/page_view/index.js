@@ -4,7 +4,7 @@
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { icons } from '../core/icons.js';
-import { showToast, confirmModal } from '../core/utils.js';
+import { showToast, confirmModal, highlightMentions } from '../core/utils.js';
 import { setEditingMode } from '../page_edit/index.js';
 import { renderBrowsePane, findItemsByPath } from '../file_tree/index.js';
 import { renderTags } from '../tags/index.js';
@@ -37,7 +37,7 @@ export const processUserCommentTags = async (content) => {
         const initial = name.charAt(0).toUpperCase();
         const color   = COMMENT_PALETTE[uid % COMMENT_PALETTE.length];
         const esc     = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        const body    = esc(text).replace(/#(\S+)/g, '<span class="chat-mention">#$1</span>');
+        const body    = highlightMentions(esc(text));
         result = result.replace(m[0],
             `<div class="page-comment"><div class="page-comment-header">` +
             `<span class="page-comment-avatar" style="background:${color}">${initial}</span>` +

@@ -69,7 +69,7 @@ export default {
     'search.no-results': 'Keine Seiten gefunden.', 'search.tag-results': 'Seiten mit Tag „{tag}"', 'search.all-spaces': 'Alle Bereiche',
     'search.prev': '← Zurück', 'search.next': 'Weiter →', 'search.page-of': 'Seite {page} von {total}',
 
-    'chat.send': 'Senden', 'chat.placeholder': 'Nachricht eingeben… (Enter zum Senden, Umschalt+Enter für neue Zeile, # für Erwähnungen, / für Befehle)',
+    'chat.send': 'Senden', 'chat.placeholder': 'Nachricht eingeben… (Enter zum Senden, Umschalt+Enter für neue Zeile, @ für Personen, # für KI, / für Befehle)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Antwort an {name}',
     'chat.new-topic-toggle': 'Neues Thema', 'chat.new-topic-toggle-title': 'Neues Thema beginnen (Alt+C) — setzt den Kontext der KI für die nächste Nachricht zurück',
     'chat.copy-title': 'Nachricht kopieren',
@@ -143,7 +143,7 @@ export default {
     'insert-list.hint2': 'Anzuzeigende Ansicht auswählen:', 'insert-list.back-btn': '← Zurück',
     'insert-list.insert-btn': 'Liste einfügen',
 
-    'comment.title': 'Kommentar einfügen', 'comment.placeholder': 'Kommentar schreiben… # für Erwähnungen',
+    'comment.title': 'Kommentar einfügen', 'comment.placeholder': 'Kommentar schreiben… @ für Erwähnungen',
     'comment.hint': 'Strg+Enter zum Einfügen', 'comment.cancel-btn': 'Abbrechen', 'comment.insert-btn': 'Einfügen',
 
     'git.title': 'Versionsverlauf', 'git.loading': 'Verlauf wird geladen…',
@@ -548,6 +548,10 @@ export default {
     'spaces.created': 'Space „{name}" erstellt', 'spaces.failed': 'Space konnte nicht erstellt werden',
 
     'mentions.my': 'Meine Erwähnungen', 'comments.my': 'Meine Kommentare',
+    'mentions.new': 'Neu',
+    'mentions.new-count': '{n} neue Erwähnung(en) seit Ihrem letzten Blick',
+    'mentions.toast-one': 'Sie wurden in „{where}“ erwähnt',
+    'mentions.toast-many': '{n} neue Erwähnungen',
 
     'session.warning': 'Sitzung läuft in {time} ab — arbeiten Sie weiter oder klicken Sie auf Angemeldet bleiben.',
     'session.stay': 'Angemeldet bleiben',

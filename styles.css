@@ -159,6 +159,14 @@ body {
 }
 .sidebar-icon-btn:hover { color: var(--text-color); background: #f0f4f8; }
 
+/* Unread count on My Mentions. The button is the positioning context, so the badge
+   can sit on its corner without reserving layout space when there is nothing to show. */
+.sidebar-icon-btn { position: relative; }
+.sidebar-badge { position: absolute; top: -2px; right: -2px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--accent-danger); color: #fff; font-size: 0.62rem; font-weight: 700; line-height: 15px; text-align: center; pointer-events: none; box-shadow: 0 0 0 2px var(--sidebar-bg, #fff); }
+
+/* A mention the user has not seen yet, in the results list. */
+.sr-new-badge { font-size: 0.68rem; font-weight: 700; padding: 0.15em 0.55em; border-radius: 4px; background: var(--accent-danger); color: #fff; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
+
 /* ── ToC overlay panel ────────────────────────────────────────────────────── */
 #toc-panel { position: absolute; left: 0; background: var(--sidebar-bg); color: var(--sidebar-text); z-index: 100; transform: translateX(-110%); transition: transform 0.25s ease; display: flex; flex-direction: column; overflow: hidden; }
 #toc-panel.open { transform: translateX(0); box-shadow: 4px 0 20px rgba(0,0,0,0.2); }

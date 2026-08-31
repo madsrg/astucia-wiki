@@ -69,12 +69,14 @@ const buildResultCard = (page, showSpace) => {
 
     const spaceBadge = (showSpace && page.space)
         ? `<span class="sr-space-badge">${escHtml(page.space)}</span>` : '';
+    // Set only by the mentions scan, so every other caller renders exactly as before.
+    const newBadge = page.is_new ? `<span class="sr-new-badge">${escHtml(t('mentions.new'))}</span>` : '';
 
     return `
         <div class="sr-card">
             <div class="sr-card-top">
                 <a href="#" class="sr-title search-result-link" data-id="${page.id}" data-space="${escHtml(page.space || '')}">${escHtml(name)}</a>
-                ${spaceBadge}<span class="sr-type-badge ${type.cls}">${type.label}</span>
+                ${newBadge}${spaceBadge}<span class="sr-type-badge ${type.cls}">${type.label}</span>
             </div>
             ${folderPath ? `<div class="sr-path">${escHtml(folderPath)}</div>` : ''}
             ${heading    ? `<div class="sr-heading">${escHtml(heading)}</div>` : ''}

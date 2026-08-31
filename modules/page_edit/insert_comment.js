@@ -2,7 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { insertMarkdown, insertBlock } from './editor.js';
-import { getUsers, getMentionableUsers } from '../core/users.js';
+import { getUsers, getMentionableUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 
 const EMOJIS = ['😀','😂','😍','🤔','😢','😮','😡','👍','👎','👋','🙏','❤️','🎉','🔥','✅','❌','⭐','💡','🚀','📝','🎯','👀','💬','🤝'];
 
@@ -52,19 +52,22 @@ export const init = () => {
         const val = input.value;
         const pos = input.selectionStart;
         let start = pos - 1;
-        while (start >= 0 && val[start] !== '#' && val[start] !== ' ' && val[start] !== '\n') start--;
-        if (start < 0 || val[start] !== '#') { mentionPop.classList.add('hidden'); return; }
+        while (start >= 0 && val[start] !== '#' && val[start] !== '@' && val[start] !== ' ' && val[start] !== '\n') start--;
+        if (start < 0 || (val[start] !== '#' && val[start] !== '@')) { mentionPop.classList.add('hidden'); return; }
+        const sigil   = val[start];
         const query   = val.slice(start + 1, pos).toLowerCase();
-        const matches = (await getMentionableUsers()).filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
+        // @ offers people, # offers AI users — the same split as the chat composer.
+        const pool    = await (sigil === '#' ? getAiMentionables() : getPeopleMentionables());
+        const matches = pool.filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
         if (!matches.length) { mentionPop.classList.add('hidden'); return; }
         mentionPop.innerHTML = '';
         matches.forEach(u => {
             const item = document.createElement('div');
             item.className = 'chat-mention-item';
-            item.textContent = '#' + u.name;
+            item.textContent = sigil + u.name;
             item.addEventListener('mousedown', (e) => {
                 e.preventDefault();
-                const insert = '#' + u.name + ' ';
+                const insert = sigil + u.name + ' ';
                 input.value = input.value.slice(0, start) + insert + input.value.slice(pos);
                 input.selectionStart = input.selectionEnd = start + insert.length;
                 mentionPop.classList.add('hidden');
@@ -87,11 +90,12 @@ export const init = () => {
         const uid     = window.WIKI_USER_UID ?? 0;
         const encoded = btoa(unescape(encodeURIComponent(text)));
 
-        // Collect UIDs of users mentioned via #Name in the comment text
-        // (API accounts excluded — they can't be notified).
+        // Collect UIDs of users mentioned in the comment text (API accounts excluded —
+        // they can't be notified). Both sigils are read: @ is what the composer now
+        // inserts for a person, and # is what comments written before the split used.
         const users = await getMentionableUsers();
         const mentionedUids = [];
-        const mentionRe = /#(\S+)/g;
+        const mentionRe = /[#@]([\w.-]*\w)/g;
         let m;
         while ((m = mentionRe.exec(text)) !== null) {
             const user = users.find(u => u.name.toLowerCase() === m[1].toLowerCase());

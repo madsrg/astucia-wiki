@@ -70,7 +70,7 @@ export default {
     'search.no-results': 'Ingen sider fundet.', 'search.tag-results': 'Sider tagget med "{tag}"', 'search.all-spaces': 'Alle rum',
     'search.prev': '← Forrige', 'search.next': 'Næste →', 'search.page-of': 'Side {page} af {total}',
 
-    'chat.send': 'Send', 'chat.placeholder': 'Skriv en besked… (Enter for at sende, Skift+Enter for ny linje, # for at nævne, / for kommandoer)',
+    'chat.send': 'Send', 'chat.placeholder': 'Skriv en besked… (Enter for at sende, Skift+Enter for ny linje, @ for personer, # for AI, / for kommandoer)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Svar til {name}',
     'chat.new-topic-toggle': 'Nyt emne', 'chat.new-topic-toggle-title': "Start et nyt emne (Alt+C) — nulstiller AI'ens kontekst for næste besked",
     'chat.copy-title': 'Kopiér besked',
@@ -144,7 +144,7 @@ export default {
     'insert-list.hint2': 'Vælg visning:', 'insert-list.back-btn': '← Tilbage',
     'insert-list.insert-btn': 'Indsæt liste',
 
-    'comment.title': 'Indsæt kommentar', 'comment.placeholder': 'Skriv en kommentar… brug # for at nævne nogen',
+    'comment.title': 'Indsæt kommentar', 'comment.placeholder': 'Skriv en kommentar… brug @ for at nævne nogen',
     'comment.hint': 'Ctrl+Enter for at indsætte', 'comment.cancel-btn': 'Annuller', 'comment.insert-btn': 'Indsæt',
 
     'git.title': 'Versionshistorik', 'git.loading': 'Indlæser historik…',
@@ -549,6 +549,10 @@ export default {
     'spaces.created': 'Space "{name}" oprettet', 'spaces.failed': 'Kunne ikke oprette space',
 
     'mentions.my': 'Mine omtaler', 'comments.my': 'Mine kommentarer',
+    'mentions.new': 'Ny',
+    'mentions.new-count': '{n} ny(e) omtale(r), siden du sidst kiggede',
+    'mentions.toast-one': 'Du blev nævnt i “{where}”',
+    'mentions.toast-many': '{n} nye omtaler',
 
     'session.warning': 'Sessionen udløber om {time} — fortsæt med at arbejde, eller klik på Forbliv logget ind.',
     'session.stay': 'Forbliv logget ind',

@@ -52,4 +52,20 @@ export const api = {
             return { success: false, message: error.message };
         }
     },
+
+    /**
+     * A request the user did not ask for.
+     *
+     * The session's idle timeout is measured from `state.lastApiCallTime`, which every
+     * call() bumps — so a poller running on a timer would hold the session open forever
+     * and quietly disable the timeout altogether. This restores the previous stamp
+     * afterwards, so a background poll can see the server without counting as the user
+     * being at their desk.
+     */
+    background: async (action, params = {}) => {
+        const before = state.lastApiCallTime;
+        const res = await api.call(action, params);
+        state.lastApiCallTime = before;
+        return res;
+    },
 };

@@ -176,7 +176,7 @@ export default {
 
     // Chat
     'chat.send': 'भेजें',
-    'chat.placeholder': 'संदेश लिखें… (भेजने के लिए Enter, नई पंक्ति के लिए Shift+Enter, उल्लेख के लिए #, कमांड के लिए /)',
+    'chat.placeholder': 'संदेश लिखें… (भेजने के लिए Enter, नई पंक्ति के लिए Shift+Enter, व्यक्ति के लिए @, AI के लिए #, कमांड के लिए /)',
     'chat.emoji-title': 'इमोजी',
     'chat.reply-title': '{name} को उत्तर दें',
     'chat.new-topic-toggle': 'नया विषय',
@@ -301,7 +301,7 @@ export default {
     'insert-list.insert-btn': 'सूची सम्मिलित करें',
 
     'comment.title': 'टिप्पणी सम्मिलित करें',
-    'comment.placeholder': 'एक टिप्पणी लिखें… किसी का उल्लेख करने के लिए # का उपयोग करें',
+    'comment.placeholder': 'एक टिप्पणी लिखें… किसी का उल्लेख करने के लिए @ का उपयोग करें',
     'comment.hint': 'सम्मिलित करने के लिए Ctrl+Enter',
     'comment.cancel-btn': 'रद्द करें',
     'comment.insert-btn': 'सम्मिलित करें',
@@ -745,6 +745,10 @@ export default {
 
     // Mentions
     'mentions.my': 'मेरे उल्लेख',
+    'mentions.new': 'नया',
+    'mentions.new-count': 'पिछली बार देखने के बाद से {n} नए उल्लेख',
+    'mentions.toast-one': '“{where}” में आपका उल्लेख हुआ',
+    'mentions.toast-many': '{n} नए उल्लेख',
     'comments.my': 'मेरी टिप्पणियाँ',
 
     // Session

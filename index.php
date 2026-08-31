@@ -319,7 +319,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
                             </button>
                         </div>
-                        <textarea id="pc-input" class="chat-input" rows="1" data-i18n-placeholder="chat.placeholder" placeholder="Type a message… (Enter to send, Shift+Enter for new line, # to mention)"></textarea>
+                        <textarea id="pc-input" class="chat-input" rows="1" data-i18n-placeholder="chat.placeholder" placeholder="Type a message… (Enter to send, Shift+Enter for new line, @ for people, # for AI)"></textarea>
                         <button id="pc-send-btn" class="btn btn-blue chat-send-btn" data-i18n="chat.send">Send</button>
                     </div>
                 </div>
@@ -404,7 +404,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
                             </button>
                         </div>
-                        <textarea id="chat-input" class="chat-input" data-i18n-placeholder="chat.placeholder" placeholder="Type a message… (Enter to send, Shift+Enter for new line, # to mention)" rows="1"></textarea>
+                        <textarea id="chat-input" class="chat-input" data-i18n-placeholder="chat.placeholder" placeholder="Type a message… (Enter to send, Shift+Enter for new line, @ for people, # for AI)" rows="1"></textarea>
                         <button id="chat-send-btn" class="btn btn-blue chat-send-btn" data-i18n="chat.send">Send</button>
                     </div>
                 </div>
@@ -813,7 +813,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <h3 data-i18n="comment.title">Insert Comment</h3>
             <div class="comment-compose-area">
                 <div class="comment-input-wrap">
-                    <textarea id="comment-input" class="comment-input-textarea" data-i18n-placeholder="comment.placeholder" placeholder="Write a comment… use # to mention someone" rows="4"></textarea>
+                    <textarea id="comment-input" class="comment-input-textarea" data-i18n-placeholder="comment.placeholder" placeholder="Write a comment… use @ to mention someone" rows="4"></textarea>
                     <div id="comment-mention-popup" class="chat-mention-popup comment-mention-popup hidden"></div>
                 </div>
                 <div class="comment-compose-toolbar">

@@ -69,7 +69,7 @@ export default {
     'search.no-results': 'Aucune page trouvée.', 'search.tag-results': 'Pages avec le tag « {tag} »', 'search.all-spaces': 'Tous les espaces',
     'search.prev': '← Précédent', 'search.next': 'Suivant →', 'search.page-of': 'Page {page} sur {total}',
 
-    'chat.send': 'Envoyer', 'chat.placeholder': 'Tapez un message… (Entrée pour envoyer, Maj+Entrée pour nouvelle ligne, # pour mentionner, / pour commandes)',
+    'chat.send': 'Envoyer', 'chat.placeholder': 'Tapez un message… (Entrée pour envoyer, Maj+Entrée pour nouvelle ligne, @ pour les personnes, # pour l\'IA, / pour commandes)',
     'chat.emoji-title': 'Emoji', 'chat.reply-title': 'Répondre à {name}',
     'chat.new-topic-toggle': 'Nouveau sujet', 'chat.new-topic-toggle-title': "Démarrer un nouveau sujet (Alt+C) — réinitialise le contexte de l'IA pour le prochain message",
     'chat.copy-title': 'Copier le message',
@@ -143,7 +143,7 @@ export default {
     'insert-list.hint2': 'Sélectionnez la vue à afficher :', 'insert-list.back-btn': '← Retour',
     'insert-list.insert-btn': 'Insérer la liste',
 
-    'comment.title': 'Insérer un commentaire', 'comment.placeholder': 'Rédigez un commentaire… utilisez # pour mentionner quelqu\'un',
+    'comment.title': 'Insérer un commentaire', 'comment.placeholder': 'Rédigez un commentaire… utilisez @ pour mentionner quelqu\'un',
     'comment.hint': 'Ctrl+Entrée pour insérer', 'comment.cancel-btn': 'Annuler', 'comment.insert-btn': 'Insérer',
 
     'git.title': 'Historique des versions', 'git.loading': 'Chargement de l\'historique…',
@@ -548,6 +548,10 @@ export default {
     'spaces.created': 'Space « {name} » créé', 'spaces.failed': 'Impossible de créer le space',
 
     'mentions.my': 'Mes mentions', 'comments.my': 'Mes commentaires',
+    'mentions.new': 'Nouveau',
+    'mentions.new-count': '{n} nouvelle(s) mention(s) depuis votre dernière consultation',
+    'mentions.toast-one': 'Vous avez été mentionné dans « {where} »',
+    'mentions.toast-many': '{n} nouvelles mentions',
 
     'session.warning': 'La session expire dans {time} — continuez à travailler ou cliquez sur Rester connecté.',
     'session.stay': 'Rester connecté',

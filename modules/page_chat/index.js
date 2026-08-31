@@ -3,8 +3,8 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
-import { showToast, confirmModal } from '../core/utils.js';
-import { getUsers, getMentionableUsers } from '../core/users.js';
+import { showToast, confirmModal, highlightMentions } from '../core/utils.js';
+import { getUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
 import { openAiModal, closeAiModal, checkAiModal, startStatusPoll } from '../core/ai_modal.js';
@@ -62,13 +62,8 @@ const formatTime = ts => {
 };
 
 const renderText = (raw, isAi = false) => {
-    if (isAi && typeof marked !== 'undefined') {
-        const html = marked.parse(String(raw ?? ''));
-        // Highlight #mentions, but skip HTML entities so numeric ones like &#39;
-        // (marked's output for an apostrophe) aren't mangled by matching "#39".
-        return html.replace(/(&#?\w+;)|#(\w+)/g, (_, ent, name) => ent || `<span class="chat-mention">#${name}</span>`);
-    }
-    return esc(raw).replace(/#(\S+)/g, '<span class="chat-mention">#$1</span>');
+    if (isAi && typeof marked !== 'undefined') return highlightMentions(marked.parse(String(raw ?? '')));
+    return highlightMentions(esc(raw));
 };
 
 const isNearBottom = el => el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -353,7 +348,7 @@ const doSend = async () => {
 
     const users = await getUsers();
     const aiUsers = users.filter(u => u.is_ai);
-    const mentions = (text.match(/#(\S+)/g) || []).map(m => m.slice(1).toLowerCase());
+    const mentions = (text.match(/[#@]([\w.-]*\w)/g) || []).map(m => m.slice(1).toLowerCase());
     const explicitAi = aiUsers.find(u => mentions.includes(u.name.toLowerCase()));
 
     // Explicitly mentioning an AI focuses the chat on it; focus mode then
@@ -494,26 +489,28 @@ const setupInput = () => {
         }
 
         let start = pos - 1;
-        while (start >= 0 && val[start] !== '#' && val[start] !== '/' && val[start] !== ' ' && val[start] !== '\n') start--;
-        if (start < 0 || (val[start] !== '#' && val[start] !== '/')) { closePop(); return; }
+        while (start >= 0 && !'#@/'.includes(val[start]) && val[start] !== ' ' && val[start] !== '\n') start--;
+        if (start < 0 || !'#@/'.includes(val[start])) { closePop(); return; }
         if (val[start] === '/' && start !== 0) { closePop(); return; }
         triggerStart = start; triggerChar = val[start];
         const query = val.slice(start + 1, pos).toLowerCase();
         selectedIdx = -1;
         mentionPop.innerHTML = '';
 
-        if (triggerChar === '#') {
+        if (triggerChar === '#' || triggerChar === '@') {
             mentionPop.classList.remove('chat-mention-popup-cmd');
-            const matches = (await getMentionableUsers()).filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
+            // # reaches an AI, @ reaches a person — see modules/core/users.js.
+            const pool = await (triggerChar === '#' ? getAiMentionables() : getPeopleMentionables());
+            const matches = pool.filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
             if (!matches.length) { closePop(); return; }
             matches.forEach(u => {
                 const item = document.createElement('div');
                 item.className = 'chat-mention-item';
-                item.textContent = '#' + u.name;
+                item.textContent = triggerChar + u.name;
                 item.addEventListener('mousedown', e => {
                     e.preventDefault();
                     const curPos = textarea.selectionStart;
-                    const insert = '#' + u.name + ' ';
+                    const insert = triggerChar + u.name + ' ';
                     textarea.value = textarea.value.slice(0, triggerStart) + insert + textarea.value.slice(curPos);
                     textarea.selectionStart = textarea.selectionEnd = triggerStart + insert.length;
                     closePop();

@@ -13,6 +13,7 @@ require_once __DIR__ . '/ai_core.php';
 require_once __DIR__ . '/agent_jobs.php';
 require_once __DIR__ . '/service_auth.php';
 require_once __DIR__ . '/space_settings.php';
+require_once __DIR__ . '/mentions.php';
 require_once __DIR__ . '/wikilinks.php';
 
 session_start();
@@ -1054,7 +1055,7 @@ if (isset($_REQUEST['action'])) {
                             'description' => 'Post a message to a chat thread. Mention an AI user with @Name to trigger a response.',
                             'params'      => [
                                 ['name' => 'file', 'in' => 'post', 'required' => true, 'description' => 'Relative path to the .chat file'],
-                                ['name' => 'text', 'in' => 'post', 'required' => true, 'description' => 'Message text (Markdown supported, @Name to mention users)'],
+                                ['name' => 'text', 'in' => 'post', 'required' => true, 'description' => 'Message text (Markdown supported; #AiName triggers an AI user, @Name mentions a person)'],
                             ],
                             'response' => ['success' => true, 'data' => '(full updated chat data)'],
                         ],
@@ -1168,7 +1169,7 @@ if (isset($_REQUEST['action'])) {
 "POST {$base_url}?action=post_chat_message\n" .
 "Body (form-encoded): file=Folder/Thread.chat&text=Your message here\n" .
 "Returns: {\"success\":true,\"data\":{...full updated chat...}}\n" .
-"Tip: mention an AI user with @Name in the text to trigger their response.\n" .
+"Tip: mention an AI user with #Name in the text to trigger their response (@Name also works).\n" .
 "\n" .
 "### List available page templates\n" .
 "GET {$base_url}?action=list_md_templates\n" .
@@ -2396,57 +2397,72 @@ if (isset($_REQUEST['action'])) {
                 break;
 
             case 'get_mentions':
-                // Pages where the current user is mentioned:
-                //   1. #Name anywhere in plain page text
-                //   2. UID appears in the mentioned-UIDs field of a {user_comment:author:base64:uid1,uid2} tag
+                // Every space the user can read, pages and chat threads alike — see
+                // mentions.php for what counts and how "new" is decided.
                 $mention_name = trim($_GET['name'] ?? '');
                 $mention_uid  = (int)($_GET['uid'] ?? 0);
-                if ($mention_name === '' && $mention_uid === 0) {
-                    echo json_encode(['success' => true, 'data' => []]);
-                    break;
+                $mn_since     = wiki_mentions_since($mention_uid);
+                $mn_allowed   = AUTHENTICATION_ENABLED
+                    ? actor_spaces_filter(get_current_role(), $ai_auth_user) : null;
+                echo json_encode([
+                    'success' => true,
+                    'data'    => wiki_scan_mentions($mention_name, $mention_uid, $mn_allowed, $mn_since),
+                    'since'   => $mn_since,
+                ]);
+                break;
+
+            case 'get_mention_count':
+                // The sidebar badge. Runs on every page load, so it takes the cheap
+                // path: index.json timestamps rule out untouched files before any of
+                // them is opened.
+                $mc_name    = trim($_GET['name'] ?? '');
+                $mc_uid     = (int)($_GET['uid'] ?? 0);
+                $mc_since   = wiki_mentions_since($mc_uid);
+                $mc_allowed = AUTHENTICATION_ENABLED
+                    ? actor_spaces_filter(get_current_role(), $ai_auth_user) : null;
+                // Without a marker every mention would read as new, which on an
+                // established wiki is a badge nobody can clear.
+                $mc_rows = $mc_since > 0
+                    ? wiki_scan_mentions($mc_name, $mc_uid, $mc_allowed, $mc_since, true) : [];
+                // The newest one rides along so a client polling this can say where the
+                // mention is, not just that the number went up. Rows are sorted newest
+                // first, and the scan has already read it — no extra work.
+                $mc_latest = null;
+                if ($mc_rows) {
+                    $mc_top = $mc_rows[0];
+                    $mc_latest = [
+                        'id'     => $mc_top['id'],
+                        'space'  => $mc_top['space'],
+                        'path'   => $mc_top['path'],
+                        // The row keeps the raw heading line for the results list; a
+                        // toast wants the title, not "# Q3 Report".
+                        'header' => ltrim($mc_top['header'], "# \t"),
+                    ];
                 }
-                $uid_str   = (string)$mention_uid;
-                $all_pages = $indexer->getAllPages();
-                $results   = [];
-                foreach ($all_pages as $id => $data) {
-                    if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') continue;
-                    $full_path = sanitize_path($data['path']);
-                    if (!file_exists($full_path)) continue;
-                    $content = file_get_contents($full_path);
-                    // #Name mention in plain text
-                    $has_name = $mention_name !== '' && (bool)preg_match('/#' . preg_quote($mention_name, '/') . '\b/i', $content);
-                    // UID in the 4th field of a comment tag: {user_comment:A:B:uid1,uid2}
-                    // Match: ...:(digits,)*UID(,digits)*}
-                    $has_uid  = $mention_uid > 0 && (bool)preg_match(
-                        '/\{user_comment:\d+:[A-Za-z0-9+\/=]*:(?:\d+,)*' . preg_quote($uid_str, '/') . '(?:,\d+)*\}/',
-                        $content
-                    );
-                    if (!$has_name && !$has_uid) continue;
-                    $lines = explode("\n", $content);
-                    $header = '';
-                    foreach ($lines as $line) {
-                        if (substr(trim($line), 0, 1) === '#' && substr(trim($line), 0, 2) !== '#{') { $header = trim($line); break; }
-                    }
-                    $preview = '';
-                    if ($has_name) {
-                        $pos = stripos($content, '#' . $mention_name);
-                        if ($pos !== false) {
-                            $start   = max(0, $pos - 40);
-                            $snippet = htmlspecialchars(substr($content, $start, strlen($mention_name) + 90));
-                            $preview = '...' . preg_replace('/(#' . preg_quote($mention_name, '/') . ')/i', '<mark>$1</mark>', $snippet) . '...';
-                        }
-                    } elseif ($has_uid) {
-                        // Decode and show the comment that mentions the user
-                        if (preg_match('/\{user_comment:\d+:([A-Za-z0-9+\/=]*):(?:\d+,)*' . preg_quote($uid_str, '/') . '/', $content, $m)) {
-                            $decoded = base64_decode($m[1]);
-                            if ($decoded !== false) $preview = htmlspecialchars(mb_substr($decoded, 0, 120));
-                        }
-                    }
-                    $results[] = array_merge([
-                        'id' => $id, 'path' => $data['path'], 'header' => $header, 'preview' => $preview,
-                    ], page_meta($data));
+                echo json_encode([
+                    'success' => true,
+                    'count'   => count($mc_rows),
+                    'since'   => $mc_since,
+                    'latest'  => $mc_latest,
+                ]);
+                break;
+
+            case 'mark_mentions_seen':
+                // Not an $edit_action: this is the reader's own state, not content, and
+                // a reader has mentions too.
+                $ms_uid = (int)($_POST['uid'] ?? 0);
+                $ms_me  = (int)(get_current_actor()['uid'] ?? 0);
+                if ($ms_uid <= 0 || ($ms_me > 0 && $ms_uid !== $ms_me)) {
+                    throw new Exception('Can only mark your own mentions as seen.');
                 }
-                echo json_encode(['success' => true, 'data' => $results]);
+                // One second back, deliberately. Index stamps come from filemtime, which
+                // has 1-second resolution, so a mention written in the same second as
+                // this click would compare equal to the marker and be skipped for good.
+                // Erring one second early can only re-show something already read — and
+                // that clears the next time the panel is opened; erring late loses a
+                // mention silently and forever.
+                wiki_user_set_stamp($ms_uid, 'mentionsSeenAt', time() - 1);
+                echo json_encode(['success' => true, 'count' => 0]);
                 break;
 
             case 'get_my_comments':

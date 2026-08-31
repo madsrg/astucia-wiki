@@ -267,7 +267,7 @@ export default {
 
     // Chat
     'chat.send':          '送信',
-    'chat.placeholder':   'メッセージを入力…（Enter で送信、Shift+Enter で改行、# でメンション、/ でコマンド）',
+    'chat.placeholder':   'メッセージを入力…（Enter で送信、Shift+Enter で改行、@ で人、# で AI にメンション、/ でコマンド）',
     'chat.emoji-title':   '絵文字',
     'chat.new-topic-toggle':       '新しいトピック',
     'chat.new-topic-toggle-title': '新しいトピックを開始（Alt+C）— 次のメッセージから AI のコンテキストをリセットします',
@@ -406,7 +406,7 @@ export default {
     'insert-list.insert-btn':'リストを挿入',
 
     'comment.title':      'コメントを挿入',
-    'comment.placeholder':'コメントを入力… # で誰かをメンションできます',
+    'comment.placeholder':'コメントを入力… @ で誰かをメンションできます',
     'comment.hint':       'Ctrl+Enter で挿入',
     'comment.cancel-btn': 'キャンセル',
     'comment.insert-btn': '挿入',
@@ -902,6 +902,10 @@ export default {
 
     // Mentions
     'mentions.my':    '自分へのメンション',
+    'mentions.new': '新着',
+    'mentions.new-count': '前回確認してから {n} 件の新しいメンション',
+    'mentions.toast-one': '「{where}」であなたがメンションされました',
+    'mentions.toast-many': '{n} 件の新しいメンション',
     'comments.my':    '自分のコメント',
 
     // Session

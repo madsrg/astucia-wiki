@@ -101,3 +101,28 @@ export const promptModal = (title, defaultValue = '', placeholder = '', icon = '
     cancelBtn.addEventListener('click', onCancel);
     input.addEventListener('keydown', onKeydown);
 });
+
+/**
+ * Wrap the mentions in a chunk of HTML for display.
+ *
+ * Two sigils: `@Name` addresses a person, `#Name` addresses an AI user. Both render
+ * the same way — the distinction is which type-ahead offers which list, and chats
+ * written before the split (where everyone was `#Name`) must keep rendering as
+ * mentions rather than going quietly plain.
+ *
+ * Order matters in the pattern. The entity branch is first so marked's numeric
+ * entities — `&#39;` for an apostrophe — are not mangled into a "#39" mention. `@`
+ * requires a boundary in front of it, so `someone@example.com` does not light up as
+ * a mention of its domain; `#` needs no such guard because marked has already turned
+ * every heading into a tag by the time this runs.
+ *
+ * Input must already be HTML (escaped text or marked's output) — this never escapes.
+ */
+const MENTION_RE = /(&#?\w+;)|(^|[\s(>])@([\w.-]*\w)|#([\w.-]*\w)/g;
+
+export const highlightMentions = (html) =>
+    String(html ?? '').replace(MENTION_RE, (match, entity, before, person, ai) => {
+        if (entity !== undefined) return match;
+        if (person !== undefined) return `${before}<span class="chat-mention">@${person}</span>`;
+        return `<span class="chat-mention">#${ai}</span>`;
+    });

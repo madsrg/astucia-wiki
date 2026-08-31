@@ -5,7 +5,8 @@
 // =================================================================
 // ASTUCIA WIKI — DAILY DIGEST RUNNER
 // Emails each subscribed user a once-a-day summary of pages created or
-// updated in the last 24 hours, across every Space they can access.
+// updated in the last 24 hours, across every Space they can access, plus any
+// mentions of them from the same window.
 //
 // Add to crontab to run once a day (e.g. 07:00 server time):
 //   0 7 * * * php /path/to/run_daily_digest.php >> /var/log/wiki-digest.log 2>&1
@@ -20,9 +21,11 @@ ignore_user_abort(true);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/indexer.php';
 require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/mentions.php';
 
 const DIGEST_WINDOW = 86400; // 24 hours
 const DIGEST_MAX    = 20;
+const DIGEST_MAX_MENTIONS = 10;
 
 if (!is_mail_configured()) {
     fwrite(STDERR, "Daily digest: email is not configured — aborting.\n");
@@ -109,7 +112,25 @@ foreach ($users as $u) {
             $items[] = $c + ['space' => $space];
         }
     }
-    if (!$items) continue; // nothing new → no email
+    // Mentions from the same 24-hour window. Deliberately measured from the digest's
+    // own cutoff rather than the reader's mentionsSeenAt marker: that marker belongs to
+    // the sidebar panel, and a user who never opens it would otherwise be sent the same
+    // mention every morning until they did.
+    $mentions = [];
+    if ($uid > 0) {
+        foreach (wiki_scan_mentions($u['name'] ?? '', $uid, $allowed, $cutoff, true) as $m) {
+            // Same rule the change list uses: a page you edited yourself is not news.
+            // Only pages — a chat is judged per message, so its own timestamps already
+            // decide this correctly and the file's last writer is the wrong question.
+            if (pathinfo($m['path'], PATHINFO_EXTENSION) === 'md'
+                && (int)($m['updatedBy']['uid'] ?? 0) === $uid) continue;
+            $mentions[] = $m;
+        }
+    }
+    $mention_total = count($mentions);
+    $mentions      = array_slice($mentions, 0, DIGEST_MAX_MENTIONS);
+
+    if (!$items && !$mentions) continue; // nothing new → no email
 
     usort($items, fn($a, $b) => $b['updated'] <=> $a['updated']);
     $total = count($items);
@@ -140,16 +161,56 @@ foreach ($users as $u) {
         }
     }
 
+    // Mentions lead the email: being named is more actionable than a page changing.
+    $mention_html = '';
+    if ($mentions) {
+        $mention_html = '<h3 style="margin:18px 0 6px;font-size:15px;color:#2d3748;border-bottom:1px solid #e2e8f0;padding-bottom:4px;">'
+                      . 'Mentions of you</h3>';
+        foreach ($mentions as $m) {
+            $link  = $base_url
+                ? $base_url . '/index.php?pageid=' . urlencode($m['id']) . '&space=' . urlencode($m['space'])
+                : '';
+            $label = $m['header'] !== '' ? $m['header'] : $m['path'];
+            $title = $link
+                ? '<a href="' . $h($link) . '" style="color:#3182ce;text-decoration:none;">' . $h($label) . '</a>'
+                : $h($label);
+            $mention_html .= '<div style="margin:8px 0;font-size:14px;color:#2d3748;">'
+                . '<span style="display:inline-block;font-size:11px;font-weight:600;color:#fff;background:#e53e3e;border-radius:4px;padding:1px 6px;margin-right:6px;">Mention</span>'
+                . $title
+                . ' <span style="color:#a0aec0;font-size:12px;">· ' . $h($m['space'])
+                . ' · ' . $h(digest_ago((int)$m['updated'], $now)) . '</span>'
+                // preview is built by mentions.php from escaped text plus its own <mark>
+                // and <strong>, so it is inserted as markup rather than escaped again.
+                . ($m['preview'] !== '' ? '<div style="color:#718096;font-size:13px;margin:2px 0 0 4px;">' . $m['preview'] . '</div>' : '')
+                . '</div>';
+        }
+        if ($mention_total > DIGEST_MAX_MENTIONS) {
+            $mention_html .= '<p style="margin:6px 0 0;color:#718096;font-size:13px;">…and '
+                . ($mention_total - DIGEST_MAX_MENTIONS) . ' more.</p>';
+        }
+    }
+
     $more = $total > DIGEST_MAX
         ? '<p style="margin-top:16px;color:#718096;font-size:13px;">…and ' . ($total - DIGEST_MAX) . ' more change' . ($total - DIGEST_MAX === 1 ? '' : 's') . ' in the last 24 hours.</p>'
         : '';
 
-    $count_label = $total . ' update' . ($total === 1 ? '' : 's');
+    // The subject names whichever parts are actually in the email, so a day with only
+    // mentions does not arrive claiming "0 updates".
+    $parts = [];
+    if ($total)         $parts[] = $total . ' update' . ($total === 1 ? '' : 's');
+    if ($mention_total) $parts[] = $mention_total . ' mention' . ($mention_total === 1 ? '' : 's');
+    $count_label = implode(' and ', $parts);
     $subject = "{$app} — {$count_label} in the last 24 hours";
+    // Say what is actually in this email: a digest with no mentions should not open by
+    // promising them.
+    $subtitle = $mention_total
+        ? ($total ? 'Mentions of you, and pages created or updated, in the last 24 hours.'
+                  : 'Mentions of you in the last 24 hours.')
+        : 'Pages created or updated in the last 24 hours.';
     $html = '<div style="font-family:\'Segoe UI\',system-ui,-apple-system,sans-serif;max-width:600px;margin:0 auto;">'
           . '<h2 style="font-size:18px;color:#1a202c;">' . $h($app) . ' — daily digest</h2>'
-          . '<p style="color:#718096;font-size:13px;margin-top:-6px;">Pages created or updated in the last 24 hours.</p>'
-          . $rows . $more
+          . '<p style="color:#718096;font-size:13px;margin-top:-6px;">' . $h($subtitle) . '</p>'
+          . $mention_html . $rows . $more
           . '<hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 12px;">'
           . '<p style="color:#a0aec0;font-size:12px;">You are receiving this because you subscribed to daily updates in My Preferences. Turn it off there any time.</p>'
           . '</div>';

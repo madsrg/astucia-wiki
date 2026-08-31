@@ -3,8 +3,8 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
-import { showToast, confirmModal } from '../core/utils.js';
-import { getUsers, getMentionableUsers } from '../core/users.js';
+import { showToast, confirmModal, highlightMentions } from '../core/utils.js';
+import { getUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
 import { openAiModal, closeAiModal, checkAiModal, startStatusPoll } from '../core/ai_modal.js';
@@ -71,13 +71,8 @@ const avatarColor = (uid) => {
 };
 
 const renderText = (raw, isAi = false) => {
-    if (isAi && typeof marked !== 'undefined') {
-        const html = marked.parse(String(raw ?? ''));
-        // Highlight #mentions, but skip HTML entities so numeric ones like &#39;
-        // (marked's output for an apostrophe) aren't mangled by matching "#39".
-        return html.replace(/(&#?\w+;)|#(\w+)/g, (_, ent, name) => ent || `<span class="chat-mention">#${name}</span>`);
-    }
-    return escHtml(raw).replace(/#(\S+)/g, '<span class="chat-mention">#$1</span>');
+    if (isAi && typeof marked !== 'undefined') return highlightMentions(marked.parse(String(raw ?? '')));
+    return highlightMentions(escHtml(raw));
 };
 
 const isNearBottom = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -164,7 +159,8 @@ const buildMsgActions = (msg) => {
     replyBtn.addEventListener('click', () => {
         const textarea = document.getElementById('chat-input');
         if (!textarea) return;
-        const mention = '#' + (msg.name || '') + ' ';
+        // The sigil has to be the one that actually reaches this author.
+        const mention = (aiUsers.some(u => u.name === msg.name) ? '#' : '@') + (msg.name || '') + ' ';
         textarea.value = textarea.value ? textarea.value.trimEnd() + ' ' + mention : mention;
         textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
         textarea.focus();
@@ -651,8 +647,8 @@ const setupMentionAutocomplete = (textarea, popup) => {
         }
 
         let start = pos - 1;
-        while (start >= 0 && val[start] !== '#' && val[start] !== '/' && val[start] !== ' ' && val[start] !== '\n') start--;
-        if (start < 0 || (val[start] !== '#' && val[start] !== '/')) { closePop(); return; }
+        while (start >= 0 && !'#@/'.includes(val[start]) && val[start] !== ' ' && val[start] !== '\n') start--;
+        if (start < 0 || !'#@/'.includes(val[start])) { closePop(); return; }
         // slash commands must be at the very start of the message
         if (val[start] === '/' && start !== 0) { closePop(); return; }
 
@@ -662,22 +658,22 @@ const setupMentionAutocomplete = (textarea, popup) => {
         selectedIdx  = -1;
         popup.innerHTML = '';
 
-        if (triggerChar === '#') {
+        if (triggerChar === '#' || triggerChar === '@') {
             popup.classList.remove('chat-mention-popup-cmd');
-            // On an /aiJob line the #mention slot only accepts an AI user, so
-            // don't offer humans for it.
-            let pool = await getMentionableUsers();
-            if (/^\/aijob\b/i.test(val)) pool = pool.filter(u => u.is_ai);
+            // One sigil, one kind of user: # reaches an AI, @ reaches a person. This
+            // also retires the /aiJob special case — that line's mention slot only ever
+            // accepted an AI user, and now the sigil itself says so.
+            const pool = await (triggerChar === '#' ? getAiMentionables() : getPeopleMentionables());
             const matches = pool.filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 6);
             if (!matches.length) { closePop(); return; }
             matches.forEach(u => {
                 const item = document.createElement('div');
                 item.className = 'chat-mention-item';
-                item.textContent = '#' + u.name;
+                item.textContent = triggerChar + u.name;
                 item.addEventListener('mousedown', (e) => {
                     e.preventDefault();
                     const curPos = textarea.selectionStart;
-                    const insert = '#' + u.name + ' ';
+                    const insert = triggerChar + u.name + ' ';
                     textarea.value = textarea.value.slice(0, triggerStart) + insert + textarea.value.slice(curPos);
                     textarea.selectionStart = textarea.selectionEnd = triggerStart + insert.length;
                     closePop();
@@ -885,7 +881,7 @@ export const init = () => {
         // Detect AI user mention so we can show a waiting modal
         const users       = await getUsers();
         const aiUsers     = users.filter(u => u.is_ai);
-        const mentions    = (text.match(/#(\S+)/g) || []).map(m => m.slice(1).toLowerCase());
+        const mentions    = (text.match(/[#@]([\w.-]*\w)/g) || []).map(m => m.slice(1).toLowerCase());
         const explicitAi  = aiUsers.find(u => mentions.includes(u.name.toLowerCase()));
 
         // Explicitly mentioning an AI focuses the chat on it; focus mode then

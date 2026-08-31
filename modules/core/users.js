@@ -23,3 +23,9 @@ export const invalidateUsers = () => { _cache = null; };
 // NOT API accounts (is_system) — those are headless inbound service tokens that
 // can't post or reply, so they must never appear in a mention autocomplete.
 export const getMentionableUsers = async () => (await getUsers()).filter(u => !u.is_system);
+
+// The two mention pools. `@` addresses a person, `#` addresses an AI, so a type-ahead
+// offers one kind at a time and the sigil already says what the name will reach.
+// Kept here so every composer splits them the same way.
+export const getPeopleMentionables = async () => (await getMentionableUsers()).filter(u => !u.is_ai);
+export const getAiMentionables     = async () => (await getMentionableUsers()).filter(u => !!u.is_ai);

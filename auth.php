@@ -28,6 +28,21 @@ function save_users(array $users): void {
     file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode(['users' => $users], JSON_PRETTY_PRINT));
 }
 
+// Stamp the moment a user signed in. Read by the My Mentions badge, which needs a line
+// between seen and new the first time a user opens the panel — without it every mention
+// the wiki ever recorded would count as new. Kept next to the login paths because those
+// are the only two places that know a login happened.
+function record_login(int $uid): void {
+    if ($uid <= 0) return;
+    $users = load_users();
+    foreach ($users as &$u) {
+        if ((int)($u['uid'] ?? -1) !== $uid) continue;
+        $u['lastLogin'] = time();
+        save_users($users);
+        return;
+    }
+}
+
 function load_requests(): array {
     $file = WIKI_SYSTEM_DATA . 'user_requests.json';
     if (!file_exists($file)) return [];
@@ -160,6 +175,7 @@ if ($_action === 'otp_verify' && in_array(AUTHENTICATION, ['otp', 'both'])) {
         'fontSize'   => $user['fontSize']   ?? 'normal',
         'auth'       => 'otp',
     ];
+    record_login((int)($user['uid'] ?? 0));
     write_access_log('LOGIN_OK', $email, $user['name'] ?? '', $user['role'] ?? 'editor');
     $redirect = $_SESSION['login_redirect'] ?? 'index.php';
     unset($_SESSION['login_redirect']);
@@ -237,6 +253,7 @@ try {
                 'auth'       => 'oidc',
             ];
             $_SESSION['id_token'] = $oidc->getIdToken();
+            record_login((int)$u['uid']);
             write_access_log('LOGIN_OK', $sub, $name, $u['role'] ?? 'editor');
             $redirect = $_SESSION['login_redirect'] ?? 'index.php';
             unset($_SESSION['login_redirect']);

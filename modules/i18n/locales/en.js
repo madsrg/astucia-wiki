@@ -267,7 +267,7 @@ export default {
 
     // Chat
     'chat.send':          'Send',
-    'chat.placeholder':   'Type a message… (Enter to send, Shift+Enter for new line, # to mention, / for commands)',
+    'chat.placeholder':   'Type a message… (Enter to send, Shift+Enter for new line, @ for people, # for AI, / for commands)',
     'chat.emoji-title':   'Emoji',
     'chat.new-topic-toggle':       'New Topic',
     'chat.new-topic-toggle-title': "Start a new topic (Alt+C) — resets the AI's context for the next message",
@@ -406,7 +406,7 @@ export default {
     'insert-list.insert-btn':'Insert List',
 
     'comment.title':      'Insert Comment',
-    'comment.placeholder':'Write a comment… use # to mention someone',
+    'comment.placeholder':'Write a comment… use @ to mention someone',
     'comment.hint':       'Ctrl+Enter to insert',
     'comment.cancel-btn': 'Cancel',
     'comment.insert-btn': 'Insert',
@@ -1042,6 +1042,10 @@ export default {
 
     // Mentions
     'mentions.my':    'My Mentions',
+    'mentions.new': 'New',
+    'mentions.new-count': '{n} new mention(s) since you last looked',
+    'mentions.toast-one': 'You were mentioned in “{where}”',
+    'mentions.toast-many': '{n} new mentions',
     'comments.my':    'My Comments',
 
     // Session
