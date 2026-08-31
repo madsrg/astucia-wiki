@@ -767,6 +767,55 @@ const showAgentInstructions = async (token) => {
     };
 };
 
+/**
+ * What the wiki itself tells this AI user, before its own system prompt.
+ *
+ * The counterpart to the API-agent box next to it: that one is for an outside agent
+ * holding this user's token, this one is what the wiki injects on every request it makes
+ * on the user's behalf. Assembled server-side by the same functions the live chat and
+ * job paths call, so it cannot drift from what is actually sent.
+ */
+const showBuiltinInstructions = async () => {
+    document.getElementById('builtin-instructions-lightbox')?.remove();
+    const res = await api.call('admin_ai_builtin_instructions');
+    if (!res.success) { showToast(res.message || t('admin.ai.instructions-failed'), 'error'); return; }
+
+    const el = (tag, cls, text) => {
+        const n = document.createElement(tag);
+        if (cls) n.className = cls;
+        if (text !== undefined) n.textContent = text;
+        return n;
+    };
+    const overlay = el('div', 'lightbox-overlay');
+    overlay.id = 'builtin-instructions-lightbox';
+    const box = el('div', 'lightbox-content builtin-instructions-content');
+    box.appendChild(el('h3', '', t('admin.ai.builtin-title')));
+    box.appendChild(el('p', 'space-settings-hint', t('admin.ai.builtin-hint', { space: res.space })));
+
+    const section = (label, body) => {
+        box.appendChild(el('h4', 'space-settings-title', label));
+        const ta = el('textarea', 'agent-instructions-textarea');
+        ta.readOnly = true;
+        ta.value = body;
+        ta.rows = 8;
+        box.appendChild(ta);
+    };
+    section(t('admin.ai.builtin-chat'), res.chat);
+    section(t('admin.ai.builtin-job'), res.job);
+    section(t('admin.ai.builtin-tools', { n: res.tools.length }),
+            res.tools.map(x => `${x.name}\n    ${x.description}`).join('\n\n'));
+
+    const footer = el('div', 'lightbox-footer');
+    const close = () => overlay.remove();
+    const closeBtn = el('button', 'btn btn-secondary', t('btn.close'));
+    closeBtn.onclick = close;
+    footer.appendChild(closeBtn);
+    box.appendChild(footer);
+    overlay.appendChild(box);
+    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+    document.body.appendChild(overlay);
+};
+
 // ── AI Users tab ──────────────────────────────────────────────────────────────
 
 const renderAiUserList = () => {
@@ -880,6 +929,9 @@ const openAiUserForm = async (u) => {
                 ${!isNew ? `<button type="button" id="ai-f-agent-instructions-btn" class="btn btn-icon btn-secondary" title="${t('admin.ai.agent-instructions-btn')}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M12 11V6"/><circle cx="12" cy="4" r="2"/><line x1="8" y1="16" x2="8.01" y2="16" stroke-width="3"/><line x1="16" y1="16" x2="16.01" y2="16" stroke-width="3"/></svg>
                 </button>` : ''}
+                <button type="button" id="ai-f-builtin-btn" class="btn btn-icon btn-secondary" title="${t('admin.ai.builtin-btn')}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                </button>
                 <button type="button" id="ai-f-help-btn" class="btn btn-icon btn-secondary" title="${t('admin.ai.help-btn')}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17" stroke-width="3"/></svg>
                 </button>
@@ -1104,6 +1156,11 @@ const openAiUserForm = async (u) => {
     document.getElementById('ai-f-cancel-btn').addEventListener('click', () => renderAiUserList());
 
     document.getElementById('ai-f-save-btn').addEventListener('click', () => saveAiUser(u?.uid ?? null));
+
+    // Outside the !isNew block below: what the wiki tells an AI user does not depend on
+    // the record being saved yet, and it is most useful while deciding what to put in
+    // the system prompt field.
+    document.getElementById('ai-f-builtin-btn').addEventListener('click', showBuiltinInstructions);
 
     if (!isNew) {
         document.getElementById('ai-f-copy-btn').addEventListener('click', async () => {

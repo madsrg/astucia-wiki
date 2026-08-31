@@ -904,8 +904,8 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
     <div id="agent-instructions-lightbox" class="lightbox-overlay hidden">
         <div class="lightbox-content" style="max-width:680px;height:auto;max-height:80vh">
             <button id="agent-instructions-close-btn" class="lightbox-close">&times;</button>
-            <h3 data-i18n="admin.ai.agent-instructions-title" style="margin:0 0 0.75rem">AI Agent Instructions</h3>
-            <p style="font-size:0.8rem;color:var(--accent-gray);margin:0 0 0.75rem" data-i18n="admin.ai.agent-instructions-hint">Copy and paste into the system prompt or instructions field of your AI agent.</p>
+            <h3 data-i18n="admin.ai.agent-instructions-title" style="margin:0 0 0.75rem">API Agent Instructions</h3>
+            <p style="font-size:0.8rem;color:var(--accent-gray);margin:0 0 0.75rem" data-i18n="admin.ai.agent-instructions-hint">For an external agent that calls this wiki over the API with this user’s token — copy it into that agent’s own system prompt. When this AI user answers inside the wiki, it is sent its instructions automatically and needs none of this.</p>
             <textarea id="agent-instructions-text" class="agent-instructions-textarea" readonly></textarea>
             <div class="lightbox-footer">
                 <button id="agent-instructions-copy-btn" class="btn btn-blue" data-i18n="admin.ai.agent-instructions-copy">Copy to Clipboard</button>

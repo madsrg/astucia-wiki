@@ -847,7 +847,7 @@ if (isset($_REQUEST['action'])) {
                       'git_deleted_files', 'git_restore_deleted',
                       'admin_reindex',
                       'admin_get_mcp_servers', 'admin_save_mcp_server', 'admin_delete_mcp_server', 'admin_test_mcp_server',
-                      'admin_space_settings', 'admin_set_space_readonly', 'admin_merge_space_preflight', 'admin_merge_space'];
+                      'admin_ai_builtin_instructions', 'admin_space_settings', 'admin_set_space_readonly', 'admin_merge_space_preflight', 'admin_merge_space'];
     $requested_action = $_REQUEST['action'];
     $current_role     = get_current_role();
 
@@ -3737,6 +3737,30 @@ if (isset($_REQUEST['action'])) {
                 $actor = get_current_actor();
                 wiki_scaffold_space($new_space_dir, $actor['uid'] ?? null, $actor['name'] ?? null);
                 echo json_encode(['success' => true]);
+                break;
+
+            case 'admin_ai_builtin_instructions':
+                // What an AI user is actually told, before its own system prompt. Built
+                // by the same functions the live requests use, so this cannot drift from
+                // what is really sent — which is the only reason it is worth showing.
+                $bi_space = trim($_GET['sample_space'] ?? '');
+                if ($bi_space === '') {
+                    foreach (scandir(PAGES_DIR) as $bi_f) {
+                        if ($bi_f === '.' || $bi_f === '..' || $bi_f[0] === '.') continue;
+                        if (is_dir(rtrim(PAGES_DIR, '/') . '/' . $bi_f)) { $bi_space = $bi_f; break; }
+                    }
+                }
+                if ($bi_space === '') $bi_space = 'Main';
+                $bi_actor = get_current_actor()['name'] ?? 'Alice';
+                echo json_encode([
+                    'success' => true,
+                    'space'   => $bi_space,
+                    'chat'    => wiki_chat_context_prompt($bi_space, 'Standup', 'Team'),
+                    'job'     => wiki_job_context_prompt($bi_space, 'Team', $bi_actor),
+                    'tools'   => array_map(
+                        fn($t) => ['name' => $t['name'], 'description' => $t['description']],
+                        wiki_tool_definitions()),
+                ]);
                 break;
 
             case 'admin_space_settings':

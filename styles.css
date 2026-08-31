@@ -110,6 +110,13 @@ body {
 .space-lock { display: flex; align-items: center; flex-shrink: 0; opacity: 0.75; }
 .space-dropdown-item .space-lock { color: var(--accent-gray); }
 
+/* Built-in AI instructions viewer: three read-only blocks, so the dialog scrolls as a
+   whole rather than squeezing each block into its own tiny scroller. */
+.builtin-instructions-content { width: 720px; max-width: 95vw; max-height: 85vh; overflow-y: auto; }
+.builtin-instructions-content h3 { margin: 0 0 0.4rem; }
+.builtin-instructions-content h4 { margin: 1rem 0 0.3rem; }
+.builtin-instructions-content .agent-instructions-textarea { width: 100%; box-sizing: border-box; }
+
 /* Space settings (admin only) */
 .space-settings-btn { background: none; border: none; padding: 2px; margin: -2px -2px -2px 0; cursor: pointer; color: rgba(255,255,255,0.7); border-radius: 4px; display: flex; align-items: center; flex-shrink: 0; }
 .space-settings-btn:hover { background: rgba(255,255,255,0.15); color: white; }
