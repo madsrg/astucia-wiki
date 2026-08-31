@@ -175,6 +175,10 @@ export const savePage = async () => {
         const resultData = await saveResponse.json();
         if (resultData.success) {
             showToast(t('edit.saved'), 'success');
+            // Tell the on-disk watcher these bytes are ours, or its next poll reports
+            // this very save as an external change and reloads the page.
+            const { rebaselineFileWatch } = await import('../page_view/index.js');
+            rebaselineFileWatch(state.currentPagePath, resultData.lastUpdated, resultData.size);
             state.initialContent = markdownContent;
             viewerContent.innerHTML = await renderCurrentPage(state.initialContent);
             setEditingMode(false);

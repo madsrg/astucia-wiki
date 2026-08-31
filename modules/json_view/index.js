@@ -74,6 +74,9 @@ const saveJson = async (saveBtn) => {
         });
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.message || t('edit.save-error'));
+        // Our own write — re-baseline the watcher so it is not reported as external.
+        const { rebaselineFileWatch } = await import('../page_view/index.js');
+        rebaselineFileWatch(_currentPath, data.lastUpdated, data.size);
         state.hasUnsavedChanges = false;
         notifyPageState();
         showToast(t('edit.saved'), 'success');

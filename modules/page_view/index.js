@@ -359,6 +359,26 @@ const reloadWatchedPage = async (path) => {
     return true;
 };
 
+/**
+ * Re-seed the watcher after *this* client wrote the page.
+ *
+ * A save changes the file's mtime and size, but the watcher is still holding the stamp
+ * taken when the page was loaded — so its next poll sees the author's own save as an
+ * external change and reloads the page out from under them. The values come back from
+ * the save response rather than a fresh stat call here, for the same reason the load
+ * path uses the load response: a separate stat would race with any write landing just
+ * after, and a poisoned baseline hides a real change for good.
+ *
+ * `path` is checked because a save can resolve after the user has already navigated on,
+ * and the page they are looking at now has its own baseline that must not be clobbered.
+ */
+export const rebaselineFileWatch = (path, mtime, size) => {
+    if (!path || _watchPath !== path || state.currentPagePath !== path) return;
+    if (mtime) { _watchMtime = mtime; state.currentPageLastUpdated = mtime; }
+    if (size !== undefined && size !== null) { _watchSize = size; state.currentPageSize = size; }
+    _watchWarned = 0;
+};
+
 const startFileWatch = (path, mtime, size) => {
     stopFileWatch();
     if (!WATCHED_TYPES.includes(state.currentPageType)) return;

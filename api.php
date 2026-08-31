@@ -2526,7 +2526,21 @@ if (isset($_REQUEST['action'])) {
                 if (file_put_contents($file_path, $content) !== false) {
                     $actor = get_current_actor();
                     $indexer->updateModified($_GET['file'], $actor['uid'], $actor['name']);
-                    echo json_encode(['success' => true, 'message' => 'File saved successfully.']);
+                    // Report the bytes just written, so the client that wrote them can
+                    // re-baseline the open-page watcher. Without this the watcher still
+                    // holds the stamp from page load, sees its own save as an external
+                    // change on the next poll, and reloads the page under the author.
+                    // clearstatcache() is required: PHP caches stat results per request,
+                    // so filemtime() here can otherwise return the mtime from before
+                    // this write. `size` counts $content after the .json re-encode above,
+                    // which is what actually landed on disk.
+                    clearstatcache(true, $file_path);
+                    echo json_encode([
+                        'success'     => true,
+                        'message'     => 'File saved successfully.',
+                        'lastUpdated' => filemtime($file_path),
+                        'size'        => strlen($content),
+                    ]);
                     if ($search_idx && in_array($ext_save, ['md', 'json'], true)) {
                         try { $search_idx->upsertPage(_sidx_space(), $rel_save, $content); } catch (\Throwable $_e) {}
                     }

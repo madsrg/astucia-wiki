@@ -18,6 +18,9 @@ export const saveListData = async () => {
         const result = await response.json();
         if (result.success) {
             showToast(t('list.saved'), 'success');
+            // Our own write — re-baseline the watcher so it is not reported as external.
+            const { rebaselineFileWatch } = await import('../page_view/index.js');
+            rebaselineFileWatch(state.currentPagePath, result.lastUpdated, result.size);
             renderListView();
         } else {
             throw new Error(result.message);
