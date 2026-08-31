@@ -8,59 +8,8 @@
 // =================================================================
 
 require_once __DIR__ . '/llm_providers.php';
+require_once __DIR__ . '/wiki_ai_tools.php';
 
-/**
- * Run a git command in the given working directory.
- * Returns ['output' => string, 'code' => int].
- */
-function _ai_git_run(array $args, string $cwd): array {
-    $parts = array_map('escapeshellarg', $args);
-    $cmd   = 'git ' . implode(' ', $parts);
-    $desc  = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-    $env   = [
-        'PATH'                => '/usr/local/bin:/usr/bin:/bin:' . (getenv('PATH') ?: ''),
-        'HOME'                => getenv('HOME') ?: sys_get_temp_dir(),
-        'GIT_TERMINAL_PROMPT' => '0',
-    ];
-    $proc = proc_open($cmd, $desc, $pipes, $cwd, $env);
-    if (!is_resource($proc)) return ['output' => '', 'code' => -1];
-    $out = stream_get_contents($pipes[1]);
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-    return ['output' => trim($out), 'code' => proc_close($proc)];
-}
-
-/**
- * Find the git root for the given space directory.
- * Returns ['root' => string, 'prefix' => string] or null.
- */
-function _ai_find_git_root(string $space_dir): ?array {
-    $space = rtrim($space_dir, '/');
-    if (is_dir($space . '/.git')) {
-        return ['root' => $space, 'prefix' => ''];
-    }
-    $pages = rtrim(PAGES_DIR, '/');
-    if (is_dir($pages . '/.git')) {
-        return ['root' => $pages, 'prefix' => basename($space) . '/'];
-    }
-    return null;
-}
-
-/**
- * Stage and commit a single file into git.
- */
-function _ai_git_commit(string $abs_path, string $git_name, string $git_email, string $commit_msg, string $space_dir): void {
-    $git_root = _ai_find_git_root($space_dir);
-    if (!$git_root) return;
-    $rel         = ltrim(str_replace(rtrim($space_dir, '/') . '/', '', $abs_path), '/');
-    $git_relpath = $git_root['prefix'] . $rel;
-    _ai_git_run(['add', $git_relpath], $git_root['root']);
-    _ai_git_run([
-        '-c', 'user.name=' . $git_name,
-        '-c', 'user.email=' . $git_email,
-        'commit', '-m', $commit_msg,
-    ], $git_root['root']);
-}
 
 // Build the auth header line for an outbound MCP request from a server's
 // configured header name + value scheme. Defaults preserve the historical
@@ -1015,81 +964,16 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
             $mcp_calls_log[] = ($mcp_tool_map[$tool_name]['server']['name'] ?? '?') . ':' . $mcp_tool_map[$tool_name]['real_name'];
             return _mcp_call_tool($mcp_tool_map[$tool_name]['server'], $mcp_tool_map[$tool_name]['real_name'], $tool_input);
         }
-        switch ($tool_name) {
-            case 'wiki_list_pages':
-                $pages = $indexer->getAllPages();
-                $paths = array_values(array_filter(array_column($pages, 'path')));
-                sort($paths);
-                return json_encode($paths);
-
-            case 'wiki_read_page':
-                $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
-                if (!$rel) return 'Error: path is required.';
-                $ext = pathinfo($rel, PATHINFO_EXTENSION);
-                if (!in_array($ext, ['md', 'list', 'chat'], true)) return 'Error: only .md, .list and .chat files can be read.';
-                $abs = rtrim($space_dir, '/') . '/' . $rel;
-                if (!file_exists($abs) || !is_file($abs)) return 'Error: page not found.';
-                return file_get_contents($abs);
-
-            case 'wiki_write_page':
-                if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot write pages.';
-                $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
-                if (!$rel) return 'Error: path is required.';
-                if (pathinfo($rel, PATHINFO_EXTENSION) !== 'md') return 'Error: only .md files can be written.';
-                if (!isset($tool_input['content']) || $tool_input['content'] === '') {
-                    return 'Error: content parameter is required and must not be empty. Call wiki_write_page again and include the full markdown content in the "content" field.';
-                }
-                $content = $tool_input['content'];
-                $abs     = rtrim($space_dir, '/') . '/' . $rel;
-                $dir     = dirname($abs);
-                if (!is_dir($dir)) mkdir($dir, 0755, true);
-                $is_new  = !file_exists($abs);
-                if (file_put_contents($abs, $content) === false) return 'Error: could not write file.';
-                $ai_git_name  = $ai_user['name'] ?? 'AI';
-                $ai_git_email = !empty($ai_user['email']) ? $ai_user['email'] : 'ai@wiki.localhost';
-                if ($is_new) {
-                    $indexer->addPage($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
-                    _ai_git_commit($abs, $ai_git_name, $ai_git_email, 'Create ' . basename($rel), $space_dir);
-                    return "Page created: {$rel}";
-                }
-                $indexer->updateModified($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
-                _ai_git_commit($abs, $ai_git_name, $ai_git_email, 'Update ' . basename($rel), $space_dir);
-                return "Page updated: {$rel}";
-
-            default:
-                return 'Error: unknown tool.';
-        }
+        return execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir);
     };
 
     // --- Tools array (provider-specific format) ---
-    $tools_def = [
-        [
-            'name'        => 'wiki_list_pages',
-            'description' => 'List all pages in the current wiki space. Returns a JSON array of relative file paths.',
-            'params'      => ['type' => 'object', 'properties' => (object)[], 'required' => []],
-        ],
-        [
-            'name'        => 'wiki_read_page',
-            'description' => 'Read the full content of a wiki page by its relative path.',
-            'params'      => [
-                'type'       => 'object',
-                'properties' => ['path' => ['type' => 'string', 'description' => 'Relative path to the page, e.g. Notes/Meeting.md']],
-                'required'   => ['path'],
-            ],
-        ],
-        [
-            'name'        => 'wiki_write_page',
-            'description' => 'Create a new wiki page or overwrite an existing one with markdown content. Path must end in .md. Both "path" and "content" are required — you MUST supply the complete markdown text in "content"; omitting it or passing an empty string is an error. Only available when the AI user has editor role.',
-            'params'      => [
-                'type'       => 'object',
-                'properties' => [
-                    'path'    => ['type' => 'string', 'description' => 'Relative path ending in .md, e.g. Notes/Summary.md. For a NEW page, put it in the current folder named in the system prompt unless the task asks for a different location — do not invent a folder.'],
-                    'content' => ['type' => 'string', 'description' => 'REQUIRED: the complete markdown content of the page. Must not be omitted or empty.'],
-                ],
-                'required'   => ['path', 'content'],
-            ],
-        ],
-    ];
+    // The same set chat @mentions and mcp.php get. Agent jobs used to carry their own
+    // three-tool copy, which meant a job could not search, tag or notify, and its
+    // wiki_list_pages returned bare paths where everywhere else returned objects — a
+    // difference nobody could see from the outside until a job was asked to do one of
+    // those things and simply could not.
+    $tools_def = wiki_tool_definitions();
 
     $mcp_server_ids    = $config['mcp_server_ids']   ?? [];
     $mcp_instructions  = $config['mcp_instructions'] ?? [];
