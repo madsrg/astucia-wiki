@@ -6,6 +6,71 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.8.4] — 2026-08-31
+
+Mentions grow up. `@Name` now addresses a person and `#Name` an AI user, My Mentions
+notices things it used to miss, an unread badge tells you when someone named you, and AI
+users can name you back. Along the way the three AI entry points stopped disagreeing about
+what tools exist.
+
+### Added
+- **`@` for people, `#` for AI.** The two sigils were interchangeable — `[@#]Name` already
+  triggered an AI and every composer inserted `#` for everyone — so a name in a thread told
+  you nothing about who it would reach. Each type-ahead now offers one kind, which also
+  retires the special case that stopped `/aiJob` offering humans for a slot only an AI can
+  fill. Reading stays lenient: `@AiName` still triggers, since the REST API documented it,
+  and `#Alice` still counts as a mention of Alice, since every chat and comment written
+  before today used it.
+- **My Mentions covers every space you can read, and chat threads.** It scanned `.md` files
+  in the current space only, so a mention in a chat — where an agent job reports that it
+  finished — was invisible, and switching space changed what you were told.
+- **An unread badge on My Mentions**, counting what arrived since you last opened the panel
+  (your last login the first time). It polls, because what produces a mention is often not a
+  person typing, and toasts when the count rises, naming where it happened. A chat is judged
+  per message, so a busy thread whose only mention of you is a year old is not new.
+- **AI users can notify people** — `wiki_list_people` and `wiki_mention_users`. An AI could
+  always type `@Alice`, but nothing told it who exists, so it could not spell the name; and a
+  model does not reach for a capability it has not been told about. Both prompts now explain
+  the sigils and the tools, and **"me" resolves**: a chat prompt states that messages carry
+  their author's name, and a job prompt names its requester. `/aiJob … mention me when done`
+  previously had no referent at all.
+- **The daily digest reports mentions**, from its own 24-hour window rather than the panel's
+  marker, and will send on mentions alone.
+- **Admin can see what the wiki tells an AI user** — the chat context, the job context and
+  the tool list, assembled by the same functions the live requests call rather than a copy
+  that drifts.
+
+### Changed
+- **Agent jobs run the shared tool set.** `run_agent_job()` carried its own three-tool copy,
+  so a job could not search, tag, write JSON, read the graph or notify anyone, and its
+  `wiki_list_pages` returned bare paths where chat and MCP returned objects. All three entry
+  points now offer the same ten tools. Two consequences for existing scheduled jobs:
+  `wiki_list_pages` returns objects, and an editor-role job can now tag pages, write `.json`
+  and post mentions — so a broad prompt has more reach than it did.
+- **`find_git_root()` and `git_auto_commit()` take an optional explicit space.** They read
+  `$space_dir` from global scope, which is correct in a web request and wrong under cron,
+  where it holds whichever scheduled job ran last and nothing at all during a one-off. A file
+  written by a job could be committed into another space's repository. Web callers are
+  unchanged; `ai_core`'s three byte-identical private copies are gone with 132 lines.
+- **The AI user instructions box says who it is for.** It is a REST guide for an *external*
+  agent holding that user's token, but sat among the fields for the internal LLM saying "copy
+  into the system prompt of your AI agent" — which reads as a description of what the wiki
+  sends. Retitled *API Agent Instructions*, with the built-in view beside it.
+- Move and copy no longer offer a read-only Space as a destination.
+
+### Fixed
+- **Saving a page reported itself as an external change.** Within ten seconds of a save,
+  "Page changed on disk — reloaded" appeared and the page reloaded under the author: the
+  watcher baselines from the load and `savePage` never updated it, so it read the author's own
+  write as somebody else's. Present since the watcher shipped in 2026.7.39. The save response
+  now reports what it wrote — after the `.json` re-encode, and after a `clearstatcache()`,
+  since PHP would otherwise hand back the mtime from before the write.
+- **A mermaid syntax error no longer takes over the bottom of the page**, and the inline
+  message no longer quotes the whole diagram back at you when the source is right below it.
+- A rename now carries its Space's settings and its external-change stamp; the stamp used to
+  be left behind on every rename.
+
+
 ## [2026.8.3] — 2026-08-29
 
 Space-level administration. A Space could be created and renamed, but not frozen and not
