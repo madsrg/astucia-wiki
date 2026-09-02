@@ -98,6 +98,12 @@ export const setEditingMode = async (editing, opts = {}) => {
             setTimeout(updateLineIndicator, 1);
 
             editor.focus();
+            // Start at the first character, not wherever the caret last was. focus() on a
+            // textarea leaves the caret at the end of the value, so opening a long page
+            // for editing dropped you at the bottom of it; scrollTop is reset too, since
+            // focusing scrolls the caret into view.
+            editor.setSelectionRange(0, 0);
+            editor.scrollTop = 0;
         }
     } else {
         const wasInlineMode = viewerContent.classList.contains('inline-edit-active');

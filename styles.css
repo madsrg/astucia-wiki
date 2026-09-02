@@ -306,7 +306,20 @@ body {
 .toggle-label input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--primary-color); }
 
 .main-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.main-header { background-color: white; border-bottom: 1px solid var(--border-color); padding: 0.75rem 1.5rem 0.75rem 52px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+/* Two columns — title on the left, actions on the right — and the breadcrumb spanning a
+   row above them. It was a flex row of [title column][actions], which centred the whole
+   title *column*: with a breadcrumb stacked above it, the title row was pushed half the
+   breadcrumb's height below the icons it sits beside (measured: 9.6px). Grid puts the
+   title row and the actions in the same row, so align-items lines them up on their own,
+   and the breadcrumb no longer drags one side down. When the breadcrumb is hidden it is
+   not a grid item at all and the two simply share row 1. */
+.main-header { background-color: white; border-bottom: 1px solid var(--border-color); padding: 0.75rem 1.5rem 0.75rem 52px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 1rem; flex-shrink: 0; }
+/* The wrapper stops generating a box so its two rows join the header's grid directly;
+   minmax(0, 1fr) on the first column is what lets a long title shrink and ellipsize. */
+.page-title-wrapper { display: contents; }
+.page-breadcrumb    { grid-column: 1 / -1; }
+.page-title-row     { grid-column: 1; }
+.header-actions     { grid-column: 2; }
 .header-actions { display: flex; gap: 8px; align-items: center; }
 .page-actions-group { display: flex; gap: 8px; align-items: center; }
 .backlinks-subtitle { font-size: 0.82rem; color: var(--accent-gray); margin: -0.5rem 0 0.75rem; }
@@ -330,8 +343,24 @@ body {
 .file-actions-menu-item-danger { color: var(--accent-danger); }
 .file-actions-menu-item-danger:hover { background: #fff5f5; }
 .file-actions-menu-sep { height: 1px; background: var(--border-color); margin: 3px 4px; }
-.page-title-wrapper { display: flex; flex-direction: column; justify-content: center; gap: 0; }
 #current-page-title { font-size: 1rem; font-weight: 600; color: #4a5568; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 0.5rem; }
+
+/* Long page names must give way, not push the header apart.
+   .main-header is one flex row — title on the left, action icons on the right — and a
+   flex item will not shrink below its own content (min-width defaults to auto), so a long
+   name widened the row past the header: the icons were shoved off the right edge and the
+   page grew a horizontal scrollbar. The existing overflow/text-overflow on the title was
+   inert for the same reason; nothing ever asked it to be narrower.
+   min-width:0 down the title's chain lets it shrink, and the icons are pinned. */
+.page-title-row     { min-width: 0; }
+.page-breadcrumb    { min-width: 0; }
+#current-page-title { min-width: 0; }
+/* The title is itself a flex row (type icon + name), and text-overflow does nothing to a
+   flex container's items — so the ellipsis belongs on the name. */
+#current-page-title > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#current-page-title > svg  { flex-shrink: 0; }
+/* Never squeeze the things the title is competing with. */
+#favorite-btn, #page-id-display, .header-actions { flex-shrink: 0; }
 .page-id-badge { background-color: #e2e8f0; color: #718096; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
 .editor-wrapper { flex-grow: 1; overflow: hidden; position: relative; background-color: white; }
 
@@ -545,7 +574,12 @@ body {
 #viewer-content a { color: inherit; }
 #viewer-content blockquote { border-left: 0.25em solid var(--border-color); padding: 0 1em; color: #6a737d; margin-left: 0; }
 #viewer-content code { background-color: rgba(27,31,35,.05); border-radius: 3px; padding: .2em .4em; font-size: 85%; }
-#viewer-content pre { background-color: #f6f8fa; border-radius: 3px; padding: 16px; overflow: auto; }
+/* Wrap rather than scroll. A fenced block holding one long line — a JSON string, a URL,
+   a stack trace — otherwise renders as a single line with a page-wide horizontal
+   scrollbar, and the rest of the block scrolls with it. pre-wrap keeps the block's own
+   indentation; only lines too long for the column are broken, and break-word lets that
+   happen inside an unbroken token, which is what a long string literal is. */
+#viewer-content pre { background-color: #f6f8fa; border-radius: 3px; padding: 16px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 #viewer-content pre code { background-color: transparent; padding: 0; }
 #viewer-content table { border-collapse: collapse; }
 #viewer-content th, #viewer-content td { border: 1px solid var(--border-color); padding: 6px 13px; }
