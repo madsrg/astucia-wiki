@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/llm_providers.php';
 require_once __DIR__ . '/wiki_ai_tools.php';
+require_once __DIR__ . '/llm_trace.php';
 
 
 // Build the auth header line for an outbound MCP request from a server's
@@ -609,7 +610,18 @@ function _extract_text_tool_call(string $text, array $known_tool_names): ?array 
 // $space, when non-empty, targets a specific space on the remote wiki by
 // appending ?space= to its MCP URL (mirrors mcp.php's ?space= convention). The
 // remote falls back to its default space if the name isn't a valid space there.
+/**
+ * An MCP call is a network round trip, so the /debug trace shows it the way it shows an
+ * LLM call. Wrapped rather than instrumented inline because the body has four exits.
+ */
 function _mcp_call_tool(array $server, string $name, array $input, string $space = ''): string {
+    $out = _mcp_call_tool_inner($server, $name, $input, $space);
+    wiki_trace_add(['type' => 'tool', 'name' => $name, 'input' => $input, 'output' => $out,
+                    'mcp' => $server['name'] ?? ($server['slug'] ?? '?')]);
+    return $out;
+}
+
+function _mcp_call_tool_inner(array $server, string $name, array $input, string $space = ''): string {
     $url = $server['url'] ?? '';
     if ($space !== '') {
         $url .= (strpos($url, '?') !== false ? '&' : '?') . 'space=' . rawurlencode($space);

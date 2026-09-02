@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/git_helpers.php';
 require_once __DIR__ . '/audit.php';
+require_once __DIR__ . '/llm_trace.php';
 require_once __DIR__ . '/wikilinks.php';
 require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/search_index.php';
@@ -355,6 +356,7 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
                  . ltrim(str_replace('..', '', (string)($tool_input['path'] ?? '')), '/'));
     }
     $result = _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, $space_dir);
+    wiki_trace_add(['type' => 'tool', 'name' => $tool_name, 'input' => $tool_input, 'output' => $result]);
     _wiki_ai_audit($tool_name, $tool_input, $ai_user, $indexer, $space_dir, $result, $existed);
     return $result;
 }

@@ -15,6 +15,7 @@ require_once __DIR__ . '/service_auth.php';
 require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/mentions.php';
 require_once __DIR__ . '/audit.php';
+require_once __DIR__ . '/llm_trace.php';
 require_once __DIR__ . '/wikilinks.php';
 
 session_start();
@@ -489,6 +490,8 @@ if (isset($_REQUEST['action'])) {
         // after the tool list is final (MCP schemas are fetched live) and the history
         // window has been sliced, so the numbers match what actually goes on the wire.
         $debug_blocks = [];
+        // /debug also records the whole conversation with the model — see llm_trace.php.
+        if ($debug_on) wiki_trace_start();
         $debug_usage  = [];
         if ($debug_on) {
             $hist_chars = '';
@@ -563,6 +566,14 @@ if (isset($_REQUEST['action'])) {
             $http     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
             $last_call_ms = (int)((microtime(true) - $call_start) * 1000);
+            wiki_trace_add([
+                'type' => 'llm', 'url' => $api_url, 'http' => $http, 'ms' => $last_call_ms,
+                // Redacted here, not at render time: the key must never enter the trace.
+                'headers'  => wiki_trace_redact_headers($headers),
+                'request'  => json_encode($payload),
+                'response' => (string)$raw,
+                'error'    => $curl_err ?: null,
+            ]);
             $write_status('received', ['iteration' => $iter + 1, 'last_call_ms' => $last_call_ms]);
 
             if (!$raw) {
@@ -813,6 +824,33 @@ if (isset($_REQUEST['action'])) {
                                                (int)((microtime(true) - $started_at) * 1000), $max_tokens),
             ];
             $fresh['nextMessageId']++;
+
+            // …and the whole conversation goes to a page beside the chat. Written after
+            // the reply is in hand so a failed run still leaves the transcript that
+            // explains it, and last of all because it must never delay the answer.
+            // Who asked, and what they asked: the last message in the context that is not
+            // the AI's own. The thread is the only record of it at this point.
+            $_req_name = 'Unknown';
+            $_req_text = '';
+            foreach (array_reverse($recent) as $_rm) {
+                if ((int)($_rm['uid'] ?? -1) === $ai_uid) continue;
+                $_req_name = (string)($_rm['name'] ?? 'Unknown');
+                $_req_text = (string)($_rm['text'] ?? '');
+                break;
+            }
+            $_trace_md = wiki_trace_markdown(
+                $_req_name, $ai_user['name'] ?? 'AI', $model, $provider,
+                basename(rtrim($space_dir, '/')), basename($chat_file),
+                $_req_text,
+                ai_debug_report($debug_blocks, $debug_usage, $model, $api_call_count,
+                                (int)((microtime(true) - $started_at) * 1000), $max_tokens));
+            $_trace_rel = wiki_trace_write_page($space_dir, $chat_file, $_trace_md, $indexer, $ai_user);
+            if ($_trace_rel !== null) {
+                $fresh['messages'][count($fresh['messages']) - 1]['text'] .=
+                    "\n\n*Full call transcript: [" . basename($_trace_rel, '.md') . "](?pageid="
+                    . (string)$indexer->getId($_trace_rel) . '&space=' . rawurlencode(basename(rtrim($space_dir, '/'))) . ")*";
+            }
+            wiki_trace_stop();
         }
         file_put_contents($chat_file, json_encode($fresh, JSON_PRETTY_PRINT));
         @unlink($status_file);
