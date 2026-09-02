@@ -8,6 +8,7 @@
 // =================================================================
 
 require_once __DIR__ . '/git_helpers.php';
+require_once __DIR__ . '/wikilinks.php';
 require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/search_index.php';
 require_once __DIR__ . '/graph.php';
@@ -133,6 +134,19 @@ function wiki_tool_definitions(): array {
                     'target'  => ['type' => 'string', 'description' => 'Relative path of the .chat thread or .md page to post into, e.g. Team.chat or Reports/Q3.md'],
                 ],
                 'required'   => ['users', 'message', 'target'],
+            ],
+        ],
+        [
+            'name'        => 'wiki_rename_page',
+            'description' => 'Rename or move a page within the current space, keeping its identity: the page id, tags, authorship, attachments and history all follow it, so existing ?pageid= links and {include:ID} tags keep working. The file extension cannot change. Give "new_path" the same folder to rename in place, or a different folder to move it. Wikilinks elsewhere that name the old title stop resolving — the result says how many, and you can pass retarget_links=true to rewrite them. Only available when the AI user has editor role.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => [
+                    'path'     => ['type' => 'string', 'description' => 'Relative path of the existing page, e.g. Notes/Old Name.md'],
+                    'new_path' => ['type' => 'string', 'description' => 'New relative path, same extension, e.g. Notes/New Name.md'],
+                    'retarget_links' => ['type' => 'boolean', 'description' => 'Rewrite [[wikilinks]] in other pages that named the old title. Defaults to false — it edits other pages, so prefer reporting the count and letting the person decide.'],
+                ],
+                'required'   => ['path', 'new_path'],
             ],
         ],
     ];
@@ -295,7 +309,7 @@ function parse_search_query(string $raw): array {
 // The tools that write. Named here because the read-only check below and any future
 // per-space write rule need the same list, and adding a tool without adding it here
 // would silently exempt it.
-const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_add_tags', 'wiki_set_tags', 'wiki_mention_users'];
+const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_add_tags', 'wiki_set_tags', 'wiki_mention_users', 'wiki_rename_page'];
 
 function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir) {
     // A read-only Space is read-only for agents too. api.php's guard already covers
@@ -466,6 +480,72 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
             git_auto_commit($mu_abs, $mu_git_name, $mu_git_email, 'Mention ' . implode(', ', $mu_resolved) . ' in ' . basename($mu_rel), $space_dir);
             return 'Mentioned ' . implode(', ', $mu_resolved) . ' in ' . $mu_rel
                  . '. They will see it in their My Mentions list.';
+
+        case 'wiki_rename_page':
+            if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot rename pages.';
+            $rn_old = ltrim(str_replace('..', '', (string)($tool_input['path'] ?? '')), '/');
+            $rn_new = ltrim(str_replace('..', '', (string)($tool_input['new_path'] ?? '')), '/');
+            if ($rn_old === '' || $rn_new === '') return 'Error: both "path" and "new_path" are required.';
+            if ($rn_old === $rn_new) return 'Error: "new_path" is the same as "path".';
+            // The extension decides how the wiki renders and indexes a file, so a rename
+            // must not change it — and must never be able to turn a page into something else.
+            if (strtolower(pathinfo($rn_old, PATHINFO_EXTENSION)) !== strtolower(pathinfo($rn_new, PATHINFO_EXTENSION))) {
+                return 'Error: the file extension cannot change in a rename.';
+            }
+            $rn_abs_old = rtrim($space_dir, '/') . '/' . $rn_old;
+            $rn_abs_new = rtrim($space_dir, '/') . '/' . $rn_new;
+            if (!is_file($rn_abs_old)) return 'Error: page not found: ' . $rn_old;
+            if (file_exists($rn_abs_new)) return 'Error: something already exists at ' . $rn_new;
+            $rn_parent = dirname($rn_abs_new);
+            if (!is_dir($rn_parent)) return 'Error: target folder does not exist: ' . ltrim(dirname($rn_new), '.');
+
+            if (!@rename($rn_abs_old, $rn_abs_new)) return 'Error: could not rename the file.';
+
+            // updatePath, never removePage+addPage: the id is what ?pageid= links and
+            // {include:ID} tags point at, and minting a new one would break every one of them.
+            $indexer->updatePath($rn_old, $rn_new);
+
+            // Attachments and the cached diagram export belong to the page, so they follow
+            // it — the single-page move in api.php does the same.
+            if (is_dir($rn_abs_old . '.uploads')) @rename($rn_abs_old . '.uploads', $rn_abs_new . '.uploads');
+            if (is_file($rn_abs_old . '.svg'))     @rename($rn_abs_old . '.svg',     $rn_abs_new . '.svg');
+
+            if (defined('SEARCH_ENGINE') && SEARCH_ENGINE === 'sqlite') {
+                try { (new SearchIndex())->movePage(basename(rtrim($space_dir, '/')), $rn_old, $rn_new); }
+                catch (\Throwable $_e) {}
+            }
+
+            // A wikilink names its target, so [[Old Name]] elsewhere stops resolving. Counted
+            // always, rewritten only when asked: this is the one tool that edits pages the
+            // request did not name, and the UI asks a human before doing it too.
+            $rn_links = 0;
+            $rn_fixed = 0;
+            foreach ($indexer->getAllPages() as $rn_data) {
+                $rn_rel = (string)($rn_data['path'] ?? '');
+                if ($rn_rel === '' || $rn_rel === $rn_new) continue;
+                if (strtolower(pathinfo($rn_rel, PATHINFO_EXTENSION)) !== 'md') continue;   // only Markdown carries them
+                $rn_file = rtrim($space_dir, '/') . '/' . $rn_rel;
+                if (!is_file($rn_file)) continue;
+                $rn_text = (string)file_get_contents($rn_file);
+                [$rn_out, $rn_n] = wikilink_retarget($rn_text, $rn_old, $rn_new);
+                if ($rn_n === 0) continue;
+                $rn_links += $rn_n;
+                if (!empty($tool_input['retarget_links']) && $rn_out !== $rn_text
+                    && file_put_contents($rn_file, $rn_out) !== false) {
+                    $rn_fixed += $rn_n;
+                    $indexer->updateModified($rn_rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
+                }
+            }
+
+            $rn_git_name  = $ai_user['name'] ?? 'AI';
+            $rn_git_email = !empty($ai_user['email']) ? $ai_user['email'] : 'ai@wiki.localhost';
+            git_move_commit($rn_abs_old, $rn_abs_new, $rn_git_name, $rn_git_email, $space_dir);
+
+            $rn_msg = 'Renamed ' . $rn_old . ' to ' . $rn_new . '. The page keeps its id, tags and attachments.';
+            if ($rn_fixed > 0)      $rn_msg .= ' Also updated ' . $rn_fixed . ' wikilink(s) that named the old title.';
+            elseif ($rn_links > 0)  $rn_msg .= ' ' . $rn_links . ' wikilink(s) elsewhere still name the old title and no longer resolve'
+                                             . ' — call again with retarget_links=true to rewrite them, or tell the user.';
+            return $rn_msg;
 
         case 'wiki_related_pages':
             $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');

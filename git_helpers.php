@@ -67,8 +67,11 @@ function git_auto_commit(string $abs_path, string $git_name, string $git_email, 
     ], $git_root['root']);
 }
 
-function git_move_commit(string $old_abs, string $new_abs, string $git_name, string $git_email): void {
-    $git_root = find_git_root();
+function git_move_commit(string $old_abs, string $new_abs, string $git_name, string $git_email,
+                         ?string $for_space = null): void {
+    // Same reason git_auto_commit takes one: a rename made by an AI tool can run from the
+    // cron job runner, where the $space_dir global belongs to whichever job ran last.
+    $git_root = find_git_root($for_space);
     if (!$git_root) return;
     $root_prefix = rtrim($git_root['root'], '/') . '/';
     // Compute paths relative to git root; only stage paths that live inside it
