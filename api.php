@@ -831,7 +831,7 @@ if (isset($_REQUEST['action'])) {
                       'post_chat_message', 'queue_agent_job', 'toggle_chat_debug', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'purge_chat_messages', 'toggle_sticky',
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags',
-                      'save_diagram_svg', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
+                      'save_diagram_svg', 'upload_page', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
                       'retarget_wikilinks'];
     $admin_actions = ['admin_get_users', 'admin_save_users', 'admin_get_user_requests',
                       'admin_approve_request', 'admin_deny_request',
@@ -3014,6 +3014,68 @@ if (isset($_REQUEST['action'])) {
                 }
                 usort($ff_files, fn($a, $b) => strcmp($a['name'], $b['name']));
                 echo json_encode(['success' => true, 'data' => $ff_files]);
+                break;
+
+            case 'upload_page':
+                // Drag-and-drop upload of Markdown pages onto a folder in the file tree.
+                // Deliberately narrow: .md only. That keeps anything executable out of
+                // PAGES_DIR even if that directory is ever served directly, and means an
+                // uploaded file is always something the wiki can actually render.
+                if (($_FILES['file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                    throw new Exception('Upload failed.');
+                }
+                if (!is_uploaded_file($_FILES['file']['tmp_name'] ?? '')) {
+                    throw new Exception('Not an uploaded file.');
+                }
+                // The extension is checked on the FINAL name, after basename() and after
+                // stripping separators and control characters — so "notes.md.php" is
+                // rejected on its real extension rather than passing on a middle segment.
+                $up_name = preg_replace('/[\x00-\x1F\x7F]/u', '', basename((string)$_FILES['file']['name']));
+                $up_name = trim(str_replace(['/', '\\'], '', $up_name));
+                if ($up_name === '' || $up_name[0] === '.') throw new Exception('Invalid file name.');
+                if (strtolower(pathinfo($up_name, PATHINFO_EXTENSION)) !== 'md') {
+                    throw new Exception('Only .md files can be uploaded as pages.');
+                }
+
+                $up_folder_rel = trim(str_replace('..', '', (string)($_POST['folder'] ?? '')), '/');
+                $up_dir = $up_folder_rel === '' ? rtrim($space_dir, '/') : sanitize_path($up_folder_rel);
+                if (!is_dir($up_dir)) throw new Exception('Target folder not found.');
+
+                // Never overwrite. A drop that silently replaced a page would be
+                // unrecoverable without git, and the gesture is too easy to make by
+                // accident; the "name (1)" convention matches the space merge.
+                $up_final = $up_name;
+                $up_n     = 0;
+                while (file_exists($up_dir . '/' . $up_final)) {
+                    $up_final = pathinfo($up_name, PATHINFO_FILENAME) . ' (' . (++$up_n) . ').md';
+                }
+
+                $up_abs = $up_dir . '/' . $up_final;
+                if (!move_uploaded_file($_FILES['file']['tmp_name'], $up_abs)) {
+                    throw new Exception('Could not save the uploaded file.');
+                }
+                @chmod($up_abs, 0644);
+
+                // Same four steps as create_file: without them the page has no id, is
+                // missing from search, and never reaches git.
+                $up_rel   = ($up_folder_rel === '' ? '' : $up_folder_rel . '/') . $up_final;
+                $up_actor = get_current_actor();
+                $indexer->addPage($up_rel, $up_actor['uid'], $up_actor['name']);
+                echo json_encode([
+                    'success' => true,
+                    'path'    => $up_rel,
+                    'name'    => $up_final,
+                    'renamed' => $up_final !== $up_name,
+                ]);
+                if ($search_idx) {
+                    try { $search_idx->upsertPage(_sidx_space(), $up_rel, (string)@file_get_contents($up_abs)); }
+                    catch (\Throwable $_e) {}
+                }
+                if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+                $up_git_name  = $up_actor['name'] ?? 'Wiki';
+                $up_git_email = (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email']))
+                    ? $_SESSION['user']['email'] : 'wiki@localhost';
+                git_auto_commit($up_abs, $up_git_name, $up_git_email, 'Upload ' . $up_final);
                 break;
 
             case 'upload_to_folder':

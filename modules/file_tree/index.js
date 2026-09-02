@@ -5,6 +5,8 @@ import { api } from '../core/api.js';
 import { icons } from '../core/icons.js';
 import { state } from '../core/state.js';
 import { loadFilesFolder } from '../files_folder/index.js';
+import { showToast } from '../core/utils.js';
+import { t } from '../i18n/index.js';
 
 export const renderTree = (items, parentElement) => {
     const ul = document.createElement('ul');
@@ -62,7 +64,12 @@ export const findItemsByPath = (path) => {
     return currentItems;
 };
 
+// Where the browse pane currently is. Kept because a file dropped on the pane's empty
+// space belongs in the folder being browsed, and only this function is told which.
+let _browsePath = '';
+
 export const renderBrowsePane = (items, currentPath) => {
+    _browsePath = currentPath || '';
     const fileBrowser = document.getElementById('file-browser');
     fileBrowser.innerHTML = '';
     const ul = document.createElement('ul');
@@ -203,6 +210,114 @@ export const startTreePolling = (space) => {
     }, TREE_POLL_MS);
 };
 
+
+// ── Drag-and-drop upload ──────────────────────────────────────────────────────
+//
+// Drop .md files on a folder to add them as pages. Restricted to Markdown on purpose:
+// the server accepts nothing else, so the two ends agree and a mis-drop is refused with
+// a reason rather than half-working.
+//
+// Both panes are wired by delegation on their container, so nodes re-rendered by a tree
+// refresh are covered without re-binding anything.
+
+const MD_FILE = /\.md$/i;
+
+// A reader cannot create pages, and a frozen Space cannot be written to at all — the
+// server enforces both, but refusing the drag means the cursor says "no" instead of the
+// drop failing after the fact.
+const canUpload = () => window.WIKI_ROLE !== 'reader' && !state.spaceReadOnly;
+
+/**
+ * The folder a drop lands in: a folder under the pointer wins; a file resolves to the
+ * folder holding it, so dropping "next to" a page does the obvious thing; otherwise the
+ * pane's own location. Returns null for a files library, which takes uploads of its own
+ * kind and not pages.
+ */
+const dropFolderFor = (e, pane) => {
+    const el = e.target.closest(pane === 'tree' ? '.file-item-content' : '.browse-item-content');
+    if (!el) return pane === 'browse' ? _browsePath : '';
+    const path = el.dataset.path || '';
+    switch (el.dataset.type) {
+        case 'filesfolder': return null;
+        case 'folder':
+        case 'up':          return path;
+        default:            return path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    }
+};
+
+const uploadDroppedFiles = async (files, folder) => {
+    const pages  = files.filter(f => MD_FILE.test(f.name));
+    const others = files.length - pages.length;
+    if (!pages.length) {
+        showToast(t('tree.drop-none'), 'error');
+        return;
+    }
+    showToast(t('tree.drop-uploading', { n: pages.length }), 'info');
+
+    let done = 0, renamed = 0, failed = 0;
+    for (const file of pages) {
+        // One request per file: it keeps each upload inside PHP's upload_max_filesize
+        // rather than summing them into post_max_size, and one failure does not take
+        // the rest of the drop with it.
+        const res = await api.call('upload_page', { file, folder }, 'POST');
+        if (res?.success) { done++; if (res.renamed) renamed++; }
+        else failed++;
+    }
+
+    await refreshFileTree();
+
+    const parts = [];
+    if (done)    parts.push(t('tree.drop-done', { n: done }));
+    if (renamed) parts.push(t('tree.drop-renamed', { n: renamed }));
+    if (others)  parts.push(t('tree.drop-skipped', { n: others }));
+    if (failed)  parts.push(t('tree.drop-failed', { n: failed }));
+    showToast(parts.join(' · '), failed ? 'error' : 'info');
+};
+
+const wireDropZone = (container, pane) => {
+    let hovered = null;
+    const clear = () => {
+        hovered?.classList.remove('drop-target');
+        container.classList.remove('drop-target-root');
+        hovered = null;
+    };
+
+    container.addEventListener('dragover', (e) => {
+        // Only file drags, and only when this user could actually write here. Without
+        // preventDefault the browser navigates away to the dropped file.
+        if (!canUpload() || ![...(e.dataTransfer?.types || [])].includes('Files')) return;
+        e.preventDefault();
+        const folder = dropFolderFor(e, pane);
+        if (folder === null) { e.dataTransfer.dropEffect = 'none'; clear(); return; }
+        e.dataTransfer.dropEffect = 'copy';
+
+        const el = e.target.closest('.file-item-content, .browse-item-content');
+        const highlight = (el && el.dataset.type === 'folder') ? el : null;
+        if (highlight !== hovered) {
+            hovered?.classList.remove('drop-target');
+            hovered = highlight;
+            hovered?.classList.add('drop-target');
+        }
+        // Nothing specific under the pointer: the whole pane is the target, so say so.
+        container.classList.toggle('drop-target-root', !hovered);
+    });
+
+    container.addEventListener('dragleave', (e) => {
+        if (!container.contains(e.relatedTarget)) clear();
+    });
+
+    container.addEventListener('drop', async (e) => {
+        if (![...(e.dataTransfer?.types || [])].includes('Files')) return;
+        e.preventDefault();
+        const folder = dropFolderFor(e, pane);
+        clear();
+        if (!canUpload()) return;
+        if (folder === null) { showToast(t('tree.drop-filesfolder'), 'error'); return; }
+        const files = [...(e.dataTransfer.files || [])];
+        if (files.length) await uploadDroppedFiles(files, folder);
+    });
+};
+
 // Ctrl/Cmd+click gives the page a tab of its own instead of reusing the preview slot —
 // the same gesture that opens a link in a new tab in the browser around us.
 const openIntent = (e) => ((e.ctrlKey || e.metaKey) ? 'permanent' : 'preview');
@@ -213,6 +328,9 @@ export const init = ({ onLoadPage, onGenerateTagCloud }) => {
 
     const fileNavigator = document.getElementById('file-navigator');
     const fileBrowser = document.getElementById('file-browser');
+
+    wireDropZone(fileNavigator, 'tree');
+    wireDropZone(fileBrowser, 'browse');
 
     // --- Browse pane clicks ---
     fileBrowser.addEventListener('click', (e) => {

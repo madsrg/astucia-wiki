@@ -554,6 +554,13 @@ export default {
     'spaces.prompt': 'Navn på nyt space', 'spaces.ph': 'f.eks. Teknik',
     'spaces.created': 'Space "{name}" oprettet', 'spaces.failed': 'Kunne ikke oprette space',
 
+    'tree.drop-uploading': 'Uploader {n} side(r)…',
+    'tree.drop-done': '{n} side(r) uploadet',
+    'tree.drop-renamed': '{n} omdøbt for ikke at overskrive',
+    'tree.drop-skipped': '{n} fil(er) sprunget over — kun .md-sider kan slippes her',
+    'tree.drop-failed': '{n} mislykkedes',
+    'tree.drop-none': 'Kun .md-sider kan slippes her',
+    'tree.drop-filesfolder': 'Det er et filbibliotek — slip sider på en mappe',
     'mentions.my': 'Mine omtaler', 'comments.my': 'Mine kommentarer',
     'mentions.new': 'Ny',
     'mentions.new-count': '{n} ny(e) omtale(r), siden du sidst kiggede',

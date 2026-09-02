@@ -750,6 +750,13 @@ export default {
     'spaces.failed': 'स्पेस बनाने में विफल',
 
     // Mentions
+    'tree.drop-uploading': '{n} पेज अपलोड हो रहे हैं…',
+    'tree.drop-done': '{n} पेज अपलोड हुए',
+    'tree.drop-renamed': '{n} का नाम बदला गया ताकि कुछ अधिलेखित न हो',
+    'tree.drop-skipped': '{n} फ़ाइल छोड़ी गईं — यहाँ केवल .md पेज ही छोड़े जा सकते हैं',
+    'tree.drop-failed': '{n} विफल',
+    'tree.drop-none': 'यहाँ केवल .md पेज ही छोड़े जा सकते हैं',
+    'tree.drop-filesfolder': 'वह एक फ़ाइल लाइब्रेरी है — पेज किसी फ़ोल्डर पर छोड़ें',
     'mentions.my': 'मेरे उल्लेख',
     'mentions.new': 'नया',
     'mentions.new-count': 'पिछली बार देखने के बाद से {n} नए उल्लेख',

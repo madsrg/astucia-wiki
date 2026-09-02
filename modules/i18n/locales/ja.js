@@ -907,6 +907,13 @@ export default {
     'spaces.readonly-toast': 'スペース「{name}」は読み取り専用です',
 
     // Mentions
+    'tree.drop-uploading': '{n} 件のページをアップロード中…',
+    'tree.drop-done': '{n} 件のページをアップロードしました',
+    'tree.drop-renamed': '{n} 件は上書きを避けるため名前を変更しました',
+    'tree.drop-skipped': '{n} 件のファイルをスキップしました（ここに置けるのは .md ページのみです）',
+    'tree.drop-failed': '{n} 件失敗',
+    'tree.drop-none': 'ここに置けるのは .md ページのみです',
+    'tree.drop-filesfolder': 'これはファイルライブラリです。ページはフォルダーに置いてください',
     'mentions.my':    '自分へのメンション',
     'mentions.new': '新着',
     'mentions.new-count': '前回確認してから {n} 件の新しいメンション',

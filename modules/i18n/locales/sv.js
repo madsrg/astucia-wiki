@@ -553,6 +553,13 @@ export default {
     'spaces.prompt': 'Namn på nytt space', 'spaces.ph': 't.ex. Teknik',
     'spaces.created': 'Space "{name}" skapat', 'spaces.failed': 'Det gick inte att skapa space',
 
+    'tree.drop-uploading': 'Laddar upp {n} sida/sidor…',
+    'tree.drop-done': '{n} sida/sidor uppladdade',
+    'tree.drop-renamed': '{n} omdöpta för att inte skriva över',
+    'tree.drop-skipped': '{n} fil(er) hoppades över — endast .md-sidor kan släppas här',
+    'tree.drop-failed': '{n} misslyckades',
+    'tree.drop-none': 'Endast .md-sidor kan släppas här',
+    'tree.drop-filesfolder': 'Det är ett filbibliotek — släpp sidor på en mapp',
     'mentions.my': 'Mina omnämnanden', 'comments.my': 'Mina kommentarer',
     'mentions.new': 'Ny',
     'mentions.new-count': '{n} nya omnämnanden sedan du senast tittade',

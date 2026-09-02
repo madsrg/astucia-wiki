@@ -1047,6 +1047,13 @@ export default {
     'spaces.readonly-toast': 'The space "{name}" is read-only',
 
     // Mentions
+    'tree.drop-uploading': 'Uploading {n} page(s)…',
+    'tree.drop-done': '{n} page(s) uploaded',
+    'tree.drop-renamed': '{n} renamed to avoid overwriting',
+    'tree.drop-skipped': '{n} file(s) skipped — only .md pages can be dropped here',
+    'tree.drop-failed': '{n} failed',
+    'tree.drop-none': 'Only .md pages can be dropped here',
+    'tree.drop-filesfolder': 'That is a files library — drop pages on a folder',
     'mentions.my':    'My Mentions',
     'mentions.new': 'New',
     'mentions.new-count': '{n} new mention(s) since you last looked',

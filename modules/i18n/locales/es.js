@@ -553,6 +553,13 @@ export default {
     'spaces.prompt': 'Nombre del nuevo space', 'spaces.ph': 'p. ej. Ingeniería',
     'spaces.created': 'Space "{name}" creado', 'spaces.failed': 'No se pudo crear el space',
 
+    'tree.drop-uploading': 'Subiendo {n} página(s)…',
+    'tree.drop-done': '{n} página(s) subida(s)',
+    'tree.drop-renamed': '{n} renombrada(s) para no sobrescribir',
+    'tree.drop-skipped': '{n} archivo(s) omitido(s): aquí solo se pueden soltar páginas .md',
+    'tree.drop-failed': '{n} con error',
+    'tree.drop-none': 'Aquí solo se pueden soltar páginas .md',
+    'tree.drop-filesfolder': 'Eso es una biblioteca de archivos: suelta las páginas en una carpeta',
     'mentions.my': 'Mis menciones', 'comments.my': 'Mis comentarios',
     'mentions.new': 'Nuevo',
     'mentions.new-count': '{n} mención(es) nueva(s) desde la última vez que miraste',

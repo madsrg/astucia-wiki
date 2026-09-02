@@ -553,6 +553,13 @@ export default {
     'spaces.prompt': 'Nom du nouveau space', 'spaces.ph': 'ex. Ingénierie',
     'spaces.created': 'Space « {name} » créé', 'spaces.failed': 'Impossible de créer le space',
 
+    'tree.drop-uploading': 'Téléversement de {n} page(s)…',
+    'tree.drop-done': '{n} page(s) téléversée(s)',
+    'tree.drop-renamed': '{n} renommée(s) pour ne rien écraser',
+    'tree.drop-skipped': '{n} fichier(s) ignoré(s) — seules les pages .md peuvent être déposées ici',
+    'tree.drop-failed': '{n} en échec',
+    'tree.drop-none': 'Seules les pages .md peuvent être déposées ici',
+    'tree.drop-filesfolder': 'Ceci est une bibliothèque de fichiers — déposez les pages sur un dossier',
     'mentions.my': 'Mes mentions', 'comments.my': 'Mes commentaires',
     'mentions.new': 'Nouveau',
     'mentions.new-count': '{n} nouvelle(s) mention(s) depuis votre dernière consultation',
