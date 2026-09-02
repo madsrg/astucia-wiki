@@ -368,7 +368,8 @@ const doSend = async () => {
     const mentionedAi = focus.mentionedAi;
 
     let abortCtrl = null;
-    if (mentionedAi) {
+    // A background AI is queued, not awaited (see modules/chat).
+    if (mentionedAi && !mentionedAi.always_background) {
         abortCtrl = new AbortController();
         openAiModal(mentionedAi.name, () => abortCtrl.abort());
     }
@@ -388,7 +389,14 @@ const doSend = async () => {
         autoResize(textarea);
         _pcData = res.data;
         renderMessages(_pcData.messages || [], true);
-        if (res.async_ai) {
+        if (res.queued_job) {
+            // Queued rather than answered inline: the runner fills the placeholder in
+            // later, so there is nothing to wait on here. Same acknowledgement /aiJob
+            // gives, because it is the same destination.
+            showToast(res.queued_job.eta_minutes != null
+                ? t('chat.cmd.aijob-accepted', { name: res.queued_job.ai_user, minutes: res.queued_job.eta_minutes })
+                : t('chat.cmd.aijob-accepted-no-eta', { name: res.queued_job.ai_user }));
+        } else if (res.async_ai) {
             const pendingMsg = (_pcData.messages || []).slice().reverse().find(m => m.pending);
             if (pendingMsg) startStatusPoll(_pcPath, pendingMsg.id);
         } else {

@@ -362,21 +362,11 @@ if (isset($_REQUEST['action'])) {
         // admin_ai_builtin_instructions) instead of a copy that drifts.
         $wiki_ctx = wiki_chat_context_prompt($space_name, $chat_name, $chat_dir_rel);
 
-        // If a .md page with the same name exists in the same folder, inject its content as context.
-        // Kept in its own variable rather than appended to $wiki_ctx so /debug can price it
-        // separately — it is unbounded and frequently the largest block in the payload.
-        $page_ctx        = '';
-        $linked_md       = dirname($chat_file) . '/' . $chat_name . '.md';
-        $pages_dir_real  = realpath(rtrim(PAGES_DIR, '/'));
-        if (file_exists($linked_md) && $pages_dir_real !== false && strpos(realpath($linked_md), $pages_dir_real) === 0) {
-            $linked_md_rel = ltrim(str_replace(rtrim($space_dir, '/') . '/', '', $linked_md), '/');
-            $page_content = file_get_contents($linked_md);
-            $page_ctx = "The following is the current content of the wiki page \"{$chat_name}\" that this chat is attached to. "
-                      . "Its full path (use this exact value when calling wiki_write_page to update it) is: \"{$linked_md_rel}\". "
-                      . "Use it as context when answering questions:\n\n```markdown\n"
-                      . $page_content
-                      . "\n```\n\n";
-        }
+        // The page this chat is attached to, if any. Built by ai_core so the queued-job
+        // path (an AI set to always run in the background) gets exactly the same block;
+        // kept in its own variable so /debug can price it separately, since it is
+        // unbounded and frequently the largest thing in the payload.
+        $page_ctx = wiki_page_context_prompt($chat_file, $space_dir);
 
         $full_system = $wiki_ctx . $page_ctx . $system_prompt;
         $debug_on    = !empty($chat_data['debug']);
@@ -1486,8 +1476,90 @@ if (isset($_REQUEST['action'])) {
                     }
                 }
 
+                // "Always run in the background": the AI answers as a queued one-off job
+                // rather than inline. Same destination as /aiJob — the placeholder already
+                // written above just needs its job_id, which is also what stops the chat
+                // poll's stale-pending sweep from timing it out while it waits its turn.
+                $_bg_job = null;
+                if ($_pending_ai_user !== null && !empty($_pending_ai_user['ai_config']['always_background'])) {
+                    $_bg_space = trim(str_replace(rtrim(PAGES_DIR, '/'), '', rtrim($space_dir, '/')), '/');
+                    $_bg_id    = 'oneoff_' . date('Ymd-His') . '_' . bin2hex(random_bytes(3));
+                    $_bg_rel   = ltrim(str_replace(rtrim($space_dir, '/'), '', $file_path), '/');
+                    $_bg_actor = get_current_actor();
+                    $_bg_page_ctx = wiki_page_context_prompt($file_path, $space_dir);
+
+                    // A job is handed only its prompt, while an inline reply sees the
+                    // recent thread. Without the transcript, switching this on would make
+                    // the assistant answer every follow-up with no idea what came before.
+                    $_bg_history = [];
+                    foreach (array_slice(array_filter($chat_data['messages'],
+                                 fn($m) => empty($m['pending']) && empty($m['is_debug'])),
+                             -(int)($_pending_ai_user['ai_config']['context_messages'] ?? 10), -1) as $_bm) {
+                        $_bg_history[] = ($_bm['name'] ?? '?') . ': ' . (string)($_bm['text'] ?? '');
+                    }
+                    $_bg_prompt = ($_bg_history
+                            ? "Earlier in this chat thread:\n" . implode("\n", $_bg_history) . "\n\n"
+                            : '')
+                        . 'Latest message from ' . ($new_msg['name'] ?? 'a user') . ': ' . $text;
+
+                    foreach ($chat_data['messages'] as &$_bm2) {
+                        if (($_bm2['id'] ?? null) === $_pending_placeholder_id) { $_bm2['job_id'] = $_bg_id; break; }
+                    }
+                    unset($_bm2);
+
+                    $_bg_ahead = 0;
+                    $_bg_mine  = 0;
+                    foreach (agent_job_queue_read() as $_bq) {
+                        if (($_bq['state'] ?? '') !== 'queued') continue;
+                        $_bg_ahead++;
+                        if ((int)($_bq['requested_by']['uid'] ?? -1) === (int)($_bg_actor['uid'] ?? 0)) $_bg_mine++;
+                    }
+                    // The same per-user cap /aiJob enforces. Chat makes it far easier to
+                    // reach by accident, so rather than rejecting the message — it is
+                    // already in the thread — the placeholder resolves to the reason.
+                    if ($_bg_mine >= AGENT_JOB_MAX_QUEUED_PER_USER) {
+                        foreach ($chat_data['messages'] as &$_bm3) {
+                            if (($_bm3['id'] ?? null) !== $_pending_placeholder_id) continue;
+                            unset($_bm3['pending']);
+                            $_bm3['text'] = 'You already have ' . AGENT_JOB_MAX_QUEUED_PER_USER
+                                . ' background jobs waiting. This one was not queued — let those finish and ask again.';
+                            break;
+                        }
+                        unset($_bm3);
+                        file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
+                        echo json_encode(['success' => true, 'data' => $chat_data,
+                                          'async_ai' => false, 'queued_job' => null]);
+                        break;
+                    }
+                    agent_job_queue_mutate(function (array &$jobs) use (
+                        $_bg_id, $_bg_actor, $_pending_ai_user, $_bg_space, $_bg_prompt, $_bg_rel,
+                        $_pending_placeholder_id, $_bg_page_ctx
+                    ) {
+                        $jobs[] = [
+                            'id'           => $_bg_id,
+                            'state'        => 'queued',
+                            'created_at'   => date('c'),
+                            'requested_by' => ['uid' => $_bg_actor['uid'] ?? 0, 'name' => $_bg_actor['name'] ?? 'Local User'],
+                            'ai_user_uid'  => (int)($_pending_ai_user['uid'] ?? 0),
+                            'ai_user_name' => $_pending_ai_user['name'] ?? 'AI',
+                            'space'        => $_bg_space,
+                            'prompt'       => $_bg_prompt,
+                            // A page chat's page travels with the job; run_agent_job puts
+                            // it in the system prompt, where the inline path has it.
+                            'page_context' => $_bg_page_ctx,
+                            'reply_to'     => ['chat' => $_bg_rel, 'message_id' => $_pending_placeholder_id],
+                            'thinking'     => ['enabled' => true, 'effort' => 'high'],
+                            'started_at'   => null, 'finished_at' => null, 'log_file' => null, 'error' => null,
+                        ];
+                    });
+                    $_bg_job = ['job_id' => $_bg_id, 'eta_minutes' => agent_job_eta_minutes($_bg_ahead),
+                                'ai_user' => $_pending_ai_user['name'] ?? 'AI'];
+                    $_pending_ai_user = null;   // queued, so nothing runs inline
+                }
+
                 file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
-                echo json_encode(['success' => true, 'data' => $chat_data, 'async_ai' => $_pending_ai_user !== null]);
+                echo json_encode(['success' => true, 'data' => $chat_data,
+                                  'async_ai' => $_pending_ai_user !== null, 'queued_job' => $_bg_job]);
 
                 if ($_pending_ai_user !== null) {
                     // Release session lock immediately so chat-poll requests are not blocked
@@ -1845,6 +1917,9 @@ if (isset($_REQUEST['action'])) {
                     'name'      => $u['name'] ?? '',
                     'is_ai'     => !empty($u['is_ai']),
                     'is_system' => !empty($u['is_system']),
+                    // The composer needs this before it sends: a background AI gets an
+                    // ETA toast, not the waiting modal.
+                    'always_background' => !empty($u['ai_config']['always_background']),
                 ], $all_users));
                 echo json_encode(['success' => true, 'data' => $user_list]);
                 break;
@@ -3958,6 +4033,9 @@ if (isset($_REQUEST['action'])) {
                             'context_messages' => (int)( $ai_cfg_in['context_messages'] ?? $ec['context_messages'] ?? 10),
                             'max_tokens'       => (int)( $ai_cfg_in['max_tokens']       ?? $ec['max_tokens']       ?? 4096),
                             'temperature'      => (float)($ai_cfg_in['temperature']      ?? $ec['temperature']      ?? 0.7),
+                            // Every chat mention of this AI is queued as a one-off job
+                            // instead of answered inline — see post_chat_message.
+                            'always_background' => !empty($ai_cfg_in['always_background'] ?? $ec['always_background'] ?? false),
                             'mcp_server_ids'    => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? $ec['mcp_server_ids'] ?? []))),
                             'mcp_instructions'  => (array)($ai_cfg_in['mcp_instructions'] ?? $ec['mcp_instructions'] ?? []),
                             'extra_headers'     => _sanitize_extra_headers($ai_cfg_in['extra_headers'] ?? $ec['extra_headers'] ?? []),
@@ -4001,6 +4079,7 @@ if (isset($_REQUEST['action'])) {
                             'context_messages' => (int)( $ai_cfg_in['context_messages'] ?? 10),
                             'max_tokens'       => (int)( $ai_cfg_in['max_tokens']       ?? 4096),
                             'temperature'      => (float)($ai_cfg_in['temperature']      ?? 0.7),
+                            'always_background' => !empty($ai_cfg_in['always_background'] ?? false),
                             'mcp_server_ids'   => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? []))),
                             'mcp_instructions' => (array)($ai_cfg_in['mcp_instructions'] ?? []),
                             'extra_headers'    => _sanitize_extra_headers($ai_cfg_in['extra_headers'] ?? []),

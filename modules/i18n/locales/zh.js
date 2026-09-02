@@ -601,6 +601,8 @@ export default {
     'admin.ai.key-ph-keep': '留空则保留现有密钥',
     'admin.ai.context-hint': '<strong>0</strong> 只发送当前消息 —— AI 不记得之前的往来。<strong>10</strong>（默认）覆盖一段简短集中的对话。<strong>20</strong>（最大值）提供最多上下文，但可能让 AI 被更早的无关话题干扰 —— 切换话题时用 <code>/newTopic</code> 重置。',
     'admin.ai.temp-hint': '控制随机性。<strong>0.7</strong>（默认）在创造性和连贯性之间取得平衡，适合大多数任务。较低的值（0–0.4）产生更集中、更确定的回复，适合事实性问答或结构化输出。较高的值（1.0–2.0）增加多样性和创造性，但可能出现不连贯或偏离主题的回复。',
+    'admin.ai.background': '始终在后台运行',
+    'admin.ai.background-hint': '对该 AI 的每次提及都会作为一次性任务排队，由任务执行器作答，而不是即时回复。适合推理模型——它们所需的时间超出聊天请求的合理范围：会话中会留下占位消息和预计时间，无需对着弹窗等待。回复会带上近期的会话内容作为上下文。',
     'admin.ai.xhdr-hint': '在每次向模型端点发送请求时附加的额外 HTTP 请求头 —— 除提供商自身的认证之外。适用于自托管模型前面的网关，例如需要 <code>CF-Access-Client-Id</code> 和 <code>CF-Access-Client-Secret</code> 的 Cloudflare Access 隧道。',
     'admin.ai.clone-btn': '克隆…',
     'admin.ai.delete-title': '删除 AI 用户',

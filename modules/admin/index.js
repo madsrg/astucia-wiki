@@ -999,6 +999,13 @@ const openAiUserForm = async (u) => {
                     <p class="form-hint">${t('admin.ai.temp-hint')}</p>
                 </div>
                 <div class="form-group">
+                    <label class="admin-ai-switch-row">
+                        <input type="checkbox" id="ai-f-background" class="space-settings-switch" ${cfg.always_background ? 'checked' : ''}>
+                        <span>${t('admin.ai.background')}</span>
+                    </label>
+                    <p class="form-hint">${t('admin.ai.background-hint')}</p>
+                </div>
+                <div class="form-group">
                     <label>${t('admin.xhdr.label')} <span style="font-weight:400;color:var(--text-muted)">${t('admin.optional')}</span></label>
                     ${extraHeadersFieldHtml('ai-f', cfg.extra_headers ?? [])}
                     <p class="form-hint">${t('admin.ai.xhdr-hint')}</p>
@@ -1299,6 +1306,7 @@ const saveAiUser = async (uid) => {
     const context_messages = parseInt(document.getElementById('ai-f-context')?.value || '10', 10);
     const temperature      = parseFloat(document.getElementById('ai-f-temperature')?.value || '0.7');
     const max_tokens       = parseInt(document.getElementById('ai-f-tokens')?.value || '4096', 10);
+    const always_background = !!document.getElementById('ai-f-background')?.checked;
     const mcp_server_ids   = [...document.querySelectorAll('.ai-f-mcp-cb:checked')].map(cb => cb.value);
     const mcp_instructions = {};
     document.querySelectorAll('.ai-f-mcp-instr').forEach(ta => {
@@ -1321,7 +1329,7 @@ const saveAiUser = async (uid) => {
         source_uid,
         name, role,
         spaces: JSON.stringify(spaces),
-        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, system_prompt_space, system_prompt_page, context_messages, temperature, max_tokens, mcp_server_ids, mcp_instructions, extra_headers }),
+        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, system_prompt_space, system_prompt_page, context_messages, temperature, max_tokens, always_background, mcp_server_ids, mcp_instructions, extra_headers }),
     }, 'POST');
 
     saveBtn.disabled = false;

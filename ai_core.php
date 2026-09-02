@@ -217,6 +217,35 @@ function wiki_markdown_features_prompt(): string {
 }
 
 /**
+ * The page a chat thread is attached to, as context for the model.
+ *
+ * A `.chat` sitting beside a `.md` of the same name is that page's discussion, so the
+ * page itself is usually what the question is about. Shared by the inline chat reply and
+ * the queued-job path: an AI user set to always run in the background answers the same
+ * questions and needs the same page in front of it, and a second copy of this wording
+ * would drift the first time either was touched.
+ *
+ * Unbounded by design — the page is as long as it is — so callers keep it in its own
+ * variable and `/debug` prices it separately.
+ */
+function wiki_page_context_prompt(string $chat_file, string $space_dir): string {
+    $chat_name = basename($chat_file, '.chat');
+    $linked_md = dirname($chat_file) . '/' . $chat_name . '.md';
+    $pages_root = realpath(rtrim(PAGES_DIR, '/'));
+    if (!is_file($linked_md) || $pages_root === false) return '';
+    // realpath both sides: the chat path is caller-supplied, and a symlink out of the
+    // content directory would otherwise read an arbitrary file into the prompt.
+    $real = realpath($linked_md);
+    if ($real === false || strpos($real, $pages_root) !== 0) return '';
+    $rel = ltrim(str_replace(rtrim($space_dir, '/') . '/', '', $linked_md), '/');
+    return "The following is the current content of the wiki page \"{$chat_name}\" that this chat is attached to. "
+         . "Its full path (use this exact value when calling wiki_write_page to update it) is: \"{$rel}\". "
+         . "Use it as context when answering questions:\n\n```markdown\n"
+         . (string)file_get_contents($linked_md)
+         . "\n```\n\n";
+}
+
+/**
  * How to reach a person, for the same two prompts.
  *
  * Kept out of wiki_markdown_features_prompt() because it is not Markdown syntax, and
@@ -954,7 +983,10 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     $wiki_ctx = wiki_job_context_prompt($space_name, $job_dir_rel,
                                         trim((string)($job['requested_by']['name'] ?? '')));
 
-    $full_system = $wiki_ctx . $sys_prompt;
+    // A job queued from a page chat carries that page (see wiki_page_context_prompt);
+    // scheduled jobs have none. Placed exactly where the inline path puts it.
+    $job_page_ctx = (string)($job['page_context'] ?? '');
+    $full_system  = $wiki_ctx . $job_page_ctx . $sys_prompt;
 
     // --- Tool executor closure ---
     $mcp_tool_map  = []; // populated below after $tools_def is built
@@ -1062,6 +1094,8 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                                    'note'   => $mcp_srv_count . ' server' . ($mcp_srv_count === 1 ? '' : 's')],
         'Tool schemas'         => ['tokens' => ai_token_estimate(json_encode($tools)),
                                    'note'   => count($tools_def) . ' tools, ' . count($mcp_tool_map) . ' via MCP'],
+        'Page context'         => ['tokens' => ai_token_estimate($job_page_ctx),
+                                   'note'   => $job_page_ctx === '' ? 'none' : 'attached page'],
         'Job prompt'           => ['tokens' => ai_token_estimate((string)($job['prompt'] ?? '')), 'note' => ''],
     ];
 

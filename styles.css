@@ -166,6 +166,8 @@ body {
 }
 .sidebar-icon-btn:hover { color: var(--text-color); background: #f0f4f8; }
 
+.admin-ai-switch-row { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; cursor: pointer; }
+
 /* Unread count on My Mentions. The button is the positioning context, so the badge
    can sit on its corner without reserving layout space when there is nothing to show. */
 .sidebar-icon-btn { position: relative; }

@@ -462,6 +462,8 @@ export default {
     'admin.ai.key-ph-keep': 'Lämna tomt för att behålla nuvarande nyckel',
     'admin.ai.context-hint': '<strong>0</strong> skickar bara det aktuella meddelandet — AI:n minns inga tidigare utbyten. <strong>10</strong> (standard) täcker en kort, fokuserad tråd. <strong>20</strong> (max) ger mest kontext men riskerar att förvirra AI:n med äldre, orelaterade ämnen — använd <code>/newTopic</code> för att nollställa när du byter ämne.',
     'admin.ai.temp-hint': 'Styr slumpmässigheten. <strong>0,7</strong> (standard) balanserar kreativitet och sammanhang — bra för de flesta uppgifter. Lägre värden (0–0,4) ger mer fokuserade, förutsägbara svar; bra för sakfrågor eller strukturerad utdata. Högre värden (1,0–2,0) ökar variation och kreativitet men riskerar osammanhängande eller irrelevanta svar.',
+    'admin.ai.background': 'Kör alltid i bakgrunden',
+    'admin.ai.background-hint': 'Varje omnämnande av den här AI:n köas som ett engångsjobb och besvaras av jobbköraren i stället för direkt. Passar resonerande modeller som tar längre tid än en chattförfrågan bör: tråden får en platshållare och en tidsuppskattning, och ingen väntar med en dialog öppen. Svaret får den senaste delen av tråden som kontext.',
     'admin.ai.xhdr-hint': 'Ytterligare HTTP-headers som skickas med varje förfrågan till modellens endpoint — utöver leverantörens autentisering. Bra för en gateway framför en självhostad modell, t.ex. en Cloudflare Access-tunnel som kräver <code>CF-Access-Client-Id</code> och <code>CF-Access-Client-Secret</code>.',
     'admin.ai.clone-btn': 'Klona…',
     'admin.ai.delete-title': 'Ta bort AI-användare',

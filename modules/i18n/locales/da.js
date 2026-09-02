@@ -463,6 +463,8 @@ export default {
     'admin.ai.key-ph-keep': 'Lad feltet være tomt for at beholde den nuværende nøgle',
     'admin.ai.context-hint': '<strong>0</strong> sender kun den aktuelle besked — AI\'en husker ikke tidligere udvekslinger. <strong>10</strong> (standard) dækker en kort, fokuseret tråd. <strong>20</strong> (maksimum) giver mest kontekst, men risikerer at forvirre AI\'en med ældre, urelaterede emner — brug <code>/newTopic</code> til at nulstille, når du skifter emne.',
     'admin.ai.temp-hint': 'Styrer tilfældigheden. <strong>0,7</strong> (standard) balancerer kreativitet og sammenhæng — godt til de fleste opgaver. Lavere værdier (0–0,4) giver mere fokuserede, forudsigelige svar; nyttigt til faktuelle spørgsmål eller struktureret output. Højere værdier (1,0–2,0) øger variation og kreativitet, men risikerer usammenhængende eller irrelevante svar.',
+    'admin.ai.background': 'Kør altid i baggrunden',
+    'admin.ai.background-hint': 'Hver omtale af denne AI sættes i kø som et engangsjob og besvares af jobkøreren i stedet for at svare med det samme. Velegnet til ræsonnerende modeller, der tager længere tid, end en chatforespørgsel bør: tråden får en pladsholder og et estimat, og ingen venter med en dialog åben. Svaret får den seneste del af tråden som kontekst.',
     'admin.ai.xhdr-hint': 'Yderligere HTTP-headere, der sendes med hver forespørgsel til modellens endpoint — ud over udbyderens autentificering. Nyttigt til en gateway foran en selvhostet model, fx en Cloudflare Access-tunnel, der kræver <code>CF-Access-Client-Id</code> og <code>CF-Access-Client-Secret</code>.',
     'admin.ai.clone-btn': 'Klon…',
     'admin.ai.delete-title': 'Slet AI-bruger',

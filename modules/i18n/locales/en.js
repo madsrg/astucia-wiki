@@ -913,6 +913,8 @@ export default {
     'admin.ai.key-ph-keep':   'Leave blank to keep existing key',
     'admin.ai.context-hint':  '<strong>0</strong> sends only the current message — the AI has no memory of earlier exchanges. <strong>10</strong> (default) covers a short focused thread. <strong>20</strong> (maximum) gives the most context but risks confusing the AI with unrelated earlier topics — use <code>/newTopic</code> to reset when switching subjects.',
     'admin.ai.temp-hint':     'Controls randomness. <strong>0.7</strong> (default) balances creativity with coherence — good for most tasks. Lower values (0–0.4) produce more focused, deterministic replies; useful for factual Q&amp;A or structured output. Higher values (1.0–2.0) increase variety and creativity but risk incoherent or off-topic replies.',
+    'admin.ai.background': 'Always run in the background',
+    'admin.ai.background-hint': 'Every mention of this AI is queued as a one-off job and answered by the job runner, instead of replying inline. Right for reasoning models, which take longer than a chat request should: the thread gets a placeholder and an ETA, and nobody waits with a modal open. The reply carries the recent thread as context.',
     'admin.ai.xhdr-hint':     'Additional HTTP headers sent on every request to the model endpoint — on top of the provider\'s auth. Useful for a gateway in front of a self-hosted model, e.g. a Cloudflare Access tunnel needing <code>CF-Access-Client-Id</code> and <code>CF-Access-Client-Secret</code>.',
     'admin.ai.clone-btn':     'Clone…',
     'admin.ai.delete-title':  'Delete AI user',
