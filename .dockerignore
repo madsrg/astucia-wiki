@@ -20,6 +20,7 @@ agent_jobs_queue.json
 agent_jobs_heartbeat.json
 mcp_servers.json
 spaces.json
+settings.json
 
 # Rebuilt in the vendor stage; copying the host's copy would defeat that.
 vendor/
