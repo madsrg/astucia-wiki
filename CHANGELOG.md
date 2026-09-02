@@ -6,6 +6,60 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.9.1] — 2026-09-02
+
+Everything an AI user does here now leaves a record you can read. An optional audit log says
+who changed which page; `/debug` writes the whole conversation with the model to a page;
+`/jobs` shows you your own background work and the log when it fails. Alongside that, AI
+users can rename pages and be told to always run in the background, and Markdown files can
+be dropped straight onto the file tree.
+
+### Added
+- **Audit log**, off by default, turned on in Admin → Audit Log. JSON Lines in
+  `LOG_DIR/audit/`, one file per day, with CIM Change field names so Splunk indexes it with
+  `INDEXED_EXTRACTIONS=json` and no regex. One hook in the router covers every content
+  action from a browser or a service token alike; denials are logged too, since "a reader
+  tried to edit a frozen Space" is usually the line someone is looking for. AI writes are
+  attributed to the AI user rather than to whoever's request they happened to run inside.
+  Chat messages are out of scope — a busy thread is hundreds of entries a day and is already
+  its own record. The viewer filters by user and date, and a row opens the full entry.
+- **`/debug` writes the full LLM transcript** to `LLM debug.md` in a `debug/` folder beside
+  the chat: every request and response, every tool call, every MCP round trip. Credentials
+  are redacted at capture, not at render — the transcript becomes a page every editor can
+  read.
+- **`/jobs`** lists your own background jobs with their state and opens the log of any of
+  them. Job failure used to be one line in a thread with an admin-only log behind it.
+  Ownership is checked against the queue entry, so a job id is not a key to someone else's
+  log.
+- **A queued job nothing will ever start is now abandoned** with a visible message. It is
+  the one failure the job runner cannot report, because it is not running to report it.
+- **`wiki_rename_page`** — AI users can rename a page without breaking what points at it.
+  The id is kept, attachments and the cached `.drawio.svg` follow, the FTS row moves, and
+  wikilinks pointing at the old name are counted rather than rewritten unless asked.
+- **"Always run in the background"** for an AI user: chat mentions are queued as one-off
+  jobs instead of answered inline, for reasoning models that take longer than a chat
+  request should. The job carries a transcript of the recent thread, and a page chat's page
+  travels with it, so a background AI is not answering blind.
+- **Drag and drop Markdown pages onto the file tree** or the browse pane. `.md` only, judged
+  on the final name; nothing is ever overwritten, a collision becomes `name (1).md`.
+
+### Changed
+- **Type-ahead highlights the first match** as soon as the list appears, and takes it
+  automatically once only one candidate is left. Enter and Tab already picked the first item;
+  nothing showed you that.
+- **A bare `/newTopic` straight after another one is ignored** — it resets a context that is
+  already empty.
+- **Code blocks wrap instead of scrolling.** One long line — a JSON string, a URL, a stack
+  trace — used to give the whole block a page-wide horizontal scrollbar.
+- **Opening the editor puts the caret at the first character** rather than the end of the
+  page.
+
+### Fixed
+- **A long page name no longer pushes the header apart**, shoving the action icons off the
+  right edge and giving the page a horizontal scrollbar. The title ellipsizes instead.
+- **The header's two sides line up.** With a breadcrumb shown, the page title sat ~10px
+  below the icons beside it.
+
 ## [2026.8.4] — 2026-08-31
 
 Mentions grow up. `@Name` now addresses a person and `#Name` an AI user, My Mentions
