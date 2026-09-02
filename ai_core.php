@@ -985,6 +985,12 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
 
     // A job queued from a page chat carries that page (see wiki_page_context_prompt);
     // scheduled jobs have none. Placed exactly where the inline path puts it.
+    // Audit context for anything this job writes: the AI user is the actor, but the
+    // person who queued it is why it happened.
+    if (function_exists('wiki_audit_set_context')) {
+        wiki_audit_set_context(['via' => 'agent_job',
+                                'requested_by' => $job['requested_by']['name'] ?? null]);
+    }
     $job_page_ctx = (string)($job['page_context'] ?? '');
     $full_system  = $wiki_ctx . $job_page_ctx . $sys_prompt;
 

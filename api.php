@@ -14,6 +14,7 @@ require_once __DIR__ . '/agent_jobs.php';
 require_once __DIR__ . '/service_auth.php';
 require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/mentions.php';
+require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/wikilinks.php';
 
 session_start();
@@ -837,11 +838,28 @@ if (isset($_REQUEST['action'])) {
                       'git_deleted_files', 'git_restore_deleted',
                       'admin_reindex',
                       'admin_get_mcp_servers', 'admin_save_mcp_server', 'admin_delete_mcp_server', 'admin_test_mcp_server',
+                      'admin_audit_config', 'admin_set_audit_enabled', 'admin_get_audit_entries',
                       'admin_ai_builtin_instructions', 'admin_space_settings', 'admin_set_space_readonly', 'admin_merge_space_preflight', 'admin_merge_space'];
     $requested_action = $_REQUEST['action'];
     $current_role     = get_current_role();
 
+    // Audit: describe the target before anything happens to it. A delete removes the
+    // index entry, so the id has to be read now or not at all; the whole router is one
+    // try/switch/catch, so this one pair of calls covers every content action, from a
+    // browser or a service token alike. Returns null unless auditing is on and this
+    // action is in scope.
+    $_audit_space = rtrim($space_dir, '/') === rtrim(PAGES_DIR, '/') ? '' : basename(rtrim($space_dir, '/'));
+    if ($ai_auth_user) {
+        wiki_audit_set_context([
+            'user'    => $ai_auth_user['name'] ?? null,
+            'user_id' => $ai_auth_user['uid'] ?? null,
+            'via'     => !empty($ai_auth_user['is_ai']) ? 'ai_token' : 'api_token',
+        ]);
+    }
+    $_audit = wiki_audit_begin($requested_action, $indexer);
+
     if (in_array($requested_action, $edit_actions) && $current_role === 'reader') {
+        wiki_audit_finish($_audit, 'failure', 'readers cannot modify content', null, $_audit_space);
         echo json_encode(['success' => false, 'message' => 'Readers cannot modify content.']);
         exit;
     }
@@ -875,6 +893,7 @@ if (isset($_REQUEST['action'])) {
         if ($_ro_target !== '') $_ro_names[] = basename($_ro_target);
         foreach ($_ro_names as $_ro_name) {
             if (!wiki_space_is_readonly($_ro_name)) continue;
+            wiki_audit_finish($_audit, 'failure', 'space is read-only', null, $_audit_space);
             echo json_encode([
                 'success'        => false,
                 'readonly_space' => $_ro_name,
@@ -3369,6 +3388,39 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true]);
                 break;
 
+            case 'admin_audit_config':
+                echo json_encode([
+                    'success' => true,
+                    'enabled' => wiki_audit_enabled(),
+                    'dates'   => wiki_audit_dates(),
+                    'dir'     => defined('LOG_DIR') && LOG_DIR ? rtrim(LOG_DIR, '/\\') . '/audit' : null,
+                ]);
+                break;
+
+            case 'admin_set_audit_enabled':
+                $ae_on = in_array($_POST['enabled'] ?? '', ['1', 'true'], true);
+                if (!$ae_on) wiki_audit_log('audit_disabled', 'success', ['object_category' => 'settings']);
+                if (!wiki_setting_set('audit_log', $ae_on)) {
+                    throw new Exception('Could not save the setting — is WIKI_SYSTEM_DATA writable?');
+                }
+                // Recorded in the log itself, so switching it off is visible in the trail
+                // rather than looking like a quiet day. Written after the flag flips on,
+                // and before it flips off, so both land in the file.
+                if ($ae_on) wiki_audit_log('audit_enabled', 'success', ['object_category' => 'settings']);
+                echo json_encode(['success' => true, 'enabled' => $ae_on]);
+                break;
+
+            case 'admin_get_audit_entries':
+                $al_date = trim($_GET['date'] ?? date('Y-m-d'));
+                $al_user = trim($_GET['user'] ?? '');
+                echo json_encode([
+                    'success' => true,
+                    'date'    => $al_date,
+                    'users'   => wiki_audit_users($al_date),
+                    'data'    => wiki_audit_read($al_date, $al_user),
+                ]);
+                break;
+
             case 'admin_get_logs':
                 if (!defined('LOG_DIR') || !LOG_DIR || !is_dir(LOG_DIR)) {
                     echo json_encode(['success' => true, 'data' => []]);
@@ -4633,7 +4685,9 @@ if (isset($_REQUEST['action'])) {
             default:
                 throw new Exception('Invalid action.');
         }
+        wiki_audit_finish($_audit, 'success', '', $indexer, $_audit_space);
     } catch (Exception $e) {
+        wiki_audit_finish($_audit, 'failure', $e->getMessage(), null, $_audit_space);
         header("HTTP/1.1 500 Internal Server Error");
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }

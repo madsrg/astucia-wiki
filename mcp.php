@@ -86,6 +86,8 @@ if ($_sp !== '') {
     }
 }
 $indexer = new PageIndexer($space_dir);
+require_once __DIR__ . '/audit.php';
+wiki_audit_set_context(['via' => 'mcp']);
 
 // Same opportunistic reconcile as api.php's bootstrap: this endpoint is separate, and
 // without it an MCP client would read an index that has not seen changes made outside

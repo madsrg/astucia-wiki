@@ -47,7 +47,7 @@ const updateRequestsBadge = () => {
 const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
     ai:         ['ai', 'jobs', 'mcp'],
-    monitoring: ['logs', 'errorlog', 'diagnostics'],
+    monitoring: ['logs', 'errorlog', 'audit', 'diagnostics'],
     content:    ['reindex', 'deleted'],
 };
 const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 'reindex' };
@@ -79,6 +79,7 @@ const switchTab = (name) => {
     const activeTab = document.querySelector(`.admin-tab[data-tab="${name}"]`);
     if (activeTab?.dataset.group) lastTabInGroup[activeTab.dataset.group] = name;
     if (name === 'logs')        loadLogFiles();
+    if (name === 'audit')       loadAuditPane();
     if (name === 'requests')    loadRequests();
     if (name === 'errorlog')    loadErrorLogFiles();
     if (name === 'diagnostics') loadDiagnostics();
@@ -88,6 +89,140 @@ const switchTab = (name) => {
     if (name === 'deleted')     loadDeletedPages();
     if (name === 'reindex')     loadReindexPane();
     if (name === 'mcp')         loadMcpServers();
+};
+
+
+// ── Audit Log tab ─────────────────────────────────────────────────────────────
+//
+// Off by default, so the pane is as much about the switch as the entries. The date list
+// comes from the files that exist rather than a calendar: a day with no changes has no
+// file, and offering it would suggest the log had been cleared.
+
+const AUDIT_ACTION_CLASS = {
+    create: 'audit-create', update: 'audit-update', delete: 'audit-delete',
+    rename: 'audit-rename', copy: 'audit-copy', tag: 'audit-tag',
+    attach: 'audit-attach', detach: 'audit-detach', restore: 'audit-restore',
+};
+
+const renderAuditEntries = (rows) => {
+    const box = document.getElementById('admin-audit-entries');
+    if (!box) return;
+    if (!rows.length) { box.innerHTML = `<p class="admin-empty">${escHtml(t('admin.audit.none'))}</p>`; return; }
+    const table = document.createElement('table');
+    table.className = 'admin-table audit-table';
+    table.innerHTML = `<thead><tr>
+        <th>${escHtml(t('admin.audit.col-time'))}</th>
+        <th>${escHtml(t('admin.audit.col-user'))}</th>
+        <th>${escHtml(t('admin.audit.col-source'))}</th>
+        <th>${escHtml(t('admin.audit.col-action'))}</th>
+        <th>${escHtml(t('admin.audit.col-page'))}</th>
+    </tr></thead>`;
+    const tbody = document.createElement('tbody');
+    tbody.innerHTML = rows.map((r, i) => {
+        const failed = r.status !== 'success';
+        // Four columns, each answering one question: when, who, what, to which page.
+        // The Space belongs with the page rather than in a column of its own — together
+        // they are one identity — and everything else that used to sit in a "detail"
+        // column is a property of the actor or of the page, so it lives with whichever
+        // it describes. On an ordinary web edit that leaves nothing extra to show, which
+        // is itself the useful signal: nothing unusual about this one.
+        const page = r.object
+            ? [
+                r.space ? `<span class="sr-space-badge">${escHtml(r.space)}</span>` : '',
+                escHtml(r.object),
+                r.object_new ? `<span class="audit-arrow">→</span> ${escHtml(r.object_new)}` : '',
+                // The id is the durable identifier: a title changes, and after a rename it
+                // is the only thing tying the two lines together.
+                r.object_id ? `<span class="audit-id">#${escHtml(r.object_id)}</span>` : '',
+              ].filter(Boolean).join(' ')
+            : '<span class="ai-users-empty">—</span>';
+        // Why it did not happen belongs with the page it did not happen to.
+        const reason = failed && r.reason ? `<div class="audit-reason">${escHtml(r.reason)}</div>` : '';
+        // Where it came from earns a column of its own: it is short, repetitive and worth
+        // scanning down. The requester qualifies it — an agent job is "on behalf of" —
+        // so it belongs in the same cell rather than beside the name.
+        const source = [
+            r.via ? `<span class="audit-via">${escHtml(r.via)}</span>` : '',
+            r.requested_by ? `<span class="audit-origin">${escHtml(t('admin.audit.for', { name: r.requested_by }))}</span>` : '',
+        ].filter(Boolean).join(' ');
+        const time = (r.ts || '').replace('T', ' ').slice(0, 19);
+        return `<tr class="audit-row ${failed ? 'audit-failed' : ''}" data-i="${i}" title="${escHtml(t('admin.audit.row-hint'))}">
+            <td class="audit-time">${escHtml(time)}</td>
+            <td class="audit-user" title="${escHtml(r.user || '')}">${escHtml(r.user || '—')}</td>
+            <td class="audit-source">${source}</td>
+            <td><span class="audit-action ${AUDIT_ACTION_CLASS[r.action] || ''}">${escHtml(r.action || '')}</span>${
+                failed ? ` <span class="audit-denied">${escHtml(t('admin.audit.denied'))}</span>` : ''}</td>
+            <td>${page}${reason}</td>
+        </tr>`;
+    }).join('');
+    table.appendChild(tbody);
+    box.innerHTML = '';
+    box.appendChild(table);
+
+    // The table shows four columns because that is what stays readable; the record has a
+    // dozen fields. Rather than choose which to drop — or squeeze them all in — a row
+    // opens the whole entry, including the ones with no column: the source address, the
+    // internal action name, and the raw line as it sits in the file.
+    tbody.addEventListener('click', (e) => {
+        const tr = e.target.closest('.audit-row');
+        if (tr) showAuditEntry(rows[Number(tr.dataset.i)]);
+    });
+};
+
+// Field names are shown as they appear in the log rather than translated. They are the
+// CIM names an operator will query in Splunk or grep for in the file, so a friendlier
+// label here would be a second vocabulary to learn.
+const AUDIT_FIELD_ORDER = ['ts', 'user', 'user_id', 'action', 'status', 'reason', 'object',
+    'object_id', 'object_new', 'object_category', 'dest', 'space', 'via', 'requested_by',
+    'src', 'api_action', 'tool'];
+
+const showAuditEntry = async (row) => {
+    if (!row) return;
+    const keys = [...AUDIT_FIELD_ORDER.filter(k => row[k] !== undefined && row[k] !== ''),
+                  ...Object.keys(row).filter(k => !AUDIT_FIELD_ORDER.includes(k))];
+    const dl = keys.map(k =>
+        `<div class="audit-field"><span class="audit-field-key">${escHtml(k)}</span>` +
+        `<span class="audit-field-val">${escHtml(String(row[k]))}</span></div>`).join('');
+    await confirmModal(t('admin.audit.entry-title'), {
+        messageHtml: `<div class="audit-detail">${dl}</div>` +
+            `<p class="space-settings-hint">${escHtml(t('admin.audit.raw'))}</p>` +
+            `<pre class="jobs-log">${escHtml(JSON.stringify(row))}</pre>`,
+        confirmLabel: t('chat.cmd.ai-users-close'),
+        hideCancel: true,
+    });
+};
+
+const loadAuditEntries = async () => {
+    const date = document.getElementById('admin-audit-date')?.value || '';
+    const user = document.getElementById('admin-audit-user')?.value || '';
+    if (!date) { renderAuditEntries([]); return; }
+    const res = await api.call('admin_get_audit_entries', { date, user });
+    if (!res.success) { showToast(res.message || t('admin.audit.load-failed'), 'error'); return; }
+
+    // The user list is per-day, so it is refreshed with the entries — but only when the
+    // filter is not narrowing them, or picking a user would erase everyone else.
+    const sel = document.getElementById('admin-audit-user');
+    if (sel && !user) {
+        sel.innerHTML = `<option value="">${escHtml(t('admin.audit.all-users'))}</option>`
+            + (res.users || []).map(u => `<option value="${escHtml(u)}">${escHtml(u)}</option>`).join('');
+    }
+    renderAuditEntries(res.data || []);
+};
+
+const loadAuditPane = async () => {
+    const res = await api.call('admin_audit_config');
+    if (!res.success) return;
+    const sw = document.getElementById('admin-audit-enabled');
+    if (sw) sw.checked = !!res.enabled;
+    const sel = document.getElementById('admin-audit-date');
+    if (sel) {
+        const dates = res.dates || [];
+        sel.innerHTML = dates.length
+            ? dates.map(d => `<option value="${escHtml(d.date)}">${escHtml(d.date)} (${Math.round(d.size / 1024)} KB)</option>`).join('')
+            : `<option value="">${escHtml(t('admin.audit.no-days'))}</option>`;
+    }
+    document.getElementById('admin-audit-user')?.replaceChildren();
+    await loadAuditEntries();
 };
 
 // ── Users tab ─────────────────────────────────────────────────────────────────
@@ -2536,6 +2671,19 @@ export const init = () => {
         grp.addEventListener('click', () => switchGroup(grp.dataset.group)));
     document.querySelectorAll('.admin-tab').forEach(tab =>
         tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
+
+    document.getElementById('admin-audit-refresh-btn')?.addEventListener('click', loadAuditPane);
+    document.getElementById('admin-audit-date')?.addEventListener('change', loadAuditEntries);
+    document.getElementById('admin-audit-user')?.addEventListener('change', loadAuditEntries);
+    document.getElementById('admin-audit-enabled')?.addEventListener('change', async (e) => {
+        const on = e.target.checked;
+        e.target.disabled = true;
+        const res = await api.call('admin_set_audit_enabled', { enabled: on ? '1' : '0' }, 'POST');
+        e.target.disabled = false;
+        if (!res.success) { e.target.checked = !on; showToast(res.message || t('admin.audit.save-failed'), 'error'); return; }
+        showToast(on ? t('admin.audit.on') : t('admin.audit.off'), 'success');
+        loadAuditPane();
+    });
 
     document.getElementById('admin-save-btn').addEventListener('click', saveUsers);
 

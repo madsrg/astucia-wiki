@@ -8,6 +8,7 @@
 // =================================================================
 
 require_once __DIR__ . '/git_helpers.php';
+require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/wikilinks.php';
 require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/search_index.php';
@@ -311,13 +312,98 @@ function parse_search_query(string $raw): array {
 // would silently exempt it.
 const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_add_tags', 'wiki_set_tags', 'wiki_mention_users', 'wiki_rename_page'];
 
+/**
+ * What an AI tool is about to touch, for the audit log. Same shape as the REST map in
+ * audit.php, but keyed by tool name and resolved from the tool's own arguments.
+ */
+const WIKI_AI_AUDIT_TOOLS = [
+    'wiki_write_page'    => ['page',       'path'],
+    'wiki_write_json'    => ['page',       'path'],
+    'wiki_add_tags'      => ['tags',       'path'],
+    'wiki_set_tags'      => ['tags',       'path'],
+    'wiki_rename_page'   => ['page',       'path'],
+    // Only when it appends to a .md page: a mention posted into a .chat is a chat
+    // message, and those are out of scope wherever they come from — see the note on
+    // WIKI_AUDIT_ACTIONS in audit.php. Gated on the target's type below rather than
+    // dropped here, so the page case stays in scope like any other page write.
+    'wiki_mention_users' => ['page',       'target'],
+];
+
+/**
+ * Every AI write goes through here — chat replies, agent jobs and MCP alike — so the
+ * audit hook sits at the same convergence point the read-only guard does.
+ *
+ * The actor is the AI user, not the session: an inline chat reply runs inside the
+ * request of the person who posted, and recording them as the author of the page the AI
+ * wrote would be exactly wrong. Whoever asked is kept alongside as requested_by.
+ */
 function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir) {
     // A read-only Space is read-only for agents too. api.php's guard already covers
     // chat @mentions, but mcp.php and run_ai_agent_jobs.php call this function
     // directly — this is the one point all three routes share.
     if (in_array($tool_name, WIKI_AI_WRITE_TOOLS, true) && wiki_space_dir_is_readonly($space_dir)) {
-        return 'Error: the space "' . basename(rtrim($space_dir, '/')) . '" is read-only; nothing in it can be changed.';
+        $denied = 'Error: the space "' . basename(rtrim($space_dir, '/')) . '" is read-only; nothing in it can be changed.';
+        _wiki_ai_audit($tool_name, $tool_input, $ai_user, $indexer, $space_dir, $denied,
+                       is_file(rtrim($space_dir, '/') . '/' . ltrim(str_replace('..', '', (string)($tool_input['path'] ?? '')), '/')));
+        return $denied;
     }
+    // Whether the page already existed has to be sampled BEFORE the write, or a create
+    // is indistinguishable from an update by the time the result comes back.
+    $existed = null;
+    if (in_array($tool_name, ['wiki_write_page', 'wiki_write_json'], true)) {
+        $existed = is_file(rtrim($space_dir, '/') . '/'
+                 . ltrim(str_replace('..', '', (string)($tool_input['path'] ?? '')), '/'));
+    }
+    $result = _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, $space_dir);
+    _wiki_ai_audit($tool_name, $tool_input, $ai_user, $indexer, $space_dir, $result, $existed);
+    return $result;
+}
+
+// Tools report failure by returning a string that starts with "Error:" — the existing
+// convention, and the only outcome signal there is.
+function _wiki_ai_audit(string $tool, array $input, $ai_user, $indexer, string $space_dir,
+                        $result, ?bool $existed = null): void {
+    if (!wiki_audit_enabled() || !isset(WIKI_AI_AUDIT_TOOLS[$tool])) return;
+    [$category, $param] = WIKI_AI_AUDIT_TOOLS[$tool];
+    $rel = ltrim(str_replace('..', '', (string)($input[$param] ?? '')), '/');
+    if ($tool === 'wiki_mention_users' && strtolower(pathinfo($rel, PATHINFO_EXTENSION)) === 'chat') return;
+
+    $verb = 'update';
+    if ($tool === 'wiki_rename_page')                       $verb = 'rename';
+    elseif ($tool === 'wiki_add_tags' || $tool === 'wiki_set_tags') $verb = 'tag';
+    elseif (in_array($tool, ['wiki_write_page', 'wiki_write_json'], true)) {
+        $verb = $existed ? 'update' : 'create';
+    }
+
+    $ctx = $GLOBALS['_wiki_audit_context'] ?? [];
+    wiki_audit_set_context(array_merge($ctx, [
+        'user'    => $ai_user['name'] ?? 'AI',
+        'user_id' => $ai_user['uid'] ?? null,
+        'via'     => $ctx['via'] ?? 'ai',
+    ]));
+
+    $ok = !(is_string($result) && str_starts_with($result, 'Error:'));
+    $fields = ['object_category' => $category, 'api_action' => $tool, 'tool' => $tool];
+    if ($rel !== '') $fields['object'] = $rel;
+    if ($rel !== '' && $indexer) {
+        $id = $indexer->getId($rel);
+        if ($id !== null) $fields['object_id'] = (string)$id;
+    }
+    if ($tool === 'wiki_rename_page' && !empty($input['new_path'])) {
+        $fields['object_new'] = ltrim(str_replace('..', '', (string)$input['new_path']), '/');
+        // After a rename the id lives at the new path.
+        if ($indexer) {
+            $nid = $indexer->getId($fields['object_new']);
+            if ($nid !== null) $fields['object_id'] = (string)$nid;
+        }
+    }
+    $space = rtrim($space_dir, '/');
+    if (defined('PAGES_DIR') && $space !== rtrim(PAGES_DIR, '/')) $fields['space'] = basename($space);
+    if (!$ok && is_string($result)) $fields['reason'] = ltrim(substr($result, 6));
+    wiki_audit_log($verb, $ok ? 'success' : 'failure', $fields);
+}
+
+function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, $space_dir) {
     switch ($tool_name) {
         case 'wiki_list_pages':
             $pages = $indexer->getAllPages();

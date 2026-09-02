@@ -1211,6 +1211,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab hidden" data-tab="mcp" data-group="ai" data-i18n="admin.tab.mcp">MCP Servers</button>
                 <button class="admin-tab hidden" data-tab="logs" data-group="monitoring" data-i18n="admin.tab.logs">Access Log</button>
                 <button class="admin-tab hidden" data-tab="errorlog" data-group="monitoring" data-i18n="admin.tab.errorlog">Error Log</button>
+                <button class="admin-tab hidden" data-tab="audit" data-group="monitoring" data-i18n="admin.tab.audit">Audit Log</button>
                 <button class="admin-tab hidden" data-tab="diagnostics" data-group="monitoring" data-i18n="admin.tab.diag">Diagnostics</button>
                 <button class="admin-tab hidden" data-tab="reindex" data-group="content" data-i18n="admin.tab.reindex">Index Pages</button>
                 <button class="admin-tab hidden" data-tab="deleted" data-group="content" data-i18n="admin.tab.deleted">Deleted Pages</button>
@@ -1240,6 +1241,21 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     <button id="admin-log-refresh-btn" class="btn btn-sm btn-secondary" data-i18n="btn.refresh">&#8635; Refresh</button>
                 </div>
                 <div id="admin-log-entries" class="admin-scroll-area"></div>
+            </div>
+
+            <!-- Audit Log pane -->
+            <div id="admin-pane-audit" class="admin-pane hidden">
+                <div class="admin-log-toolbar">
+                    <label class="admin-ai-switch-row" style="margin-right:auto">
+                        <input type="checkbox" id="admin-audit-enabled" class="space-settings-switch">
+                        <span data-i18n="admin.audit.enable">Record page changes</span>
+                    </label>
+                    <select id="admin-audit-date" class="form-control admin-log-date-select"></select>
+                    <select id="admin-audit-user" class="form-control admin-log-date-select"></select>
+                    <button id="admin-audit-refresh-btn" class="btn btn-sm btn-secondary" data-i18n="btn.refresh">&#8635; Refresh</button>
+                </div>
+                <p id="admin-audit-hint" class="form-hint" data-i18n="admin.audit.hint">Off by default. When on, page creates, updates, deletes, renames, attachments and tag changes are appended to LOG_DIR/audit/ as JSON Lines — including attempts that were refused.</p>
+                <div id="admin-audit-entries" class="admin-scroll-area"></div>
             </div>
 
             <!-- Error Log pane -->

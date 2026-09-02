@@ -168,6 +168,42 @@ body {
 
 .admin-ai-switch-row { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; cursor: pointer; }
 
+/* Audit log viewer */
+.audit-table td { vertical-align: middle; font-size: 0.8rem; }
+/* The timestamp is fixed-width content and must never wrap or ellipsize — it was using
+   .admin-log-source, which caps at 80px for a log *filename*. */
+.audit-time { white-space: nowrap; width: 1%; color: var(--accent-gray); font-variant-numeric: tabular-nums; }
+/* A long name is truncated rather than allowed to set the column's width — the full name
+   is on the cell's tooltip. max-width is what makes the ellipsis reachable: without it an
+   auto-layout table sizes the column to max-content and nothing ever overflows. */
+.audit-user { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Where it came from: short, repetitive, worth scanning down its own column. */
+.audit-source { white-space: nowrap; }
+.audit-origin { font-size: 0.7rem; color: var(--accent-gray); }
+.audit-arrow { color: var(--accent-gray); }
+.audit-row { cursor: pointer; }
+/* The full record, for the fields the four columns have no room for. */
+/* Widened 50% (380 → 570) only when the shared confirm dialog holds this record — paths,
+   raw JSON and CIM field names all read badly wrapped. Same content-keyed approach as the
+   /aiUsers table above, so no width option has to be threaded through confirmModal. */
+#confirm-modal .input-modal-content:has(.audit-detail) { max-width: 570px; }
+.audit-detail { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.2rem 0.9rem; text-align: left; margin-bottom: 0.75rem; }
+.audit-field { display: contents; }
+.audit-field-key { font-family: monospace; font-size: 0.75rem; color: var(--accent-gray); }
+.audit-field-val { font-size: 0.8rem; word-break: break-word; }
+.audit-table tr.audit-failed { background: #fffafa; }
+.audit-action { font-size: 0.68rem; font-weight: 700; padding: 0.1em 0.5em; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.03em; background: #edf2f7; color: #2d3748; }
+.audit-create  { background: #f0fff4; color: #22543d; }
+.audit-update  { background: #ebf8ff; color: #2a4365; }
+.audit-delete  { background: #fff5f5; color: #742a2a; }
+.audit-rename  { background: #fffaf0; color: #7b341e; }
+.audit-tag     { background: #faf5ff; color: #44337a; }
+.audit-attach, .audit-detach, .audit-copy, .audit-restore { background: #e6fffa; color: #234e52; }
+.audit-denied  { font-size: 0.68rem; font-weight: 700; color: var(--accent-danger); text-transform: uppercase; }
+.audit-id      { color: var(--accent-gray); font-size: 0.7rem; }
+.audit-via     { font-size: 0.68rem; padding: 0.1em 0.45em; border-radius: 4px; background: #edf2f7; color: var(--accent-gray); }
+.audit-reason  { color: var(--accent-danger); font-size: 0.75rem; }
+
 /* /jobs overview — reuses the /aiUsers table, plus state pills and a log viewer. */
 /* Wider and taller than the /aiUsers dialog it shares a class with: a job row carries a
    free-text prompt and a path, where an AI user row carries short fixed fields. Height is
