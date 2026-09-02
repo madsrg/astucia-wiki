@@ -460,6 +460,26 @@ const setupInput = () => {
         selectedIdx = idx;
     };
 
+    /**
+     * One match left, and something typed to narrow it to that one: take it and close.
+     *
+     * The empty-query guard is what makes this usable — with a single AI user, "#" on its
+     * own already has exactly one match, and without it the trigger character would
+     * complete itself before you had typed anything. Names and commands have to match
+     * exactly to do anything at all, so once only one candidate survives there is nothing
+     * else the keystroke could have meant.
+     */
+    const autoPick = (query) => {
+        const items = getItems();
+        if (query === '' || items.length !== 1) return false;
+        // The pools are fetched asynchronously; if a later keystroke has already changed
+        // the query, this list is stale and inserting from it would clobber live input.
+        const now = textarea.value.slice(triggerStart + triggerChar.length, textarea.selectionStart).toLowerCase();
+        if (now !== query) return false;
+        items[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        return true;
+    };
+
     textarea.addEventListener('input', async () => {
         autoResize(textarea);
         const val = textarea.value, pos = textarea.selectionStart;
@@ -500,6 +520,8 @@ const setupInput = () => {
                 });
                 mentionPop.appendChild(item);
             });
+            if (autoPick(query)) return;
+            setSelected(0);
             mentionPop.classList.remove('hidden');
             return;
         }
@@ -561,6 +583,8 @@ const setupInput = () => {
                 mentionPop.appendChild(item);
             });
         }
+        if (autoPick(query)) return;
+        setSelected(0);
         mentionPop.classList.remove('hidden');
     });
 
