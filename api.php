@@ -1507,6 +1507,27 @@ if (isset($_REQUEST['action'])) {
                 $actor = get_current_actor();
                 $is_new_topic = (bool)preg_match('/^\/newTopic(\s|$)/i', $text);
                 $is_action    = (bool)preg_match('/^\/me(\s|$)/i', $text);
+
+                // A bare /newTopic straight after another one resets a context that is
+                // already empty. Drop it rather than stack a second divider in the thread
+                // for a message that changes nothing.
+                //
+                // Both halves must be *bare*. "/newTopic let's discuss X" carries a real
+                // message, so a following bare /newTopic does discard it and is not a
+                // no-op; and a bare one followed by "/newTopic and now Y" posts Y. Only
+                // the exact repeat is redundant. Any message in between — an AI reply
+                // included — means the reset now excludes something, so the last message
+                // in the thread is the only one worth comparing against.
+                $nt_bare = fn($t) => trim(preg_replace('/^\/newTopic\s*/i', '', (string)$t)) === '';
+                if ($is_new_topic && $nt_bare($text)) {
+                    $prev_msgs = $chat_data['messages'] ?? [];
+                    $prev = $prev_msgs ? end($prev_msgs) : null;
+                    if ($prev && !empty($prev['is_new_topic']) && $nt_bare($prev['text'] ?? '')) {
+                        echo json_encode(['success' => true, 'data' => $chat_data,
+                                          'async_ai' => false, 'queued_job' => null, 'ignored' => 'new_topic']);
+                        break;
+                    }
+                }
                 $stored_text  = $is_action ? trim(preg_replace('/^\/me\s*/i', '', $text)) : $text;
                 $new_msg = [
                     'id'        => $chat_data['nextMessageId'],
