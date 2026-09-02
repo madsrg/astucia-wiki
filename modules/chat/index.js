@@ -21,6 +21,7 @@ const CHAT_COMMANDS = [
     { name: 'summarize', description: t('chat.cmd.summarize') },
     { name: 'aiJob',     description: t('chat.cmd.ai-job'), editorOnly: true },
     { name: 'aiUsers',   description: t('chat.cmd.ai-users') },
+    { name: 'jobs',      description: t('chat.cmd.jobs') },
     { name: 'debug',     description: t('chat.cmd.debug'), editorOnly: true },
 ];
 // Readers can't queue jobs (the API rejects them too — this only keeps the
@@ -864,6 +865,13 @@ export const init = () => {
                     textarea.value = text; autoResize(textarea);
                     showToast(jobRes?.message || t('chat.cmd.aijob-fail'), 'error');
                 }
+                return;
+            }
+            if (cmd === '/jobs') {
+                textarea.value = ''; autoResize(textarea);
+                const { showJobsOverview } = await import('../core/jobs_overview.js');
+                await showJobsOverview();
+                textarea.focus();
                 return;
             }
             if (cmd === '/aiusers') {

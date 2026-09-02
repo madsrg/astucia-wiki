@@ -19,6 +19,7 @@ const CHAT_COMMANDS = [
     { name: 'purge',     description: t('chat.cmd.purge') },
     { name: 'summarize', description: t('chat.cmd.summarize') },
     { name: 'aiUsers',   description: t('chat.cmd.ai-users') },
+    { name: 'jobs',      description: t('chat.cmd.jobs') },
     { name: 'debug',     description: t('chat.cmd.debug'), editorOnly: true },
 ];
 
@@ -331,6 +332,13 @@ const doSend = async () => {
             textarea.value = '#';
             textarea.dispatchEvent(new Event('input'));
             textarea.selectionStart = textarea.selectionEnd = 1;
+            textarea.focus();
+            return;
+        }
+        if (cmd === '/jobs') {
+            textarea.value = ''; autoResize(textarea);
+            const { showJobsOverview } = await import('../core/jobs_overview.js');
+            await showJobsOverview();
             textarea.focus();
             return;
         }

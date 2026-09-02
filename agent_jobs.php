@@ -96,6 +96,51 @@ function agent_job_touch_heartbeat(): void {
     ]));
 }
 
+/**
+ * Has the runner stopped turning up?
+ *
+ * The runner recovers its own crashes (a 'running' job past AGENT_JOB_RUNNING_TIMEOUT_MIN),
+ * but it cannot detect the case where it never runs at all — that is precisely when it is
+ * not there to look. So this is asked from the web side, and the heartbeat is the only
+ * honest signal: a live runner means a queued job is legitimately waiting its turn, no
+ * matter how long the queue is, and must not be abandoned.
+ *
+ * Three missed ticks rather than one: a single late cron run is normal.
+ */
+function agent_job_runner_stalled(): bool {
+    $hb = agent_job_heartbeat();
+    if ($hb === null) return true;                       // never ran on this install
+    $age_min = (time() - (int)strtotime((string)$hb['last_run'])) / 60;
+    return $age_min > agent_job_runner_interval() * 3;
+}
+
+/**
+ * Give up on a queued job nothing is going to run, and say why.
+ *
+ * Only ever called for a job that has already missed a tick of its own, so a job queued
+ * moments before cron hiccups is not thrown away. Returns the message to put in the
+ * thread, or null if the job is not abandonable — including the race where the runner
+ * came back and claimed it between the check and the lock.
+ */
+function agent_job_abandon_if_stalled(string $job_id): ?string {
+    if (!agent_job_runner_stalled()) return null;
+    $msg = 'This job was never started: the job runner is not running. '
+         . 'Ask an administrator to check the run_ai_agent_jobs.php cron entry.';
+    return agent_job_queue_mutate(function (array &$jobs) use ($job_id, $msg): ?string {
+        foreach ($jobs as &$j) {
+            if (($j['id'] ?? '') !== $job_id) continue;
+            if (($j['state'] ?? '') !== 'queued') return null;      // claimed after all
+            $age = time() - (int)strtotime((string)($j['created_at'] ?? ''));
+            if ($age < agent_job_runner_interval() * 60) return null;  // has not missed a tick yet
+            $j['state']       = 'error';
+            $j['error']       = $msg;
+            $j['finished_at'] = date('c');
+            return $msg;
+        }
+        return null;
+    });
+}
+
 function agent_job_heartbeat(): ?array {
     $f = agent_job_heartbeat_path();
     if (!is_file($f)) return null;

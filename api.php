@@ -1276,9 +1276,21 @@ if (isset($_REQUEST['action'])) {
                 foreach ($cm_data['messages'] as &$_cm_msg) {
                     if (empty($_cm_msg['pending'])) continue;
                     // A job-backed placeholder is *meant* to sit pending until the cron
-                    // runner picks the job up, which is minutes to hours away. The queue
-                    // does its own crash detection, so this sweep must not touch these.
-                    if (!empty($_cm_msg['job_id'])) continue;
+                    // runner picks the job up, which is minutes to hours away — so the
+                    // 5-minute sweep above must not touch it. The one case it does own is
+                    // the one the runner cannot report on: a job nothing will ever start,
+                    // because the runner is not running. Left alone that placeholder spins
+                    // forever, with no error anywhere, since logging happens in the runner.
+                    if (!empty($_cm_msg['job_id'])) {
+                        $cm_abandoned = agent_job_abandon_if_stalled((string)$_cm_msg['job_id']);
+                        if ($cm_abandoned !== null) {
+                            $_cm_msg['text']      = '⚠️ ' . $cm_abandoned;
+                            $_cm_msg['timestamp'] = date('c');
+                            unset($_cm_msg['pending']);
+                            $cm_changed = true;
+                        }
+                        continue;
+                    }
                     $cm_age = time() - strtotime($_cm_msg['timestamp'] ?? '');
                     if ($cm_age > $cm_stale_timeout) {
                         $_cm_msg['text']    = '⚠️ No response was received. The request may have timed out on the server.';
@@ -4189,6 +4201,65 @@ if (isset($_REQUEST['action'])) {
                 if (!$found_sys_regen) throw new Exception('System user not found.');
                 file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($uf_regen_sys, JSON_PRETTY_PRINT));
                 echo json_encode(['success' => true, 'token' => $new_sys_token]);
+                break;
+
+            case 'list_my_jobs':
+                // The caller's own one-off jobs — what /jobs shows. Not an admin action:
+                // a job you queued is yours to check on, and a reader can queue nothing,
+                // so there is nothing here they could see that they did not cause.
+                $mj_uid  = (int)(get_current_actor()['uid'] ?? 0);
+                $mj_rows = [];
+                foreach (agent_job_queue_read() as $mj) {
+                    // uid 0 is "authentication disabled", where everyone is the same
+                    // local user — matching on it is correct rather than a leak.
+                    if ((int)($mj['requested_by']['uid'] ?? -1) !== $mj_uid) continue;
+                    $mj_rows[] = [
+                        'id'          => $mj['id'] ?? '',
+                        'state'       => $mj['state'] ?? '',
+                        'ai_user'     => $mj['ai_user_name'] ?? 'AI',
+                        'space'       => $mj['space'] ?? '',
+                        'chat'        => $mj['reply_to']['chat'] ?? '',
+                        'created_at'  => $mj['created_at'] ?? null,
+                        'finished_at' => $mj['finished_at'] ?? null,
+                        'error'       => $mj['error'] ?? null,
+                        // The prompt can be long — and for a background chat mention it
+                        // carries the thread transcript — so only enough to recognise it.
+                        'prompt'      => mb_substr(trim((string)($mj['prompt'] ?? '')), 0, 160),
+                        'has_log'     => $mj['log_file'] !== null && $mj['log_file'] !== '',
+                    ];
+                }
+                usort($mj_rows, fn($a, $b) => strcmp((string)$b['created_at'], (string)$a['created_at']));
+                echo json_encode([
+                    'success' => true,
+                    'data'    => $mj_rows,
+                    // So the list can say "queued, but nothing is running them".
+                    'runner_ok' => agent_job_heartbeat() !== null,
+                ]);
+                break;
+
+            case 'get_my_job_log':
+                // The same file admin_get_oneoff_job_log reads, authorised by ownership
+                // instead of by role. Safe to show the requester: it holds their own
+                // prompt, the result or error, and a token/tool breakdown — no
+                // credentials and no system-prompt text.
+                if (!defined('LOG_DIR') || !LOG_DIR) throw new Exception('LOG_DIR is not configured.');
+                $ml_id  = trim($_REQUEST['id'] ?? '');
+                $ml_uid = (int)(get_current_actor()['uid'] ?? 0);
+                $ml_job = null;
+                foreach (agent_job_queue_read() as $mlj) {
+                    if (($mlj['id'] ?? '') === $ml_id) { $ml_job = $mlj; break; }
+                }
+                // Ownership is checked against the queue entry, never against the id in
+                // the request — the id alone must not be enough to read someone's log.
+                if (!$ml_job || (int)($ml_job['requested_by']['uid'] ?? -1) !== $ml_uid) {
+                    throw new Exception('No such job of yours.');
+                }
+                $ml_path = rtrim(LOG_DIR, '/') . '/agent-jobs/_oneoff/'
+                         . preg_replace('/[^a-zA-Z0-9_-]/', '-', $ml_id) . '.log';
+                if (!is_file($ml_path)) throw new Exception('No log for this job yet — it may still be waiting to run.');
+                $ml_body = (string)file_get_contents($ml_path);
+                if (strlen($ml_body) > 200000) $ml_body = "… (truncated to last 200 KB) …\n" . substr($ml_body, -200000);
+                echo json_encode(['success' => true, 'content' => $ml_body]);
                 break;
 
             case 'admin_get_agent_jobs':

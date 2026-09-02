@@ -168,6 +168,40 @@ body {
 
 .admin-ai-switch-row { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; cursor: pointer; }
 
+/* /jobs overview — reuses the /aiUsers table, plus state pills and a log viewer. */
+/* Wider and taller than the /aiUsers dialog it shares a class with: a job row carries a
+   free-text prompt and a path, where an AI user row carries short fixed fields. Height is
+   set on the message area rather than the box, so the header and Close button stay put and
+   only the list scrolls once it outgrows the dialog. */
+#confirm-modal .input-modal-content:has(.jobs-table) { max-width: 795px; }
+#confirm-modal .input-modal-content:has(.jobs-table) .confirm-modal-message {
+    min-height: 45vh; max-height: 60vh; overflow-y: auto;
+}
+.jobs-table td { vertical-align: middle; }
+.jobs-prompt { max-width: 460px; }
+/* Prompt on top in ordinary text, where it ran beneath it as a muted subline: stacked,
+   the two need a hierarchy the old side-by-side columns got from their headings. */
+.jobs-prompt-text, .jobs-where { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jobs-where { font-size: 0.7rem; color: var(--accent-gray); }
+.jobs-state { font-size: 0.7rem; font-weight: 700; padding: 0.1em 0.5em; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+.jobs-state-queued  { background: #ebf4ff; color: #2a4365; }
+.jobs-state-running { background: #e6fffa; color: #234e52; }
+.jobs-state-ok      { background: #f0fff4; color: #22543d; }
+.jobs-state-error   { background: #fff5f5; color: #742a2a; }
+.jobs-stalled { font-size: 0.7rem; color: var(--accent-danger); font-weight: 600; }
+/* The log viewer gets twice the base dialog width (380 → 760). Its own class rather than
+   :has(.jobs-log), because the audit entry dialog renders its raw line in the same <pre>
+   and sets a width of its own — keyed on the shared class, whichever rule came last would
+   silently resize the other dialog. */
+#confirm-modal .input-modal-content:has(.jobs-log-view) { max-width: 760px; }
+.jobs-log { max-height: 55vh; overflow: auto; background: #f7fafc; border: 1px solid var(--border-color); border-radius: 6px; padding: 0.75rem; font-size: 0.75rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; text-align: left; }
+
+/* Drag-and-drop upload: the folder under the pointer, or the whole pane when the drop
+   would land in its current location. Outline rather than border, so nothing reflows
+   mid-drag and the target stops jumping around under the cursor. */
+.drop-target { outline: 2px solid var(--accent-blue); outline-offset: -2px; border-radius: 4px; background: #ebf8ff; }
+.drop-target-root { outline: 2px dashed var(--accent-blue); outline-offset: -4px; border-radius: 6px; }
+
 /* Unread count on My Mentions. The button is the positioning context, so the badge
    can sit on its corner without reserving layout space when there is nothing to show. */
 .sidebar-icon-btn { position: relative; }
@@ -586,8 +620,10 @@ body {
 .confirm-modal-message { margin: -0.25rem 0 0.75rem; color: #4a5568; font-size: 0.875rem; }
 #confirm-modal { z-index: 1100; }
 /* /aiUsers overview table (rendered via confirmModal messageHtml) */
-/* Widen the confirm dialog by 150px (380 → 530) only when it holds the table. */
-#confirm-modal .input-modal-content:has(.ai-users-table) { max-width: 530px; }
+/* Widen the confirm dialog by 150px (380 → 530) only when it holds the table. The
+   :not() matters: /jobs reuses this table class and wants a wider dialog still, and
+   without it this later rule would win on source order at equal specificity. */
+#confirm-modal .input-modal-content:has(.ai-users-table:not(.jobs-table)) { max-width: 530px; }
 .ai-users-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left; }
 .ai-users-table th, .ai-users-table td { padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--border-color); vertical-align: top; }
 .ai-users-table th { color: var(--accent-gray); font-weight: 600; white-space: nowrap; }
