@@ -6,6 +6,52 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.9.2] — 2026-09-03
+
+The collapsed sidebar stops being a dead end. A breadcrumb folder now opens a real folder
+listing in the main area, and the 48px rail keeps the controls you actually need — space
+switcher, the footer icons, log out. Page tabs gained an overflow menu instead of a
+scrollbar.
+
+### Added
+- **Browsing folders with the sidebar collapsed.** Clicking a folder in the breadcrumb used
+  to point the sidebar's browse pane at it, which does nothing when that pane is off-screen.
+  Collapsed, it now lists the folder in the main area: directories first, then pages, each
+  sorted case-insensitively. It reuses the Files Library pane, so the same three view modes
+  (simple, detailed, icons) and the same saved preference apply. `Root` is a crumb like any
+  other there — it lists the space root rather than opening the start page, or nothing in
+  the root would be reachable.
+- **The sidebar toggle swaps between the two presentations** of a selected folder: the
+  tree's empty viewer while the tree is on screen, the listing while it isn't.
+- **The collapsed sidebar keeps its footer icons**, stacked and bottom-aligned in the rail —
+  they are the only way into Preferences, My Mentions, the graph and Admin. The **space
+  switcher** is the first of them, with its dropdown opening beside the rail, and **log out**
+  is the last, with room below it.
+- **An overflow menu for page tabs.** As many tabs as fit are shown at their natural width
+  and the rest move into a `⌄ N` dropdown at the end of the row. The active tab is always on
+  the strip, whatever its position — only the display moves, so dragging still means what it
+  did.
+- **`list` returns each page's `updated` stamp**, read off the index entry already in memory
+  rather than stat-ing every file. It is what the folder listing's Modified column shows.
+
+### Changed
+- **Sidebar icons are legible.** They used `--accent-gray`, a mid grey meant for light
+  surfaces, which lands at 2.9:1 against the dark sidebar — under the 3:1 floor for a UI
+  control. The collapse/expand toggle was dimmer still, at `opacity: 0.6` over a third
+  colour. Both now use one token at 8.1:1.
+- **The README's Docker section points at Docker Hub** instead of carrying a `docker run`
+  line pinned to a stale tag and an incomplete build-it-yourself recipe.
+
+### Fixed
+- **The favourites star no longer appears on My Mentions, My Comments or search results.**
+  It carried over from whatever page was last open, still lit for that page, and clicking it
+  did nothing.
+- **Opening a files library from a chat, `.json` or search page left that page on screen**
+  underneath it. The listing pane now hides every other content container, not just two of
+  them; selecting a folder in the tree re-shows the viewer for the same reason.
+- **Opening a page from the folder listing marks it in the sidebar**, even though the sidebar
+  is off-screen at the time — it is what you see the instant you expand it.
+
 ## [2026.9.1] — 2026-09-02
 
 Everything an AI user does here now leaves a record you can read. An optional audit log says

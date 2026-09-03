@@ -1,11 +1,14 @@
 # Astucia Wiki
 
+If you like Astucia Wiki, please consider giving it a star on
+[github](https://github.com/madsrg/astucia-wiki)!
+
 A flat-file, self-hosted team wiki with AI assistants and an MCP server. **No database** —
 every page is a file on disk, so a backup is an archive of one directory.
 
 Markdown pages with text diagrams · draw.io diagrams · structured lists · team and per-page
 chat · AI users that read and write wiki pages · scheduled AI agent jobs · knowledge graph ·
-full-text search · Spaces with per-user access control · UI in eight languages.
+full-text search · Spaces with per-user access control · UI in nine languages.
 
 ## Quick start
 
@@ -15,7 +18,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.9.1
+    madsrotwitt/astucia-wiki:2026.9.2
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -41,7 +44,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.9.1
+    madsrotwitt/astucia-wiki:2026.9.2
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -53,7 +56,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.9.1` | moves only if that release is rebuilt |
+| `2026.9.2` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:

@@ -88,17 +88,33 @@ let _onRoot     = null;
 /**
  * Renders a breadcrumb nav above the page title.
  * Format: SpaceName / Root / Folder / Subfolder
- * Root navigates to the start page; folder segments switch the browse pane.
+ * Root navigates to the start page (the root folder listing when the sidebar is
+ * collapsed); folder segments open that folder.
+ *
+ * `opts.folder` says the path *is* a folder, so its last segment is a crumb of its own
+ * rather than the filename to drop.
  */
-export const updateBreadcrumb = (path, space) => {
+export const updateBreadcrumb = (path, space, opts = {}) => {
     const nav = document.getElementById('page-breadcrumb');
     if (!nav) return;
 
-    // Path segments without the last element (the page file itself)
     const segments = path ? path.split('/') : [];
-    segments.pop(); // remove the filename
+    if (!opts.folder) segments.pop(); // the page file itself is not a crumb
 
     nav.innerHTML = '';
+
+    // With the sidebar collapsed the browse pane is off-screen, so a crumb that only
+    // moved that pane would be a click that appears to do nothing. Collapsed, every
+    // crumb — Root included — lists its folder in the main area instead; Root there
+    // means the space root, not the start page, or the root's own files would be
+    // unreachable without expanding the sidebar again.
+    const sidebarCollapsed = () =>
+        !!document.querySelector('.app-container')?.classList.contains('sidebar-collapsed');
+    // Dynamic import: file_tree imports files_folder, and this module is reached from there.
+    const browseFolder = async (folderPath) => {
+        const { loadFolderView } = await import('../files_folder/index.js');
+        await loadFolderView(folderPath);
+    };
 
     if (!space && segments.length === 0) {
         nav.classList.add('hidden');
@@ -114,7 +130,8 @@ export const updateBreadcrumb = (path, space) => {
         spaceEl.textContent = space;
         nav.appendChild(spaceEl);
 
-        // Root — always shown after space, navigates to start page
+        // Root — always shown after space; the start page, or the root folder listing
+        // when the sidebar is collapsed
         const rootSep = document.createElement('span');
         rootSep.className = 'breadcrumb-sep';
         rootSep.textContent = ' / ';
@@ -124,7 +141,10 @@ export const updateBreadcrumb = (path, space) => {
         rootBtn.className = 'breadcrumb-seg';
         rootBtn.textContent = t('nav.breadcrumb-root');
         rootBtn.title = t('nav.breadcrumb-root');
-        rootBtn.addEventListener('click', () => { if (_onRoot) _onRoot(); });
+        rootBtn.addEventListener('click', async () => {
+            if (sidebarCollapsed()) return browseFolder('');
+            if (_onRoot) _onRoot();
+        });
         nav.appendChild(rootBtn);
     }
 
@@ -142,6 +162,9 @@ export const updateBreadcrumb = (path, space) => {
         btn.textContent = seg;
         btn.title = folderPath;
         btn.addEventListener('click', async () => {
+            // Collapsed: list the folder in the main area. It syncs the browse pane on the
+            // way, so expanding the sidebar afterwards lands in the same place.
+            if (sidebarCollapsed()) return browseFolder(folderPath);
             // Dynamic import to avoid circular dependency (file_tree imports page_view)
             const { renderBrowsePane, findItemsByPath } = await import('../file_tree/index.js');
             renderBrowsePane(findItemsByPath(folderPath), folderPath);

@@ -1279,7 +1279,11 @@ if (isset($_REQUEST['action'])) {
                             'path' => $relativePath,
                             'type' => $is_dir ? 'folder' : 'file',
                             'id'   => $id,
-                            'tags' => $is_dir ? [] : $indexer->getTags($id)
+                            'tags' => $is_dir ? [] : $indexer->getTags($id),
+                            // Read off the index entry that is already in memory rather than
+                            // stat()ing every file — the folder view's "Modified" column is the
+                            // only consumer, and a whole-tree scandir is expensive enough already.
+                            'updated' => $is_dir ? null : ($indexer->getPageData($id)['updated'] ?? null)
                         ];
 
                         if ($is_dir) {

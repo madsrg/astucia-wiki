@@ -13,7 +13,7 @@
 
 import { icons } from './modules/core/icons.js';
 import { init as initI18n, t } from './modules/i18n/index.js';
-import { refreshFileTree, revealAndSelectFile, startTreePolling, stopTreePolling, init as initFileTree } from './modules/file_tree/index.js';
+import { refreshFileTree, revealAndSelectFile, startTreePolling, stopTreePolling, syncFolderPane, init as initFileTree } from './modules/file_tree/index.js';
 import { loadPage } from './modules/page_view/index.js';
 import { init as initPageEdit } from './modules/page_edit/index.js';
 import { init as initSearch } from './modules/page_edit/search.js';
@@ -68,6 +68,9 @@ const initSidebarToggle = () => {
         btn.innerHTML = collapsed ? '&#x203A;' : '&#x2039;';
         applyTitle(collapsed);
         localStorage.setItem('sidebarCollapsed', collapsed);
+        // A selected folder is shown one way with the tree on screen and another without
+        // it, so the toggle has to swap between them. No-op for anything but a folder.
+        syncFolderPane(collapsed);
     };
     btn.addEventListener('click', toggle);
 

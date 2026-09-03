@@ -179,6 +179,22 @@ export default {
     'files.view-simple':  'シンプルリスト',
     'files.view-detailed':'詳細リスト',
     'files.view-icons':   'アイコン表示',
+    'files.col-name':       '名前',
+    'files.col-size':       'サイズ',
+    'files.col-modified':   '更新日',
+    'files.empty':          'ファイルはまだありません。「アップロード」から追加してください。',
+    'files.load-failed':    'フォルダーを読み込めませんでした',
+    'folder.empty':         'このフォルダーは空です。',
+    'folder.up':            '1つ上へ',
+    'folder.col-type':      '種類',
+    'folder.type-folder':   'フォルダー',
+    'folder.type-fileslib': 'ファイルライブラリ',
+    'folder.type-page':     'ページ',
+    'folder.type-diagram':  '図',
+    'folder.type-list':     'リスト',
+    'folder.type-chat':     'チャット',
+    'folder.type-search':   '保存した検索',
+    'folder.type-json':     'データ',
 
     // List module
     'list.add-item':      '項目を追加',
@@ -1023,6 +1039,7 @@ export default {
     'tabs.close-right':      '右側を閉じる',
     'tabs.close-all':        'すべて閉じる',
     'tabs.close-discard':    'このタブには保存していない変更があります。破棄して閉じますか？',
+    'tabs.more':             '他に {n} 件のタブ — クリックして選択',
 
     // Editor toolbar
     'tb.h1': '見出し 1（Alt+1）',

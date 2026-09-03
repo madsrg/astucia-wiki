@@ -4,6 +4,7 @@
     --font-body: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
     --sidebar-bg: #2d3748;
     --sidebar-text: #e2e8f0;
+    --sidebar-icon: #cbd5e0;   /* secondary foreground on the sidebar: icons and the toggle */
     --main-bg: #f7fafc;
     --border-color: #e2e8f0;
     --text-color: #2d3748;
@@ -59,12 +60,62 @@ body {
 
 .app-container { display: flex; flex: 1; min-height: 0; position: relative; }
 .sidebar { width: 22%; min-width: 250px; background-color: var(--sidebar-bg); color: var(--sidebar-text); padding: 1.5rem; display: flex; flex-direction: column; overflow-y: auto; transition: width 0.2s ease, min-width 0.2s ease, padding 0.2s ease; }
+/* Collapsed, the sidebar is a 48px rail: the toggle at the top, the footer icons at the
+   bottom, nothing in between. The icons stay because they are the only way into
+   Preferences, My Mentions, the graph and Admin — reaching them otherwise means expanding,
+   clicking and collapsing again. What goes is everything that needs width to mean
+   anything: the tree, the space switcher, the user's name and role. */
 .app-container.sidebar-collapsed .sidebar { width: 48px; min-width: 48px; padding: 0.5rem; overflow: hidden; align-items: center; }
 .app-container.sidebar-collapsed .sidebar-header,
 .app-container.sidebar-collapsed .sidebar-panes,
-.app-container.sidebar-collapsed .sidebar-footer { display: none; }
-.sidebar-toggle-btn { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: none; border: 1px solid var(--sidebar-text); color: var(--sidebar-text); border-radius: 4px; cursor: pointer; align-self: flex-end; margin-bottom: 0.75rem; flex-shrink: 0; font-size: 14px; line-height: 1; opacity: 0.6; padding: 0; transition: opacity 0.15s; }
-.sidebar-toggle-btn:hover { opacity: 1; }
+.app-container.sidebar-collapsed .user-info { display: none; }
+/* The space switcher stays, as the first icon in the column — it is already the footer's
+   first child, so it lands there without moving any markup. Everything on it that needs
+   width goes: the name, the read-only lock, the chevron and the admin settings gear.
+   The name survives as the tooltip (set in modules/spaces), which is the only thing left
+   saying which space you are in. */
+.app-container.sidebar-collapsed .sidebar-footer { align-items: center; gap: 0.35rem; }
+.app-container.sidebar-collapsed .space-switcher { margin-bottom: 0; }
+.app-container.sidebar-collapsed .space-switcher-header { padding: 4px 6px; gap: 0; border: none; border-radius: 4px; }
+.app-container.sidebar-collapsed .space-switcher-header:hover { background: var(--accent-gray-hover); }
+.app-container.sidebar-collapsed .space-switcher-icon { color: var(--sidebar-icon); }
+.app-container.sidebar-collapsed .space-switcher-header:hover .space-switcher-icon { color: var(--sidebar-text); }
+/* Authored at 14px for a row that also had text; on its own it matches the 17px icons. */
+.app-container.sidebar-collapsed .space-switcher-icon svg { width: 17px; height: 17px; }
+.app-container.sidebar-collapsed #space-current-label,
+.app-container.sidebar-collapsed #space-current-lock,
+.app-container.sidebar-collapsed .space-chevron,
+.app-container.sidebar-collapsed #space-settings-btn { display: none; }
+/* Same escape as the language dropdown, but the offsets come from JS: unlike that one,
+   this sits part-way up a column whose height depends on the viewer's role. */
+.app-container.sidebar-collapsed .space-dropdown { position: fixed; right: auto; }
+/* margin-top:auto on .sidebar-footer already pushes it down; stretch so its top border
+   spans the rail rather than only the icon column. */
+/* The extra bottom padding is deliberate: log out is the last icon in the column and sits
+   hard against the window edge without it, which is the wrong thing to put under a
+   twitchy cursor. */
+.app-container.sidebar-collapsed .sidebar-footer { align-self: stretch; padding-top: 0.5rem; padding-bottom: 0.9rem; }
+.app-container.sidebar-collapsed .sidebar-footer-icons { flex-direction: column; gap: 0.35rem; }
+/* Log out / log in live in .user-info, which the rail hides — so the rail carries its own
+   icon, and only the rail: the expanded footer still has the text link. */
+/* Specificity, not source order: `.sidebar-icon-btn { display: flex }` is a single class
+   further down the sheet and would otherwise win, leaving the icon in the expanded
+   footer beside the text link it stands in for. */
+.sidebar-footer-icons .sidebar-rail-only { display: none; text-decoration: none; }
+.app-container.sidebar-collapsed .sidebar-footer-icons .sidebar-rail-only { display: flex; }
+/* The dropdown is 140px wide and the rail clips at 48px, so absolute positioning inside
+   it can only ever be cut off. `fixed` escapes the clip, and the offset is exact rather
+   than guessed: the rail is hard against the viewport's left edge (body has no margin,
+   the sidebar is the first flex child) and is 48px *plus* its padding, since the sheet
+   is content-box. 8px of clearance on top of that. */
+.app-container.sidebar-collapsed .lang-dropdown {
+    position: fixed; left: calc(48px + 1rem + 8px); bottom: 8px; transform: none;
+}
+/* Same brightness as the footer icons: this used `opacity: 0.6` over --sidebar-text,
+   which renders as ~#9aa1ad — a third grey in one panel. Colouring it directly means the
+   two are the same value, and hover still steps up to full --sidebar-text. */
+.sidebar-toggle-btn { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: none; border: 1px solid var(--sidebar-icon); color: var(--sidebar-icon); border-radius: 4px; cursor: pointer; align-self: flex-end; margin-bottom: 0.75rem; flex-shrink: 0; font-size: 14px; line-height: 1; padding: 0; transition: color 0.15s, border-color 0.15s; }
+.sidebar-toggle-btn:hover { color: var(--sidebar-text); border-color: var(--sidebar-text); }
 .app-container.sidebar-collapsed .sidebar-toggle-btn { align-self: center; margin-bottom: 0; margin-top: 0.25rem; }
 .sidebar-header { flex-shrink: 0; margin-bottom: 1rem; }
 .logo-wrapper { text-align: center; }
@@ -158,13 +209,19 @@ body {
 .role-badge-editor { background: #e6fffa; color: #234e52; }
 .role-badge-reader { background: #ebf4ff; color: #2a4365; }
 .sidebar-footer-icons { display: flex; align-items: center; gap: 0.5rem; }
+/* These sit on the dark sidebar, so the colours are the sidebar's, not the page's.
+   --accent-gray (#718096) is a mid grey meant for light surfaces and lands at 2.9:1
+   against --sidebar-bg — under the 3:1 floor for a UI control, and it read as a smudge.
+   --sidebar-icon is 8.1:1: crisp, and still a step below --sidebar-text, which the tree
+   and the title use. Hover matches the file tree (--accent-gray-hover) rather than
+   flashing a near-white chip on a dark panel. */
 .sidebar-icon-btn {
     background: none; border: none; cursor: pointer;
-    color: var(--accent-gray); padding: 4px 6px; border-radius: 4px;
+    color: var(--sidebar-icon); padding: 4px 6px; border-radius: 4px;
     font-size: 0.95rem; line-height: 1; display: flex; align-items: center;
     transition: color 0.15s, background 0.15s;
 }
-.sidebar-icon-btn:hover { color: var(--text-color); background: #f0f4f8; }
+.sidebar-icon-btn:hover { color: var(--sidebar-text); background: var(--accent-gray-hover); }
 
 .admin-ai-switch-row { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; cursor: pointer; }
 
@@ -1164,6 +1221,13 @@ body {
 /* Icon wrappers */
 .ff-icon-sm svg, .ff-icon-lg svg { display: block; }
 
+/* Folder listing — same three view modes as the files library, over wiki content.
+   Rows navigate in-app rather than linking out, so the whole row is the target. */
+.fv-row { cursor: pointer; }
+.fv-arrow { margin-left: auto; color: var(--accent-gray); font-size: 0.9rem; }
+/* The wiki type icons are authored at 18px; the grid wants them poster-sized. */
+.fv-icon-lg svg { width: 44px; height: 44px; }
+
 /* ── Read-only surfaces — hide every editing control ──────────────────────────
    Two conditions share one list: the Reader role (set by PHP on <body> at render)
    and a frozen Space (`.space-readonly`, toggled by modules/spaces on every space
@@ -1907,10 +1971,15 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 
 /* ── Page tabs (modules/tabs) ───────────────────────────────────────────── */
 /* The strip sits above .main-header, since tabs choose which page that header
-   describes. It never wraps: overflow scrolls horizontally like every other
-   tab bar, and the active tab is scrolled into view from JS. */
-.wiki-tabs { flex-shrink: 0; background: var(--main-bg); border-bottom: 1px solid var(--border-color); }
-.wiki-tabs-strip { display: flex; align-items: stretch; overflow-x: auto; scrollbar-width: thin; }
+   describes. It never wraps and never scrolls: as many tabs as fit are shown at their
+   natural width and the rest move into the ⌄ menu at the end of the row (the layout
+   pass lives in modules/tabs). A horizontal scrollbar hides tabs just as thoroughly
+   but gives no count and no way to reach one without dragging. */
+.wiki-tabs { flex-shrink: 0; display: flex; align-items: stretch; background: var(--main-bg); border-bottom: 1px solid var(--border-color); }
+.wiki-tabs-strip { flex: 1; min-width: 0; display: flex; align-items: stretch; overflow: hidden; }
+/* Set by the layout pass on tabs that did not fit. Not `.hidden`, so the two cannot
+   be confused: this one is recomputed on every render and every resize. */
+.wiki-tab.overflowed { display: none; }
 .wiki-tab {
     display: flex; align-items: center; gap: 6px; flex-shrink: 0;
     max-width: 220px; padding: 0.4rem 0.4rem 0.4rem 0.7rem;
@@ -1940,6 +2009,20 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 .wiki-tab.dirty .wiki-tab-close .tab-dot { display: inline; }
 .wiki-tab.dirty .wiki-tab-close:hover .tab-x { display: inline; }
 .wiki-tab.dirty .wiki-tab-close:hover .tab-dot { display: none; }
+/* ⌄ N — the overflow button, at the end of the row and outside the clipped strip. */
+.wiki-tabs-more {
+    flex-shrink: 0; display: flex; align-items: center; gap: 4px;
+    padding: 0 0.6rem; border: none; border-left: 1px solid var(--border-color);
+    background: none; color: var(--accent-gray); font-family: inherit; font-size: 0.8rem;
+    font-weight: 600; cursor: pointer;
+}
+.wiki-tabs-more:hover { background: #edf2f7; color: var(--text-color); }
+.wiki-tabs-more svg { width: 13px; height: 13px; }
+/* The overflow list can be long — a wiki session runs to dozens of tabs. */
+.wiki-tab-menu-overflow { max-height: 60vh; overflow-y: auto; max-width: 320px; }
+.wiki-tab-menu-overflow button { display: flex; align-items: center; gap: 7px; }
+.wiki-tab-menu-overflow .wiki-tab-icon { opacity: 0.6; }
+.wiki-tab-menu-overflow .wiki-tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wiki-tab-menu {
     position: fixed; z-index: 3000; display: flex; flex-direction: column; min-width: 175px;
     padding: 4px; background: white; border: 1px solid var(--border-color); border-radius: 4px;

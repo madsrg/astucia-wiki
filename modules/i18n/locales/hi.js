@@ -145,6 +145,22 @@ export default {
     'files.view-simple': 'सरल सूची',
     'files.view-detailed': 'विस्तृत सूची',
     'files.view-icons': 'आइकन ग्रिड',
+    'files.col-name':       'नाम',
+    'files.col-size':       'आकार',
+    'files.col-modified':   'संशोधित',
+    'files.empty':          'अभी कोई फ़ाइल नहीं। फ़ाइलें जोड़ने के लिए अपलोड का उपयोग करें।',
+    'files.load-failed':    'फ़ोल्डर लोड नहीं हो सका',
+    'folder.empty':         'यह फ़ोल्डर खाली है।',
+    'folder.up':            'एक स्तर ऊपर',
+    'folder.col-type':      'प्रकार',
+    'folder.type-folder':   'फ़ोल्डर',
+    'folder.type-fileslib': 'फ़ाइल लाइब्रेरी',
+    'folder.type-page':     'पृष्ठ',
+    'folder.type-diagram':  'आरेख',
+    'folder.type-list':     'सूची',
+    'folder.type-chat':     'चैट',
+    'folder.type-search':   'सहेजी गई खोज',
+    'folder.type-json':     'डेटा',
 
     // List module
     'list.add-item': 'आइटम जोड़ें',
@@ -837,6 +853,7 @@ export default {
     'tabs.close-right':      'दाईं ओर के बंद करें',
     'tabs.close-all':        'सभी बंद करें',
     'tabs.close-discard':    'इस टैब में सहेजे न गए बदलाव हैं। इसे बंद करें और बदलाव छोड़ दें?',
+    'tabs.more':             '{n} और टैब — चुनने के लिए क्लिक करें',
 
     // Table of contents, knowledge graph, recent/saved panes
     'btn.close': 'बंद करें',

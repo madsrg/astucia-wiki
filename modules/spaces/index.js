@@ -100,6 +100,10 @@ const _updateLabel = (name) => {
     if (el) el.textContent = name || t('spaces.empty');
     const lock = document.getElementById('space-current-lock');
     if (lock) lock.classList.toggle('hidden', !name || !_readOnly.has(name));
+    // The collapsed rail hides the label, so the tooltip is the name — and switching
+    // spaces does not re-render the switcher, only relabel it.
+    const header = document.querySelector('.space-switcher-header');
+    if (header) header.title = name || t('spaces.empty');
 };
 
 const _markActive = (name) => {
@@ -267,10 +271,16 @@ const _render = (spaces, active) => {
         dropdown.appendChild(newBtn);
     }
 
+    // The label is hidden in the collapsed rail, so the tooltip is the only thing left
+    // that says which space you are in.
+    header.title = active || t('spaces.empty');
+
     // Toggle dropdown on header click
     header.addEventListener('click', (e) => {
         e.stopPropagation();
+        const opening = dropdown.classList.contains('hidden');
         dropdown.classList.toggle('hidden');
+        if (opening) _positionDropdown(header, dropdown);
     });
 
     container.appendChild(header);
@@ -306,7 +316,30 @@ const _render = (spaces, active) => {
     if (!container.dataset.listenerAttached) {
         container.dataset.listenerAttached = '1';
         document.addEventListener('click', () => {
-            document.getElementById('space-dropdown')?.classList.add('hidden');
+            const d = document.getElementById('space-dropdown');
+            if (!d) return;
+            d.classList.add('hidden');
+            _clearDropdownPos(d);   // any close drops the rail coordinates
         });
     }
+};
+
+// In the collapsed rail the switcher is one icon in a 48px column that clips, so the
+// dropdown cannot open inside it. CSS switches it to `fixed`; the coordinates have to come
+// from here because the switcher's height off the bottom depends on how many icons the
+// user's role puts below it.
+const _clearDropdownPos = (d) => { d.style.left = d.style.top = d.style.bottom = ''; };
+
+const _positionDropdown = (header, dropdown) => {
+    if (!document.querySelector('.app-container')?.classList.contains('sidebar-collapsed')) {
+        _clearDropdownPos(dropdown);
+        return;
+    }
+    // Clear of the *rail*, not of the header: the header is a centred 29px icon inside a
+    // wider column, so anchoring to it puts the dropdown back on top of the sidebar.
+    const rail = document.querySelector('.sidebar').getBoundingClientRect();
+    const r    = header.getBoundingClientRect();
+    dropdown.style.left   = `${Math.round(rail.right + 8)}px`;
+    dropdown.style.bottom = `${Math.round(window.innerHeight - r.bottom)}px`;
+    dropdown.style.top    = 'auto';
 };

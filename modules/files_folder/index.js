@@ -6,6 +6,7 @@ import { state } from '../core/state.js';
 import { icons } from '../core/icons.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { t } from '../i18n/index.js';
+import { updateBreadcrumb, updateFavoriteBtn } from '../nav/index.js';
 
 // ── File type icons ───────────────────────────────────────────────────────────
 
@@ -53,6 +54,12 @@ const fmtDate = (t) => new Date(t * 1000).toLocaleDateString(undefined, { year: 
 
 let currentViewMode = localStorage.getItem('ff_view') || 'simple';
 
+// Which listing the pane is currently showing. Both use the same container, the same
+// three view modes and the same toolbar, so the view-mode buttons need to know which
+// one to re-render.
+let paneMode   = 'library';   // 'library' (a *.uploads-style files folder) | 'folder' (a wiki folder)
+let folderPath = '';          // the wiki folder being listed, when paneMode === 'folder'
+
 const setActiveViewBtn = () => {
     ['simple', 'detailed', 'icons'].forEach(m => {
         const btn = document.getElementById(`ff-view-${m}`);
@@ -62,6 +69,35 @@ const setActiveViewBtn = () => {
     });
 };
 
+/**
+ * Shows the listing pane and hides everything page-scoped. Every other content
+ * container is hidden here, not just the two the files library used to know about:
+ * they are siblings, so arriving from a .chat or .json page left that page on screen
+ * underneath.
+ */
+const showListingPane = (mode) => {
+    ['viewer-container', 'list-view-container', 'chat-view-container',
+     'search-view-container', 'json-view-container'].forEach(id =>
+        document.getElementById(id)?.classList.add('hidden'));
+    document.querySelector('.editor-container-wrapper')?.classList.add('hidden');
+    document.getElementById('files-folder-container').classList.remove('hidden');
+
+    ['page-id-display', 'diagram-edit-btn', 'editor-mode-group', 'save-btn', 'cancel-btn',
+     'search-btn', 'page-meta-row', 'copy-btn', 'backlinks-btn', 'print-btn', 'toc-btn',
+     'page-chat-btn', 'share-btn', 'chat-topic-btn', 'graph-focus-btn', 'git-history-btn',
+     'git-commit-toggle-btn', 'git-snapshot-btn'].forEach(id =>
+        document.getElementById(id)?.classList.add('hidden'));
+
+    const editBtn = document.getElementById('edit-btn');
+    editBtn.classList.add('hidden');
+    editBtn.disabled = true;
+    document.getElementById('page-actions-group').classList.remove('hidden');
+    // A wiki folder is not a file: it can be moved, but there is nothing to upload into
+    // it here (pages are dropped on the tree) and nothing to delete row by row.
+    document.getElementById('move-btn').classList.toggle('hidden', mode !== 'folder');
+    document.getElementById('ff-upload-btn').classList.toggle('hidden', mode === 'folder');
+};
+
 // ── Render ────────────────────────────────────────────────────────────────────
 
 const renderFiles = (files) => {
@@ -69,7 +105,7 @@ const renderFiles = (files) => {
     container.innerHTML = '';
 
     if (!files.length) {
-        container.innerHTML = '<p class="ff-empty">No files yet. Use Upload to add files.</p>';
+        container.innerHTML = `<p class="ff-empty">${t('files.empty')}</p>`;
         return;
     }
 
@@ -98,7 +134,7 @@ const renderFiles = (files) => {
             link.textContent = f.name;
             const del = document.createElement('button');
             del.className = 'btn ff-del-btn';
-            del.title = 'Delete';
+            del.title = t('btn.delete');
             del.textContent = '✕';
             del.addEventListener('click', () => deleteFile(f.path, f.name));
             li.append(icon, link, del);
@@ -112,7 +148,7 @@ const renderFiles = (files) => {
         const table = document.createElement('table');
         table.className = 'ff-detail-table';
         const thead = document.createElement('thead');
-        thead.innerHTML = '<tr><th>Name</th><th>Size</th><th>Modified</th><th></th></tr>';
+        thead.innerHTML = `<tr><th>${t('files.col-name')}</th><th>${t('files.col-size')}</th><th>${t('files.col-modified')}</th><th></th></tr>`;
         const tbody = document.createElement('tbody');
         files.forEach(f => {
             const tr = document.createElement('tr');
@@ -135,7 +171,7 @@ const renderFiles = (files) => {
             const tdDel = document.createElement('td');
             const del = document.createElement('button');
             del.className = 'btn ff-del-btn';
-            del.title = 'Delete';
+            del.title = t('btn.delete');
             del.textContent = '✕';
             del.addEventListener('click', () => deleteFile(f.path, f.name));
             tdDel.appendChild(del);
@@ -166,7 +202,7 @@ const renderFiles = (files) => {
             link.append(iconEl, nameEl);
             const del = document.createElement('button');
             del.className = 'ff-icon-del';
-            del.title = 'Delete';
+            del.title = t('btn.delete');
             del.textContent = '✕';
             del.addEventListener('click', () => deleteFile(f.path, f.name));
             item.append(link, del);
@@ -176,38 +212,229 @@ const renderFiles = (files) => {
     }
 };
 
+// ── Wiki folder listing ───────────────────────────────────────────────────────
+//
+// The same three view modes as the files library, over the contents of a wiki folder.
+// Reached by clicking a breadcrumb segment while the sidebar is collapsed: the browse
+// pane is off-screen then, so the folder is shown in the main area instead.
+
+const CONTENT_EXT = /\.(md|drawio|list|chat|search|json)$/;
+
+const KINDS = {
+    folder:   { icon: 'folder',      label: 'folder.type-folder' },
+    fileslib: { icon: 'filesFolder', label: 'folder.type-fileslib' },
+    diagram:  { icon: 'diagram',     label: 'folder.type-diagram' },
+    list:     { icon: 'list',        label: 'folder.type-list' },
+    chat:     { icon: 'chat',        label: 'folder.type-chat' },
+    search:   { icon: 'search',      label: 'folder.type-search' },
+    json:     { icon: 'json',        label: 'folder.type-json' },
+    page:     { icon: 'file',        label: 'folder.type-page' },
+};
+
+const kindOf = (item) => {
+    if (item.type === 'folder')      return 'folder';
+    if (item.type === 'filesfolder') return 'fileslib';
+    if (item.name.endsWith('.drawio')) return 'diagram';
+    if (item.name.endsWith('.list'))   return 'list';
+    if (item.name.endsWith('.chat'))   return 'chat';
+    if (item.name.endsWith('.search')) return 'search';
+    if (item.name.endsWith('.json'))   return 'json';
+    return 'page';
+};
+
+const isDir = (item) => item.type === 'folder' || item.type === 'filesfolder';
+const entryName = (item) => item.name.replace(CONTENT_EXT, '');
+
+// Directories first, then files, each A→Z. The server already sorts the tree this way,
+// but with strcmp — so "Zebra" sorted before "apple". A listing a person reads wants
+// case-insensitive, digit-aware order.
+const sortEntries = (items) => [...items].sort((a, b) =>
+    (isDir(a) ? 0 : 1) - (isDir(b) ? 0 : 1) ||
+    entryName(a).localeCompare(entryName(b), undefined, { sensitivity: 'base', numeric: true }));
+
+const openEntry = async (item) => {
+    const kind = kindOf(item);
+    const from = folderPath;
+    // Dynamic: file_tree imports this module.
+    const tree = await import('../file_tree/index.js');
+
+    if (kind === 'folder')   return loadFolderView(item.path);
+    if (kind === 'fileslib') { await loadFilesFolder(item.path); tree.revealAndSelectFile(item.path); return; }
+
+    // Dynamic: page_view imports file_tree, which imports this module.
+    const { loadPage } = await import('../page_view/index.js');
+    await loadPage(item.path, item.id, item.tags || []);
+    // Mark the selection in the sidebar even though it is off-screen: it is what the
+    // reader sees the moment they expand it, and every other way of opening a page does
+    // this. The browse pane only marks the active file when it is re-rendered, so both
+    // panes are handled here.
+    tree.revealAndSelectFile(item.path);
+    tree.renderBrowsePane(tree.findItemsByPath(from), from);
+};
+
+/** The ".." row, as a pseudo-entry the three renderers can treat like any other. */
+const upEntry = (path) => ({ up: true, name: '..', path: path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '' });
+
+const renderFolder = (items, path) => {
+    const container = document.getElementById('ff-file-list');
+    container.innerHTML = '';
+
+    // The ".." row is a row like any other, so an empty subfolder still offers a way out
+    // — the "folder is empty" note is appended below rather than replacing the listing.
+    const rows = path ? [upEntry(path), ...items] : [...items];
+
+    const activate = (entry) => entry.up ? loadFolderView(entry.path) : openEntry(entry);
+    const iconFor  = (entry, cls) => {
+        const span = document.createElement('span');
+        span.className = cls;
+        span.innerHTML = entry.up ? icons.up : icons[KINDS[kindOf(entry)].icon];
+        return span;
+    };
+    const labelFor = (entry) => entry.up ? '..' : entryName(entry);
+
+    if (currentViewMode === 'simple') {
+        const ul = document.createElement('ul');
+        ul.className = 'ff-simple-list';
+        rows.forEach(entry => {
+            const li = document.createElement('li');
+            li.className = 'ff-simple-item fv-row';
+            li.title = entry.up ? t('folder.up') : entry.path;
+            const name = document.createElement('span');
+            name.className = 'ff-filename';
+            name.textContent = labelFor(entry);
+            li.append(iconFor(entry, 'ff-icon-sm'), name);
+            if (entry.up || isDir(entry)) {
+                const arrow = document.createElement('span');
+                arrow.className = 'fv-arrow';
+                arrow.textContent = entry.up ? '' : '\u203A';
+                li.appendChild(arrow);
+            }
+            li.addEventListener('click', () => activate(entry));
+            ul.appendChild(li);
+        });
+        container.appendChild(ul);
+
+    } else if (currentViewMode === 'detailed') {
+        const wrap = document.createElement('div');
+        wrap.className = 'ff-detail-wrap';
+        const table = document.createElement('table');
+        table.className = 'ff-detail-table';
+        const thead = document.createElement('thead');
+        const htr = document.createElement('tr');
+        [t('files.col-name'), t('folder.col-type'), t('files.col-modified')].forEach(label => {
+            const th = document.createElement('th');
+            th.textContent = label;
+            htr.appendChild(th);
+        });
+        thead.appendChild(htr);
+        const tbody = document.createElement('tbody');
+        rows.forEach(entry => {
+            const tr = document.createElement('tr');
+            tr.className = 'fv-row';
+            tr.title = entry.up ? t('folder.up') : entry.path;
+            const tdName = document.createElement('td');
+            tdName.className = 'ff-detail-name';
+            const name = document.createElement('span');
+            name.className = 'ff-filename';
+            name.textContent = labelFor(entry);
+            tdName.append(iconFor(entry, 'ff-icon-sm'), name);
+            const tdType = document.createElement('td');
+            tdType.className = 'ff-detail-meta';
+            tdType.textContent = entry.up ? '' : t(KINDS[kindOf(entry)].label);
+            const tdDate = document.createElement('td');
+            tdDate.className = 'ff-detail-meta';
+            // Folders carry no stamp in the index, and a page written outside the wiki
+            // gets one on the next reconcile — an em dash beats a wrong date.
+            tdDate.textContent = entry.up ? '' : (entry.updated ? fmtDate(entry.updated) : '—');
+            tr.append(tdName, tdType, tdDate);
+            tr.addEventListener('click', () => activate(entry));
+            tbody.appendChild(tr);
+        });
+        table.append(thead, tbody);
+        wrap.appendChild(table);
+        container.appendChild(wrap);
+
+    } else { // icons
+        const grid = document.createElement('div');
+        grid.className = 'ff-icons-grid';
+        rows.forEach(entry => {
+            const item = document.createElement('div');
+            item.className = 'ff-icon-item fv-row';
+            item.title = entry.up ? t('folder.up') : entry.path;
+            const link = document.createElement('span');
+            link.className = 'ff-icon-link';
+            const name = document.createElement('span');
+            name.className = 'ff-icon-name';
+            const label = labelFor(entry);
+            name.textContent = label.length > 18 ? label.slice(0, 17) + '…' : label;
+            link.append(iconFor(entry, 'ff-icon-lg fv-icon-lg'), name);
+            item.appendChild(link);
+            item.addEventListener('click', () => activate(entry));
+            grid.appendChild(item);
+        });
+        container.appendChild(grid);
+    }
+
+    if (!items.length) {
+        const note = document.createElement('p');
+        note.className = 'ff-empty';
+        note.textContent = t('folder.empty');
+        container.appendChild(note);
+    }
+};
+
+/**
+ * Lists a wiki folder in the main content area. Reads the folder from the tree already
+ * in state rather than refetching, and keeps the sidebar's browse pane pointed at the
+ * same folder so expanding it lands where the reader is.
+ */
+export const loadFolderView = async (path) => {
+    const target = path || '';
+    // Dynamic: file_tree imports this module.
+    const { findItemsByPath, renderBrowsePane, revealAndSelectFile } = await import('../file_tree/index.js');
+    const items = findItemsByPath(target) || [];
+
+    paneMode   = 'folder';
+    folderPath = target;
+    state.currentPagePath = target;
+    state.currentPageType = 'folder';
+    state.currentPageId   = null;
+    state.currentPageTags = [];
+
+    showListingPane('folder');
+    updateBreadcrumb(target, state.currentSpace, { folder: true });
+    updateFavoriteBtn(null);
+
+    const name = target ? target.split('/').pop() : (state.currentSpace || t('nav.breadcrumb-root'));
+    document.getElementById('current-page-title').innerHTML = `${icons.folder} <span>${name}</span>`;
+
+    setActiveViewBtn();
+    renderFolder(sortEntries(items), target);
+
+    renderBrowsePane(items, target);
+    revealAndSelectFile(target);
+};
+
 // ── Public: load a files folder ───────────────────────────────────────────────
 
 export const loadFilesFolder = async (path) => {
+    paneMode = 'library';
     state.currentPagePath = path;
     state.currentPageType = 'filesfolder';
 
-    document.getElementById('viewer-container').classList.add('hidden');
-    document.getElementById('list-view-container').classList.add('hidden');
-    document.getElementById('files-folder-container').classList.remove('hidden');
+    showListingPane('library');
+
+    updateBreadcrumb(path, state.currentSpace, { folder: true });
+    updateFavoriteBtn(null);
 
     const folderName = path.split('/').pop();
     document.getElementById('current-page-title').innerHTML = `${icons.filesFolder} <span>${folderName}</span>`;
-    document.getElementById('page-id-display').classList.add('hidden');
-    document.getElementById('edit-btn').classList.add('hidden');
-    document.getElementById('edit-btn').disabled = true;
-    document.getElementById('diagram-edit-btn').classList.add('hidden');
-    document.getElementById('editor-mode-group')?.classList.add('hidden');
-    document.getElementById('save-btn').classList.add('hidden');
-    document.getElementById('cancel-btn').classList.add('hidden');
-    document.getElementById('search-btn').classList.add('hidden');
-    document.getElementById('page-meta-row').classList.add('hidden');
-    document.getElementById('page-actions-group').classList.remove('hidden');
-    document.getElementById('copy-btn').classList.add('hidden');
-    document.getElementById('backlinks-btn').classList.add('hidden');
-    document.getElementById('print-btn').classList.add('hidden');
-    document.getElementById('move-btn').classList.add('hidden');
 
     setActiveViewBtn();
 
     const result = await api.call('list_folder_files', { folder_path: path });
     if (result.success) renderFiles(result.data);
-    else showToast('Failed to load folder', 'error');
+    else showToast(t('files.load-failed'), 'error');
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -240,7 +467,8 @@ export const init = () => {
             currentViewMode = mode;
             localStorage.setItem('ff_view', mode);
             setActiveViewBtn();
-            if (state.currentPageType === 'filesfolder') loadFilesFolder(state.currentPagePath);
+            if (paneMode === 'folder' && state.currentPageType === 'folder') loadFolderView(folderPath);
+            else if (state.currentPageType === 'filesfolder') loadFilesFolder(state.currentPagePath);
         });
     });
 };

@@ -6,6 +6,7 @@ import { state } from '../core/state.js';
 import { loadPage } from '../page_view/index.js';
 import { revealAndSelectFile, refreshFileTree } from '../file_tree/index.js';
 import { t } from '../i18n/index.js';
+import { updateFavoriteBtn } from '../nav/index.js';
 
 export const generateTagCloud = async () => {
     const result = await api.call('get_tag_cloud');
@@ -140,6 +141,11 @@ export const displaySearchResults = (title, results, showSpace = false) => {
     document.getElementById('editor-mode-group')?.classList.add('hidden');
     document.getElementById('page-chat-btn')?.classList.add('hidden');
     document.getElementById('toc-btn')?.classList.add('hidden');
+    // A results list is not a page, so there is nothing to star. Left alone the button
+    // stays visible from whatever page was open before, still lit for *that* page, and
+    // clicking it does nothing — currentPageId is null by the line above. Goes through
+    // nav rather than the DOM so the star has one owner.
+    updateFavoriteBtn(null);
 
     renderPage(0);
 };

@@ -318,17 +318,125 @@ const render = () => {
         strip.appendChild(el);
     });
 
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'wiki-tabs-more hidden';
+    more.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="wiki-tabs-more-count"></span>`;
+    more.addEventListener('click', (e) => {
+        // The document-level listener that dismisses menus would otherwise close this
+        // one in the same click that opened it.
+        e.stopPropagation();
+        openOverflowMenu(more);
+    });
+    bar.appendChild(more);
+
     wireDrag(strip);
-    scrollActiveIntoView(strip);
+    layoutOverflow();
+    observeWidth(bar);
 };
 
-const scrollActiveIntoView = (strip) => {
-    const el = strip.querySelector('.wiki-tab.active');
-    if (!el) return;
-    const left  = el.offsetLeft;
-    const right = left + el.offsetWidth;
-    if (left < strip.scrollLeft) strip.scrollLeft = Math.max(0, left - 8);
-    else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth + 8;
+// ── overflow ─────────────────────────────────────────────────────────────────
+//
+// Tabs are laid out at their natural width and the ones past the edge are moved into a
+// menu, rather than left to a horizontal scrollbar. Two rules make it usable:
+//   - the *active* tab is always on the strip, even when its position says otherwise.
+//     It is shown last, next to the ⌄ button; the tab order in the model is untouched,
+//     so dragging still means what it did.
+//   - at least one tab is shown, however narrow the window.
+
+// Model indices currently in the menu, in tab order. Read when the menu is opened.
+let _overflowIdx = [];
+
+const layoutOverflow = () => {
+    const bar   = document.getElementById(BAR_ID);
+    const strip = bar?.querySelector('.wiki-tabs-strip');
+    const more  = bar?.querySelector('.wiki-tabs-more');
+    if (!strip || !more) return;
+
+    const els = [...strip.children];
+    // Measure with everything shown: a display:none tab has no width to measure.
+    els.forEach(el => el.classList.remove('overflowed'));
+    more.classList.add('hidden');
+    _overflowIdx = [];
+    if (els.length < 2) return;
+
+    const widths = els.map(el => el.offsetWidth);
+    const total  = widths.reduce((a, b) => a + b, 0);
+    if (total <= strip.clientWidth) return;
+
+    // Only now does the ⌄ button exist, and it takes width off the strip — so the
+    // budget has to be read again with it in place.
+    more.classList.remove('hidden');
+    const avail = strip.clientWidth;
+
+    const visible = new Set();
+    let used = 0;
+    for (let i = 0; i < els.length; i++) {
+        if (used + widths[i] > avail) break;
+        used += widths[i];
+        visible.add(i);
+    }
+    if (!visible.size) { visible.add(0); used = widths[0]; }
+
+    const active = ws().activeIdx;
+    if (active >= 0 && !visible.has(active)) {
+        // Evict from the right until the active tab fits. It keeps its DOM position, so
+        // it lands at the end of the visible run — directly before the ⌄ button.
+        while (used + widths[active] > avail && visible.size > 0) {
+            const last = Math.max(...visible);
+            visible.delete(last);
+            used -= widths[last];
+        }
+        visible.add(active);
+    }
+
+    els.forEach((el, i) => {
+        if (visible.has(i)) return;
+        el.classList.add('overflowed');
+        _overflowIdx.push(i);
+    });
+    more.querySelector('.wiki-tabs-more-count').textContent = String(_overflowIdx.length);
+    more.title = t('tabs.more', { n: _overflowIdx.length });
+};
+
+// One observer for the life of the page. The bar is full width, so hiding tabs cannot
+// resize it and the callback cannot feed itself; what does resize it is the window and
+// the sidebar collapsing (which animates, hence an observer rather than a resize event).
+let _ro = null;
+const observeWidth = (bar) => {
+    if (_ro || typeof ResizeObserver === 'undefined') return;
+    _ro = new ResizeObserver(() => layoutOverflow());
+    _ro.observe(bar);
+};
+
+const openOverflowMenu = (anchor) => {
+    closeMenu();
+    if (!_overflowIdx.length) return;
+    const w = ws();
+
+    _menu = document.createElement('div');
+    _menu.className = 'wiki-tab-menu wiki-tab-menu-overflow';
+    _overflowIdx.forEach(idx => {
+        const tab = w.tabs[idx];
+        if (!tab) return;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.title = tab.path;
+        b.innerHTML = `<span class="wiki-tab-icon">${tab.path ? iconForType(tab.type) : icons.file}</span>`;
+        const name = document.createElement('span');
+        name.className = 'wiki-tab-name';
+        name.textContent = labelFor(tab, w.tabs);   // unshortened: the menu has the room
+        b.appendChild(name);
+        b.addEventListener('click', () => { closeMenu(); activate(idx); });
+        _menu.appendChild(b);
+    });
+    document.body.appendChild(_menu);
+
+    // Hang it under the button's right edge, kept on screen.
+    const a = anchor.getBoundingClientRect();
+    const r = _menu.getBoundingClientRect();
+    _menu.style.left = `${Math.max(4, Math.min(a.right - r.width, window.innerWidth - r.width - 4))}px`;
+    _menu.style.top  = `${Math.min(a.bottom + 2, window.innerHeight - r.height - 4)}px`;
 };
 
 // ── reordering ───────────────────────────────────────────────────────────────

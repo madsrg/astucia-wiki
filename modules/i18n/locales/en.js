@@ -179,6 +179,22 @@ export default {
     'files.view-simple':  'Simple list',
     'files.view-detailed':'Detailed list',
     'files.view-icons':   'Icon grid',
+    'files.col-name':       'Name',
+    'files.col-size':       'Size',
+    'files.col-modified':   'Modified',
+    'files.empty':          'No files yet. Use Upload to add files.',
+    'files.load-failed':    'Failed to load folder',
+    'folder.empty':         'This folder is empty.',
+    'folder.up':            'Up one level',
+    'folder.col-type':      'Type',
+    'folder.type-folder':   'Folder',
+    'folder.type-fileslib': 'Files Library',
+    'folder.type-page':     'Page',
+    'folder.type-diagram':  'Diagram',
+    'folder.type-list':     'List',
+    'folder.type-chat':     'Chat',
+    'folder.type-search':   'Saved Search',
+    'folder.type-json':     'Data',
 
     // List module
     'list.add-item':      'Add Item',
@@ -1163,4 +1179,5 @@ export default {
     'tabs.close-right':      'Close to the right',
     'tabs.close-all':        'Close all',
     'tabs.close-discard':    'This tab has unsaved changes. Close it and discard them?',
+    'tabs.more':             '{n} more tab(s) — click to choose',
 };

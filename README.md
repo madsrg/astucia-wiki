@@ -42,22 +42,12 @@ Open `http://localhost:8000`. No database, no build step.
 
 ### Docker
 
-```bash
-docker run -d --name astucia-wiki --restart=always \
-    -p 8080:80 -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.7.44
-```
-
-Or build it yourself from a checkout:
-
-```bash
-./docker/build.sh
-cp docker/wiki.env.example /srv/astucia-wiki/wiki.env   # edit it
-./docker/create_container.sh
-```
-
 One container (nginx + PHP-FPM + cron), with all pages, settings and logs on the host so
 a backup is a `tar` of one directory and deleting the container loses nothing.
+
+The image, the current tags and how to run it live on Docker Hub:
+**[madsrotwitt/astucia-wiki](https://hub.docker.com/r/madsrotwitt/astucia-wiki)**
+
 **[DOCKER.md](DOCKER.md)** covers configuration, management, cron, backup/restore, and
 putting it behind nginx with Let's Encrypt.
 

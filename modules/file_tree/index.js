@@ -4,7 +4,7 @@
 import { api } from '../core/api.js';
 import { icons } from '../core/icons.js';
 import { state } from '../core/state.js';
-import { loadFilesFolder } from '../files_folder/index.js';
+import { loadFilesFolder, loadFolderView } from '../files_folder/index.js';
 import { showToast } from '../core/utils.js';
 import { t } from '../i18n/index.js';
 
@@ -145,6 +145,51 @@ export const revealAndSelectFile = (path) => {
                 current = current.parentElement.closest('.file-item');
             }
         }
+    }
+};
+
+/**
+ * The main area for a folder selected in the *tree*: an empty viewer under the folder's
+ * path. Extracted from the tree click handler because collapsing the sidebar swaps this
+ * for the folder listing and expanding it swaps back (see syncFolderPane below).
+ */
+export const showFolderPlaceholder = (path) => {
+    state.currentPagePath = path;
+    state.currentPageType = 'folder';
+    // The space root has no path and cannot be picked in the tree — only by expanding the
+    // sidebar out of the root listing — so name it after the space rather than blank.
+    document.getElementById('current-page-title').textContent = path || state.currentSpace || '';
+    // Clearing the viewer only reads as "cleared" if the viewer is the pane on screen.
+    // Arriving from a files library or a folder listing otherwise left that listing up
+    // under the new title.
+    document.getElementById('viewer-container').classList.remove('hidden');
+    document.getElementById('files-folder-container').classList.add('hidden');
+    document.getElementById('viewer-content').innerHTML = '';
+    document.getElementById('diagram-viewer').innerHTML = '';
+    ['tags-container', 'attachments-section', 'page-id-display', 'edit-btn',
+     'diagram-edit-btn', 'page-chat-btn', 'editor-mode-group', 'toc-btn', 'copy-btn',
+     'backlinks-btn', 'print-btn'].forEach(id =>
+        document.getElementById(id)?.classList.add('hidden'));
+    document.getElementById('page-actions-group').classList.remove('hidden');
+    document.getElementById('move-btn').classList.remove('hidden');
+};
+
+/**
+ * Keeps the main area in step with the sidebar while a *folder* is selected. A folder has
+ * two presentations — the tree's empty viewer and the collapsed-sidebar folder listing —
+ * and which one is right depends on whether the tree is on screen, so toggling the
+ * sidebar has to swap between them. Call this after any change to `sidebar-collapsed`.
+ * A no-op for anything that is not a folder.
+ */
+export const syncFolderPane = async (collapsed) => {
+    if (state.currentPageType !== 'folder') return;
+    const path = state.currentPagePath || '';
+    if (collapsed) {
+        await loadFolderView(path);
+    } else {
+        showFolderPlaceholder(path);
+        renderBrowsePane(findItemsByPath(path), path);
+        revealAndSelectFile(path);
     }
 };
 
@@ -370,24 +415,7 @@ export const init = ({ onLoadPage, onGenerateTagCloud }) => {
         } else if (type === 'filesfolder') {
             loadFilesFolder(path);
         } else if (type === 'folder') {
-            state.currentPagePath = path;
-            state.currentPageType = 'folder';
-            document.getElementById('current-page-title').textContent = path;
-            document.getElementById('viewer-content').innerHTML = '';
-            document.getElementById('diagram-viewer').innerHTML = '';
-            document.getElementById('tags-container').classList.add('hidden');
-            document.getElementById('attachments-section').classList.add('hidden');
-            document.getElementById('page-id-display').classList.add('hidden');
-            document.getElementById('edit-btn').classList.add('hidden');
-            document.getElementById('diagram-edit-btn').classList.add('hidden');
-            document.getElementById('page-chat-btn')?.classList.add('hidden');
-            document.getElementById('editor-mode-group')?.classList.add('hidden');
-            document.getElementById('toc-btn')?.classList.add('hidden');
-            document.getElementById('page-actions-group').classList.remove('hidden');
-            document.getElementById('copy-btn').classList.add('hidden');
-            document.getElementById('backlinks-btn').classList.add('hidden');
-            document.getElementById('print-btn').classList.add('hidden');
-            document.getElementById('move-btn').classList.remove('hidden');
+            showFolderPlaceholder(path);
 
             const childUl = contentTarget.parentElement.querySelector('ul');
             const iconEl = contentTarget.querySelector('.folder-icon');
