@@ -38,6 +38,7 @@ import { init as initChatSave } from './modules/chat_save/index.js';
 import { init as initMobile } from './modules/mobile/index.js';
 import { initSpaces, switchSpaceSilently, getAllSpaces } from './modules/spaces/index.js';
 import { init as initMentions } from './modules/mentions/index.js';
+import { init as initJobWatch } from './modules/job_watch/index.js';
 import { init as initSession } from './modules/session/index.js';
 import { init as initGit, checkSpaceGit } from './modules/git/index.js';
 import { init as initNav, removeStaleRecentEntry } from './modules/nav/index.js';
@@ -182,6 +183,7 @@ const init = async () => {
     initChatSave();
     initGit();
     initMentions();
+    initJobWatch();
     initSession();
     initToc();
     initPageChat();

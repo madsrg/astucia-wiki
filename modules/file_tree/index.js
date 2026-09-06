@@ -4,8 +4,8 @@
 import { api } from '../core/api.js';
 import { icons } from '../core/icons.js';
 import { state } from '../core/state.js';
-import { loadFilesFolder, loadFolderView } from '../files_folder/index.js';
-import { showToast } from '../core/utils.js';
+import { loadFilesFolder, loadFolderView, isFolderViewActive } from '../files_folder/index.js';
+import { showToast, canUpload } from '../core/utils.js';
 import { t } from '../i18n/index.js';
 
 export const renderTree = (items, parentElement) => {
@@ -206,6 +206,10 @@ export const refreshFileTree = async () => {
         renderTree(state.fullFileTree, fileNavigator);
         renderBrowsePane(state.fullFileTree, '');
         if (_onGenerateTagCloud) _onGenerateTagCloud();
+        // The folder listing is drawn from this tree, so it has to be repainted with it —
+        // otherwise a folder created from the listing's own New menu, or one that appeared
+        // from an external change, shows up only after navigating away and back.
+        if (isFolderViewActive()) await loadFolderView(state.currentPagePath || '');
     }
 };
 
@@ -267,10 +271,6 @@ export const startTreePolling = (space) => {
 
 const MD_FILE = /\.md$/i;
 
-// A reader cannot create pages, and a frozen Space cannot be written to at all — the
-// server enforces both, but refusing the drag means the cursor says "no" instead of the
-// drop failing after the fact.
-const canUpload = () => window.WIKI_ROLE !== 'reader' && !state.spaceReadOnly;
 
 /**
  * The folder a drop lands in: a folder under the pointer wins; a file resolves to the
@@ -290,7 +290,7 @@ const dropFolderFor = (e, pane) => {
     }
 };
 
-const uploadDroppedFiles = async (files, folder) => {
+export const uploadDroppedFiles = async (files, folder) => {
     const pages  = files.filter(f => MD_FILE.test(f.name));
     const others = files.length - pages.length;
     if (!pages.length) {

@@ -6,6 +6,60 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.9.3] — 2026-09-06
+
+**Security release.** A reader restricted to one Space could read another Space's content.
+Everyone should upgrade. Alongside it, the collapsed sidebar's folder view becomes a place
+you can actually work — search, upload, create, and act on the folder — and a background
+job now tells you when it has finished.
+
+### Security
+- **Space isolation is enforced on the resolved path, not on the `?space=` parameter.** The
+  allowlist was checked when a request named a Space, and the check was skipped when it did
+  not — but the parameter is optional, so a *path* of `Other/secret.md` reached another
+  Space without ever naming it. Four entry points were affected: the attachment gateway
+  (`getfile.php`, which never consulted the allowlist at all — reported by a user), the REST
+  API, the `.list` export, and the tool set shared by AI users, MCP and the job runner,
+  where it allowed writes as well as reads. Each now resolves the path first and asks which
+  Space it lands in. Content that sits outside any Space, on a wiki predating the feature,
+  stays readable as before.
+- **`getfile.php` no longer serves `?space=.git`**, which exposed the content repository's
+  internals, including remote URLs with credentials in them. The REST API has always refused
+  dot-prefixed Space names; the gateway did not.
+- **Containment checks compare against the directory, not its name as a prefix.** A base of
+  `…/Alpha` also matched `…/Alpha2`, a different Space one level up.
+
+### Added
+- **A working toolbar in the collapsed folder view** — a search box, an Upload button for
+  Markdown pages, `New …` with the same options as the sidebar, and the folder's own `…`
+  actions (Rename, Move, Delete). The folder's name is in the breadcrumb, so the title row
+  that repeated it is gone.
+- **Markdown files can be dropped straight onto the folder listing**, not just onto the file
+  tree. They land in the folder being browsed.
+- **A finished background job raises a notification** with its status and a link back to the
+  thread it was started from. Queueing a job means going elsewhere, so the answer used to
+  land in a thread nobody was looking at, possibly an hour later.
+- **Sticky toasts** — notifications that stay until dismissed, stacked clear of the ordinary
+  three-second ones, for things you are meant to act on rather than just notice.
+- **`/aiJob` works in Page Chat.** It was in the team-chat composer only; in Page Chat the
+  line was posted as an ordinary message, which then drew an inline reply instead of queueing
+  a job.
+
+### Changed
+- **`/jobs` opens a log inside the list** with a Back button, instead of closing the list to
+  borrow the dialog — reading a second log took three clicks and a re-open.
+- **List export works again.** `export.php` resolved paths against a relative `pages/`, which
+  is the content directory only on an install that keeps it inside the web root; everywhere
+  else every export returned 404. It uses `PAGES_DIR` now, and the client sends the Space.
+- Sidebar icons and the collapse toggle were drawn in a grey meant for light backgrounds,
+  under the contrast floor for a control against the dark sidebar. Both now share one value.
+
+### Fixed
+- **Search results left the folder listing on screen underneath them.** The same omission
+  affected opening a Files Library from a chat, data or saved-search page.
+- Opening a page from the folder listing did not mark it in the sidebar, so expanding the
+  sidebar showed the previous selection.
+
 ## [2026.9.2] — 2026-09-03
 
 The collapsed sidebar stops being a dead end. A breadcrumb folder now opens a real folder

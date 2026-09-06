@@ -127,6 +127,9 @@ export const displaySearchResults = (title, results, showSpace = false) => {
     document.getElementById('list-view-container').classList.add('hidden');
     document.getElementById('chat-view-container').classList.add('hidden');
     document.getElementById('diagram-viewer').classList.add('hidden');
+    // The listing pane is a sibling of the viewer, so results rendered while a folder or
+    // a files library is open would appear underneath it, toolbar and all.
+    document.getElementById('files-folder-container')?.classList.add('hidden');
     document.getElementById('viewer-content').classList.remove('hidden');
 
     // Clear edit state

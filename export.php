@@ -3,6 +3,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 require_once 'config.php';
+require_once 'service_auth.php';   // actor_spaces_filter(), wiki_path_space()
 session_start();
 
 // If authentication is enabled and no user is in the session, deny access.
@@ -23,11 +24,38 @@ $format = strtolower($_GET['format']);
 
 // Basic path sanitization
 $sanitized_path = str_replace('..', '', $requested_path);
-$full_path = 'pages/' . ltrim($sanitized_path, '/');
+
+// Resolve against PAGES_DIR, and against the Space when one is named. This used to be a
+// hardcoded relative 'pages/', which is only the content directory on an install that
+// happens to keep it inside the web root — everywhere else this endpoint 404s. It also
+// meant any .list in any Space was one `path` away, with no ACL between.
+$base_dir = rtrim(PAGES_DIR, '/');
+$_sp = trim($_GET['space'] ?? '');
+if ($_sp !== '') {
+    $_sp_safe = basename($_sp);
+    if ($_sp_safe === '' || $_sp_safe[0] === '.') {
+        header("HTTP/1.1 403 Forbidden");
+        echo "Access Denied";
+        exit;
+    }
+    if (is_dir($base_dir . '/' . $_sp_safe)) $base_dir .= '/' . $_sp_safe;
+}
+$full_path = $base_dir . '/' . ltrim($sanitized_path, '/');
 
 if (!file_exists($full_path) || pathinfo($full_path, PATHINFO_EXTENSION) !== 'list') {
     header("HTTP/1.1 404 Not Found");
     echo "List file not found.";
+    exit;
+}
+
+// Same rule as api.php and getfile.php: the Space is decided by the resolved path, not by
+// the parameter, so a path that reaches into a Space without naming it is still caught.
+$allowed_spaces = AUTHENTICATION_ENABLED
+    ? actor_spaces_filter($_SESSION['user']['role'] ?? 'reader', null)
+    : null;
+if (!wiki_space_allowed($allowed_spaces, wiki_path_space(realpath($full_path)))) {
+    header("HTTP/1.1 403 Forbidden");
+    echo "Access Denied";
     exit;
 }
 

@@ -18,6 +18,7 @@ const CHAT_COMMANDS = [
     { name: 'topic',     description: t('chat.cmd.topic') },
     { name: 'purge',     description: t('chat.cmd.purge') },
     { name: 'summarize', description: t('chat.cmd.summarize') },
+    { name: 'aiJob',     description: t('chat.cmd.ai-job'), editorOnly: true },
     { name: 'aiUsers',   description: t('chat.cmd.ai-users') },
     { name: 'jobs',      description: t('chat.cmd.jobs') },
     { name: 'debug',     description: t('chat.cmd.debug'), editorOnly: true },
@@ -333,6 +334,15 @@ const doSend = async () => {
             textarea.dispatchEvent(new Event('input'));
             textarea.selectionStart = textarea.selectionEnd = 1;
             textarea.focus();
+            return;
+        }
+        if (cmd === '/aijob') {
+            const { runAiJobCommand } = await import('../core/ai_job_command.js');
+            await runAiJobCommand(arg, {
+                chatPath: _pcPath, original: text, textarea, sendBtn,
+                setText: (v) => { textarea.value = v; autoResize(textarea); },
+                render:  (data) => { _pcData = data; renderMessages(_pcData.messages || [], true); },
+            });
             return;
         }
         if (cmd === '/jobs') {

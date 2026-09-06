@@ -355,6 +355,24 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <span data-i18n="files.upload-btn">Upload</span>
                         </button>
                         <input type="file" id="ff-upload-input" class="hidden" multiple>
+                        <div class="ff-actions-right">
+                        <?php /* Folder-listing only. Both of these hand off to the sidebar's own
+                               controls rather than reimplementing them: the search box writes into
+                               the sidebar input and clicks its button, and the New menu clicks the
+                               sidebar dropdown's entries. One implementation of each, either way. */ ?>
+                        <div id="ff-search" class="ff-search hidden">
+                            <input type="text" id="ff-search-input" data-i18n-placeholder="nav.search-ph" placeholder="Search pages&hellip;">
+                            <button id="ff-search-btn" class="btn btn-sm btn-secondary" data-i18n="nav.search-btn">Search</button>
+                        </div>
+                        <button id="ff-upload-pages-btn" class="btn btn-secondary btn-sm hidden">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                            <span data-i18n="files.upload-btn">Upload</span>
+                        </button>
+                        <input type="file" id="ff-upload-pages-input" class="hidden" accept=".md,text/markdown" multiple>
+                        <div id="ff-new" class="ff-new dropdown-container hidden">
+                            <button id="ff-new-btn" class="btn btn-blue btn-sm" data-i18n="nav.new-btn">New &hellip;</button>
+                            <div id="ff-new-dropdown" class="dropdown-content hidden"></div>
+                        </div>
                         <div class="ff-view-modes">
                             <button id="ff-view-simple" class="btn btn-sm btn-blue" data-i18n-title="files.view-simple" title="Simple list">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
@@ -365,6 +383,16 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <button id="ff-view-icons" class="btn btn-sm btn-secondary" data-i18n-title="files.view-icons" title="Icon grid">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                             </button>
+                        </div>
+                        <?php /* Folder actions, outermost right. A proxy for the header menu:
+                               its rows click #rename-btn / #move-btn / #delete-btn, so the
+                               handlers stay in modules/file_ops. */ ?>
+                        <div id="ff-folder-actions" class="ff-folder-actions dropdown-container hidden">
+                            <button id="ff-folder-actions-btn" class="btn btn-icon btn-secondary" data-i18n-title="header.folder-actions" title="Folder actions">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                            </button>
+                            <div id="ff-folder-actions-menu" class="file-actions-menu hidden"></div>
+                        </div>
                         </div>
                     </div>
                     <div id="ff-file-list"></div>
@@ -1134,6 +1162,9 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
     </div>
 
     <div id="toast"><span id="toast-message"></span></div>
+    <?php /* Sticky notifications, stacked above the transient toast so the two never
+           overlap. Emptied only by the reader clicking a close button. */ ?>
+    <div id="toast-stack" class="toast-stack"></div>
 
     <?php if (AUTHENTICATION_ENABLED && isset($_SESSION['user'])): ?>
     <div id="preferences-lightbox" class="lightbox-overlay hidden">

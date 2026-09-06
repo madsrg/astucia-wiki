@@ -856,39 +856,12 @@ export const init = () => {
                 return;
             }
             if (cmd === '/aijob') {
-                // Queue a long-running, reasoning-heavy job instead of replying
-                // inline. The AI user is mandatory: an expensive background job
-                // must never run on a guess about who was meant, so there is
-                // deliberately no fall back to the current chat focus here.
-                // Name, then a prompt that must contain something other than
-                // whitespace — don't depend on the caller having trimmed `arg`.
-                const parsed = arg.match(/^[#@]?(\S+)\s+(\S[\s\S]*)$/);
-                if (!parsed) { showToast(t('chat.cmd.aijob-usage'), 'error'); return; }
-                const [, aiName, jobPrompt] = parsed;
-                const ai = (await getUsers()).find(u => u.is_ai && u.name.toLowerCase() === aiName.toLowerCase());
-                if (!ai) { showToast(t('chat.cmd.aijob-unknown-ai', { name: aiName }), 'error'); return; }
-
-                textarea.value = ''; autoResize(textarea);
-                sendBtn.disabled = true;
-                let jobRes;
-                try {
-                    jobRes = await api.call('queue_agent_job',
-                        { file: _chatPath, ai_user: ai.name, prompt: jobPrompt.trim() }, 'POST');
-                } finally {
-                    sendBtn.disabled = false;
-                }
-                if (jobRes?.success) {
-                    renderChatView(_applyFullDataToWindow(jobRes.data), _hasMore, true);
-                    // eta_minutes is null when the runner has not checked in — say so
-                    // rather than promising a time that may never come.
-                    showToast(jobRes.eta_minutes != null
-                        ? t('chat.cmd.aijob-accepted', { name: jobRes.ai_user, minutes: jobRes.eta_minutes })
-                        : t('chat.cmd.aijob-accepted-no-eta', { name: jobRes.ai_user }));
-                } else {
-                    // Put the request back so a long prompt isn't lost to an error.
-                    textarea.value = text; autoResize(textarea);
-                    showToast(jobRes?.message || t('chat.cmd.aijob-fail'), 'error');
-                }
+                const { runAiJobCommand } = await import('../core/ai_job_command.js');
+                await runAiJobCommand(arg, {
+                    chatPath: _chatPath, original: text, textarea, sendBtn,
+                    setText: (v) => { textarea.value = v; autoResize(textarea); },
+                    render:  (data) => renderChatView(_applyFullDataToWindow(data), _hasMore, true),
+                });
                 return;
             }
             if (cmd === '/jobs') {

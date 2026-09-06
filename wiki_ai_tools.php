@@ -12,6 +12,7 @@ require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/llm_trace.php';
 require_once __DIR__ . '/wikilinks.php';
 require_once __DIR__ . '/space_settings.php';
+require_once __DIR__ . '/service_auth.php';   // actor_spaces_filter(), wiki_path_space()
 require_once __DIR__ . '/search_index.php';
 require_once __DIR__ . '/graph.php';
 require_once __DIR__ . '/llm_providers.php';
@@ -339,6 +340,35 @@ const WIKI_AI_AUDIT_TOOLS = [
  * wrote would be exactly wrong. Whoever asked is kept alongside as requested_by.
  */
 function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir) {
+    // Space isolation, for the same reason the read-only guard is here: this is the one
+    // point api.php, mcp.php and run_ai_agent_jobs.php share.
+    //
+    // Each caller gates the ?space= *parameter* against the actor's allowlist, which is
+    // only half of it. Every tool builds its target as $space_dir . '/' . path with just
+    // '..' stripped, so with no ?space= the base is PAGES_DIR and a path of
+    // "Bravo/secret.md" reaches Bravo without the parameter ever being set. Ask which
+    // Space the resolved path lands in instead.
+    if (defined('AUTHENTICATION_ENABLED') && AUTHENTICATION_ENABLED) {
+        $acl = actor_spaces_filter($ai_user['role'] ?? 'reader', $ai_user);
+        if ($acl !== null) {
+            foreach (['path', 'new_path', 'target'] as $arg) {
+                $rel = ltrim(str_replace('..', '', (string)($tool_input[$arg] ?? '')), '/');
+                if ($rel === '') continue;
+                // Resolve the deepest existing ancestor: a page being created does not
+                // exist yet, but the directory that decides its Space does.
+                $probe = rtrim($space_dir, '/') . '/' . $rel;
+                while ($probe !== '' && !file_exists($probe)) {
+                    $parent = dirname($probe);
+                    if ($parent === $probe) break;
+                    $probe = $parent;
+                }
+                $real = realpath($probe);
+                if ($real === false || !wiki_space_allowed($acl, wiki_path_space($real))) {
+                    return 'Error: access denied to that space.';
+                }
+            }
+        }
+    }
     // A read-only Space is read-only for agents too. api.php's guard already covers
     // chat @mentions, but mcp.php and run_ai_agent_jobs.php call this function
     // directly — this is the one point all three routes share.

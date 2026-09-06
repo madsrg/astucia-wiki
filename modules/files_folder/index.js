@@ -4,9 +4,10 @@
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { icons } from '../core/icons.js';
-import { showToast, confirmModal } from '../core/utils.js';
+import { showToast, confirmModal, canUpload } from '../core/utils.js';
 import { t } from '../i18n/index.js';
 import { updateBreadcrumb, updateFavoriteBtn } from '../nav/index.js';
+
 
 // ── File type icons ───────────────────────────────────────────────────────────
 
@@ -93,9 +94,25 @@ const showListingPane = (mode) => {
     editBtn.disabled = true;
     document.getElementById('page-actions-group').classList.remove('hidden');
     // A wiki folder is not a file: it can be moved, but there is nothing to upload into
-    // it here (pages are dropped on the tree) and nothing to delete row by row.
+    // it here (pages are dropped on the tree) and nothing to delete row by row. What it
+    // does take is new content, which is what the rail hides the sidebar's New button for.
     document.getElementById('move-btn').classList.toggle('hidden', mode !== 'folder');
     document.getElementById('ff-upload-btn').classList.toggle('hidden', mode === 'folder');
+    document.getElementById('ff-new')?.classList.toggle('hidden', mode !== 'folder');
+    document.getElementById('ff-new-dropdown')?.classList.add('hidden');
+    document.getElementById('ff-search')?.classList.toggle('hidden', mode !== 'folder');
+    document.getElementById('ff-upload-pages-btn')
+        ?.classList.toggle('hidden', mode !== 'folder' || !canUpload());
+    document.getElementById('ff-folder-actions')?.classList.toggle('hidden', mode !== 'folder');
+    document.getElementById('ff-folder-actions-menu')?.classList.add('hidden');
+    // The folder's name is already in the breadcrumb directly above, so the title row is
+    // a second copy of it taking a whole row; its actions button moves into the toolbar.
+    // Hiding it is left to CSS keyed on this class *and* the pane being visible, because
+    // every way out of the listing already hides the pane — loadPage, showBlankPage,
+    // displaySearchResults, the tree's folder placeholder. A JS toggle would need undoing
+    // in all four, and the row would stay hidden the first time one of them was missed.
+    document.getElementById('files-folder-container').classList.toggle('ff-folder-mode', mode === 'folder');
+    document.getElementById('page-actions-group').classList.toggle('hidden', mode === 'folder');
 };
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -383,6 +400,11 @@ const renderFolder = (items, path) => {
     }
 };
 
+/** True while the pane is showing a wiki folder, so a tree refresh knows to repaint it. */
+export const isFolderViewActive = () =>
+    paneMode === 'folder' && state.currentPageType === 'folder'
+    && !document.getElementById('files-folder-container')?.classList.contains('hidden');
+
 /**
  * Lists a wiki folder in the main content area. Reads the folder from the tree already
  * in state rather than refetching, and keeps the sidebar's browse pane pointed at the
@@ -437,6 +459,174 @@ export const loadFilesFolder = async (path) => {
     else showToast(t('files.load-failed'), 'error');
 };
 
+// ── "New …" in the folder listing ─────────────────────────────────────────────
+//
+// The same seven options as the sidebar, and deliberately the *same* handlers: each row
+// clicks the sidebar's own hidden <a>, so creation, naming prompts, templates and the
+// post-create navigation all live in modules/new_items and cannot drift into a second
+// copy. The rows are cloned from that dropdown when the menu opens, which also means the
+// labels and icons follow a language change without this module knowing about it.
+
+const NEW_ITEM_IDS = [
+    'dropdown-new-page', 'dropdown-new-folder', 'dropdown-new-filesfolder',
+    'dropdown-new-diagram', 'dropdown-new-list', 'dropdown-new-chat', 'dropdown-new-search',
+];
+
+const buildNewMenu = (menu) => {
+    menu.innerHTML = '';
+    NEW_ITEM_IDS.forEach(id => {
+        const src = document.getElementById(id);
+        if (!src) return;                       // role-gated away, or markup changed
+        const a = document.createElement('a');
+        a.href = '#';
+        a.innerHTML = src.innerHTML;            // icon + label, already localised
+        a.addEventListener('click', (e) => {
+            e.preventDefault();
+            menu.classList.add('hidden');
+            src.click();
+        });
+        menu.appendChild(a);
+    });
+};
+
+const wireNewMenu = () => {
+    const btn  = document.getElementById('ff-new-btn');
+    const menu = document.getElementById('ff-new-dropdown');
+    if (!btn || !menu) return;
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();                    // or the document handler closes it at once
+        const opening = menu.classList.contains('hidden');
+        if (opening) buildNewMenu(menu);
+        menu.classList.toggle('hidden');
+    });
+    menu.addEventListener('click', (e) => e.stopPropagation());
+    document.addEventListener('click', () => menu.classList.add('hidden'));
+};
+
+// ── Search, handed to the sidebar's own box ───────────────────────────────────
+//
+// The rail hides the sidebar's search, so the listing carries one. It does not run a
+// search itself: it writes the query into the sidebar's input and clicks its button, so
+// `performSearch()` in modules/search stays the only implementation — including the
+// "all spaces" checkbox, which keeps whatever the reader last set it to, and the results
+// view, which replaces the listing exactly as a sidebar search does.
+
+const wireSearchBox = () => {
+    const input = document.getElementById('ff-search-input');
+    const btn   = document.getElementById('ff-search-btn');
+    if (!input || !btn) return;
+
+    const run = () => {
+        const target = document.getElementById('search-query-input');
+        const go     = document.getElementById('search-query-btn');
+        if (!target || !go || !input.value.trim()) return;
+        target.value = input.value;   // leaves the sidebar showing the same query
+        go.click();
+    };
+    btn.addEventListener('click', run);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); run(); } });
+};
+
+// ── Uploading pages into the folder being browsed ─────────────────────────────
+//
+// The same `.md`-only upload the file tree accepts as a drop, reached two ways: the
+// toolbar button and a drop anywhere on the listing. Both call `uploadDroppedFiles()` in
+// modules/file_tree, so the extension check, the "never overwrite, rename to (1)"
+// convention, the per-file request and the summary toast have one implementation.
+//
+// Unlike the tree, the drop target is not whatever is under the pointer: it is always the
+// folder being browsed. The listing's rows carry no path data — they close over their
+// entry — and "the folder you are looking at" is the unsurprising answer for a pane that
+// shows exactly one folder.
+
+const uploadPagesTo = async (files) => {
+    if (!files.length) return;
+    const { uploadDroppedFiles } = await import('../file_tree/index.js');
+    await uploadDroppedFiles(files, folderPath);
+};
+
+const wirePageUpload = () => {
+    const btn   = document.getElementById('ff-upload-pages-btn');
+    const input = document.getElementById('ff-upload-pages-input');
+    const pane  = document.getElementById('files-folder-container');
+    if (!btn || !input || !pane) return;
+
+    btn.addEventListener('click', () => input.click());
+    input.addEventListener('change', async () => {
+        const files = [...input.files];
+        input.value = '';                     // so the same file can be picked again
+        await uploadPagesTo(files);
+    });
+
+    // The pane is shared with the files library, which takes uploads of its own kind
+    // through its own button — so the drop zone is live only while a wiki folder is up.
+    const active = () => paneMode === 'folder' && canUpload();
+    pane.addEventListener('dragover', (e) => {
+        if (!active() || ![...(e.dataTransfer?.types || [])].includes('Files')) return;
+        e.preventDefault();                   // without this the browser opens the file
+        e.dataTransfer.dropEffect = 'copy';
+        pane.classList.add('drop-target-root');
+    });
+    pane.addEventListener('dragleave', (e) => {
+        if (!pane.contains(e.relatedTarget)) pane.classList.remove('drop-target-root');
+    });
+    pane.addEventListener('drop', async (e) => {
+        if (![...(e.dataTransfer?.types || [])].includes('Files')) return;
+        e.preventDefault();
+        pane.classList.remove('drop-target-root');
+        if (!active()) return;
+        await uploadPagesTo([...(e.dataTransfer.files || [])]);
+    });
+};
+
+// ── Folder actions ────────────────────────────────────────────────────────────
+//
+// Rename / Move / Delete for the folder being browsed, as a proxy for the header's "…"
+// menu: each row clicks the original button, so the handlers stay in modules/file_ops and
+// there is one implementation of each. A proxy rather than moving the header node here,
+// because that node would go with the pane when it hides.
+//
+// The set is fixed rather than mirroring whatever the header menu currently shows. That
+// menu's Rename and Delete entries are not touched when a folder is selected, so they
+// carried over from the last page opened and the folder menu differed depending on where
+// you had been. Delete is recursive server-side, which is not a thing to leave to chance.
+
+const FOLDER_ACTION_IDS = ['rename-btn', 'move-btn', 'delete-btn'];
+
+const buildFolderActionsMenu = (menu) => {
+    menu.innerHTML = '';
+    FOLDER_ACTION_IDS.forEach((id, i) => {
+        const src = document.getElementById(id);
+        if (!src) return;
+        if (i && id === 'delete-btn') {
+            const sep = document.createElement('div');
+            sep.className = 'file-actions-menu-sep';
+            menu.appendChild(sep);
+        }
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = src.className.replace(/\bhidden\b/, '').trim();
+        b.innerHTML = src.innerHTML;        // icon + label, already localised
+        b.addEventListener('click', () => { menu.classList.add('hidden'); src.click(); });
+        menu.appendChild(b);
+    });
+};
+
+const wireFolderActions = () => {
+    const btn  = document.getElementById('ff-folder-actions-btn');
+    const menu = document.getElementById('ff-folder-actions-menu');
+    if (!btn || !menu) return;
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const opening = menu.classList.contains('hidden');
+        if (opening) buildFolderActionsMenu(menu);
+        menu.classList.toggle('hidden');
+    });
+    menu.addEventListener('click', (e) => e.stopPropagation());
+    document.addEventListener('click', () => menu.classList.add('hidden'));
+};
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 export const init = () => {
@@ -461,6 +651,11 @@ export const init = () => {
         if (ok > 0) { showToast(`${ok} file${ok > 1 ? 's' : ''} uploaded`, 'success'); loadFilesFolder(state.currentPagePath); }
         uploadInput.value = '';
     });
+
+    wireNewMenu();
+    wireSearchBox();
+    wirePageUpload();
+    wireFolderActions();
 
     ['simple', 'detailed', 'icons'].forEach(mode => {
         document.getElementById(`ff-view-${mode}`)?.addEventListener('click', () => {

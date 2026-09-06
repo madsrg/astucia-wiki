@@ -187,10 +187,35 @@ if (isset($_REQUEST['action'])) {
     }
 
     function sanitize_path($path) {
-        global $space_dir;
+        global $space_dir, $ai_auth_user;
         $path = str_replace('..', '', $path);
         $path = ltrim($path, '/');
-        return $space_dir . '/' . $path;
+        $abs  = $space_dir . '/' . $path;
+
+        // The ?space= guard in the bootstrap covers the parameter; this covers the path.
+        // With no ?space= the base is PAGES_DIR itself, so a *relative* path of
+        // "Bravo/secret.md" reaches Bravo without the parameter ever being set and without
+        // the guard ever running. Asking which Space the resolved path lands in catches
+        // that, and it is asked here because every action's file access comes through this
+        // one function.
+        if (AUTHENTICATION_ENABLED) {
+            $allowed = actor_spaces_filter(get_current_role(), $ai_auth_user);
+            if ($allowed !== null) {
+                // realpath() for something that exists; for a path being created, resolve
+                // the deepest parent that does, since that is what decides the Space.
+                $probe = $abs;
+                while ($probe !== '' && !file_exists($probe)) {
+                    $parent = dirname($probe);
+                    if ($parent === $probe) break;
+                    $probe = $parent;
+                }
+                $real = realpath($probe);
+                if ($real === false || !wiki_space_allowed($allowed, wiki_path_space($real))) {
+                    throw new Exception('Access denied to this space.');
+                }
+            }
+        }
+        return $abs;
     }
 
     // Returns [abs_path, rel_path, PageIndexer] for a destination that may be in another space.
@@ -4324,6 +4349,18 @@ if (isset($_REQUEST['action'])) {
                 // so there is nothing here they could see that they did not cause.
                 $mj_uid  = (int)(get_current_actor()['uid'] ?? 0);
                 $mj_rows = [];
+                // One indexer per space, reused across rows: the notification toast links
+                // to the thread a job was started from, and navigation here is by page id,
+                // not by path. A job's space is not necessarily the request's.
+                $mj_indexers = [];
+                $mj_chat_id = function ($space, $chat) use (&$mj_indexers) {
+                    if ($chat === '') return null;
+                    if (!array_key_exists($space, $mj_indexers)) {
+                        $dir = $space === '' ? rtrim(PAGES_DIR, '/') : rtrim(PAGES_DIR, '/') . '/' . $space;
+                        $mj_indexers[$space] = is_dir($dir) ? new PageIndexer($dir) : null;
+                    }
+                    return $mj_indexers[$space] ? ($mj_indexers[$space]->getId($chat) ?: null) : null;
+                };
                 foreach (agent_job_queue_read() as $mj) {
                     // uid 0 is "authentication disabled", where everyone is the same
                     // local user — matching on it is correct rather than a leak.
@@ -4334,6 +4371,7 @@ if (isset($_REQUEST['action'])) {
                         'ai_user'     => $mj['ai_user_name'] ?? 'AI',
                         'space'       => $mj['space'] ?? '',
                         'chat'        => $mj['reply_to']['chat'] ?? '',
+                        'chat_id'     => $mj_chat_id((string)($mj['space'] ?? ''), (string)($mj['reply_to']['chat'] ?? '')),
                         'created_at'  => $mj['created_at'] ?? null,
                         'finished_at' => $mj['finished_at'] ?? null,
                         'error'       => $mj['error'] ?? null,

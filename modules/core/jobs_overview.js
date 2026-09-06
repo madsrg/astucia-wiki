@@ -76,16 +76,12 @@ export const buildJobsTableHtml = (rows, runnerOk) => {
     </table>`;
 };
 
-const showJobLog = async (id) => {
-    const res = await api.call('get_my_job_log', { id });
-    await confirmModal(t('jobs.log-title'), {
-        messageHtml: res.success
-            ? `<pre class="jobs-log jobs-log-view">${esc(res.content)}</pre>`
-            : `<p>${esc(res.message || t('jobs.log-failed'))}</p>`,
-        confirmLabel: t('chat.cmd.ai-users-close'),
-        hideCancel: true,
-    });
-};
+const logViewHtml = (res) => `<div class="jobs-view">
+    <div class="jobs-view-bar"><button type="button" class="btn btn-sm btn-secondary jobs-back-btn">${esc(t('btn.back'))}</button></div>
+    ${res.success
+        ? `<pre class="jobs-log jobs-log-view">${esc(res.content)}</pre>`
+        : `<p>${esc(res.message || t('jobs.log-failed'))}</p>`}
+</div>`;
 
 export const showJobsOverview = async () => {
     const res  = await api.call('list_my_jobs');
@@ -100,22 +96,38 @@ export const showJobsOverview = async () => {
         return;
     }
 
-    // The log buttons live inside the modal's own markup, so the handler is delegated
-    // onto the message element and torn down with it when the modal closes.
-    const host = document.getElementById('confirm-modal-message');
-    const onClick = (e) => {
+    const listHtml = `<div class="jobs-view">${buildJobsTableHtml(rows, res.runner_ok !== false)}</div>`;
+
+    // A log opens *inside* the list rather than in place of it. confirmModal is a single
+    // shared dialog, so the log used to close the list to borrow it, and closing the log
+    // left you back at the chat with the list gone — one click to read a log, three to
+    // read a second. The dialog's promise stays pending across the swap; only its title
+    // and body change, and `Back` puts the list back exactly as it was, unfetched.
+    const host    = document.getElementById('confirm-modal-message');
+    const titleEl = document.getElementById('confirm-modal-title');
+    const showList = () => {
+        if (titleEl) titleEl.textContent = t('jobs.title');
+        if (host) host.innerHTML = listHtml;
+    };
+
+    // Delegated onto the host, which survives the swap, so both views' buttons are
+    // covered by one listener and it is removed once when the dialog closes.
+    const onClick = async (e) => {
+        if (e.target.closest('.jobs-back-btn')) { e.preventDefault(); showList(); return; }
         const btn = e.target.closest('.jobs-log-btn');
         if (!btn) return;
         e.preventDefault();
-        // Close the list first: confirmModal is a single shared dialog, so the log has to
-        // reuse it rather than stack a second one on top.
-        document.getElementById('confirm-modal-ok')?.click();
-        showJobLog(btn.dataset.job);
+        const log = await api.call('get_my_job_log', { id: btn.dataset.job });
+        // The dialog can be closed while the log is in flight; writing into it then would
+        // paint a log behind a hidden overlay and leave it there for the next caller.
+        if (document.getElementById('confirm-modal')?.classList.contains('hidden')) return;
+        if (titleEl) titleEl.textContent = t('jobs.log-title');
+        if (host) host.innerHTML = logViewHtml(log);
     };
     host?.addEventListener('click', onClick);
     try {
         await confirmModal(t('jobs.title'), {
-            messageHtml: buildJobsTableHtml(rows, res.runner_ok !== false),
+            messageHtml: listHtml,
             confirmLabel: t('chat.cmd.ai-users-close'),
             hideCancel: true,
         });

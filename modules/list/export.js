@@ -3,6 +3,10 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { state } from '../core/state.js';
 
+// export.php resolves the path against PAGES_DIR/<space>, so the current Space has to
+// travel with the request — without it a list inside a Space is simply not found.
+const spaceQs = () => state.currentSpace ? `&space=${encodeURIComponent(state.currentSpace)}` : '';
+
 export const init = () => {
     const exportBtn = document.getElementById('export-btn');
     const exportDropdown = document.getElementById('export-dropdown');
@@ -33,13 +37,13 @@ export const init = () => {
 
     document.getElementById('export-xml').addEventListener('click', (e) => {
         e.preventDefault();
-        window.open(`export.php?path=${encodeURIComponent(state.currentPagePath)}&format=xml`);
+        window.open(`export.php?path=${encodeURIComponent(state.currentPagePath)}&format=xml${spaceQs()}`);
         exportDropdown.classList.add('hidden');
     });
 
     document.getElementById('export-csv').addEventListener('click', (e) => {
         e.preventDefault();
-        window.open(`export.php?path=${encodeURIComponent(state.currentPagePath)}&format=csv`);
+        window.open(`export.php?path=${encodeURIComponent(state.currentPagePath)}&format=csv${spaceQs()}`);
         exportDropdown.classList.add('hidden');
     });
 };

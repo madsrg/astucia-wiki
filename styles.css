@@ -266,10 +266,18 @@ body {
    free-text prompt and a path, where an AI user row carries short fixed fields. Height is
    set on the message area rather than the box, so the header and Close button stay put and
    only the list scrolls once it outgrows the dialog. */
-#confirm-modal .input-modal-content:has(.jobs-table) { max-width: 795px; }
-#confirm-modal .input-modal-content:has(.jobs-table) .confirm-modal-message {
+/* Keyed on .jobs-view, the wrapper both the list and a log render inside, so opening a
+   log does not resize the dialog under the pointer — the log is shown in place of the
+   table within the same box. */
+#confirm-modal .input-modal-content:has(.jobs-view) { max-width: 795px; }
+#confirm-modal .input-modal-content:has(.jobs-view) .confirm-modal-message {
     min-height: 45vh; max-height: 60vh; overflow-y: auto;
 }
+/* The Back button sits above the log, right-aligned like the dialog's own footer. */
+.jobs-view-bar { display: flex; justify-content: flex-end; margin-bottom: 0.5rem; }
+/* Inside the jobs dialog the log has to fit under the Back bar within the body's own
+   60vh, or both scroll and the reader gets two nested scrollbars for one document. */
+.jobs-view .jobs-log { max-height: 48vh; }
 .jobs-table td { vertical-align: middle; }
 .jobs-prompt { max-width: 460px; }
 /* Prompt on top in ordinary text, where it ran beneath it as a muted subline: stacked,
@@ -282,11 +290,6 @@ body {
 .jobs-state-ok      { background: #f0fff4; color: #22543d; }
 .jobs-state-error   { background: #fff5f5; color: #742a2a; }
 .jobs-stalled { font-size: 0.7rem; color: var(--accent-danger); font-weight: 600; }
-/* The log viewer gets twice the base dialog width (380 → 760). Its own class rather than
-   :has(.jobs-log), because the audit entry dialog renders its raw line in the same <pre>
-   and sets a width of its own — keyed on the shared class, whichever rule came last would
-   silently resize the other dialog. */
-#confirm-modal .input-modal-content:has(.jobs-log-view) { max-width: 760px; }
 .jobs-log { max-height: 55vh; overflow: auto; background: #f7fafc; border: 1px solid var(--border-color); border-radius: 6px; padding: 0.75rem; font-size: 0.75rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; text-align: left; }
 
 /* Drag-and-drop upload: the folder under the pointer, or the whole pane when the drop
@@ -732,6 +735,43 @@ body {
 
 #toast { position: fixed; bottom: 1.25rem; right: 1.25rem; background-color: #2d3748; color: white; padding: 0.75rem 1.25rem; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s; z-index: 9999; }
 #toast.show { opacity: 1; visibility: visible; }
+
+/* Sticky notifications. Bottom-right like the transient toast but offset above it, so a
+   "saved" message firing underneath one cannot hide it. Anchored at the bottom and growing
+   upward, newest on top (see showStickyToast). pointer-events on the children only, so the
+   empty column never eats a click on the page behind it. */
+.toast-stack {
+    position: fixed; bottom: 4.5rem; right: 1.25rem; z-index: 9999;
+    display: flex; flex-direction: column-reverse; gap: 0.5rem;
+    max-height: calc(100vh - 7rem); overflow-y: auto; pointer-events: none;
+}
+.sticky-toast {
+    pointer-events: auto; display: flex; align-items: flex-start; gap: 0.75rem;
+    width: 320px; padding: 0.7rem 0.6rem 0.7rem 0.9rem;
+    background: #2d3748; color: white; border-radius: 0.5rem;
+    border-left: 4px solid var(--accent-blue);
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.25), 0 4px 6px -2px rgba(0,0,0,0.1);
+}
+.sticky-toast-success { border-left-color: var(--accent-green); }
+.sticky-toast-error   { border-left-color: var(--accent-danger); }
+.sticky-toast-main  { flex: 1; min-width: 0; }
+.sticky-toast-title { font-size: 0.85rem; font-weight: 600; }
+/* Two lines of the request is enough to tell two jobs apart; the rest is on the tooltip. */
+.sticky-toast-body {
+    font-size: 0.78rem; opacity: 0.8; margin-top: 0.15rem;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.sticky-toast-link {
+    margin-top: 0.4rem; padding: 0; background: none; border: none;
+    color: #90cdf4; font-family: inherit; font-size: 0.78rem; font-weight: 600;
+    cursor: pointer; text-decoration: underline;
+}
+.sticky-toast-link:hover { color: white; }
+.sticky-toast-close {
+    flex-shrink: 0; width: 20px; height: 20px; padding: 0; border: none; border-radius: 3px;
+    background: none; color: white; opacity: 0.55; font-size: 1.1rem; line-height: 1; cursor: pointer;
+}
+.sticky-toast-close:hover { opacity: 1; background: rgba(255,255,255,0.15); }
 
 /* Lightbox Styles */
 .lightbox-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); z-index: 1000; display: flex; align-items: center; justify-content: center; }
@@ -1180,11 +1220,51 @@ body {
 
 /* ── Files Library ───────────────────────────────────────────────────────── */
 
+/* Browsing a folder: the title row would repeat the breadcrumb immediately above it, so
+   it goes and the folder's actions move into the toolbar. Keyed on the pane being both
+   visible and in folder mode, so hiding the pane — which is what every exit from the
+   listing does — brings the row back without anyone having to remember to. */
+.main-content:has(#files-folder-container.ff-folder-mode:not(.hidden)) .page-title-row { display: none; }
+
 .ff-actions {
     display: flex; align-items: center; gap: 0.75rem;
     padding: 0.6rem 1.5rem 0.6rem 52px; border-bottom: 1px solid var(--border-color); flex-shrink: 0;
 }
-.ff-view-modes { display: flex; gap: 4px; margin-left: auto; }
+/* New … and the view-mode icons travel together at the right of the bar, with a gap
+   wide enough that "change the view" is not one slip away from "create something". */
+/* One height for every control in the group. It is the icon buttons' natural height —
+   btn-sm's 0.25rem padding top and bottom around a 14px icon — so those are unchanged and
+   the text controls line up with them instead of each finding its own height from its
+   content. box-sizing because this sheet is otherwise content-box, where `height` would
+   set the content box and the padding would be added on top. */
+.ff-actions-right {
+    display: flex; align-items: center; gap: 1.25rem; margin-left: auto;
+    --ff-ctl-h: calc(0.5rem + 14px);
+}
+.ff-actions-right .btn,
+.ff-actions-right .ff-search input { box-sizing: border-box; height: var(--ff-ctl-h); }
+.ff-view-modes { display: flex; gap: 4px; }
+/* .dropdown-container stretches its button to 100% for the sidebar's full-width New;
+   in a toolbar the button sizes itself, and the menu hangs off the right edge so it
+   opens inward instead of off the side of the pane. */
+/* The search box, on the light toolbar rather than the dark sidebar, so it takes the
+   page's input colours instead of the sidebar's. */
+.ff-search { display: flex; align-items: stretch; gap: 0.4rem; }
+.ff-search input {
+    width: 180px; min-width: 0; padding: 0.25rem 0.5rem; font-size: 0.75rem;
+    font-family: inherit; color: var(--text-color);
+    border: 1px solid var(--border-color); border-radius: 0.375rem; background: white;
+}
+.ff-search input:focus { outline: none; border-color: var(--accent-blue); }
+.ff-search .btn { white-space: nowrap; }
+
+.ff-new .btn {
+    width: auto;
+    /* Twice the natural width of "New …". A min rather than a width: a longer label in
+       another locale grows past it instead of being clipped. */
+    min-width: 103px;
+}
+.ff-new .dropdown-content { right: 0; min-width: 210px; }
 .ff-empty { padding: 2rem 1.5rem 2rem 52px; color: var(--accent-gray); font-style: italic; }
 
 /* Simple list */
