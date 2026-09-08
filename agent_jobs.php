@@ -18,6 +18,8 @@
 
 // How many one-off jobs one runner tick will execute. Keeps a burst of queued
 // jobs from overrunning the cron window; the rest wait for the next tick.
+require_once __DIR__ . '/service_auth.php';   // wiki_user_notify_email()
+
 const AGENT_JOB_MAX_PER_RUN = 3;
 // A job still marked 'running' after this long lost its runner (crash, kill,
 // timeout). The next tick fails it so the chat placeholder resolves.
@@ -257,5 +259,5 @@ function agent_job_notify_requester(array $job, ?string $reply, ?string $error, 
           . ($ok ? '<p><strong>Result:</strong></p><pre style="white-space:pre-wrap;background:#f7fafc;padding:0.8rem;border-radius:4px">'
                    . $h(mb_strimwidth((string)$reply, 0, 20000, '…')) . '</pre>'
                  : '<pre style="background:#fff5f5;padding:0.8rem;border-radius:4px">' . $h($error) . '</pre>');
-    return send_email($user['email'], $user['name'] ?? '', $subj, $body);
+    return send_email(wiki_user_notify_email($user), $user['name'] ?? '', $subj, $body);
 }

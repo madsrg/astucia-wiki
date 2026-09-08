@@ -28,7 +28,7 @@ One container running three processes under supervisord:
 | **PHP-FPM** | The application. FPM specifically, because AI replies call `fastcgi_finish_request()` to answer the browser and keep working in the background |
 | **crond** | Scheduled AI agent jobs and the daily digest |
 
-Base image `php:8.3-fpm-alpine`, about **226 MB**. A wiki is an appliance: one image
+Base image `php:8.5-fpm-alpine`, about **263 MB**. A wiki is an appliance: one image
 that runs beats three services to wire together. Split them if your platform prefers
 it — see [Next steps](#next-steps).
 

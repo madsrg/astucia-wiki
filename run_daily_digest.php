@@ -21,6 +21,7 @@ ignore_user_abort(true);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/indexer.php';
 require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/service_auth.php';   // wiki_user_notify_email()
 require_once __DIR__ . '/mentions.php';
 
 const DIGEST_WINDOW = 86400; // 24 hours
@@ -215,7 +216,7 @@ foreach ($users as $u) {
           . '<p style="color:#a0aec0;font-size:12px;">You are receiving this because you subscribed to daily updates in My Preferences. Turn it off there any time.</p>'
           . '</div>';
 
-    if (send_email($u['email'], $u['name'] ?? '', $subject, $html)) {
+    if (send_email(wiki_user_notify_email($u), $u['name'] ?? '', $subject, $html)) {
         $sent++;
     } else {
         fwrite(STDERR, "Daily digest: failed to send to {$u['email']}\n");

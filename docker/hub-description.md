@@ -3,12 +3,24 @@
 If you like Astucia Wiki, please consider giving it a star on
 [github](https://github.com/madsrg/astucia-wiki)!
 
+Also to support my work I hope you will subscribe to the Astucia Wiki
+[YouTube channel](https://www.youtube.com/channel/UCysy17UwEsxOmrGYZ0_5zkA).
+
 A flat-file, self-hosted team wiki with AI assistants and an MCP server. **No database** —
 every page is a file on disk, so a backup is an archive of one directory.
 
-Markdown pages with text diagrams · draw.io diagrams · structured lists · team and per-page
-chat · AI users that read and write wiki pages · scheduled AI agent jobs · knowledge graph ·
-full-text search · Spaces with per-user access control · UI in nine languages.
+**Content** — Markdown pages with **Mermaid** and draw.io diagrams · structured lists and
+JSON data pages · page and diagram templates · attachments and file libraries · wikilinks,
+transclusion and tags · full-text search with saved searches · a knowledge graph · optional
+git version history · static site export.
+
+**AI** — AI users that read and write wiki pages · one-off and scheduled agent jobs · team
+and per-page chat · an **MCP server** so other tools can use your wiki, and an **MCP client**
+so your AI users can use theirs.
+
+**Teams** — Spaces with per-user access control, including read-only Spaces · OTP or OIDC
+login · mentions, page comments and a daily digest email · an optional audit log · a REST API
+with service tokens · UI in nine languages.
 
 ## Quick start
 
@@ -18,7 +30,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.9.3
+    madsrotwitt/astucia-wiki:2026.9.4
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -44,7 +56,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.9.3
+    madsrotwitt/astucia-wiki:2026.9.4
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -56,7 +68,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.9.3` | moves only if that release is rebuilt |
+| `2026.9.4` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
@@ -104,7 +116,7 @@ tree on its own; the page you are reading reloads itself.
 ## Inside the image
 
 One container: **nginx**, **PHP-FPM** and **cron** under supervisord, on
-`php:8.3-fpm-alpine`. PHP-FPM specifically, because AI replies answer the browser and then
+`php:8.5-fpm-alpine`. PHP-FPM specifically, because AI replies answer the browser and then
 keep working in the background.
 
 - **Docs:** [DOCKER.md](https://github.com/madsrg/astucia-wiki/blob/main/DOCKER.md) —

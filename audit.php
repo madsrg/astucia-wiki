@@ -151,6 +151,32 @@ function wiki_audit_users(string $date): array {
 //
 // The third element names the request parameter holding the target, so one hook can
 // serve every action instead of thirty call sites drifting apart.
+/**
+ * A bulk deletion of chat messages — auto-purge, or the manual /purge.
+ *
+ * Individual chat messages are deliberately outside the audit log: a busy thread is
+ * hundreds of entries a day and is already its own readable record. A *bulk deletion* is
+ * different in kind. "Where did those four hundred messages go" is exactly the question
+ * this log exists to answer, and one line per purge costs nothing.
+ *
+ * @param string $mode 'auto' (a retention policy fired) or 'manual' (someone ran /purge)
+ */
+function wiki_audit_chat_purge(string $abs_path, int $removed, string $mode): void {
+    if (!wiki_audit_enabled() || $removed <= 0) return;
+    $rel = $abs_path;
+    if (defined('PAGES_DIR')) {
+        $root = rtrim(realpath(PAGES_DIR) ?: PAGES_DIR, '/');
+        $real = realpath($abs_path) ?: $abs_path;
+        if (str_starts_with($real, $root . '/')) $rel = substr($real, strlen($root) + 1);
+    }
+    wiki_audit_log('delete', 'success', [
+        'object'      => $rel,
+        'object_type' => 'chat_messages',
+        'change_type' => $mode === 'auto' ? 'retention' : 'purge',
+        'count'       => $removed,
+    ]);
+}
+
 const WIKI_AUDIT_ACTIONS = [
     'save'               => ['update',  'page',       'file'],
     'create_file'        => ['create',  'page',       'path'],

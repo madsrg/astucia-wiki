@@ -1461,6 +1461,10 @@ body {
 .chat-row-mine { flex-direction: row-reverse; }
 .chat-avatar { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.8rem; }
 .chat-avatar-gap { width: 32px; flex-shrink: 0; }
+/* An AI's avatar holds the android glyph instead of an initial. The circle and its colour
+   stay: the colour is what tells two AI users apart, and keeping the box identical means
+   the message rows do not shift depending on who wrote them. */
+.chat-avatar-ai svg { width: 18px; height: 18px; display: block; }
 .chat-col { display: flex; flex-direction: column; max-width: 70%; position: relative; }
 .chat-row-mine .chat-col { align-items: flex-end; }
 .chat-meta { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 2px; padding: 0 4px; }
@@ -1526,6 +1530,34 @@ body {
 .chat-pending-queued .chat-spinner { animation-duration: 2.4s; border-top-color: var(--accent-gray); }
 
 /* Admin → AI → one-off /aiJob jobs */
+/* The notification address under the login address in the admin user list. */
+.admin-notify-email { display: block; font-size: 0.72rem; color: var(--accent-gray); margin-top: 0.15rem; }
+
+/* Auto-purge sits under the topic in the Chat Settings dialog, divided from it: the topic
+   is the frequent edit and the retention rule is the rare, consequential one. */
+.chat-settings-section { margin-top: 1.1rem; padding-top: 0.9rem; border-top: 1px solid var(--border-color); }
+.chat-settings-section .pref-hint { margin-top: 0.4rem; min-height: 2.2em; }
+
+/* System prompt gallery — the picker, and the "Choose from Gallery" button beside the
+   prompt label. */
+.admin-ai-prompt-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.3rem; }
+#confirm-modal .input-modal-content:has(.gallery-list) { max-width: 620px; }
+.gallery-list { display: flex; flex-direction: column; gap: 0.4rem; max-height: 55vh; overflow-y: auto; text-align: left; }
+.gallery-item {
+    display: flex; flex-direction: column; gap: 0.2rem; width: 100%;
+    padding: 0.6rem 0.75rem; border: 1px solid var(--border-color); border-radius: 6px;
+    background: white; cursor: pointer; text-align: left; font-family: inherit;
+}
+.gallery-item:hover { background: #f0f4f8; border-color: var(--accent-blue); }
+.gallery-item-title { font-size: 0.9rem; font-weight: 600; color: var(--text-color); }
+/* Two lines of description: enough to choose between roles, not enough to make the list
+   a page in its own right. */
+.gallery-item-desc {
+    font-size: 0.8rem; color: var(--accent-gray); line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.gallery-source { margin-top: 0.6rem; font-size: 0.75rem; color: var(--accent-gray); text-align: left; }
+
 .admin-oneoff-section { margin-top: 1.75rem; }
 /* Agent-job run logs (scheduled and one-off) are prose-heavy — prompts, tool args,
    model output — so wrap instead of forcing a horizontal scrollbar. Long unbroken
@@ -1844,6 +1876,8 @@ body {
 #pc-messages .chat-row { gap: 0.3rem; }
 #pc-messages .chat-avatar.pc-avatar { width: 20px; height: 20px; min-width: 20px; font-size: 0.62rem; border-radius: 50%; }
 #pc-messages .chat-avatar-gap { width: 20px; min-width: 20px; }
+/* Page Chat's avatars are 20px rather than 32px, so the glyph scales with them. */
+#pc-messages .chat-avatar.pc-avatar.chat-avatar-ai svg { width: 13px; height: 13px; }
 #pc-messages .chat-meta { font-size: 0.72rem; }
 #pc-messages .chat-bubble { font-size: 0.79rem; padding: 0.3rem 0.5rem; }
 #pc-messages .chat-del-btn { font-size: 0.8rem; top: 0.1rem; right: 0.25rem; }

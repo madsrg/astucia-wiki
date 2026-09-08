@@ -48,7 +48,7 @@ const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
     ai:         ['ai', 'jobs', 'mcp'],
     monitoring: ['logs', 'errorlog', 'audit', 'diagnostics'],
-    content:    ['reindex', 'deleted'],
+    content:    ['reindex', 'deleted', 'chatpolicy'],
 };
 const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 'reindex' };
 
@@ -88,9 +88,98 @@ const switchTab = (name) => {
     if (name === 'jobs')        loadAgentJobs();
     if (name === 'deleted')     loadDeletedPages();
     if (name === 'reindex')     loadReindexPane();
+    if (name === 'chatpolicy')  loadChatPolicyPane();
     if (name === 'mcp')         loadMcpServers();
 };
 
+
+// ── System prompt gallery ─────────────────────────────────────────────────────
+//
+// Picking one **copies its text** into the prompt box. It is a starting point that the
+// administrator then edits, not a subscription — an upstream change must never alter how
+// somebody's AI user behaves without them touching it. That is also why the confirm below
+// warns before replacing a prompt that already has content.
+
+const openPromptGallery = async () => {
+    const ta = document.getElementById('ai-f-prompt');
+    if (!ta) return;
+
+    const res = await api.call('admin_prompt_gallery');
+    if (!res.success || !res.prompts?.length) {
+        showToast(res.message || t('admin.ai.gallery-failed'), 'error');
+        return;
+    }
+
+    // Where the list came from is worth saying: an admin looking at a short or old list
+    // should be able to tell "the vendor publishes this" from "we could not reach it".
+    const note = { remote: 'admin.ai.gallery-src-remote', cache: 'admin.ai.gallery-src-cache',
+                   'cache-stale': 'admin.ai.gallery-src-stale', bundled: 'admin.ai.gallery-src-bundled' }[res.source];
+
+    const html = `<div class="gallery-list">` + res.prompts.map((p, i) => `
+        <button type="button" class="gallery-item" data-i="${i}">
+            <span class="gallery-item-title">${escHtml(p.title)}</span>
+            ${p.description ? `<span class="gallery-item-desc">${escHtml(p.description)}</span>` : ''}
+        </button>`).join('') +
+        `</div><p class="gallery-source">${escHtml(t(note))}${res.updated ? ' · ' + escHtml(res.updated) : ''}</p>`;
+
+    const host = document.getElementById('confirm-modal-message');
+    const onPick = async (e) => {
+        const btn = e.target.closest('.gallery-item');
+        if (!btn) return;
+        e.preventDefault();
+        const p = res.prompts[Number(btn.dataset.i)];
+        if (!p) return;
+        // Replacing text somebody wrote is the one destructive thing this dialog can do.
+        if (ta.value.trim() && !await confirmModal(t('admin.ai.gallery-replace-title'), {
+                message: t('admin.ai.gallery-replace', { title: p.title }),
+                confirmLabel: t('admin.ai.gallery-replace-ok'), dangerous: true })) return;
+        document.getElementById('confirm-modal-ok')?.click();
+        ta.value = p.prompt;
+        ta.dispatchEvent(new Event('input'));
+        ta.focus();
+        showToast(t('admin.ai.gallery-applied', { title: p.title }), 'success');
+    };
+    host?.addEventListener('click', onPick);
+    try {
+        await confirmModal(t('admin.ai.gallery-title'), {
+            messageHtml: html, confirmLabel: t('btn.close'), hideCancel: true,
+        });
+    } finally {
+        host?.removeEventListener('click', onPick);
+    }
+};
+
+// ── Chat Retention tab (Content) ──────────────────────────────────────────────
+//
+// The wiki-wide default, for threads that have never chosen one. A thread that *has*
+// chosen — including choosing "off" — keeps its own setting, so raising a house policy
+// can never quietly re-enable trimming on a thread somebody deliberately exempted.
+
+const RETENTION_OPTIONS = ['', 'count:100', 'count:200', 'count:300', 'days:30', 'days:90', 'days:180'];
+
+const loadChatPolicyPane = async () => {
+    const sel  = document.getElementById('admin-chat-retention');
+    const save = document.getElementById('admin-chat-retention-save');
+    if (!sel || !save) return;
+
+    if (!sel.options.length) {
+        RETENTION_OPTIONS.forEach(v => {
+            const o = document.createElement('option');
+            o.value = v;
+            o.textContent = t('chat-topic.retention.' + (v === '' ? 'off' : v.replace(':', '-')));
+            sel.appendChild(o);
+        });
+        save.addEventListener('click', async () => {
+            save.disabled = true;
+            const res = await api.call('admin_chat_retention', { policy: sel.value }, 'POST');
+            save.disabled = false;
+            showToast(res.success ? t('admin.chatpolicy.saved') : (res.message || t('admin.chatpolicy.failed')),
+                      res.success ? 'success' : 'error');
+        });
+    }
+    const res = await api.call('admin_chat_retention');
+    if (res.success) sel.value = res.policy ?? '';
+};
 
 // ── Audit Log tab ─────────────────────────────────────────────────────────────
 //
@@ -459,6 +548,16 @@ const renderUsers = () => {
             tdEmail.appendChild(inp);
         } else {
             tdEmail.textContent = u.email || '—';
+        }
+        // The address mail is actually sent to, when the person has chosen a different one
+        // in My Preferences. Shown beneath the login address rather than replacing it —
+        // the whole point of the split is that the identity stays visible here.
+        if (u.notifyEmail && u.notifyEmail.trim() && u.notifyEmail.trim() !== (u.email || '').trim()) {
+            const alt = document.createElement('span');
+            alt.className = 'admin-notify-email';
+            alt.textContent = t('admin.users.notify-email', { email: u.notifyEmail.trim() });
+            alt.title = t('admin.users.notify-email-title');
+            tdEmail.appendChild(alt);
         }
 
         const tdAuth = document.createElement('td');
@@ -1159,7 +1258,10 @@ const openAiUserForm = async (u) => {
                     <p id="ai-f-prompt-page-active" class="form-hint" style="${cfg.system_prompt_page ? '' : 'display:none;'}color:var(--accent-blue)">${cfg.system_prompt_page ? t('admin.ai.prompt-page-active') : ''}</p>
                 </div>
                 <div class="form-group">
-                    <label>${t('admin.ai.prompt')}</label>
+                    <div class="admin-ai-prompt-head">
+                        <label>${t('admin.ai.prompt')}</label>
+                        <button type="button" id="ai-f-prompt-gallery" class="btn btn-sm btn-secondary">${t('admin.ai.gallery-btn')}</button>
+                    </div>
                     <textarea id="ai-f-prompt" class="form-control admin-ai-prompt" rows="10" placeholder="${t('admin.ai.prompt-ph')}">${escHtml(cfg.system_prompt || '')}</textarea>
                 </div>
             </div>
@@ -1230,6 +1332,8 @@ const openAiUserForm = async (u) => {
     // lightbox in the move/copy style). Selection is held on the display span's
     // dataset and read back by saveAiUser.
     (() => {
+        document.getElementById('ai-f-prompt-gallery')?.addEventListener('click', openPromptGallery);
+
         const display   = document.getElementById('ai-f-prompt-page-display');
         const chooseBtn = document.getElementById('ai-f-prompt-page-btn');
         const clearBtn  = document.getElementById('ai-f-prompt-page-clear');

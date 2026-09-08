@@ -12,6 +12,8 @@ require_once 'mailer.php';
 require_once __DIR__ . '/ai_core.php';
 require_once __DIR__ . '/agent_jobs.php';
 require_once __DIR__ . '/service_auth.php';
+require_once __DIR__ . '/chat_retention.php';
+require_once __DIR__ . '/system_prompt_gallery.php';
 require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/mentions.php';
 require_once __DIR__ . '/audit.php';
@@ -84,6 +86,8 @@ if (isset($_REQUEST['action'])) {
             $space_dir = $_sp_candidate;
         }
     }
+
+    wiki_migrate_user_emails();   // one-shot, marked by `schema` in users.json
 
     $indexer = new PageIndexer($space_dir);
 
@@ -882,12 +886,13 @@ if (isset($_REQUEST['action'])) {
     }
 
     $edit_actions  = ['save', 'create_file', 'save_message_page', 'create_folder', 'create_diagram', 'create_list', 'create_chat', 'create_search',
-                      'post_chat_message', 'queue_agent_job', 'toggle_chat_debug', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'purge_chat_messages', 'toggle_sticky',
+                      'post_chat_message', 'queue_agent_job', 'toggle_chat_debug', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'purge_chat_messages', 'set_chat_retention', 'toggle_sticky',
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags',
                       'save_diagram_svg', 'upload_page', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
                       'retarget_wikilinks'];
-    $admin_actions = ['admin_get_users', 'admin_save_users', 'admin_get_user_requests',
+    $admin_actions = ['admin_chat_retention', 'admin_prompt_gallery',
+                      'admin_get_users', 'admin_save_users', 'admin_get_user_requests',
                       'admin_approve_request', 'admin_deny_request',
                       'admin_get_logs', 'admin_get_log_content',
                       'admin_get_error_logs', 'admin_get_error_log_content',
@@ -1417,6 +1422,11 @@ if (isset($_REQUEST['action'])) {
                     'git_commit'    => isset($cm_data['git_commit']) ? (bool)$cm_data['git_commit'] : false,
                     'nextMessageId' => $cm_data['nextMessageId'] ?? 1,
                     'mtime'         => $cm_mtime,
+                    // null means the thread has never chosen and follows the wiki default.
+                    // '' means the thread chose *off*, which outranks the default — the
+                    // dialog cannot offer that distinction unless it can see it.
+                    'retention'         => array_key_exists('retention', $cm_data) ? (string)$cm_data['retention'] : null,
+                    'retention_default' => wiki_chat_policy_default(),
                 ]);
                 break;
 
@@ -1676,6 +1686,13 @@ if (isset($_REQUEST['action'])) {
                     $_pending_ai_user = null;   // queued, so nothing runs inline
                 }
 
+                // Auto-purge rides on the write this request was going to make anyway, so
+                // it costs nothing and a trim can never land without the message that
+                // triggered it. It runs after the AI placeholder has been appended, which
+                // is why the policy protects pending messages carrying a job_id.
+                $_purged = wiki_chat_autopurge($chat_data);
+                if ($_purged > 0) wiki_audit_chat_purge($file_path, $_purged, 'auto');
+
                 file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
                 echo json_encode(['success' => true, 'data' => $chat_data,
                                   'async_ai' => $_pending_ai_user !== null, 'queued_job' => $_bg_job]);
@@ -1689,6 +1706,72 @@ if (isset($_REQUEST['action'])) {
                     if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
                     trigger_ai_response($_pending_ai_user, $file_path, $chat_data, $indexer, $space_dir, $_pending_placeholder_id);
                 }
+                break;
+
+            case 'chat_retention_preview':
+                // What would this policy remove, right now. Auto-purge is silent and
+                // irreversible, so the dialog shows a number before anything is enabled.
+                $cp_path = sanitize_path($_REQUEST['file'] ?? '');
+                $cp_pol  = (string)($_REQUEST['policy'] ?? '');
+                $cp_inherit = ($cp_pol === 'inherit');
+                if ($cp_inherit) $cp_pol = wiki_chat_policy_default();
+                if (!wiki_chat_policy_valid($cp_pol)) throw new Exception('Unknown retention policy.');
+                $cp_data = json_decode((string)@file_get_contents($cp_path), true);
+                if ($cp_data === null) throw new Exception('Invalid chat file.');
+                $cp_msgs = $cp_data['messages'] ?? [];
+                [$cp_keep, $cp_gone] = wiki_chat_apply_policy($cp_msgs, $cp_pol);
+                echo json_encode(['success' => true,
+                    'total' => count($cp_msgs), 'keeps' => count($cp_keep), 'removes' => count($cp_gone),
+                    // So the dialog can label "Use the wiki default" with what that is.
+                    'default' => wiki_chat_policy_default(), 'resolved' => $cp_pol, 'inherited' => $cp_inherit]);
+                break;
+
+            case 'set_chat_retention':
+                $cr_path = sanitize_path($_POST['file'] ?? '');
+                $cr_pol  = (string)($_POST['policy'] ?? '');
+                if ($cr_pol !== 'inherit' && !wiki_chat_policy_valid($cr_pol)) throw new Exception('Unknown retention policy.');
+                $cr_data = json_decode((string)@file_get_contents($cr_path), true);
+                if ($cr_data === null) throw new Exception('Invalid chat file.');
+                if ($cr_pol === 'inherit') {
+                    // Removing the key is the only way back to following the wiki default.
+                    // Without this a thread is pinned the first time the dialog is saved and
+                    // can never inherit again.
+                    unset($cr_data['retention']);
+                } else {
+                    // Stored even when '' — that is the thread saying "off", which has to
+                    // outrank a wiki-wide default rather than fall through to it.
+                    $cr_data['retention'] = $cr_pol;
+                }
+                // Applied at once: a policy that did nothing until the next message would
+                // look broken on a thread that is already over the limit.
+                $cr_gone = wiki_chat_autopurge($cr_data);
+                if ($cr_gone > 0) wiki_audit_chat_purge($cr_path, $cr_gone, 'auto');
+                file_put_contents($cr_path, json_encode($cr_data, JSON_PRETTY_PRINT));
+                echo json_encode(['success' => true, 'removed' => $cr_gone, 'data' => $cr_data,
+                    'retention' => array_key_exists('retention', $cr_data) ? (string)$cr_data['retention'] : null]);
+                break;
+
+            case 'admin_prompt_gallery':
+                // Fetched here, by the server, and only because an administrator asked —
+                // see system_prompt_gallery.php for why that matters.
+                $g = wiki_gallery_get(!empty($_REQUEST['refresh']));
+                echo json_encode(['success' => true,
+                    'prompts' => $g['prompts'], 'source' => $g['source'],
+                    'updated' => $g['updated'] ?? null, 'url' => $g['url']]);
+                break;
+
+            case 'admin_chat_retention':
+                // The wiki-wide default, for threads that have never chosen one.
+                if (isset($_POST['policy'])) {
+                    $ap = (string)$_POST['policy'];
+                    if (!wiki_chat_policy_valid($ap)) throw new Exception('Unknown retention policy.');
+                    if (!wiki_setting_set(WIKI_CHAT_POLICY_KEY, $ap)) throw new Exception('Could not save the setting.');
+                    wiki_audit_log('update', 'success', ['object' => 'settings.json',
+                        'object_type' => 'setting', 'change_type' => 'chat_retention_default', 'value' => $ap]);
+                }
+                echo json_encode(['success' => true,
+                    'policy'  => wiki_chat_policy_default(),
+                    'options' => WIKI_CHAT_POLICIES]);
                 break;
 
             case 'toggle_chat_debug':
@@ -1919,7 +2002,10 @@ if (isset($_REQUEST['action'])) {
                 $keep = max(0, (int)($_POST['keep'] ?? 0));
                 $chat_data = json_decode(file_get_contents($file_path), true);
                 if ($chat_data === null) throw new Exception('Invalid chat file.');
+                $_before = count($chat_data['messages'] ?? []);
                 $chat_data['messages'] = $keep === 0 ? [] : array_slice($chat_data['messages'] ?? [], -$keep);
+                $_gone = $_before - count($chat_data['messages']);
+                if ($_gone > 0) wiki_audit_chat_purge($file_path, $_gone, 'manual');
                 file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
                 echo json_encode(['success' => true, 'data' => $chat_data]);
                 break;
@@ -2835,7 +2921,7 @@ if (isset($_REQUEST['action'])) {
 
                 $sh_sent = 0; $sh_failed = 0;
                 foreach ($sh_recipients as $sh_r) {
-                    if (send_email($sh_r['email'], $sh_r['name'] ?? '', $sh_subject, $sh_body)) {
+                    if (send_email(wiki_user_notify_email($sh_r), $sh_r['name'] ?? '', $sh_subject, $sh_body)) {
                         $sh_sent++;
                     } else {
                         $sh_failed++;
@@ -3352,8 +3438,35 @@ if (isset($_REQUEST['action'])) {
                     }
                     $merged[] = $base;
                 }
+
+                // No two OTP accounts may claim the same login address. `email` is what
+                // find_otp_user() matches on, so a duplicate makes the lookup return
+                // whichever record comes first in the file — one person silently landing
+                // in another's account, with that account's role and Spaces.
+                //
+                // Scoped to OTP records on purpose. An OIDC record is matched on `sub`, so
+                // sharing an address with one is harmless — and forbidding it would be a
+                // false alarm on a real pattern: one person's provider address also being
+                // an OTP account's login. The moment an account is switched *to* OTP both
+                // records are OTP and this check runs, which is exactly when it matters.
+                $seen_login = [];
+                foreach ($merged as $mu) {
+                    if (($mu['auth'] ?? 'oidc') !== 'otp') continue;
+                    $key = strtolower(trim((string)($mu['email'] ?? '')));
+                    if ($key === '') continue;
+                    if (isset($seen_login[$key])) {
+                        throw new Exception('Two OTP accounts share the login email "' . $key
+                            . '". A login address identifies exactly one account — give one of them its own,'
+                            . ' or use the notification email for a shared inbox.');
+                    }
+                    $seen_login[$key] = true;
+                }
+
                 $merged = array_merge($merged, $non_human_preserved);
-                if (file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode(['users' => $merged], JSON_PRETTY_PRINT)) === false) {
+                // Keep every top-level key (notably `schema`, the migration marker) rather
+                // than rebuilding the document from just the user list.
+                $existing_uf['users'] = $merged;
+                if (file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($existing_uf, JSON_PRETTY_PRINT)) === false) {
                     throw new Exception('Failed to write users file.');
                 }
                 echo json_encode(['success' => true]);
@@ -3431,7 +3544,9 @@ if (isset($_REQUEST['action'])) {
                     if (($pu['sub'] ?? '') === $me_sub) {
                         echo json_encode(['success' => true, 'data' => [
                             'name'        => $pu['name']       ?? '',
-                            'email'       => $pu['email']      ?? '',
+                            // The address they may change, not the one they log in with.
+                            'email'       => wiki_user_notify_email($pu),
+                            'loginEmail'  => $pu['email']      ?? '',
                             'fontFamily'  => $pu['fontFamily'] ?? 'sans',
                             'fontSize'    => $pu['fontSize']   ?? '11pt',
                             'dailyDigest' => !empty($pu['dailyDigest']),
@@ -3459,7 +3574,11 @@ if (isset($_REQUEST['action'])) {
                 $found_pref = false;
                 foreach ($pref_data2['users'] as &$pu2) {
                     if (($pu2['sub'] ?? '') === $me_sub2) {
-                        if ($new_email) $pu2['email'] = $new_email;
+                        // notifyEmail, never email: on an OTP account `email` is the
+                        // credential the login lookup matches on, so a preference must not
+                        // be able to write it. Clearing the box falls back to the identity.
+                        if ($new_email) $pu2['notifyEmail'] = $new_email;
+                        else            unset($pu2['notifyEmail']);
                         $pu2['fontFamily']  = $new_font;
                         $pu2['fontSize']    = $new_font_size;
                         $pu2['dailyDigest'] = $new_digest;

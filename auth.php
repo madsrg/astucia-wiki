@@ -8,6 +8,7 @@
 require_once __DIR__ . '/config.php';
 require_once 'logger.php';
 require_once 'mailer.php';
+require_once __DIR__ . '/service_auth.php';   // wiki_migrate_user_emails(), wiki_user_notify_email()
 
 session_start();
 
@@ -52,6 +53,8 @@ function load_requests(): array {
 function save_requests(array $requests): void {
     file_put_contents(WIKI_SYSTEM_DATA . 'user_requests.json', json_encode(['requests' => $requests], JSON_PRETTY_PRINT));
 }
+
+wiki_migrate_user_emails();   // before any read of users.json below
 
 function find_by_sub(array $list, string $sub): ?int {
     foreach ($list as $i => $item) {
@@ -229,6 +232,11 @@ try {
             }
 
             $users[$idx]['name'] = $name;
+            // The provider is authoritative for the identity address. Before the
+            // email/notifyEmail split a saved preference overwrote this field, so a record
+            // could stop showing which provider account it belonged to; writing the claim
+            // back on every login repairs those without anyone having to touch users.json.
+            if ($email !== '') $users[$idx]['email'] = $email;
             if (!isset($u['uid'])) {
                 $max_uid = 0;
                 foreach ($users as $eu) { if (isset($eu['uid']) && $eu['uid'] > $max_uid) $max_uid = $eu['uid']; }

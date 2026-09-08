@@ -125,6 +125,18 @@ define('LOG_DIR', '/var/log/wiki/');
 // so a value that disagrees with cron produces a wrong estimate.
 define('AGENT_JOB_RUNNER_INTERVAL_MINUTES', 15);
 
+// --- System prompt gallery ---
+// A curated list of role prompts an administrator can pick from when configuring an AI
+// user (Admin -> AI Users -> Choose from Gallery). Choosing one copies its text into the
+// prompt box; it is a starting point, not a live link.
+//
+// This is the only outbound request the wiki makes to the vendor. It is made by the
+// server, not the browser, and only when someone opens the gallery — never on page load.
+// A copy ships with the wiki, so an air-gapped install still has a gallery.
+//
+// Set to '' to make no outbound request at all and use the bundled copy alone.
+define('SYSTEM_PROMPT_GALLERY_URL', 'https://astucia.wiki/system_prompts.json');
+
 // --- External change detection ---
 // Content changed outside the wiki (rsync, git pull, an editor writing straight into
 // PAGES_DIR) is reconciled with index.json / the graph cache / the FTS index by

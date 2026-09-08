@@ -25,6 +25,72 @@ function resolve_service_token_auth(): ?array {
     return null;
 }
 
+// --- User email: identity vs. notification -----------------------------------
+// `email` is an *identity*: the address an OIDC provider asserts, and for an OTP account
+// the address a login code is sent to and matched on. `notifyEmail` is a *preference*:
+// where this person would rather be written to.
+//
+// They used to be one field, which meant saving a preference overwrote the identity — an
+// OIDC account's record stopped showing which provider account it was, and on an OTP
+// account the same field is a credential. Splitting them keeps a preference from ever
+// being able to reach the login lookup.
+
+/** Where mail for this user should go: their choice if they made one, else their identity. */
+function wiki_user_notify_email(array $u): string {
+    $n = trim((string)($u['notifyEmail'] ?? ''));
+    return $n !== '' ? $n : trim((string)($u['email'] ?? ''));
+}
+
+/**
+ * One-shot migration to the split. Idempotent, marked by `schema` in users.json.
+ *
+ * Existing records have a single `email` that may be either the identity or a preference
+ * saved over it — from the record alone the two are indistinguishable.
+ *
+ * Only **OIDC** records get the copy, and only because their `email` is about to be
+ * overwritten: the login now writes the provider's claim back over it, so without capturing
+ * the current value first, mail would silently move to the provider address. An OTP
+ * record's `email` is never rewritten by logging in, so the `notifyEmail ?? email` fallback
+ * already preserves its routing — and leaving it unset means an admin who later changes
+ * that account's login address moves its mail too, which is what they would expect.
+ * Nothing is guessed either way.
+ *
+ * Writes a one-time `users.json.pre-split.bak` beside the file before its first change.
+ */
+function wiki_migrate_user_emails(): void {
+    if (!defined('WIKI_SYSTEM_DATA')) return;
+    $file = WIKI_SYSTEM_DATA . 'users.json';
+    if (!is_file($file)) return;
+
+    $raw  = file_get_contents($file);
+    $data = json_decode($raw, true);
+    if (!is_array($data) || ($data['schema'] ?? 0) >= 2) return;   // absent or done
+
+    // By index, not by reference: `foreach ($data['users'] ?? [] as &$u)` cannot bind a
+    // reference to the result of `??`, so PHP silently iterates a copy and every write is
+    // discarded — while the schema marker below still records the migration as done.
+    foreach (($data['users'] ?? []) as $i => $u) {
+        // Service identities are not people and are never written to.
+        if (!empty($u['is_ai']) || !empty($u['is_system'])) continue;
+        // Only the accounts whose `email` the login is about to overwrite.
+        if (($u['auth'] ?? (!empty($u['sub']) ? 'oidc' : 'otp')) !== 'oidc') continue;
+        if (!array_key_exists('notifyEmail', $u)) {
+            $cur = trim((string)($u['email'] ?? ''));
+            if ($cur !== '') $data['users'][$i]['notifyEmail'] = $cur;
+        }
+    }
+    $data['schema'] = 2;
+
+    $bak = $file . '.pre-split.bak';
+    if (!file_exists($bak)) @file_put_contents($bak, $raw);
+    // Same write-then-rename the rest of the file store uses, so a crash mid-write cannot
+    // leave a truncated user database.
+    $tmp = $file . '.tmp';
+    if (@file_put_contents($tmp, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) !== false) {
+        @rename($tmp, $file);
+    }
+}
+
 // --- Space containment -------------------------------------------------------
 // The allowlist is enforced on the ?space= parameter, which is only half the job: a path
 // can reach into a Space without naming it. With no ?space= the base is PAGES_DIR itself,

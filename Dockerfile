@@ -22,7 +22,7 @@ RUN composer install --no-dev --no-interaction --no-scripts --optimize-autoloade
 # fastcgi_finish_request() to answer the browser and keep working in the
 # background, which only exists under FPM.
 # ---------------------------------------------------------------------------
-FROM php:8.3-fpm-alpine
+FROM php:8.5-fpm-alpine
 
 # nginx: static files + FastCGI. supervisor: three processes in one container.
 # crond: the two wiki cron jobs. git: optional page version history.

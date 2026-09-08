@@ -6,6 +6,79 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.9.4] — 2026-09-08
+
+The wiki gets a test suite. Alongside it: chat threads can be told how long to keep their
+messages, an AI user's system prompt can be started from a curated gallery, and a person's
+login address and their notification address stop being the same field.
+
+### Added
+- **A black-box test suite** (`tests/`, run with `tests/run.sh`). It builds a throwaway wiki
+  from the working tree — uncommitted changes included — with its own port, its own content
+  directory and a generated `config.php`, then drives it over HTTP and tears it down. No
+  framework and no new dependencies, because a wiki you can install by copying a directory
+  should be testable the same way. CI runs it on PHP 8.3, 8.4 and 8.5: 8.3 is what the image
+  shipped, 8.5 is where development happens, so a fix verified locally can no longer be
+  broken in the published image without anyone noticing.
+  - `security_spaces.test.sh` is the regression suite for the v2026.9.3 Space-isolation fix.
+    It was validated by re-introducing the vulnerability in a copy and confirming that 13
+    attack assertions go red while all 15 legitimate-access assertions stay green — a
+    security test that passes against fixed code proves nothing on its own.
+- **Chat auto-purge.** "Edit Topic" becomes **Chat Settings**, and a thread can now keep only
+  its newest 100/200/300 messages, or only the last 1/3/6 months. An administrator sets a
+  wiki-wide default in **Admin → Content → Chat Retention**, and a thread either follows it
+  ("Use the wiki default", the option an unconfigured thread starts on) or overrides it —
+  including overriding it with *off*, so raising a house policy can never quietly start
+  trimming a thread somebody deliberately exempted.
+  - The dialog previews exactly what a policy would remove before anything is saved, and
+    enabling one applies it immediately rather than at the next message.
+  - Pinned messages and the placeholders a queued background job writes its answer into are
+    never purged, and a pinned message does not consume the count budget. A message whose
+    timestamp cannot be read is kept: age cannot be established, and deleting on a guess is
+    the wrong way to be wrong.
+  - Trimming happens when a thread is written to, not on a timer — so a thread nobody posts
+    to is never trimmed, which the dialog says plainly.
+  - Bulk deletions are recorded in the audit log, covering the manual `/purge` too.
+    Individual messages stay out of it, as before.
+- **A system prompt gallery.** Admin → AI Users → **Choose from Gallery** offers a curated
+  list of role prompts (Product Owner, Developer, QA, Scrum Master, …) to start from.
+  Choosing one **copies its text** into the prompt box — a snapshot you then edit, never a
+  live link, so an upstream change cannot alter how your AI user behaves without you
+  touching it.
+  - This is the only place the wiki contacts the vendor, so: the **server** fetches it, never
+    the browser, so no reader's IP is disclosed and it works when the browser sits on an
+    isolated network; it is fetched **only when the dialog is opened**, never on page load;
+    a copy **ships with the wiki**, so an air-gapped install still has a gallery; and setting
+    `SYSTEM_PROMPT_GALLERY_URL` to `''` makes **no outbound request at all**, which the test
+    suite asserts by counting requests.
+  - `tools/build_system_prompts.php` builds the published JSON from ordinary Markdown pages,
+    so the gallery is authored and reviewed like any other content.
+- **AI users have an android avatar** in chat threads and in Page Chat, instead of the first
+  letter of their name.
+
+### Changed
+- **The Docker image is now built on `php:8.5-fpm-alpine`** (was 8.3). About 263 MB, up from
+  226 MB.
+- **A user's login address and their notification address are two fields.** `email` is the
+  identity — what an OIDC provider asserts, and what an OTP login code is matched on.
+  `notifyEmail` is a preference: where that person would rather be written to. Mail addressed
+  to a *person* (daily digest, agent-job notifications, share-a-page) uses the preference and
+  falls back to the identity; mail addressed to an *address* (an OTP login code, an
+  access-request alert) does not.
+  - A one-shot migration copies `email` → `notifyEmail` for OIDC records, whose identity
+    field is about to be overwritten by the provider claim, and writes
+    `users.json.pre-split.bak` once before its first change.
+  - OTP login addresses are now **unique** across accounts. A duplicate made the lookup
+    return whichever record came first, so one person could land in another's account with
+    that account's role and Spaces.
+
+### Fixed
+- **Saving a notification preference no longer overwrites the login identity.** The two
+  shared one field, so setting a preferred address in *My Preferences* erased which provider
+  account an OIDC record belonged to — and on an OTP account, a preference could overwrite a
+  credential. Existing OIDC records repair themselves on the next login, from the provider's
+  own claim; nothing has to be edited by hand.
+
 ## [2026.9.3] — 2026-09-06
 
 **Security release.** A reader restricted to one Space could read another Space's content.

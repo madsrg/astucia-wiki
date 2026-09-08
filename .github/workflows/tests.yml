@@ -1,0 +1,37 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8.5 is what the Docker image ships (php:8.5-fpm-alpine) and what development
+        # happens on. 8.3 stays in the matrix as the supported floor for anyone running
+        # the source directly on an older distro — dropping it would be a support
+        # decision, not a side effect of bumping the image.
+        php: ['8.3', '8.4', '8.5']
+
+    name: PHP ${{ matrix.php }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, curl, sqlite3, json
+          coverage: none
+
+      # The tests exercise the real application, which loads vendor/ for OIDC. --no-dev
+      # matches what the image is built with, so CI runs the same dependency set.
+      - name: Install dependencies
+        run: composer install --no-dev --no-interaction --no-progress --optimize-autoloader
+
+      - name: Run the suite
+        run: tests/run.sh

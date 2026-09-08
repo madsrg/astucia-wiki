@@ -650,6 +650,9 @@ export const loadPage = async (path, id, tags, opts = {}) => {
             topic:         result.topic || '',
             git_commit:    result.git_commit ?? false,
             nextMessageId: result.nextMessageId ?? 1,
+            // null = the thread follows the wiki default; '' = the thread chose off.
+            retention:        result.retention ?? null,
+            retentionDefault: result.retention_default ?? '',
         };
         const { renderChatView, startPolling } = await import('../chat/index.js');
         renderChatView(state.currentChatData, result.has_more);

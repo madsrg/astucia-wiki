@@ -55,6 +55,8 @@ if ($env('APP_BASE_URL') !== null) define('APP_BASE_URL', $env('APP_BASE_URL'));
 // --- Search -------------------------------------------------------------------
 // 'sqlite' enables the FTS5 index (search.sqlite lives in WIKI_SYSTEM_DATA).
 define('SEARCH_ENGINE', $env('SEARCH_ENGINE', 'sqlite'));
+// Empty makes the wiki fetch nothing and use the copy bundled in the image.
+define('SYSTEM_PROMPT_GALLERY_URL', $env('SYSTEM_PROMPT_GALLERY_URL', 'https://astucia.wiki/system_prompts.json'));
 
 // --- External change detection ------------------------------------------------
 // Minimum seconds between filesystem scans for content changed outside the wiki.

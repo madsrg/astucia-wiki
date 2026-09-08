@@ -267,7 +267,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     <button id="search-btn" class="btn btn-icon btn-secondary hidden" data-i18n-title="header.search-replace" title="Search & Replace (Alt+F)">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                     </button>
-                    <button id="chat-topic-btn" class="btn btn-icon btn-secondary hidden" data-i18n-title="header.chat-topic" title="Edit topic">
+                    <button id="chat-topic-btn" class="btn btn-icon btn-secondary hidden" data-i18n-title="header.chat-topic" title="Chat settings">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2"/></svg>
                     </button>
                     <button id="diagram-edit-btn" class="btn btn-icon btn-blue hidden" data-i18n-title="header.diagram-edit" title="Edit diagram">
@@ -1133,10 +1133,19 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
     <div id="chat-topic-lightbox" class="lightbox-overlay hidden">
         <div class="lightbox-content lightbox-content-sm">
             <button id="chat-topic-close-btn" class="lightbox-close">&times;</button>
-            <h3 data-i18n="chat-topic.title">Edit Topic</h3>
+            <h3 data-i18n="chat-topic.title">Chat Settings</h3>
+            <label class="form-label" data-i18n="chat-topic.topic-label">Topic</label>
             <div class="form-group chat-topic-input-group">
                 <textarea id="chat-topic-input" class="form-control" rows="3" data-i18n-placeholder="chat-topic.ph" placeholder="What is this chat about?"></textarea>
                 <div id="chat-topic-emoji-picker" class="chat-emoji-picker hidden"></div>
+            </div>
+            <?php /* Auto-purge. One select rather than a checkbox plus two groups: a thread has
+                     one retention rule, and half-configured controls are how a thread gets
+                     trimmed in a way nobody intended. */ ?>
+            <div class="chat-settings-section">
+                <label class="form-label" for="chat-retention-select" data-i18n="chat-topic.retention-label">Auto-purge</label>
+                <select id="chat-retention-select" class="form-control"></select>
+                <p id="chat-retention-effect" class="pref-hint"></p>
             </div>
             <div class="lightbox-footer">
                 <button id="chat-topic-emoji-btn" class="btn btn-icon btn-secondary chat-emoji-btn" title="Emoji" style="margin-right:auto">
@@ -1178,6 +1187,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <div class="form-group">
                 <label for="pref-email" data-i18n="prefs.email-label">Email</label>
                 <input type="email" id="pref-email" class="form-control" data-i18n-placeholder="prefs.email-ph" placeholder="your@email.com">
+                <p class="pref-hint" data-i18n="prefs.email-hint">Where notifications are sent. Leave blank to use your login address.</p>
             </div>
             <div class="form-group">
                 <label data-i18n="prefs.font-label">Font</label>
@@ -1257,6 +1267,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab hidden" data-tab="diagnostics" data-group="monitoring" data-i18n="admin.tab.diag">Diagnostics</button>
                 <button class="admin-tab hidden" data-tab="reindex" data-group="content" data-i18n="admin.tab.reindex">Index Pages</button>
                 <button class="admin-tab hidden" data-tab="deleted" data-group="content" data-i18n="admin.tab.deleted">Deleted Pages</button>
+                <button class="admin-tab hidden" data-tab="chatpolicy" data-group="content" data-i18n="admin.tab.chatpolicy">Chat Retention</button>
             </div>
 
             <!-- Users pane -->
@@ -1335,6 +1346,21 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             </div>
 
             <!-- Index Pages pane -->
+            <!-- Chat retention pane -->
+            <div id="admin-pane-chatpolicy" class="admin-pane hidden">
+                <div class="admin-scroll-area">
+                    <div class="admin-reindex-body">
+                        <p class="admin-reindex-desc" data-i18n="admin.chatpolicy.desc"></p>
+                        <div class="admin-reindex-controls">
+                            <label class="admin-reindex-label" for="admin-chat-retention" data-i18n="admin.chatpolicy.label"></label>
+                            <select id="admin-chat-retention" class="form-control admin-reindex-select"></select>
+                            <button id="admin-chat-retention-save" class="btn btn-blue" data-i18n="btn.save">Save</button>
+                        </div>
+                        <p class="pref-hint" data-i18n="admin.chatpolicy.hint"></p>
+                    </div>
+                </div>
+            </div>
+
             <div id="admin-pane-reindex" class="admin-pane hidden">
                 <div class="admin-scroll-area">
                     <div class="admin-reindex-body">

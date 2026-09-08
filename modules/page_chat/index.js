@@ -3,6 +3,7 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
+import { icons } from '../core/icons.js';
 import { showToast, confirmModal, highlightMentions } from '../core/utils.js';
 import { getUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
@@ -107,8 +108,11 @@ const buildRow = (msg, grouped) => {
 
     const avatarEl = document.createElement('div');
     if (!grouped) {
-        avatarEl.className = 'chat-avatar pc-avatar';
-        avatarEl.textContent = (msg.name || '?')[0].toUpperCase();
+        // Same rule as the team chat: an AI is shown as an android, not an initial.
+        const isAi = _aiUids.has(msg.uid);
+        avatarEl.className = 'chat-avatar pc-avatar' + (isAi ? ' chat-avatar-ai' : '');
+        if (isAi) avatarEl.innerHTML = icons.robot;
+        else      avatarEl.textContent = (msg.name || '?')[0].toUpperCase();
         avatarEl.style.background = avatarColor(msg.uid);
         attachFocusClick(avatarEl, msg);
     } else {

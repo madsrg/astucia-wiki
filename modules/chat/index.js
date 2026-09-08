@@ -3,6 +3,7 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
+import { icons } from '../core/icons.js';
 import { showToast, confirmModal, highlightMentions } from '../core/utils.js';
 import { getUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
@@ -276,8 +277,13 @@ const buildRow = (msg, grouped) => {
 
     const avatarEl = document.createElement('div');
     if (!grouped) {
-        avatarEl.className = 'chat-avatar';
-        avatarEl.textContent = (msg.name || '?').charAt(0).toUpperCase();
+        // An AI gets the android silhouette instead of an initial: scanning a thread, the
+        // question is which replies a person did not write, and a letter does not answer
+        // it. The colour still distinguishes one AI user from another.
+        const isAi = _aiUids.has(msg.uid);
+        avatarEl.className = 'chat-avatar' + (isAi ? ' chat-avatar-ai' : '');
+        if (isAi) avatarEl.innerHTML = icons.robot;
+        else      avatarEl.textContent = (msg.name || '?').charAt(0).toUpperCase();
         avatarEl.style.background = avatarColor(msg.uid);
         attachFocusClick(avatarEl, msg);
     } else {
@@ -1009,18 +1015,92 @@ export const init = () => {
 
         const closeTopicLightbox = () => topicLightbox.classList.add('hidden');
 
+        // ── Auto-purge ──────────────────────────────────────────────────────
+        // Options are fixed server-side (WIKI_CHAT_POLICIES); this list mirrors them and
+        // the server refuses anything else, so a stale client cannot install a policy the
+        // wiki cannot explain.
+        // 'inherit' first, and it is what an unconfigured thread shows — not a preference
+        // but the truth: a thread with no setting of its own follows the wiki default, and
+        // showing "Off" there would misreport current behaviour whenever a default is set.
+        // It is also the only way *back* to following the default once something explicit
+        // has been chosen.
+        const RETENTION = ['inherit', '', 'count:100', 'count:200', 'count:300', 'days:30', 'days:90', 'days:180'];
+        const retSelect = document.getElementById('chat-retention-select');
+        const retEffect = document.getElementById('chat-retention-effect');
+
+        const fillRetention = () => {
+            if (!retSelect || retSelect.options.length) return;
+            RETENTION.forEach(v => {
+                const o = document.createElement('option');
+                o.value = v;
+                o.textContent = v === 'inherit'
+                    ? t('chat-topic.retention.inherit')
+                    : t('chat-topic.retention.' + (v === '' ? 'off' : v.replace(':', '-')));
+                retSelect.appendChild(o);
+            });
+        };
+
+        // Auto-purge deletes silently and permanently, so the dialog says what the chosen
+        // rule would do to *this* thread before it is saved.
+        // Name the wiki default on the inherit option — "Use the wiki default" alone does
+        // not tell you whether that means keeping everything or trimming to 100.
+        const labelInherit = (def) => {
+            const opt = retSelect?.querySelector('option[value="inherit"]');
+            if (!opt) return;
+            const named = def === ''
+                ? t('chat-topic.retention.off')
+                : t('chat-topic.retention.' + def.replace(':', '-'));
+            opt.textContent = t('chat-topic.retention.inherit-named', { policy: named });
+        };
+
+        const showEffect = async () => {
+            if (!retSelect || !retEffect) return;
+            const policy = retSelect.value;
+            retEffect.textContent = '…';
+            const res = await api.call('chat_retention_preview', { file: _chatPath, policy });
+            if (!res.success) { retEffect.textContent = ''; return; }
+            labelInherit(res.default ?? '');
+            if (res.resolved === '') {
+                retEffect.textContent = policy === 'inherit'
+                    ? t('chat-topic.retention.inherit-off-hint')
+                    : t('chat-topic.retention.off-hint');
+                return;
+            }
+            retEffect.textContent = res.removes > 0
+                ? t('chat-topic.retention.effect', { n: res.removes, keep: res.keeps })
+                : t('chat-topic.retention.effect-none');
+        };
+
         const saveTopic = async () => {
             const topic = topicInput.value.trim();
             topicSaveBtn.disabled = true;
             const res = await api.call('update_chat_topic', { file: _chatPath, topic }, 'POST');
-            topicSaveBtn.disabled = false;
-            if (res.success) {
-                state.currentChatData = res.data;
-                updateTopicBar(topic);
-                closeTopicLightbox();
-            } else {
+            if (!res.success) {
+                topicSaveBtn.disabled = false;
                 showToast(res.message || t('chat.cmd.topic-fail'), 'error');
+                return;
             }
+            state.currentChatData = res.data;
+            updateTopicBar(topic);
+
+            // Saved second and only when changed, so an unrelated topic edit never trims
+            // a thread as a side effect.
+            const policy  = retSelect ? retSelect.value : 'inherit';
+            const current = state.currentChatData?.retention ?? null;   // null = inheriting
+            if (retSelect && policy !== (current === null ? 'inherit' : current)) {
+                const r = await api.call('set_chat_retention', { file: _chatPath, policy }, 'POST');
+                if (r.success) {
+                    state.currentChatData = r.data;
+                    if (r.removed > 0) {
+                        renderChatView(_applyFullDataToWindow(r.data), _hasMore, true);
+                        showToast(t('chat-topic.retention.purged', { n: r.removed }), 'info');
+                    }
+                } else {
+                    showToast(r.message || t('chat-topic.retention.failed'), 'error');
+                }
+            }
+            topicSaveBtn.disabled = false;
+            closeTopicLightbox();
         };
 
         topicSaveBtn.addEventListener('click', saveTopic);
@@ -1035,10 +1115,18 @@ export const init = () => {
         if (topicBtn) {
             topicBtn.addEventListener('click', () => {
                 topicInput.value = state.currentChatData?.topic || '';
+                fillRetention();
+                if (retSelect) {
+                    const cur = state.currentChatData?.retention ?? null;
+                    retSelect.value = cur === null ? 'inherit' : cur;
+                    labelInherit(state.currentChatData?.retentionDefault ?? '');
+                    showEffect();
+                }
                 topicEmojiPicker.classList.add('hidden');
                 topicLightbox.classList.remove('hidden');
                 setTimeout(() => topicInput.focus(), 50);
             });
+            retSelect?.addEventListener('change', showEffect);
         }
     }
 };
