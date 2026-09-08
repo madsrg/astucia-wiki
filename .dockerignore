@@ -33,6 +33,13 @@ vendor/
 Dockerfile
 docker-compose.yml
 
+# The test suite builds its own throwaway wiki from a source checkout, so it is of no
+# use inside the image — and tools/ is maintainer tooling for generating the published
+# prompt gallery, not something the running wiki reads.
+tests/
+tools/
+.github/
+
 .git
 .gitignore
 .gitattributes
