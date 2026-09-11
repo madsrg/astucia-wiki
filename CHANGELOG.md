@@ -6,6 +6,20 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+### Fixed
+- **The Docker image still defaulted the agent-job runner to 15 minutes.** `ENV
+  AGENT_JOB_RUNNER_INTERVAL_MINUTES=15` in the Dockerfile is the image default and takes
+  precedence over the entrypoint's shell fallback, so the generated crontab stayed
+  `*/15` however the app was configured. Found by building the image and reading the
+  crontab it wrote. `docker-compose.yml` set it explicitly too, and the entrypoint's
+  fallbacks for a malformed value still said 15. `AGENT_JOB_RUNNER_SLOTS` is now declared
+  alongside it, so `docker inspect` documents both.
+- **The Mercure monitor reported "Nothing answered at the public URL" on every container.**
+  It built the URL to probe from the `Host` header, which carries the *published* port —
+  not listening inside the container behind a port mapping. It now asks over loopback on
+  the port the web server is actually bound to (`SERVER_PORT`) when the public URL is a
+  path, falling back to the Host-header form, and reports the URL it used.
+
 ## [2026.9.5] — 2026-09-11
 
 Realtime push arrives, with a monitor for it. AI users gain a reasoning-effort setting

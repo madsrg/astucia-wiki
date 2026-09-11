@@ -4892,29 +4892,43 @@ if (isset($_REQUEST['action'])) {
                 // The subscriber's side of the path, as the browser would ask for it. A
                 // hub answers a GET with no topic as 400; anything that is not the hub
                 // (404 from nginx, 502) is the interesting result.
-                $rt_sub = ['code' => 0, 'error' => '', 'reason' => 'skipped'];
+                $rt_sub = ['code' => 0, 'error' => '', 'reason' => 'skipped', 'url' => ''];
                 $rt_pub_url = $rt_conf['public_url'];
-                // Resolved whether or not the probe can run: an operator troubleshooting
-                // this row wants the absolute URL, and it is derived here (scheme + Host
-                // + path) so it appears nowhere in config.php to compare against.
-                $rt_abs = $rt_pub_url === '' ? '' : (preg_match('#^https?://#i', $rt_pub_url)
-                    ? $rt_pub_url
-                    : (($_SERVER['REQUEST_SCHEME'] ?? 'http') . '://'
-                       . ($_SERVER['HTTP_HOST'] ?? '127.0.0.1') . $rt_pub_url));
-                $rt_sub['url'] = $rt_abs;
-                if ($rt_conf['enabled'] && function_exists('curl_init') && $rt_pub_url !== '') {
-                    // Two attempts, because a TLS verification failure here says nothing
-                    // about the question being asked. This is an unauthenticated GET of
-                    // the wiki's own public URL whose body is discarded — the only thing
-                    // wanted is the status code — so certificate trust adds no security
-                    // to it, while a chain the server cannot verify hides whether nginx
-                    // forwards the path at all. A browser succeeds where curl fails
-                    // because browsers chase a missing intermediate via the certificate's
-                    // AIA extension and curl does not; that is a real problem, but a
-                    // different one, so it is reported as its own state rather than as
-                    // "nothing answered".
-                    $rt_probe_get = function (bool $verify) use ($rt_abs): array {
-                        $ch = curl_init($rt_abs);
+
+                // Where to ask, in order. A *relative* MERCURE_PUBLIC_URL is a path on
+                // this very server, so loopback on the port nginx is actually bound to is
+                // the reliable way to reach it: the Host header carries the **published**
+                // port, which behind a port mapping — every Docker install — is not
+                // listening inside the container and reports a false "nothing answered".
+                // The Host-header form is kept as a fallback for a deployment where the
+                // public URL is served by something other than this process.
+                $rt_cands = [];
+                if ($rt_pub_url !== '') {
+                    if (preg_match('#^https?://#i', $rt_pub_url)) {
+                        $rt_cands[] = $rt_pub_url;
+                    } else {
+                        $rt_port   = (int)($_SERVER['SERVER_PORT'] ?? 80);
+                        $rt_scheme = $rt_port === 443 ? 'https' : 'http';
+                        $rt_cands[] = $rt_scheme . '://127.0.0.1'
+                            . ($rt_port === 80 || $rt_port === 443 ? '' : ':' . $rt_port) . $rt_pub_url;
+                        $rt_cands[] = ($_SERVER['REQUEST_SCHEME'] ?? 'http') . '://'
+                            . ($_SERVER['HTTP_HOST'] ?? '127.0.0.1') . $rt_pub_url;
+                    }
+                }
+                $rt_sub['url'] = $rt_cands[0] ?? '';
+
+                if ($rt_conf['enabled'] && function_exists('curl_init') && $rt_cands) {
+                    // Two attempts per candidate, because a TLS verification failure says
+                    // nothing about the question being asked. This is an unauthenticated
+                    // GET whose body is discarded — the only thing wanted is the status
+                    // code — so certificate trust adds no security to it, while a chain
+                    // the server cannot verify would hide whether nginx forwards the path
+                    // at all. A browser succeeds where curl fails because browsers use
+                    // their own root store and chase a missing intermediate via the
+                    // certificate's AIA extension; that is a real problem, but a
+                    // different one, so it gets its own state rather than "unreachable".
+                    $rt_probe_get = function (string $url, bool $verify): array {
+                        $ch = curl_init($url);
                         curl_setopt_array($ch, [
                             CURLOPT_RETURNTRANSFER    => true,
                             CURLOPT_TIMEOUT           => 3,
@@ -4923,33 +4937,39 @@ if (isset($_REQUEST['action'])) {
                             CURLOPT_SSL_VERIFYHOST    => $verify ? 2 : 0,
                         ]);
                         curl_exec($ch);
-                        $out = [
-                            'code'  => (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE),
-                            'error' => curl_error($ch),
-                            'errno' => curl_errno($ch),
-                        ];
+                        $out = ['code'  => (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE),
+                                'error' => curl_error($ch), 'errno' => curl_errno($ch)];
                         curl_close($ch);
                         return $out;
                     };
-                    $rt_got   = $rt_probe_get(true);
-                    $rt_tlsok = true;
-                    // The SSL/certificate family: bad CA bundle, unverifiable peer,
-                    // certificate problem, handshake failure.
-                    if ($rt_got['code'] === 0 && in_array($rt_got['errno'], [35, 51, 58, 60, 77, 83], true)) {
-                        $rt_retry = $rt_probe_get(false);
-                        if ($rt_retry['code'] !== 0) {
-                            $rt_tlsok = false;
-                            $rt_retry['error'] = $rt_got['error'];   // keep the real reason
-                            $rt_got = $rt_retry;
+                    foreach ($rt_cands as $rt_try) {
+                        $rt_got   = $rt_probe_get($rt_try, true);
+                        $rt_tlsok = true;
+                        // The SSL/certificate family: bad CA bundle, unverifiable peer,
+                        // certificate problem, handshake failure.
+                        if ($rt_got['code'] === 0 && in_array($rt_got['errno'], [35, 51, 58, 60, 77, 83], true)) {
+                            $rt_retry = $rt_probe_get($rt_try, false);
+                            if ($rt_retry['code'] !== 0) {
+                                $rt_tlsok = false;
+                                $rt_retry['error'] = $rt_got['error'];   // keep the real reason
+                                $rt_got = $rt_retry;
+                            }
                         }
+                        // 400/401 both mean "a hub answered". 404 is nginx not forwarding.
+                        $rt_hub = in_array($rt_got['code'], [200, 400, 401], true);
+                        $rt_sub = [
+                            'code'   => $rt_got['code'],
+                            'error'  => $rt_got['error'],
+                            'url'    => $rt_try,
+                            'reason' => $rt_hub
+                                ? ($rt_tlsok ? 'hub' : 'hub_unverified')
+                                : ($rt_got['code'] === 0 ? 'unreachable' : 'not_hub'),
+                        ];
+                        // A hub answered, or something that is not a hub did — either way
+                        // that is the answer. Only an unreachable address is worth
+                        // retrying at the next candidate.
+                        if ($rt_sub['reason'] !== 'unreachable') break;
                     }
-                    $rt_sub = ['code' => $rt_got['code'], 'error' => $rt_got['error'],
-                               'url'  => $rt_abs, 'reason' => ''];
-                    // 400/401 both mean "a hub answered". 404 is nginx not forwarding.
-                    $rt_hub = in_array($rt_sub['code'], [200, 400, 401], true);
-                    $rt_sub['reason'] = $rt_hub
-                        ? ($rt_tlsok ? 'hub' : 'hub_unverified')
-                        : ($rt_sub['code'] === 0 ? 'unreachable' : 'not_hub');
                 }
                 echo json_encode(['success' => true, 'data' => [
                     'config' => $rt_conf, 'publish' => $rt_probe, 'subscribe' => $rt_sub,

@@ -56,7 +56,10 @@ services:
 
       # Scheduled AI agent jobs + the /aiJob queue. The entrypoint writes the
       # crontab from this value, so the schedule and the ETA shown to users agree.
-      AGENT_JOB_RUNNER_INTERVAL_MINUTES: "15"
+      AGENT_JOB_RUNNER_INTERVAL_MINUTES: "2"
+      # How many job runs may overlap. One means the queue is serial, so a slow job
+      # delays every job behind it; each extra slot is another simultaneous LLM call.
+      AGENT_JOB_RUNNER_SLOTS: "2"
       ENABLE_CRON: "true"
       # One SSE channel instead of polling. "false" falls back to the old behaviour.
       # Wants HTTP/2 at whatever terminates TLS in front of this.
