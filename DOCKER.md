@@ -144,6 +144,17 @@ Other environment overrides:
 IMAGE_NAME=madsrotwitt/astucia-wiki ./docker/build.sh   # tags ready to push
 ./docker/build.sh --no-cache                        # extra args go to docker build
 ```
+`docker push` moves layers and never touches the repository's text, so the Docker Hub page
+keeps describing an older image until something updates it:
+
+```bash
+./docker/push-hub-description.sh        # pushes docker/hub-description.md
+```
+
+It reuses the credential from `docker login` (or `DOCKERHUB_USER`/`DOCKERHUB_TOKEN` when a
+credsStore keeps the password out of `config.json`), and reads the page back afterwards —
+a 200 from that endpoint is not proof the field was stored.
+
 
 ### Multi-architecture images
 
