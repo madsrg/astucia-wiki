@@ -6,6 +6,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.9.6] — 2026-09-11
+
+A patch for v2026.9.5, entirely from building the image and running it: the container's own
+defaults, the realtime monitor in a container, and log noise on PHP 8.5.
+
 ### Fixed
 - **The Mercure monitor's end-to-end test never passed, even with the hub working.** It
   waited for a nonce in the event payload, but `modules/realtime` delivers a *hint* and
