@@ -22,9 +22,10 @@ so your AI users can use theirs.
 login · mentions, page comments and a daily digest email · an optional audit log · a REST API
 with service tokens · UI in nine languages.
 
-**Live updates** — an optional **Mercure** hub ships inside the image, so chats, pages, the
-file tree, mentions and job results arrive by push instead of polling. Off by default; one
-variable turns it on, and **Admin → Monitoring → Mercure** tells you whether it is working.
+**Live updates** — a **Mercure** hub ships inside the image and is **on by default**, so
+chats, pages, the file tree, mentions and job results arrive by push instead of polling.
+`ENABLE_REALTIME=false` turns it off and every view falls back to its own timer — slower,
+never broken. **Admin → Monitoring → Mercure** tells you whether it is working.
 
 ## Quick start
 
