@@ -141,7 +141,7 @@ either way.
 Other environment overrides:
 
 ```bash
-IMAGE_NAME=madsrg/astucia-wiki ./docker/build.sh    # tags ready to push
+IMAGE_NAME=madsrotwitt/astucia-wiki ./docker/build.sh   # tags ready to push
 ./docker/build.sh --no-cache                        # extra args go to docker build
 ```
 
