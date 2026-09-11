@@ -85,7 +85,6 @@ function _send_sendgrid(string $to, string $to_name, string $subject, string $ht
     ]);
     curl_exec($ch);
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
     return $status >= 200 && $status < 300;
 }
 
@@ -117,6 +116,5 @@ function _send_mailgun(string $to, string $to_name, string $subject, string $htm
     ]);
     curl_exec($ch);
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
     return $status === 200;
 }

@@ -106,7 +106,6 @@ function wiki_gallery_fetch(string $url): ?array {
     ]);
     $body = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    curl_close($ch);
     if ($body === false || $code < 200 || $code >= 300) return null;
     return wiki_gallery_valid(json_decode((string)$body, true));
 }

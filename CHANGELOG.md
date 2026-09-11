@@ -7,6 +7,16 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 ## [Unreleased]
 
 ### Fixed
+- **The Mercure monitor's end-to-end test never passed, even with the hub working.** It
+  waited for a nonce in the event payload, but `modules/realtime` delivers a *hint* and
+  nothing else — `fire()` calls handlers with no arguments, because an event says "topic X
+  changed, re-read it" and never carries content. Every event that arrived was discarded.
+  It also published before subscribing, and Mercure has no replay. The arrival is now the
+  signal, and the subscription is registered first.
+- **Every realtime publish logged a PHP deprecation** on the image's PHP 8.5:
+  `curl_close()` has had no effect since 8.0 and is deprecated since 8.5, so a wiki with
+  realtime on filled `php-error.log` at the rate of its own writes. Removed throughout
+  (11 call sites), not only in the publish path.
 - **The Docker image still defaulted the agent-job runner to 15 minutes.** `ENV
   AGENT_JOB_RUNNER_INTERVAL_MINUTES=15` in the Dockerfile is the image default and takes
   precedence over the entrypoint's shell fallback, so the generated crontab stayed

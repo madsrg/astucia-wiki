@@ -580,7 +580,6 @@ if (isset($_REQUEST['action'])) {
             $raw      = curl_exec($ch);
             $curl_err = curl_error($ch);
             $http     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
             $last_call_ms = (int)((microtime(true) - $call_start) * 1000);
             wiki_trace_add([
                 'type' => 'llm', 'url' => $api_url, 'http' => $http, 'ms' => $last_call_ms,
@@ -4939,7 +4938,6 @@ if (isset($_REQUEST['action'])) {
                         curl_exec($ch);
                         $out = ['code'  => (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE),
                                 'error' => curl_error($ch), 'errno' => curl_errno($ch)];
-                        curl_close($ch);
                         return $out;
                     };
                     foreach ($rt_cands as $rt_try) {

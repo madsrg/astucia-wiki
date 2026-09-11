@@ -396,7 +396,6 @@ function _mcp_http_rpc(string $url, array $base_headers, string $method, $params
     $raw  = curl_exec($ch);
     $err  = curl_error($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
 
     $session = $resp_headers['mcp-session-id'] ?? null;
 
@@ -935,7 +934,7 @@ function _test_openai_responses(string $api_url, string $api_key, string $model,
         CURLOPT_TIMEOUT        => 20,
         CURLOPT_ENCODING       => '', // advertise gzip/deflate and auto-decode
     ]);
-    $raw = curl_exec($ch); $curl_err = curl_error($ch); $http = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    $raw = curl_exec($ch); $curl_err = curl_error($ch); $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     if (!$raw) return ['ok' => false, 'error' => $curl_err ?: 'No response (connection failed or timed out).'];
     $data = json_decode($raw, true);
     if (!$data) return ['ok' => false, 'error' => "HTTP {$http}: unreadable response." . _ai_raw_debug($raw, $http)];
@@ -977,7 +976,6 @@ function _test_ai_connection(string $provider, string $api_url, string $api_key,
         $raw      = curl_exec($ch);
         $curl_err = curl_error($ch);
         $http     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
 
         if (!$raw) return ['ok' => false, 'error' => $curl_err ?: 'No response (connection failed or timed out).'];
         $data = json_decode($raw, true);
@@ -1057,7 +1055,7 @@ function _ai_quick_reply(array $ai_user, string $system, string $user_msg, int $
             CURLOPT_TIMEOUT        => 60,
             CURLOPT_ENCODING       => '', // advertise gzip/deflate and auto-decode
         ]);
-        $raw = curl_exec($ch); $curl_err = curl_error($ch); $http = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+        $raw = curl_exec($ch); $curl_err = curl_error($ch); $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         if (!$raw) return ['ok' => false, 'error' => ($curl_err ?: 'No response from the API.') . ($http ? " (HTTP {$http})" : '')];
         $data = json_decode($raw, true);
         if (!$data) return ['ok' => false, 'error' => 'The API returned an unreadable response' . ($http ? " (HTTP {$http})" : '') . '.' . _ai_raw_debug($raw, $http)];
@@ -1379,7 +1377,6 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
         $raw      = curl_exec($ch);
         $curl_err = curl_error($ch);
         $http     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
 
         if (!$raw) {
             $api_error = ($curl_err ?: 'No response from the API (connection failed or timed out).')

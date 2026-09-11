@@ -1018,6 +1018,17 @@ const loadRealtimeStatus = async () => {
 // Publish to this admin's own diagnostic topic and wait for the browser to receive it.
 // The subscription is the one the app already holds, so a pass means the real channel
 // works — not a special-cased one built for the test.
+//
+// Two things this got wrong first time round, both worth keeping written down:
+//   - **Subscribe before publishing.** Mercure has no replay, so an update sent before the
+//     handler exists is simply gone. Registering the handler is synchronous and the stream
+//     is already open, so ordering it this way removes the race rather than papering over
+//     it with a second publish.
+//   - **There is no payload to match.** modules/realtime delivers a *hint* — `fire()` calls
+//     handlers with no arguments, because an event says "topic X changed, re-read it" and
+//     never carries content. Waiting for a nonce therefore discarded every event that did
+//     arrive. The arrival *is* the signal: this topic is `wiki/user/<uid>/diag`, nothing
+//     else publishes to it, and no other account's token can even subscribe to it.
 const runRealtimeRoundTrip = async () => {
     const out = document.getElementById('admin-rt-test-out');
     const btn = document.getElementById('admin-rt-test-btn');
@@ -1026,44 +1037,29 @@ const runRealtimeRoundTrip = async () => {
     out.innerHTML = `<span class="admin-loading">${t('admin.rt.test-waiting')}</span>`;
 
     let settled = false;
-    const started = Date.now();
     let stop = null;
+    let timer = null;
+    const started = Date.now();
     const finish = (html) => {
         if (settled) return;
         settled = true;
+        if (timer) clearTimeout(timer);
         if (stop) stop();
         if (btn) btn.disabled = false;
         out.innerHTML = html;
     };
 
+    stop = subscribe(rtTopic.diag(currentUid()), () => {
+        finish(`<span class="admin-rt-ok">${escHtml(t('admin.rt.test-ok', { ms: Date.now() - started }))}</span>`);
+    });
+    timer = setTimeout(() => finish(`<span class="admin-rt-bad">${escHtml(t('admin.rt.test-timeout'))}</span>`), 8000);
+
     const res = await api.call('admin_realtime_test', {}, 'POST');
-    const nonce = res?.data?.nonce;
-    const pub   = res?.data?.publish || {};
+    const pub = res?.data?.publish || {};
     if (!res.success || !pub.ok) {
         finish(`<span class="admin-rt-bad">${escHtml(t('admin.rt.test-nopublish',
             { code: pub.code || '-', error: _rtErr(pub.error || pub.reason) }))}</span>`);
-        return;
     }
-    // Subscribed after the publish on purpose: Mercure has no replay, so an event that
-    // arrives here can only have been pushed live. The server publishes once more below
-    // if nothing turns up, which covers the race where the subscription was not yet open.
-    stop = subscribe(rtTopic.diag(currentUid()), (payload) => {
-        if (payload?.nonce !== nonce) return;
-        finish(`<span class="admin-rt-ok">${escHtml(t('admin.rt.test-ok', { ms: Date.now() - started }))}</span>`);
-    });
-    setTimeout(async () => {
-        if (settled) return;
-        const again = await api.call('admin_realtime_test', {}, 'POST');
-        const n2 = again?.data?.nonce;
-        if (n2 && !settled) {
-            stop?.();
-            stop = subscribe(rtTopic.diag(currentUid()), (payload) => {
-                if (payload?.nonce !== n2) return;
-                finish(`<span class="admin-rt-ok">${escHtml(t('admin.rt.test-ok', { ms: Date.now() - started }))}</span>`);
-            });
-        }
-    }, 600);
-    setTimeout(() => finish(`<span class="admin-rt-bad">${escHtml(t('admin.rt.test-timeout'))}</span>`), 8000);
 };
 
 const loadDiagnostics = () => {

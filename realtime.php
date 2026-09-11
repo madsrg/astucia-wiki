@@ -188,7 +188,6 @@ function wiki_realtime_post(string $topic, array $data = []): array {
     $res  = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     $err  = curl_error($ch);
-    curl_close($ch);
 
     $out['code']  = $code;
     $out['ms']    = (int)round((microtime(true) - $started) * 1000);
