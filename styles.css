@@ -476,6 +476,57 @@ body {
     background-color: #f1f1f1;
 }
 
+/* Nested menu — Insert → Mermaid Diagram. The generic .dropdown-content further down
+   this sheet sets overflow:hidden, which would clip a submenu that has to escape its
+   parent, so the toolbar's dropdowns opt back out. */
+#editor-toolbar .dropdown-content {
+    overflow: visible;
+}
+
+#editor-toolbar .dropdown-submenu {
+    position: relative;
+}
+
+/* The row that opens it: a normal item plus a chevron pushed to the right edge, so it
+   reads as "there is more this way" rather than as another insert action. */
+#editor-toolbar .dropdown-content a.dropdown-submenu-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    /* Without this the label wraps against the parent's 160px min-width and the row
+       becomes two lines tall; the menu widens to fit instead. */
+    white-space: nowrap;
+}
+
+#editor-toolbar .dropdown-content a.dropdown-submenu-toggle::after {
+    content: '\203A';           /* › */
+    font-size: 1.1em;
+    line-height: 1;
+    opacity: 0.55;
+}
+
+/* Sits beside the parent row, top-aligned with it. -6px cancels the parent's 6px top
+   padding; margin-top:0 cancels the gap the top-level dropdown leaves under its button.
+   No horizontal margin, deliberately: the submenu opens on hover, and a gap between the
+   row and the menu is a strip the pointer can cross where it is over neither — which
+   reads as the submenu closing as you reach for it. The box-shadow separates them. */
+#editor-toolbar .dropdown-content.dropdown-submenu-content {
+    top: -6px;
+    left: 100%;
+    margin-top: 0;
+    margin-left: 0;
+    min-width: 200px;
+}
+
+/* Opens leftwards instead when the window edge is closer than the menu is wide. */
+#editor-toolbar .dropdown-content.dropdown-submenu-content.submenu-flip {
+    left: auto;
+    right: 100%;
+    margin-left: 0;
+    margin-right: 0;
+}
+
 #editor-toolbar .btn {
     padding: 4px 8px; /* Make buttons a bit smaller */
     font-weight: bold;
@@ -1700,7 +1751,43 @@ body {
 .admin-ai-form-section-header { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-gray); border-bottom: 1px solid var(--border-color); padding-bottom: 0.35rem; margin-top: 0.25rem; }
 .admin-ai-form-row { display: flex; gap: 1rem; }
 .admin-ai-form-row .form-group { flex: 1; margin: 0; }
+/* One height for every control in a two-column row, because the two sides cannot derive
+   it from each other: a <select> is sized by the UA's own font (13.3px) while anything
+   else inherits the app's (14.7px), so their natural heights differ by 6px and the
+   columns visibly fail to line up. Same convention as --ff-ctl-h in the folder listing. */
+.admin-ai-form-row { --ai-ctl-h: 38px; }
+.admin-ai-form-row .form-control { height: var(--ai-ctl-h); }
+
+/* A switch sharing a row with a <select>: boxed like .form-control so it reads as the
+   same kind of control. No *vertical* padding — the height is min-height's job, which is
+   what lets the box grow instead of clip when the label wraps at narrow widths. */
+/* `label.` is load-bearing: `.form-group label { display: block }` further up this sheet
+   is specificity 0,0,1,1 and beats a bare class, so a single-class `display: flex` here
+   silently loses. That is what left the checkbox and its text baseline-aligned rather
+   than centred — 2px apart — however the row said it was aligned. */
+.form-group label.admin-ai-switch-boxed {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: var(--ai-ctl-h);
+    padding: 0 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+/* The UA gives a checkbox `margin: 3px 3px 3px 4px`, which is what pulls its centre 2px
+   off the label's however the row is aligned. Zero it and let the row's gap space them. */
+.admin-ai-switch-boxed .space-settings-switch { margin: 0; flex: none; }
 .admin-ai-prompt { resize: vertical; font-family: var(--font-body); }
+/* What the MCP server already tells every AI user, shown above this one's own box so the
+   shared text is visible where it would otherwise be retyped. Read-only by being a <p>. */
+.mcp-shared-instr {
+    margin: 0 0 0.35rem;
+    padding: 0.4rem 0.55rem;
+    background: var(--bg-muted, #f7fafc);
+    border-left: 3px solid var(--border-color);
+    border-radius: 0 3px 3px 0;
+}
 .admin-ai-key-set { font-size: 0.75rem; font-weight: 600; color: var(--accent-green); margin-left: 4px; }
 .admin-ai-token-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .admin-ai-token { font-family: monospace; font-size: 0.78rem; background: #f1f5f9; border: 1px solid var(--border-color); border-radius: 4px; padding: 3px 7px; word-break: break-all; flex: 1; }
@@ -2148,3 +2235,18 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 }
 .wiki-tab-menu button:hover { background: #f0f4f8; }
 @media print { .wiki-tabs { display: none; } }
+
+/* Admin -> Monitoring -> Mercure. Three separate verdicts rather than one, because the
+   halves fail independently; colour carries the state but never alone — each row spells
+   it out in words too, so it survives a colour-blind reader and a greyscale screenshot. */
+.admin-rt-table td { vertical-align: middle; font-size: 0.82rem; }
+.admin-rt-table td:first-child { font-weight: 600; width: 34%; }
+.admin-rt-ok   { color: var(--accent-green,  #2f855a); font-weight: 600; }
+.admin-rt-warn { color: var(--accent-orange, #b7791f); font-weight: 600; }
+.admin-rt-bad  { color: var(--accent-danger, #c53030); font-weight: 600; }
+.admin-rt-detail { color: var(--accent-gray); font-size: 0.8rem; line-height: 1.5; }
+/* The URL a check actually used. break-all because it is a URL in a narrow column and
+   truncating the thing someone is here to copy would defeat the point. */
+.admin-rt-endpoint { margin-top: 0.2rem; }
+.admin-rt-endpoint code { font-size: 0.76rem; word-break: break-all; }
+.admin-rt-verdict { font-weight: 600; margin-bottom: 0.5rem; }

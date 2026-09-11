@@ -3,6 +3,7 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
+import { watch, rtTopic } from '../realtime/index.js';
 import { icons } from '../core/icons.js';
 import { showToast, confirmModal, highlightMentions } from '../core/utils.js';
 import { setEditingMode } from '../page_edit/index.js';
@@ -316,15 +317,16 @@ export const refreshPageContent = async () => {
 // alone (re-initialising the draw.io embed mid-view is jarring, and a `.search` file
 // barely changes — its results are computed).
 const FILE_WATCH_MS  = 10000;
+const FILE_WATCH_SLOW_MS = 300000;   // safety net while push is live; see modules/realtime
 const WATCHED_TYPES  = ['file', 'list', 'json'];
-let _watchTimer  = null;
+let _stopWatchTimer  = null;
 let _watchPath   = null;
 let _watchMtime  = 0;
 let _watchSize   = null;   // null = not sampled yet
 let _watchWarned = 0;
 
 export const stopFileWatch = () => {
-    if (_watchTimer) { clearInterval(_watchTimer); _watchTimer = null; }
+    if (_stopWatchTimer) { _stopWatchTimer(); _stopWatchTimer = null; }
     _watchPath = null;
     _watchMtime = 0;
     _watchSize = null;
@@ -389,7 +391,7 @@ const startFileWatch = (path, mtime, size) => {
     // and that poisoned baseline would hide the change for good.
     _watchSize  = size ?? null;
 
-    _watchTimer = setInterval(async () => {
+    const checkOnce = async () => {
         if (state.currentPagePath !== _watchPath) { stopFileWatch(); return; }
         const res = await api.call('file_mtime', { file: _watchPath });
         if (!res.success || !res.mtime) return;      // 0 = gone; deletion is handled elsewhere
@@ -419,7 +421,14 @@ const startFileWatch = (path, mtime, size) => {
             _watchSize  = res.size ?? _watchSize;
             showToast(t('page.reloaded-from-disk'), 'info');
         }
-    }, FILE_WATCH_MS);
+    };
+
+    // The mtime/size comparison inside checkOnce is what actually decides anything, so push
+    // only makes it happen sooner — including for the author's own save, which is why
+    // rebaselineFileWatch() still has to run: without it the event would arrive, the stale
+    // baseline would call it an external change, and the page would reload under the author.
+    _stopWatchTimer = watch(rtTopic.page(state.currentSpace, path), checkOnce,
+                        { fast: FILE_WATCH_MS, slow: FILE_WATCH_SLOW_MS });
 };
 
 /**

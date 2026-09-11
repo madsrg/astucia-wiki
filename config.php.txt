@@ -120,10 +120,16 @@ define('LOG_DIR', '/var/log/wiki/');
 
 // --- AI Agent Jobs ---
 // Minutes between run_ai_agent_jobs.php ticks. MUST match the crontab entry:
-//   */15 * * * * php /path/to/run_ai_agent_jobs.php >> /var/log/wiki-agent-jobs.log 2>&1
+//   */2 * * * * php /path/to/run_ai_agent_jobs.php >> /var/log/wiki-agent-jobs.log 2>&1
 // One-off /aiJob requests use this to tell the user when their job will start,
 // so a value that disagrees with cron produces a wrong estimate.
-define('AGENT_JOB_RUNNER_INTERVAL_MINUTES', 15);
+define('AGENT_JOB_RUNNER_INTERVAL_MINUTES', 2);
+
+// How many runner processes may work the one-off job queue at once. One means the
+// queue is strictly serial, so a single slow job delays everything behind it however
+// often cron fires. Each slot is another simultaneous LLM call, so this is a spend
+// ceiling as much as a throughput one. 1-8.
+define('AGENT_JOB_RUNNER_SLOTS', 2);
 
 // --- System prompt gallery ---
 // A curated list of role prompts an administrator can pick from when configuring an AI
@@ -145,6 +151,35 @@ define('SYSTEM_PROMPT_GALLERY_URL', 'https://astucia.wiki/system_prompts.json');
 // higher costs less. One scan stats the indexable files of one space; results are
 // cached in WIKI_SYSTEM_DATA/index-sync/ between passes. Set to 0 to use the default.
 define('INDEX_SYNC_INTERVAL_SECONDS', 30);
+
+// --- Realtime push (optional) ---
+// Replaces the client's polling loops with one SSE channel served by a Mercure hub. The
+// Docker image ships and starts the hub; on a bare install you run one yourself.
+//
+// Turning this off is always safe: every module keeps the poller it has always had, so
+// 'false' is exactly the behaviour of every release before this one.
+//
+// NOTE: an SSE stream holds one of the browser's ~6 connections per origin for its whole
+// life, so realtime wants HTTP/2 — i.e. TLS at the reverse proxy. It works over HTTP/1.1,
+// but a few tabs will exhaust the connection budget.
+define('ENABLE_REALTIME', false);
+
+// Shared secret the wiki signs its hub tokens with. Must match the hub's own configuration.
+// Generate one with: php -r 'echo bin2hex(random_bytes(32));'
+// Leave empty to disable realtime regardless of ENABLE_REALTIME.
+define('MERCURE_JWT_KEY', '');
+
+// Where PHP publishes to. The hub's own address, reachable from the web server.
+define('MERCURE_INTERNAL_URL', 'http://127.0.0.1:3000');
+
+// Where the *browser* subscribes. Same-origin by design: no CORS, and the ticket cookie
+// flows without special handling. Reverse-proxy this path to MERCURE_INTERNAL_URL.
+define('MERCURE_PUBLIC_URL', '/.well-known/mercure');
+
+// How long a subscriber ticket is valid. The client re-mints on reconnect and on expiry, so
+// revoking a user's Space takes effect within one TTL. Shorten this rather than adding
+// revocation machinery to the hub.
+define('REALTIME_TICKET_TTL', 3600);
 
 // --- Diagnostics (optional) ---
 // Absolute paths to server log files shown in Admin → Diagnostics.

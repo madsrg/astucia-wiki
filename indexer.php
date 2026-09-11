@@ -7,6 +7,10 @@
 // Manages the mapping of persistent IDs to file paths and tags.
 // =================================================================
 
+// The announce() hooks below degrade to no-ops when this is absent, but the cron runner and
+// the CLI reindex both write content and both have subscribers waiting on the result.
+if (is_file(__DIR__ . '/realtime.php')) require_once __DIR__ . '/realtime.php';
+
 class PageIndexer {
     // Content types that get a stable page id. Defined once because two paths walk the
     // tree — rebuildIndex() behind ?action=indexfiles, and index_sync.php's automatic
@@ -58,10 +62,46 @@ class PageIndexer {
 
     private $indexFile;
     private $indexData;
+    private $space;      // which Space this index belongs to; '' is PAGES_DIR itself
 
     public function __construct($pagesDirectory) {
         $this->indexFile = $pagesDirectory . '/index.json';
+        $this->space     = self::spaceOfDir($pagesDirectory);
         $this->loadIndex();
+    }
+
+    /**
+     * The Space name a content directory belongs to, '' for PAGES_DIR itself.
+     *
+     * Every immediate subdirectory of PAGES_DIR is a Space, so this is a basename — but it
+     * is resolved through realpath() first, because callers pass the directory in several
+     * shapes (with and without a trailing slash, occasionally relative).
+     */
+    private static function spaceOfDir($dir) {
+        if (!defined('PAGES_DIR')) return '';
+        $root = rtrim(realpath(PAGES_DIR) ?: PAGES_DIR, '/\\');
+        $real = rtrim(realpath($dir) ?: $dir, '/\\');
+        if ($real === $root || $real === '') return '';
+        return basename($real);
+    }
+
+    /**
+     * Announce a change to subscribers. Hooking the indexer rather than the ~25 call sites
+     * is deliberate: keeping the index in step with the filesystem is already a hard
+     * invariant of this codebase (see CLAUDE.md), so anything that writes content has
+     * necessarily been through here. A publish call bolted onto each action would drift
+     * from that set the first time someone added an action and forgot one line.
+     *
+     * Bulk methods do not call this per file — they announce the tree once instead.
+     */
+    private function announce($path, $change) {
+        if (!function_exists('wiki_realtime_publish_path')) return;
+        wiki_realtime_publish_path($this->space, (string)$path, $change);
+    }
+
+    private function announceTree() {
+        if (!function_exists('wiki_realtime_publish_tree')) return;
+        wiki_realtime_publish_tree($this->space);
     }
 
     private function loadIndex() {
@@ -95,6 +135,7 @@ class PageIndexer {
             }
             $this->indexData[$id] = $entry;
             $this->saveIndex();
+            $this->announce($path, 'create');
             return $id;
         }
         return null;
@@ -108,6 +149,7 @@ class PageIndexer {
                 $this->indexData[$id]['updatedBy'] = ['uid' => (int)$uid, 'name' => $userName];
             }
             $this->saveIndex();
+            $this->announce($path, 'update');
         }
     }
 
@@ -155,7 +197,7 @@ class PageIndexer {
             $this->indexData[$id]['updated'] = $stamp($path);
             $touched++;
         }
-        if ($added || $removed || $touched) $this->saveIndex();
+        if ($added || $removed || $touched) { $this->saveIndex(); $this->announceTree(); }
         return ['added' => $added, 'removed' => $removed, 'touched' => $touched];
     }
 
@@ -184,7 +226,7 @@ class PageIndexer {
             $this->indexData[$newId] = $entry;
             $map[$oldId] = $newId;
         }
-        if ($map) $this->saveIndex();
+        if ($map) { $this->saveIndex(); $this->announceTree(); }
         return $map;
     }
 
@@ -193,6 +235,7 @@ class PageIndexer {
         if ($id !== null) {
             unset($this->indexData[$id]);
             $this->saveIndex();
+            $this->announce($path, 'delete');
         }
     }
 
@@ -201,6 +244,10 @@ class PageIndexer {
         if ($id !== null) {
             $this->indexData[$id]['path'] = $newPath;
             $this->saveIndex();
+            // Both ends: a client with the old path open is the one that most needs to know,
+            // and it is not subscribed to the new topic.
+            $this->announce($oldPath, 'delete');
+            $this->announce($newPath, 'create');
         }
         // The 'else' block that called addPage() was removed.
         // This prevents creating a new page with a new ID and empty tags
@@ -216,6 +263,9 @@ class PageIndexer {
             }
         }
         $this->saveIndex();
+        // A folder rename can move hundreds of pages. One tree event, and each client
+        // refetches the tree it was going to refetch anyway.
+        $this->announceTree();
     }
 
     public function updateTags($id, $tags) {
@@ -224,6 +274,7 @@ class PageIndexer {
             $cleanedTags = array_unique(array_filter(array_map('trim', $tags)));
             $this->indexData[$id]['tags'] = array_values($cleanedTags); // Re-index array
             $this->saveIndex();
+            $this->announce($this->indexData[$id]['path'] ?? '', 'update');
             return true;
         }
         return false;

@@ -40,6 +40,45 @@ function wiki_mention_spaces(?array $allowed): array {
 }
 
 /**
+ * The trailing boundary of a `[@#]Name` mention.
+ *
+ * `\b` is wrong here, and the way it is wrong is expensive: it sees a word boundary
+ * between "0" and "-", so "#gpt120-think" also matched an AI user named "gpt120". The
+ * detection loop takes the first match in users.json order, so the wrong AI answered —
+ * inline, ignoring the intended one's "always run in the background", which is what put
+ * a job-less placeholder in the thread reading "Working…". The client never had the bug:
+ * it extracts the whole token with /[#@]([\w.-]*\w)/, so the two disagreed about who
+ * was being addressed while both looked correct on their own.
+ *
+ * A name token may contain "." and "-" only between word characters (the same grammar
+ * the client uses), so the boundary is "not a word character, and not a . or - that
+ * continues into one". That still lets a mention end a sentence: "@Alice." matches Alice,
+ * while "@Alice-Smith" and "@Alice2" do not.
+ */
+const WIKI_MENTION_END = '(?!\\w)(?![.-]\\w)';
+
+/**
+ * Which AI user a message addresses, or null if none.
+ *
+ * Longest name first, so a name that is a prefix of another cannot claim the mention
+ * even where the boundary alone would allow it (names may contain spaces, which the
+ * boundary cannot see past). One resolver, because api.php decides *twice* whether a
+ * message triggers an AI — once to write the placeholder and once to route it — and the
+ * two disagreeing is the failure this replaces.
+ */
+function wiki_match_ai_mention(string $text, array $users): ?array {
+    $ais = array_values(array_filter($users,
+        fn($u) => !empty($u['is_ai']) && trim((string)($u['name'] ?? '')) !== ''));
+    usort($ais, fn($a, $b) => mb_strlen((string)$b['name']) <=> mb_strlen((string)$a['name']));
+    foreach ($ais as $u) {
+        if (preg_match('/(^|[\s,])[@#]' . preg_quote((string)$u['name'], '/') . WIKI_MENTION_END . '/iu', $text)) {
+            return $u;
+        }
+    }
+    return null;
+}
+
+/**
  * Scan for mentions of one user.
  *
  * @param int  $since     Unix time the user last looked; 0 disables the new/old split.
@@ -51,7 +90,7 @@ function wiki_scan_mentions(string $name, int $uid, ?array $allowed_spaces,
                             int $since = 0, bool $only_new = false): array {
     if ($name === '' && $uid <= 0) return [];
     $rows = [];
-    $name_re = $name !== '' ? '/[@#]' . preg_quote($name, '/') . '\b/i' : null;
+    $name_re = $name !== '' ? '/[@#]' . preg_quote($name, '/') . WIKI_MENTION_END . '/i' : null;
 
     foreach (wiki_mention_spaces($allowed_spaces) as $space) {
         $dir   = rtrim(PAGES_DIR, '/') . '/' . $space;

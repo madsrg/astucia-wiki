@@ -209,7 +209,10 @@ function ai_debug_report_text(array $blocks, array $usage, string $model, int $a
  */
 function wiki_markdown_features_prompt(): string {
     return "This wiki's Markdown extensions: a ```mermaid block renders as a diagram (flowchart, "
-         . "sequence, state, ER, gantt) — prefer one to ASCII art; a blockquote starting "
+         . "sequence, class, state, ER, gantt, pie, quadrant, mindmap, kanban, xychart) — prefer one "
+         . "to ASCII art, and prefer an xychart or pie block to a table of numbers when the point is "
+         . "the shape of the data; wiki_read_page reads a .json data page, so figures stored in one "
+         . "can be charted without restating them by hand; a blockquote starting "
          . "\"> [!warning] Title\" is a callout box (note, tip, warning, danger, info, example; add - "
          . "to start it collapsed); {include:ID} embeds a page; {toc} inserts a table of contents; "
          . "{filename} and {lastUpdated} are substituted on render; [[Page]] links and ![[Page]] "
@@ -689,6 +692,147 @@ function _is_thinking_param_error(string $msg): bool {
         && (bool)preg_match('/' . _LLM_PARAM_REJECTED . '|does not match/i', $msg);
 }
 
+/** The reasoning-effort values an AI user may be configured with; '' means off. */
+const WIKI_AI_EFFORTS = ['', 'low', 'medium', 'high'];
+
+/**
+ * What the model's final message actually contained, for an error someone can act on.
+ *
+ * "No response was generated." is what several different failures all collapse into, and
+ * it names none of them: an empty `content` with `finish_reason: stop`, a `tool_calls`
+ * finish with an empty tool_calls array, or a reasoning model whose text arrived in
+ * `reasoning_content` where nothing reads it. This reports which of those happened.
+ *
+ * **Field names and sizes only, never values.** This string is written into a chat
+ * message every editor of the space can read, and the field most likely to be holding
+ * something here is a reasoning model's chain of thought.
+ */
+function _ai_message_shape(array $choice): string {
+    $msg  = is_array($choice['message'] ?? null) ? $choice['message'] : [];
+    $bits = [];
+    foreach ($msg as $k => $v) {
+        if ($k === 'role') continue;
+        if (is_string($v))    $bits[] = $k . '=' . ($v === '' ? 'empty' : strlen($v) . ' chars');
+        elseif (is_array($v)) $bits[] = $k . '=' . count($v) . ' item' . (count($v) === 1 ? '' : 's');
+        elseif ($v === null)  $bits[] = $k . '=null';
+        else                  $bits[] = $k . '=' . var_export($v, true);
+    }
+    return 'finish_reason=' . (((string)($choice['finish_reason'] ?? '')) ?: '?')
+         . '; message: ' . ($bits ? implode(', ', $bits) : '(nothing but role)');
+}
+
+/** Fields a provider may put a reasoning model's text in instead of `content`. */
+const WIKI_AI_REASONING_FIELDS = ['reasoning_content', 'reasoning', 'thinking'];
+
+/**
+ * The "you hit the token ceiling" error, in one place.
+ *
+ * Four copies of this sentence already existed (two paths x two wire families) and the
+ * third family had none at all: OpenAI chat-completions never checked
+ * `finish_reason === "length"`, so a truncated run fell through to an empty reply and
+ * reported "No response was generated." — which says nothing about the cause and sends
+ * the reader looking in the wrong place.
+ *
+ * The reasoning clause is the part that matters at high effort: reasoning tokens are
+ * charged against the *same* ceiling as the answer, so a model can spend the entire
+ * budget thinking and return `length` with empty content. That looks identical to "the
+ * model said nothing" unless the message says otherwise.
+ */
+function wiki_ai_truncated_error(int $max_tokens, bool $is_thinking = false): string {
+    return 'Response truncated: the Max Tokens limit (' . number_format($max_tokens)
+        . ') was reached before the AI could finish its reply. '
+        . ($is_thinking
+            ? 'Extended reasoning is charged against that same limit, so a high Reasoning '
+              . 'effort needs considerably more headroom — raise Max Tokens for this AI '
+              . 'user, or lower its Reasoning effort.'
+            : 'Increase Max Tokens in the AI user settings (recommend >= 4096 for page writing).');
+}
+
+/**
+ * The messages that count as a thread's AI context.
+ *
+ * Everything after the last `/newTopic` sentinel, with pending placeholders and /debug
+ * reports dropped, capped to the AI user's `context_messages` — and the sentinel's own
+ * trailing text put back at the front, since "/newTopic let's discuss X" *is* the topic.
+ *
+ * One implementation, because there were two and they disagreed: the inline reply path
+ * honoured the sentinel while both job paths built their own transcript and did not. So
+ * resetting a topic changed what an inline answer saw and not what a queued one saw — the
+ * same AI, the same thread, a different context depending only on how it was invoked.
+ */
+function wiki_chat_context_slice(array $messages, int $limit): array {
+    $msgs = array_values(array_filter($messages,
+        fn($m) => empty($m['pending']) && empty($m['is_debug'])));
+    $sentinel = null;
+    $pos      = -1;
+    foreach ($msgs as $i => $m) {
+        if (!empty($m['is_new_topic'])) { $sentinel = $m; $pos = $i; }
+    }
+    if ($pos >= 0) $msgs = array_slice($msgs, $pos + 1);
+    $recent = $limit > 0 ? array_slice($msgs, -$limit) : $msgs;
+    if ($sentinel !== null) {
+        $tail = trim(preg_replace('/^\/newTopic\s*/i', '', (string)($sentinel['text'] ?? '')));
+        if ($tail !== '') {
+            array_unshift($recent, ['uid'  => $sentinel['uid'] ?? 0,
+                                    'name' => $sentinel['name'] ?? 'User',
+                                    'text' => $tail]);
+        }
+    }
+    return $recent;
+}
+
+/**
+ * The "MCP tool guidance" block for a set of enabled servers.
+ *
+ * Two sources, appended in that order per server:
+ *  - the server's own `instructions`, which describe *the server* ("dates are ISO-8601",
+ *    "call list_projects before get_project") and are therefore the same for every AI user
+ *    that enables it. Edited once, on the MCP server page. This used to have nowhere to
+ *    live, so ten AI users meant ten copies of the same paragraph and ten edits to change
+ *    it, with nothing recording that they were meant to agree.
+ *  - the AI user's own note for that server, which describes *this AI's* remit ("you are
+ *    read-only; never call create_issue").
+ *
+ * They **compose rather than override**, which is what keeps this out of the unset-vs-empty
+ * trap the chat-retention setting had to solve with a tri-state: with appending, an empty
+ * per-AI box unambiguously means "nothing extra".
+ *
+ * Shared by the inline chat path and the job path, for the usual anti-drift reason.
+ */
+function wiki_mcp_guidance(array $enabled_servers, array $per_ai_instructions): string {
+    $lines = '';
+    foreach ($enabled_servers as $srv) {
+        $name = (string)($srv['name'] ?? '?');
+        $texts = [
+            trim((string)($srv['instructions'] ?? '')),
+            trim((string)($per_ai_instructions[$srv['id'] ?? ''] ?? '')),
+        ];
+        foreach ($texts as $text) {
+            if ($text !== '') $lines .= "\n[" . $name . '] ' . $text;
+        }
+    }
+    return $lines === '' ? '' : "\n\nMCP tool guidance:" . $lines;
+}
+
+/**
+ * How hard this AI user thinks, as _llm_tuning_params() wants it — or null for not at all.
+ *
+ * Effort is a property of the **AI user**, not of how its answer is delivered. It used to
+ * be neither: `/aiJob` and "always run in the background" both hardcoded
+ * `effort => high`, so the two were byte-identical runs and the only way to get extended
+ * reasoning was to route through cron — while an AI user meant to answer quickly in the
+ * background got maximum effort anyway, which is the opposite of the intent. Splitting it
+ * out means the queue setting decides *when* an answer arrives and this decides *how hard
+ * the model works*, and the two compose instead of implying each other.
+ *
+ * Unset stays off, so an existing AI user's behaviour only changes where the admin asks.
+ */
+function wiki_ai_thinking_config(array $ai_config): ?array {
+    $effort = (string)($ai_config['reasoning_effort'] ?? '');
+    if ($effort === '' || !in_array($effort, WIKI_AI_EFFORTS, true)) return null;
+    return ['enabled' => true, 'effort' => $effort];
+}
+
 /**
  * Model-aware sampling / reasoning request parameters, to merge into a payload.
  *
@@ -955,7 +1099,8 @@ function _ai_quick_reply(array $ai_user, string $system, string $user_msg, int $
  *               'debug' is the context/token accounting for the run log — always
  *               produced, since a run log is read precisely when something looks off.
  */
-function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string $space_dir): array {
+function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string $space_dir,
+                       ?callable $on_progress = null): array {
     // --- Extract LLM config ---
     $config        = $ai_user['ai_config']   ?? [];
     $provider      = $config['provider']      ?? 'openai';
@@ -1006,10 +1151,51 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     $job_page_ctx = (string)($job['page_context'] ?? '');
     $full_system  = $wiki_ctx . $job_page_ctx . $sys_prompt;
 
+    // --- Live progress, for the placeholder waiting in the thread ---
+    // An AI user set to always run in the background reaches the chat through this
+    // function instead of trigger_ai_response(), and its placeholder used to sit on a
+    // static "Queued…" for the whole run. It writes the same
+    // <chat>.ai-status.<message_id> file the inline path writes, read back by the same
+    // get_ai_status action — so one status format serves both paths and the bubble can
+    // say what the run is actually doing.
+    //
+    // Only a job with a placeholder writes anything: a scheduled job has no thread and
+    // nobody watching, so the file would be litter.
+    $status_file = ($job_chat_rel !== '' && (int)($job['reply_to']['message_id'] ?? 0) > 0)
+        ? rtrim($space_dir, '/') . '/' . $job_chat_rel . '.ai-status.' . (int)$job['reply_to']['message_id']
+        : '';
+    $status_started = microtime(true);
+    $status_calls   = 0;
+    $status_tools   = [];
+    $write_status = function (string $step, array $extra = []) use (
+        $status_file, $model, &$status_started, &$status_calls, &$status_tools, $on_progress
+    ): void {
+        // Proof of life first, and unconditionally: the runner passes its heartbeat in
+        // here, and a job with no chat placeholder (a scheduled one) still has to keep it
+        // fresh. Without this a single long job makes a live runner look stopped, and the
+        // web side then abandons everything queued behind it.
+        if ($on_progress !== null) $on_progress($step);
+        if ($status_file === '') return;
+        // Never let progress reporting break the run it is reporting on.
+        @file_put_contents($status_file, json_encode(array_merge([
+            'step'       => $step,
+            'model'      => $model,
+            'api_calls'  => $status_calls,
+            'tools_used' => $status_tools,
+            'elapsed_ms' => (int)((microtime(true) - $status_started) * 1000),
+            'background' => true,
+        ], $extra)));
+    };
+    $write_status('preparing');
+
     // --- Tool executor closure ---
     $mcp_tool_map  = []; // populated below after $tools_def is built
     $mcp_calls_log = [];
-    $exec_tool = function(string $tool_name, array $tool_input) use ($ai_user, $indexer, $space_dir, &$mcp_tool_map, &$mcp_calls_log): string {
+    // One hook covers every wire family, because all three tool branches below call this
+    // closure — the inline path has to repeat its equivalent four times.
+    $exec_tool = function(string $tool_name, array $tool_input) use ($ai_user, $indexer, $space_dir, &$mcp_tool_map, &$mcp_calls_log, $write_status, &$status_tools): string {
+        $status_tools[] = $tool_name;
+        $write_status('executing_tool', ['tool' => $tool_name]);
         if (isset($mcp_tool_map[$tool_name])) {
             $mcp_calls_log[] = ($mcp_tool_map[$tool_name]['server']['name'] ?? '?') . ':' . $mcp_tool_map[$tool_name]['real_name'];
             return _mcp_call_tool($mcp_tool_map[$tool_name]['server'], $mcp_tool_map[$tool_name]['real_name'], $tool_input);
@@ -1056,14 +1242,9 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 $mcp_extra .= "\n\nThe prompt explicitly requested " . implode(' and ', array_column($forced, 'name'))
                     . " via src: — use only the tools available to you for this run.";
             } else {
-                $mcp_guidance = '';
-                foreach ($enabled as $mcp_srv) {
-                    $add_mcp_server_tools($mcp_srv);
-                    $instr = trim($mcp_instructions[$mcp_srv['id'] ?? ''] ?? '');
-                    if ($instr) $mcp_guidance .= "\n[" . $mcp_srv['name'] . '] ' . $instr;
-                }
+                foreach ($enabled as $mcp_srv) $add_mcp_server_tools($mcp_srv);
                 $mcp_srv_count = count($enabled);
-                if ($mcp_guidance) $mcp_extra .= "\n\nMCP tool guidance:" . $mcp_guidance;
+                $mcp_extra .= wiki_mcp_guidance($enabled, $mcp_instructions);
             }
         }
     }
@@ -1121,6 +1302,8 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     $reply        = null;
     $api_error    = null;
     $tools_called = false;
+    // What the last message looked like, if it yielded no reply — see _ai_message_shape().
+    $no_reply_note = '';
     // OpenAI token-limit param + sampling/thinking handling (see helpers above).
     $openai_token_param  = _openai_token_param($api_url);
     $token_param_swapped = false;
@@ -1181,6 +1364,9 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
         if ($force_final) $payload['tool_choice'] = $family === 'anthropic' ? ['type' => 'none'] : 'none';
 
         $api_call_count++;
+        $status_calls = $api_call_count;
+        $write_status('calling_api', ['iteration' => $iter + 1]);
+        $call_started = microtime(true);
         $ch = curl_init($api_url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
@@ -1206,6 +1392,9 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 . _ai_raw_debug($raw, $http);
             break;
         }
+
+        $write_status('received', ['iteration' => $iter + 1,
+                                   'last_call_ms' => (int)((microtime(true) - $call_started) * 1000)]);
 
         // One capture point for all three wire families, before the family-specific
         // branches — every successful pass adds a row to the run log's usage table.
@@ -1241,7 +1430,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
 
         if ($family === 'anthropic') {
             if (($data['stop_reason'] ?? '') === 'max_tokens') {
-                $api_error = 'Response truncated: the Max Tokens limit (' . $max_tokens . ') was reached before the AI could finish its reply. Increase Max Tokens in the AI user settings (recommend ≥ 4096 for page writing).';
+                $api_error = wiki_ai_truncated_error($max_tokens, $is_thinking);
                 break;
             }
             $tool_uses = array_values(array_filter($data['content'] ?? [], fn($b) => ($b['type'] ?? '') === 'tool_use'));
@@ -1293,7 +1482,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 continue;
             }
             if ($parsed['truncated']) {
-                $api_error = 'Response truncated: the Max Tokens limit (' . $max_tokens . ') was reached before the AI could finish its reply. Increase Max Tokens in the AI user settings (recommend ≥ 4096 for page writing).';
+                $api_error = wiki_ai_truncated_error($max_tokens, $is_thinking);
                 break;
             }
             $reply = $parsed['text'];
@@ -1302,9 +1491,21 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
 
         } else {
             $choice = $data['choices'][0] ?? [];
+            // Before the tool-call branch, as in the anthropic one: a truncated response
+            // can carry half a tool call, whose arguments JSON will not parse.
+            if (($choice['finish_reason'] ?? '') === 'length') {
+                $api_error = wiki_ai_truncated_error($max_tokens, $is_thinking);
+                break;
+            }
             if (($choice['finish_reason'] ?? '') === 'tool_calls') {
                 $tool_calls = $choice['message']['tool_calls'] ?? [];
-                if (!$tool_calls) break;
+                if (!$tool_calls) {
+                    // Signalled a tool call and sent none. Used to break silently, which
+                    // then surfaced as "No response was generated".
+                    $api_error = 'The model signalled a tool call but sent none. ['
+                              . _ai_message_shape($choice) . ']';
+                    break;
+                }
                 $messages[] = $choice['message'];
                 foreach ($tool_calls as $tc) {
                     $fn_args = json_decode($tc['function']['arguments'] ?? '{}', true) ?? [];
@@ -1333,6 +1534,21 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                 continue;
             }
             if ($note) $reply = trim($reply . "\n\n" . $note);
+            if ($reply === '') {
+                // Nothing usable in `content`. Say which field the model did fill, since
+                // a reasoning model behind a gateway can put its whole answer in one this
+                // API shape does not read.
+                $no_reply_note = _ai_message_shape($choice);
+                foreach (WIKI_AI_REASONING_FIELDS as $_rk) {
+                    $_rv = $choice['message'][$_rk] ?? null;
+                    if (!is_string($_rv) || trim($_rv) === '') continue;
+                    $api_error = 'The model returned reasoning but no answer: its text arrived in "'
+                        . $_rk . '", which is not the field the reply is read from. Lower this AI '
+                        . 'user\'s Reasoning effort, or point it at a model whose final message puts '
+                        . 'the reply in "content". [' . $no_reply_note . ']';
+                    break 2;
+                }
+            }
             break;
         }
     }
@@ -1355,7 +1571,19 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
         if ($iter >= $max_iters) {
             return ['reply' => null, 'error' => 'Stopped after too many tool calls without producing a response.', 'debug' => $debug_text];
         }
-        return ['reply' => null, 'error' => 'No response was generated.', 'debug' => $debug_text];
+        // "No response was generated" is a lie when the run called tools: the work may
+        // well have happened — a page written, a message posted into the thread — and
+        // only the closing sentence is missing. Reporting it as a flat failure sends the
+        // reader looking for work that is already done, so name what ran.
+        if ($tools_called || $status_tools) {
+            $ran = $status_tools ? implode(', ', array_unique($status_tools)) : 'tools';
+            return ['reply' => null, 'debug' => $debug_text,
+                    'error' => 'The run finished without a closing message, but it did call: ' . $ran
+                             . '. Any changes those made are already saved — only the summary is missing.'];
+        }
+        return ['reply' => null, 'debug' => $debug_text,
+                'error' => 'No response was generated.'
+                         . ($no_reply_note !== '' ? ' [' . $no_reply_note . ']' : '')];
     }
 
     if ($mcp_calls_log) {

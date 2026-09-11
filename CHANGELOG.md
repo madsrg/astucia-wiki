@@ -6,6 +6,94 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.9.5] — 2026-09-11
+
+Realtime push arrives, with a monitor for it. AI users gain a reasoning-effort setting
+separate from how their answers are delivered, the job runner ticks every two minutes
+instead of fifteen, and an AI whose name is a prefix of another's stops answering in its
+place.
+
+### Added
+- **Realtime push over a Mercure hub** (`ENABLE_REALTIME`, off by default). An event is an
+  invalidation hint, never a payload: the read still goes through api.php and its guards,
+  so the hub never becomes a second content-serving path needing its own copy of Space
+  filtering. Six pollers are demoted rather than suspended, so switching the feature off —
+  or a stream going zombie behind a proxy — costs latency and never correctness. The
+  subscribe JWT carries the Space allowlist, so isolation is enforced by the hub,
+  declaratively. `tools/install-mercure.sh` does the bare-metal install; the Docker image
+  ships and starts the hub.
+- **Admin → Monitoring → Mercure.** Publishing is fire-and-forget by design, so a broken
+  hub is silent and every view quietly falls back to its timer. The tab asks three
+  questions separately, because they fail independently: can this server publish, does the
+  browser's path to the hub resolve, and is this page actually receiving. Plus an
+  end-to-end test that publishes a nonce to your own diagnostic topic and waits for this
+  page to receive it — the only check covering PHP, the hub, nginx and the browser at once.
+- **`ai_config.reasoning_effort`** (off/low/medium/high) — how hard a model thinks, on all
+  three run paths. It used to be neither configurable nor separable: `/aiJob` and "always
+  run in the background" each hardcoded maximum effort, which made the setting named for
+  *where* work runs silently the most expensive mode in the product.
+- **`AGENT_JOB_RUNNER_SLOTS`** (default 2) — how many runner processes may work the one-off
+  queue at once. With one lock the queue was strictly serial, so a slow job delayed
+  everything behind it however often cron fired.
+- **Insert → Mermaid Diagram**, a submenu of nine starters (class, flowchart, gantt,
+  kanban, mind map, pie, quadrant, sequence, xychart) carrying the examples from the
+  mermaid documentation rather than invented syntax. **Insert → Callouts** groups the five
+  callout entries the same way. Both open on hover.
+- **A background AI's placeholder reports what the run is doing** — the step, the API call,
+  the tool being executed — because that path shows no modal and the placeholder is the
+  only thing on screen.
+- **Shared instructions on an MCP server**, so guidance about a server is written once
+  instead of copied onto every AI user that enables it. An AI user's own note appends to it.
+- **`/jobs`, `/debug` and the AI tool set reach `.json` data pages.** `wiki_read_page`
+  always could; nothing said so, and `wiki_search_pages` excluded them, so charting figures
+  out of a stored dataset was unreachable in practice.
+
+### Changed
+- **The agent-job runner ticks every 2 minutes** (was 15), in `config.php.txt`, the Docker
+  image, and the documented crontab. Two things had to change with it: the runner keeps its
+  heartbeat fresh *during* a run, or a job longer than six minutes made a busy runner look
+  dead and queued jobs behind it were destroyed; and slots stop one slow job blocking the
+  queue.
+- **"Always run in the background" is now "Answer as a queued job (never inline)"** and
+  means only that. `/aiJob` is the same switch at message scope, and now carries the same
+  context the background path always did: the attached page and the recent thread.
+- Insert → "Diagram" is now "Draw.io Diagram", which is what it inserts.
+- The mermaid types named in the AI system prompt now match what the pinned renderer
+  supports, so a model can be asked for an xychart and know it exists.
+
+### Fixed
+- **`#Name` matched an AI user whose name was a prefix of the one addressed.** The boundary
+  was `\b`, which sees one between "0" and "-", so `#gpt120-think` also matched an AI named
+  `gpt120` — and the first match in `users.json` order won. The wrong AI answered, inline,
+  ignoring the intended one's queued-job setting. One resolver now decides this for every
+  server-side site, longest name first. The same boundary fixed My Mentions, where
+  `@Alice-Smith` counted as a mention of `Alice`.
+- **A drag-and-dropped page was audited without saying which page.** `upload_page` chooses
+  its own final name — a collision makes it `name (1).md` — so nothing in the request could
+  be recorded, and the entry carried no object and therefore no page id.
+- **A queued job's placeholder in a Page Chat showed "Working…" and then falsely reported a
+  timeout** while its job sat legitimately in the queue; that renderer had no job-backed
+  branch at all.
+- **A run that produced no answer blamed the wrong thing.** OpenAI chat-completions never
+  checked `finish_reason: length`, so a truncated reply reported "No response was
+  generated."; a phantom tool call broke out silently; and a run that did its work but
+  wrote no closing sentence was reported as a flat failure. Each now names itself, and a
+  reasoning model whose text lands in a field the reply is not read from says so.
+- **A queued job read across `/newTopic`** while an inline reply did not — the same AI in
+  the same thread seeing a different conversation depending only on how it was invoked.
+- **AI-written pages were missing from search** until someone reindexed: the write tools
+  updated the page index and git but never the FTS row.
+- A tag/recency search excluded `.json` pages while a text search on an FTS install
+  returned them, so a stored dataset was findable on one install and invisible on the next.
+
+### Security
+- Realtime publishes carry `private=on` without exception. Mercure only consults a
+  subscriber's token for private updates, so omitting it hands every subscriber every
+  Space's change stream — confirmed against a real hub, and asserted by the test suite.
+- The `/debug` transcript and the Mercure monitor never disclose a credential: the hub key
+  is reported as set or unset, and a model's dropped field is reported by name and size
+  rather than quoted.
+
 ## [2026.9.4] — 2026-09-08
 
 The wiki gets a test suite. Alongside it: chat threads can be told how long to keep their

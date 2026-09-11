@@ -15,11 +15,13 @@
  * are somebody's cron entry, not a thing you are waiting on.
  */
 import { api } from '../core/api.js';
+import { watch, rtTopic } from '../realtime/index.js';
 import { state } from '../core/state.js';
 import { showStickyToast } from '../core/utils.js';
 import { t } from '../i18n/index.js';
 
 const POLL_MS = 60000;
+const POLL_SLOW_MS = 600000;   // safety net while push is live; see modules/realtime
 const DONE = new Set(['ok', 'error']);
 
 // job id → last state seen. Populated silently on the first poll: a job that had already
@@ -110,13 +112,16 @@ export const init = () => {
     // A reader cannot queue a job, so there is never anything here for them.
     if (window.WIKI_ROLE === 'reader') return;
     poll();
-    _timer = setInterval(() => {
+    // This is the poller push helps most: a job takes minutes, so a 60 s timer is the
+    // difference between "it finished" and "it finished a minute ago". The runner publishes
+    // on every state change, including the one that resolves the chat placeholder.
+    _timer = watch(rtTopic.job(window.WIKI_USER_UID || 0), () => {
         if (document.hidden) return;      // an unwatched tab needs no notifications
         poll();
-    }, POLL_MS);
+    }, { fast: POLL_MS, slow: POLL_SLOW_MS });
     // A tab returning to the foreground may have missed several ticks.
     document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 };
 
 /** Switching space keeps the same queue — the jobs are the user's, not the space's. */
-export const stop = () => { if (_timer) { clearInterval(_timer); _timer = null; } };
+export const stop = () => { if (_timer) { _timer(); _timer = null; } };

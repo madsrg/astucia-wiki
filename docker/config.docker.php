@@ -58,6 +58,16 @@ define('SEARCH_ENGINE', $env('SEARCH_ENGINE', 'sqlite'));
 // Empty makes the wiki fetch nothing and use the copy bundled in the image.
 define('SYSTEM_PROMPT_GALLERY_URL', $env('SYSTEM_PROMPT_GALLERY_URL', 'https://astucia.wiki/system_prompts.json'));
 
+// --- Realtime push --------------------------------------------------------------
+// The image ships a Mercure hub and starts it under supervisord. The key is generated on
+// first boot into the data volume, never baked into a layer; the entrypoint exports it to
+// both processes so they agree.
+define('ENABLE_REALTIME', filter_var($env('ENABLE_REALTIME', 'true'), FILTER_VALIDATE_BOOLEAN));
+define('MERCURE_JWT_KEY', $env('MERCURE_JWT_KEY', ''));
+define('MERCURE_INTERNAL_URL', $env('MERCURE_INTERNAL_URL', 'http://127.0.0.1:3000'));
+define('MERCURE_PUBLIC_URL', $env('MERCURE_PUBLIC_URL', '/.well-known/mercure'));
+define('REALTIME_TICKET_TTL', (int)$env('REALTIME_TICKET_TTL', '3600'));
+
 // --- External change detection ------------------------------------------------
 // Minimum seconds between filesystem scans for content changed outside the wiki.
 // Relevant in a container: a bind-mounted PAGES_DIR is exactly the case where
@@ -67,7 +77,8 @@ define('INDEX_SYNC_INTERVAL_SECONDS', (int)$env('INDEX_SYNC_INTERVAL_SECONDS', '
 // --- AI agent jobs ------------------------------------------------------------
 // Must match the crontab interval; the entrypoint writes the crontab from this
 // same variable, so the two cannot drift apart.
-define('AGENT_JOB_RUNNER_INTERVAL_MINUTES', (int)$env('AGENT_JOB_RUNNER_INTERVAL_MINUTES', '15'));
+define('AGENT_JOB_RUNNER_INTERVAL_MINUTES', (int)$env('AGENT_JOB_RUNNER_INTERVAL_MINUTES', '2'));
+define('AGENT_JOB_RUNNER_SLOTS', (int)$env('AGENT_JOB_RUNNER_SLOTS', '2'));
 define('AI_DEBUG_RAW_ERRORS', $bool('AI_DEBUG_RAW_ERRORS', false));
 
 // --- Email (optional; is_mail_configured() gates all sending) -----------------

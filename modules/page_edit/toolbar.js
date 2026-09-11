@@ -11,13 +11,149 @@ import { t } from '../i18n/index.js';
 const svg = (inner, sw = 2) =>
     `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
 
-// Starter blocks for the Insert menu. Each is a diagram that already renders, so the
-// result is visible immediately and can be edited down; the closing fence is passed as
-// the suffix so any selected lines end up inside the block.
-const SEQUENCE_SKELETON = '```mermaid\nsequenceDiagram\n    autonumber\n'
-    + '    Alice->>Bob: Request\n    Bob-->>Alice: Response';
-const FLOWCHART_SKELETON = '```mermaid\nflowchart TD\n'
-    + '    Start([Start]) --> Check{OK?}\n    Check -->|yes| Done([Done])\n    Check -->|no| Start';
+// Starter blocks for Insert → Mermaid Diagram. Each already renders, so the result is
+// visible immediately and can be edited down; the closing fence is passed as the suffix
+// so any selected lines end up inside the block.
+//
+// The new types carry the introductory example from that diagram's page in the mermaid
+// documentation rather than one invented here — upstream syntax, and recognisable to
+// anyone who arrives from those docs. Two things are dropped from the docs' versions: the
+// `---` frontmatter wrappers (`title:`, `config:`, `look:`), which exist to pin the
+// documentation site's own rendering, and anything needing assets this wiki does not load
+// (noted where it applies). Sequence and Flowchart keep the skeletons they had before the
+// submenu existed — they were already working starters, and the docs' opening flowchart
+// example is a single node with no edges.
+const mermaidBlock = (...lines) => '```mermaid\n' + lines.join('\n');
+const FENCE_END = '\n```';
+
+const SEQUENCE_SKELETON = mermaidBlock(
+    'sequenceDiagram',
+    '    autonumber',
+    '    Alice->>Bob: Request',
+    '    Bob-->>Alice: Response');
+
+const FLOWCHART_SKELETON = mermaidBlock(
+    'flowchart TD',
+    '    Start([Start]) --> Check{OK?}',
+    '    Check -->|yes| Done([Done])',
+    '    Check -->|no| Start');
+
+const CLASS_SKELETON = mermaidBlock(
+    'classDiagram',
+    '    note "From Duck till Zebra"',
+    '    Animal <|-- Duck',
+    '    note for Duck "can fly<br>can swim<br>can dive<br>can help in debugging"',
+    '    Animal <|-- Fish',
+    '    Animal <|-- Zebra',
+    '    Animal : +int age',
+    '    Animal : +String gender',
+    '    Animal: +isMammal()',
+    '    Animal: +mate()',
+    '    class Duck{',
+    '        +String beakColor',
+    '        +swim()',
+    '        +quack()',
+    '    }',
+    '    class Fish{',
+    '        -int sizeInFeet',
+    '        -canEat()',
+    '    }',
+    '    class Zebra{',
+    '        +bool is_wild',
+    '        +run()',
+    '    }');
+
+const GANTT_SKELETON = mermaidBlock(
+    'gantt',
+    '    title A Gantt Diagram',
+    '    dateFormat YYYY-MM-DD',
+    '    section Section',
+    '        A task          :a1, 2014-01-01, 30d',
+    '        Another task    :after a1, 20d',
+    '    section Another',
+    '        Task in Another :2014-01-12, 12d',
+    '        another task    :24d');
+
+// The docs' full board, shortened: their example carries a deliberately 100-character
+// task title and repeats an id, neither of which belongs in a starter.
+const KANBAN_SKELETON = mermaidBlock(
+    'kanban',
+    '  Todo',
+    '    [Create Documentation]',
+    '    docs[Create Blog about the new diagram]',
+    '  [In progress]',
+    '    id6[Create renderer so that it works in all cases]',
+    '  id9[Ready for deploy]',
+    "    id8[Design grammar]@{ assigned: 'knsv' }",
+    '  id11[Done]',
+    '    id5[define getData]');
+
+// The docs' example also carries a `::icon(fa fa-book)` line; dropped, because it needs
+// Font Awesome, which this wiki does not load — it would insert a line that does nothing.
+const MINDMAP_SKELETON = mermaidBlock(
+    'mindmap',
+    '  root((mindmap))',
+    '    Origins',
+    '      Long history',
+    '      Popularisation',
+    '        British popular psychology author Tony Buzan',
+    '    Research',
+    '      On effectiveness<br/>and features',
+    '      On Automatic creation',
+    '        Uses',
+    '            Creative techniques',
+    '            Strategic planning',
+    '            Argument mapping',
+    '    Tools',
+    '      Pen and paper',
+    '      Mermaid');
+
+const PIE_SKELETON = mermaidBlock(
+    'pie title Pets adopted by volunteers',
+    '    "Dogs" : 386',
+    '    "Cats" : 85',
+    '    "Rats" : 15');
+
+const QUADRANT_SKELETON = mermaidBlock(
+    'quadrantChart',
+    '    title Reach and engagement of campaigns',
+    '    x-axis Low Reach --> High Reach',
+    '    y-axis Low Engagement --> High Engagement',
+    '    quadrant-1 We should expand',
+    '    quadrant-2 Need to promote',
+    '    quadrant-3 Re-evaluate',
+    '    quadrant-4 May be improved',
+    '    Campaign A: [0.3, 0.6]',
+    '    Campaign B: [0.45, 0.23]',
+    '    Campaign C: [0.57, 0.69]',
+    '    Campaign D: [0.78, 0.34]',
+    '    Campaign E: [0.40, 0.34]',
+    '    Campaign F: [0.35, 0.78]');
+
+// `xychart`, not `xychart-beta`: the pinned mermaid@11 detector accepts either
+// (/^\s*xychart(-beta)?/) and the docs have moved to the unsuffixed keyword.
+const XYCHART_SKELETON = mermaidBlock(
+    'xychart',
+    '    title "Sales Revenue"',
+    '    x-axis [jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec]',
+    '    y-axis "Revenue (in $)" 4000 --> 11000',
+    '    bar [5000, 6000, 7500, 8200, 9500, 10500, 11000, 10200, 9200, 8500, 7000, 6000]',
+    '    line [5000, 6000, 7500, 8200, 9500, 10500, 11000, 10200, 9200, 8500, 7000, 6000]');
+
+// The submenu's contents. Ordered by the *displayed* label rather than by this list, so
+// "alphabetical" holds in every language — same localeCompare convention the file tree
+// uses for names the server hands back in strcmp order.
+const MERMAID_STARTERS = [
+    ['tb.mermaid-class',     CLASS_SKELETON],
+    ['tb.insert-flowchart',  FLOWCHART_SKELETON],
+    ['tb.mermaid-gantt',     GANTT_SKELETON],
+    ['tb.mermaid-kanban',    KANBAN_SKELETON],
+    ['tb.mermaid-mindmap',   MINDMAP_SKELETON],
+    ['tb.mermaid-pie',       PIE_SKELETON],
+    ['tb.mermaid-quadrant',  QUADRANT_SKELETON],
+    ['tb.insert-sequence',   SEQUENCE_SKELETON],
+    ['tb.mermaid-xychart',   XYCHART_SKELETON],
+];
 
 // Callouts. The type word is the only thing that differs, so one builder covers the menu
 // entries; a reader can change `note` to any of the supported types by editing that word.
@@ -158,7 +294,85 @@ export const createEditorToolbar = () => {
             content.appendChild(a);
         };
 
-        buildItems(addItem);
+        // Nested menus, for groups too long to sit inline (the mermaid types, the callouts)
+        // without burying the rest of Insert.
+        const submenus = [];
+
+        const openSubmenu = (only) => {
+            for (const { wrap, sub } of submenus) {
+                if (wrap !== only) { sub.classList.add('hidden'); continue; }
+                if (!sub.classList.contains('hidden')) continue;
+                sub.classList.remove('hidden');
+                // Opens to the right, unless that would run off the window — the Insert
+                // menu sits wherever the toolbar's width puts it. Measured on each open,
+                // since the window may have been resized since the last one.
+                sub.classList.remove('submenu-flip');
+                if (sub.getBoundingClientRect().right > window.innerWidth - 8) {
+                    sub.classList.add('submenu-flip');
+                }
+            }
+        };
+
+        // Hover opens, which is what a nested menu is expected to do. The pointer's path
+        // from the parent row into the submenu stays inside this subtree, so `mouseleave`
+        // on `content` cannot fire on the way across — the CSS deliberately leaves no gap
+        // between the two for the same reason. Moving onto any plain row closes whatever
+        // was open, so one hover cannot leave two menus on screen.
+        content.addEventListener('mouseover', (e) => {
+            if (!submenus.length) return;
+            const wrap = e.target.closest('.dropdown-submenu');
+            openSubmenu(wrap && content.contains(wrap) ? wrap : null);
+        });
+        content.addEventListener('mouseleave', () => openSubmenu(null));
+
+        const addSubmenu = (text, title, buildSubItems) => {
+            const row = document.createElement('a');
+            row.href = '#';
+            row.className = 'dropdown-submenu-toggle';
+            row.title = title;
+            row.textContent = text;
+
+            const sub = document.createElement('div');
+            sub.className = 'dropdown-content dropdown-submenu-content hidden';
+            allDropdowns.push(sub);
+
+            // Choosing from the submenu closes the whole stack, not just the submenu.
+            buildSubItems((itemText, itemTitle, action) => {
+                const a = document.createElement('a');
+                a.href = '#';
+                a.textContent = itemText;
+                a.title = itemTitle;
+                a.addEventListener('mousedown', e => e.preventDefault());
+                a.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    action();
+                    sub.classList.add('hidden');
+                    content.classList.add('hidden');
+                });
+                sub.appendChild(a);
+            });
+
+            const wrap = document.createElement('div');
+            wrap.className = 'dropdown-submenu';
+            wrap.appendChild(row);
+            wrap.appendChild(sub);
+            content.appendChild(wrap);
+            submenus.push({ wrap, sub });
+
+            row.addEventListener('mousedown', e => e.preventDefault());
+            // A touch screen has no hover, so the row still has to respond to a tap. It
+            // opens rather than toggles: on a pointer that does hover, the row is already
+            // open by the time the click lands, and toggling would shut it again.
+            row.addEventListener('click', (e) => {
+                e.preventDefault();
+                // Without this the document listener closes the parent menu too, and the
+                // submenu is unreachable.
+                e.stopPropagation();
+                openSubmenu(wrap);
+            });
+        };
+
+        buildItems(addItem, addSubmenu);
 
         container.appendChild(btn);
         container.appendChild(content);
@@ -192,27 +406,37 @@ export const createEditorToolbar = () => {
     });
 
     // ── Insert dropdown ─────────────────────────────────────────────────────
-    makeDropdown(t('tb.menu-insert'), add => {
+    makeDropdown(t('tb.menu-insert'), (add, addSubmenu) => {
         add(t('tb.insert-include'), t('tb.insert-include-title'), openIncludeLightbox);
         add(t('tb.insert-image'), t('tb.insert-image-title'), openImageLightbox);
         add(t('tb.insert-diagram'), t('tb.insert-diagram-title'), openDiagramInsertLightbox);
         add(t('tb.insert-list'), t('tb.insert-list-title'), openListInsertLightbox);
         add(t('tb.insert-comment'), t('tb.insert-comment-title'), openCommentLightbox);
         // Text-defined diagrams: a ```mermaid block, rendered as SVG in read mode. The
-        // skeleton is a working diagram, so it renders as soon as the page is saved.
-        add(t('tb.insert-sequence'), t('tb.insert-sequence-title'), () =>
-            insertBlock(SEQUENCE_SKELETON, '\n```'));
-        add(t('tb.insert-flowchart'), t('tb.insert-flowchart-title'), () =>
-            insertBlock(FLOWCHART_SKELETON, '\n```'));
+        // skeleton is a working diagram, so it renders as soon as the page is saved. One
+        // submenu rather than nine more rows here, which would push the callouts out of
+        // reach and make Insert a list of mostly mermaid.
+        addSubmenu(t('tb.insert-mermaid'), t('tb.insert-mermaid-title'), addItem => {
+            MERMAID_STARTERS
+                .map(([key, skeleton]) => [t(key), skeleton])
+                .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base', numeric: true }))
+                .forEach(([label, skeleton]) => {
+                    addItem(label, t('tb.mermaid-item-title'), () => insertBlock(skeleton, FENCE_END));
+                });
+        });
         // Callouts render as coloured boxes in read mode. Same syntax as Obsidian, GitHub and
-        // GitLab, so a page carrying one displays correctly in all of them.
-        add(t('tb.callout-note'), t('tb.callout-note-title', { types: CALLOUT_TYPES }),
-            () => insertBlock(callout('note', 'Note')));
-        add(t('tb.callout-tip'), t('tb.callout-tip-title'), () => insertBlock(callout('tip', 'Tip')));
-        add(t('tb.callout-warning'), t('tb.callout-warning-title'), () => insertBlock(callout('warning', 'Warning')));
-        add(t('tb.callout-danger'), t('tb.callout-danger-title'), () => insertBlock(callout('danger', 'Danger')));
-        add(t('tb.callout-foldable'), t('tb.callout-foldable-title'),
-            () => insertBlock('> [!note]- Click to expand\n> '));
+        // GitLab, so a page carrying one displays correctly in all of them. Left in their
+        // own order rather than sorted: Note → Tip → Warning → Danger is a severity
+        // progression, and Foldable is a variant of any of them rather than a sixth type.
+        addSubmenu(t('tb.insert-callouts'), t('tb.insert-callouts-title'), addItem => {
+            addItem(t('tb.callout-note'), t('tb.callout-note-title', { types: CALLOUT_TYPES }),
+                () => insertBlock(callout('note', 'Note')));
+            addItem(t('tb.callout-tip'), t('tb.callout-tip-title'), () => insertBlock(callout('tip', 'Tip')));
+            addItem(t('tb.callout-warning'), t('tb.callout-warning-title'), () => insertBlock(callout('warning', 'Warning')));
+            addItem(t('tb.callout-danger'), t('tb.callout-danger-title'), () => insertBlock(callout('danger', 'Danger')));
+            addItem(t('tb.callout-foldable'), t('tb.callout-foldable-title'),
+                () => insertBlock('> [!note]- Click to expand\n> '));
+        });
     });
 
     // ── Help / keyboard shortcuts dropdown ──────────────────────────────────

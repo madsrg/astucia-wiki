@@ -19,8 +19,27 @@
 // How many one-off jobs one runner tick will execute. Keeps a burst of queued
 // jobs from overrunning the cron window; the rest wait for the next tick.
 require_once __DIR__ . '/service_auth.php';   // wiki_user_notify_email()
+require_once __DIR__ . '/realtime.php';       // wiki_chat_write() — the cron runner
+                                              // resolves placeholders too, and a browser
+                                              // waiting on one is the whole point of push.
 
 const AGENT_JOB_MAX_PER_RUN = 3;
+
+/**
+ * How many runner processes may work the one-off queue at once.
+ *
+ * With one lock the queue is strictly serial: a tick that finds the lock held exits, so a
+ * single slow job stalls everything behind it however often cron fires. Shortening the
+ * interval alone does not help that — it only shortens the wait when the runner is idle.
+ * Slots put a ceiling on concurrency instead of removing it, because each concurrent job
+ * is another simultaneous LLM call and another bill.
+ *
+ * Overridable in config.php (spend is the operator's call, not a runtime setting).
+ */
+function agent_job_runner_slots(): int {
+    $n = defined('AGENT_JOB_RUNNER_SLOTS') ? (int)AGENT_JOB_RUNNER_SLOTS : 2;
+    return max(1, min(8, $n));
+}
 // A job still marked 'running' after this long lost its runner (crash, kill,
 // timeout). The next tick fails it so the chat placeholder resolves.
 const AGENT_JOB_RUNNING_TIMEOUT_MIN = 60;
@@ -90,6 +109,25 @@ function agent_job_queue_mutate(callable $fn) {
 
 // Called by the runner on every tick, so the web side can tell a scheduled
 // runner from a crontab entry nobody ever added.
+/**
+ * Tell one job's requester that it moved.
+ *
+ * Job state is the one thing a user waits on for minutes at a time, so it is the poller
+ * push helps most — but the queue file is shared by everyone, and the topic is per user, so
+ * the uid has to come off the job itself rather than from the session (the cron runner has
+ * none, and an inline resolution runs inside somebody else's request).
+ */
+function agent_job_announce(array $job): void {
+    if (!function_exists('wiki_realtime_publish')) return;
+    $uid = (int)($job['requested_by']['uid'] ?? 0);
+    if ($uid <= 0) return;
+    wiki_realtime_publish(wiki_rt_topic_job($uid), [
+        'type'  => 'job',
+        'id'    => (string)($job['id'] ?? ''),
+        'state' => (string)($job['state'] ?? ''),
+    ]);
+}
+
 function agent_job_touch_heartbeat(): void {
     if (!defined('WIKI_SYSTEM_DATA')) return;
     @file_put_contents(agent_job_heartbeat_path(), json_encode([
@@ -113,7 +151,14 @@ function agent_job_runner_stalled(): bool {
     $hb = agent_job_heartbeat();
     if ($hb === null) return true;                       // never ran on this install
     $age_min = (time() - (int)strtotime((string)$hb['last_run'])) / 60;
-    return $age_min > agent_job_runner_interval() * 3;
+    // Three ticks, but never less than a couple of minutes' grace: at a 2-minute interval
+    // three ticks is six, and a cron run that starts a second late must not read as death.
+    // The runner also refreshes this stamp *while* a job runs (agent_job_touch_heartbeat
+    // is passed into run_agent_job as its progress callback), so a long job cannot make a
+    // live runner look stopped — which at a 2-minute interval it otherwise would, and
+    // agent_job_abandon_if_stalled() would then destroy queued jobs claiming nothing was
+    // going to run them.
+    return $age_min > max(agent_job_runner_interval() * 3, 5);
 }
 
 /**
@@ -137,6 +182,7 @@ function agent_job_abandon_if_stalled(string $job_id): ?string {
             $j['state']       = 'error';
             $j['error']       = $msg;
             $j['finished_at'] = date('c');
+            agent_job_announce($j);
             return $msg;
         }
         return null;
@@ -164,8 +210,10 @@ function agent_job_eta_minutes(int $ahead = 0): ?int {
     if (!$hb) return null;
     $since = (time() - (int)strtotime($hb['last_run'])) / 60;
     if ($since > ($interval * 2) + 1) return null; // missed two ticks — not running
-    // Jobs beyond one tick's capacity spill into later ticks.
-    $wait = max(0, $interval - $since) + (intdiv($ahead, AGENT_JOB_MAX_PER_RUN) * $interval);
+    // Jobs beyond one tick's capacity spill into later ticks. Capacity is per runner, and
+    // there may be several working the queue at once.
+    $per_tick = max(1, AGENT_JOB_MAX_PER_RUN * agent_job_runner_slots());
+    $wait = max(0, $interval - $since) + (intdiv($ahead, $per_tick) * $interval);
     return max(1, (int)ceil($wait));
 }
 
@@ -222,10 +270,15 @@ function agent_job_deliver_to_chat(array $job, ?string $reply, ?string $error): 
         }
         unset($m);
         if (!$found) return false;
-        return file_put_contents($chat, json_encode($data, JSON_PRETTY_PRINT)) !== false;
+        return wiki_chat_write($chat, $data);
     } finally {
         if ($lock) { flock($lock, LOCK_UN); fclose($lock); }
         @unlink($chat . '.joblock');
+        // The run's progress file, written by run_agent_job() while the placeholder was
+        // pending. This is the one place a job's placeholder stops being pending, so it
+        // is the one place the file is certain to be finished with — including the
+        // failure path, where the placeholder becomes the error message.
+        if ($msg_id > 0) @unlink($chat . '.ai-status.' . $msg_id);
     }
 }
 

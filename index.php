@@ -1265,6 +1265,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab hidden" data-tab="errorlog" data-group="monitoring" data-i18n="admin.tab.errorlog">Error Log</button>
                 <button class="admin-tab hidden" data-tab="audit" data-group="monitoring" data-i18n="admin.tab.audit">Audit Log</button>
                 <button class="admin-tab hidden" data-tab="diagnostics" data-group="monitoring" data-i18n="admin.tab.diag">Diagnostics</button>
+                <button class="admin-tab hidden" data-tab="realtime" data-group="monitoring" data-i18n="admin.tab.realtime">Mercure</button>
                 <button class="admin-tab hidden" data-tab="reindex" data-group="content" data-i18n="admin.tab.reindex">Index Pages</button>
                 <button class="admin-tab hidden" data-tab="deleted" data-group="content" data-i18n="admin.tab.deleted">Deleted Pages</button>
                 <button class="admin-tab hidden" data-tab="chatpolicy" data-group="content" data-i18n="admin.tab.chatpolicy">Chat Retention</button>
@@ -1371,6 +1372,13 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <button id="admin-reindex-btn" class="btn btn-blue" data-i18n="admin.reindex.btn">Rebuild Index</button>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Mercure / realtime pane -->
+            <div id="admin-pane-realtime" class="admin-pane hidden">
+                <div class="admin-scroll-area">
+                    <div id="admin-rt-body"></div>
                 </div>
             </div>
 

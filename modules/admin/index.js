@@ -8,6 +8,7 @@ import { showToast, confirmModal } from '../core/utils.js';
 import { invalidateUsers } from '../core/users.js';
 import { invalidateMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
+import { isLive, subscribe, rtTopic } from '../realtime/index.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ const updateRequestsBadge = () => {
 const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
     ai:         ['ai', 'jobs', 'mcp'],
-    monitoring: ['logs', 'errorlog', 'audit', 'diagnostics'],
+    monitoring: ['logs', 'errorlog', 'audit', 'diagnostics', 'realtime'],
     content:    ['reindex', 'deleted', 'chatpolicy'],
 };
 const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 'reindex' };
@@ -83,6 +84,7 @@ const switchTab = (name) => {
     if (name === 'requests')    loadRequests();
     if (name === 'errorlog')    loadErrorLogFiles();
     if (name === 'diagnostics') loadDiagnostics();
+    if (name === 'realtime')    loadRealtimeStatus();
     if (name === 'ai')          loadAiUsers();
     if (name === 'api')         loadApiAccounts();
     if (name === 'jobs')        loadAgentJobs();
@@ -917,6 +919,153 @@ const loadDiagLog = async (type, outputId) => {
     }
 };
 
+// ── Mercure / realtime status ────────────────────────────────────────────────
+// "Is it working?" is genuinely hard to see from outside: publishing is fire-and-forget by
+// design (a save must not fail because a hint could not be delivered), so a broken hub is
+// silent and every module quietly falls back to its slow poll. This pane asks the three
+// questions separately, because they fail for different reasons and one verdict would hide
+// which: can PHP publish, does the browser's path to the hub resolve, and does an event
+// actually arrive here.
+const currentUid = () => Number(document.body.dataset.userUid || 0);
+
+// curl's error strings carry no trailing punctuation ("Connection refused"), so a
+// message that continues after one reads as a run-on. Fixed here rather than in nine
+// translations, since the sentence that follows differs per locale but the gap does not.
+const _rtErr = (e) => {
+    const s = String(e ?? '').trim();
+    return s && !/[.!?]$/.test(s) ? s + '.' : s;
+};
+
+// `endpoint` is the URL the check actually used, shown verbatim under the detail. Not
+// folded into the translated sentences: it is a technical value, and the absolute form is
+// derived (scheme + host + path) so it appears nowhere else — the Configuration table
+// below lists MERCURE_PUBLIC_URL, which is often just a path.
+const _rtRow = (label, state, detail, endpoint) => {
+    const cls = state === 'ok' ? 'admin-rt-ok' : state === 'warn' ? 'admin-rt-warn' : 'admin-rt-bad';
+    return `<tr><td>${escHtml(label)}</td>
+        <td class="${cls}" style="white-space:nowrap">● ${escHtml(
+            state === 'ok' ? t('admin.rt.ok') : state === 'warn' ? t('admin.rt.warn') : t('admin.rt.bad'))}</td>
+        <td class="admin-rt-detail">${escHtml(detail ?? '')}${
+            endpoint ? `<div class="admin-rt-endpoint"><code>${escHtml(endpoint)}</code></div>` : ''}</td></tr>`;
+};
+
+const loadRealtimeStatus = async () => {
+    const box = document.getElementById('admin-rt-body');
+    if (!box) return;
+    box.innerHTML = `<p class="admin-loading">${t('admin.diag.loading')}</p>`;
+    const res = await api.call('admin_realtime_status');
+    if (!res.success) {
+        box.innerHTML = `<p class="admin-empty">${escHtml(res.message || t('admin.rt.failed'))}</p>`;
+        return;
+    }
+    const d = res.data || {};
+    const c = d.config || {}, pub = d.publish || {}, sub = d.subscribe || {};
+
+    // Off is a state, not a fault: realtime is opt-in and the wiki is fully functional
+    // without it, so say so plainly instead of showing a wall of red.
+    if (!c.enabled) {
+        const why = !c.flag ? t('admin.rt.off-flag') : !c.key_set ? t('admin.rt.off-key') : '';
+        box.innerHTML = `<div class="admin-rt-verdict admin-rt-warn">${t('admin.rt.disabled')}</div>
+            <p class="form-hint">${escHtml(why)}</p>
+            <p class="form-hint">${t('admin.rt.off-hint')}</p>`;
+        return;
+    }
+
+    const rows = [
+        _rtRow(t('admin.rt.row-publish'),
+               pub.ok ? 'ok' : 'bad',
+               pub.ok ? t('admin.rt.publish-ok', { ms: pub.ms })
+                      : t('admin.rt.publish-bad', { code: pub.code || '-', error: _rtErr(pub.error || pub.reason) })),
+        // hub_unverified is a warning, not a failure: a hub did answer, so browsers can
+        // subscribe — it is this server's own TLS verification that could not confirm it.
+        _rtRow(t('admin.rt.row-subscribe'),
+               sub.reason === 'hub' ? 'ok' : sub.reason === 'hub_unverified' ? 'warn' : 'bad',
+               sub.reason === 'hub' ? t('admin.rt.sub-ok', { code: sub.code })
+                   : sub.reason === 'hub_unverified'
+                       ? t('admin.rt.sub-unverified', { code: sub.code, error: _rtErr(sub.error) })
+                   : sub.reason === 'not_hub' ? t('admin.rt.sub-not-hub', { code: sub.code })
+                   : t('admin.rt.sub-unreachable', { error: _rtErr(sub.error) }),
+               sub.url),
+        _rtRow(t('admin.rt.row-browser'),
+               isLive() ? 'ok' : 'warn',
+               isLive() ? t('admin.rt.browser-ok') : t('admin.rt.browser-poll')),
+    ];
+
+    box.innerHTML = `
+        <table class="admin-table admin-rt-table"><tbody>${rows.join('')}</tbody></table>
+        <div class="admin-diag-section">
+            <div class="admin-diag-header">
+                <strong>${t('admin.rt.roundtrip')}</strong>
+                <button id="admin-rt-test-btn" class="btn btn-sm btn-secondary">${t('admin.rt.test-btn')}</button>
+            </div>
+            <p class="form-hint">${t('admin.rt.roundtrip-hint')}</p>
+            <div id="admin-rt-test-out" class="admin-rt-detail"></div>
+        </div>
+        <div class="admin-diag-section">
+            <strong>${t('admin.rt.config')}</strong>
+            <table class="admin-table admin-rt-table"><tbody>
+                <tr><td>MERCURE_INTERNAL_URL</td><td colspan="2"><code>${escHtml(c.internal_url || '—')}</code></td></tr>
+                <tr><td>MERCURE_PUBLIC_URL</td><td colspan="2"><code>${escHtml(c.public_url || '—')}</code></td></tr>
+                <tr><td>MERCURE_JWT_KEY</td><td colspan="2">${c.key_set ? t('admin.rt.key-set') : t('admin.rt.key-missing')}</td></tr>
+                <tr><td>REALTIME_TICKET_TTL</td><td colspan="2"><code>${escHtml(String(c.ticket_ttl ?? ''))}s</code></td></tr>
+                <tr><td>${t('admin.rt.topic')}</td><td colspan="2"><code>${escHtml(d.topic || '')}</code></td></tr>
+            </tbody></table>
+        </div>`;
+
+    document.getElementById('admin-rt-test-btn')?.addEventListener('click', () => runRealtimeRoundTrip());
+};
+
+// Publish to this admin's own diagnostic topic and wait for the browser to receive it.
+// The subscription is the one the app already holds, so a pass means the real channel
+// works — not a special-cased one built for the test.
+const runRealtimeRoundTrip = async () => {
+    const out = document.getElementById('admin-rt-test-out');
+    const btn = document.getElementById('admin-rt-test-btn');
+    if (!out) return;
+    if (btn) btn.disabled = true;
+    out.innerHTML = `<span class="admin-loading">${t('admin.rt.test-waiting')}</span>`;
+
+    let settled = false;
+    const started = Date.now();
+    let stop = null;
+    const finish = (html) => {
+        if (settled) return;
+        settled = true;
+        if (stop) stop();
+        if (btn) btn.disabled = false;
+        out.innerHTML = html;
+    };
+
+    const res = await api.call('admin_realtime_test', {}, 'POST');
+    const nonce = res?.data?.nonce;
+    const pub   = res?.data?.publish || {};
+    if (!res.success || !pub.ok) {
+        finish(`<span class="admin-rt-bad">${escHtml(t('admin.rt.test-nopublish',
+            { code: pub.code || '-', error: _rtErr(pub.error || pub.reason) }))}</span>`);
+        return;
+    }
+    // Subscribed after the publish on purpose: Mercure has no replay, so an event that
+    // arrives here can only have been pushed live. The server publishes once more below
+    // if nothing turns up, which covers the race where the subscription was not yet open.
+    stop = subscribe(rtTopic.diag(currentUid()), (payload) => {
+        if (payload?.nonce !== nonce) return;
+        finish(`<span class="admin-rt-ok">${escHtml(t('admin.rt.test-ok', { ms: Date.now() - started }))}</span>`);
+    });
+    setTimeout(async () => {
+        if (settled) return;
+        const again = await api.call('admin_realtime_test', {}, 'POST');
+        const n2 = again?.data?.nonce;
+        if (n2 && !settled) {
+            stop?.();
+            stop = subscribe(rtTopic.diag(currentUid()), (payload) => {
+                if (payload?.nonce !== n2) return;
+                finish(`<span class="admin-rt-ok">${escHtml(t('admin.rt.test-ok', { ms: Date.now() - started }))}</span>`);
+            });
+        }
+    }, 600);
+    setTimeout(() => finish(`<span class="admin-rt-bad">${escHtml(t('admin.rt.test-timeout'))}</span>`), 8000);
+};
+
 const loadDiagnostics = () => {
     loadDiagLog('php',          'admin-diag-php-output');
     loadDiagLog('nginx_error',  'admin-diag-nginx-error-output');
@@ -1232,12 +1381,24 @@ const openAiUserForm = async (u) => {
                     <input type="range" id="ai-f-temperature" class="admin-ai-temp-slider" value="${cfg.temperature ?? 0.7}" min="0" max="2" step="0.05">
                     <p class="form-hint">${t('admin.ai.temp-hint')}</p>
                 </div>
-                <div class="form-group">
-                    <label class="admin-ai-switch-row">
-                        <input type="checkbox" id="ai-f-background" class="space-settings-switch" ${cfg.always_background ? 'checked' : ''}>
-                        <span>${t('admin.ai.background')}</span>
-                    </label>
-                    <p class="form-hint">${t('admin.ai.background-hint')}</p>
+                <!-- The two axes side by side, because they are read together: one decides
+                     how hard the model thinks, the other when its answer arrives. -->
+                <div class="admin-ai-form-row">
+                    <div class="form-group">
+                        <label>${t('admin.ai.effort')}</label>
+                        <select id="ai-f-effort" class="form-control">
+                            ${['', 'low', 'medium', 'high'].map(v => `<option value="${v}"${(cfg.reasoning_effort ?? '') === v ? ' selected' : ''}>${t('admin.ai.effort-' + (v || 'off'))}</option>`).join('')}
+                        </select>
+                        <p class="form-hint">${t('admin.ai.effort-hint')}</p>
+                    </div>
+                    <div class="form-group">
+                        <label>${t('admin.ai.delivery')}</label>
+                        <label class="admin-ai-switch-row admin-ai-switch-boxed">
+                            <input type="checkbox" id="ai-f-background" class="space-settings-switch" ${cfg.always_background ? 'checked' : ''}>
+                            <span>${t('admin.ai.background')}</span>
+                        </label>
+                        <p class="form-hint">${t('admin.ai.background-hint')}</p>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>${t('admin.xhdr.label')} <span style="font-weight:400;color:var(--text-muted)">${t('admin.optional')}</span></label>
@@ -1385,6 +1546,8 @@ const openAiUserForm = async (u) => {
                             <span style="font-size:0.78rem;color:var(--text-muted)">${escHtml(s.url)}</span>
                         </label>
                         <div class="ai-f-mcp-instr-wrap" style="margin-top:0.35rem;padding-left:1.4rem;${active ? '' : 'display:none'}">
+                            ${s.instructions ? `<p class="form-hint mcp-shared-instr">
+                                <strong>${escHtml(t('admin.ai.mcp-shared'))}</strong> ${escHtml(s.instructions)}</p>` : ''}
                             <textarea class="form-control ai-f-mcp-instr" data-mcp-id="${escHtml(s.id)}" rows="2"
                                 placeholder="${escHtml(t('admin.ai.mcp-instr-ph'))}"
                                 style="font-size:0.82rem">${escHtml(activeMcpInstrs[s.id] || '')}</textarea>
@@ -1546,6 +1709,7 @@ const saveAiUser = async (uid) => {
     const temperature      = parseFloat(document.getElementById('ai-f-temperature')?.value || '0.7');
     const max_tokens       = parseInt(document.getElementById('ai-f-tokens')?.value || '4096', 10);
     const always_background = !!document.getElementById('ai-f-background')?.checked;
+    const reasoning_effort  = document.getElementById('ai-f-effort')?.value || '';
     const mcp_server_ids   = [...document.querySelectorAll('.ai-f-mcp-cb:checked')].map(cb => cb.value);
     const mcp_instructions = {};
     document.querySelectorAll('.ai-f-mcp-instr').forEach(ta => {
@@ -1568,7 +1732,7 @@ const saveAiUser = async (uid) => {
         source_uid,
         name, role,
         spaces: JSON.stringify(spaces),
-        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, system_prompt_space, system_prompt_page, context_messages, temperature, max_tokens, always_background, mcp_server_ids, mcp_instructions, extra_headers }),
+        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, system_prompt_space, system_prompt_page, context_messages, temperature, max_tokens, always_background, reasoning_effort, mcp_server_ids, mcp_instructions, extra_headers }),
     }, 'POST');
 
     saveBtn.disabled = false;
@@ -2434,6 +2598,12 @@ const openMcpServerForm = (s) => {
                     <input type="text" id="mcp-f-search-arg" class="form-control" value="${escHtml(s?.search_arg || '')}" placeholder="${t('admin.mcp.search-arg-ph')}">
                     <p class="form-hint">${t('admin.mcp.search-arg-hint')}</p>
                 </div>
+                <div class="form-group">
+                    <label>${t('admin.mcp.instr-label')} <span style="font-weight:400;color:var(--text-muted)">${t('admin.optional')}</span></label>
+                    <textarea id="mcp-f-instructions" class="form-control admin-ai-prompt" rows="3"
+                        placeholder="${escHtml(t('admin.mcp.instr-ph'))}">${escHtml(s?.instructions || '')}</textarea>
+                    <p class="form-hint">${t('admin.mcp.instr-hint')}</p>
+                </div>
             </div>
             <div id="mcp-f-test-result" style="margin-bottom:0.5rem"></div>
             <div class="admin-ai-form-actions">
@@ -2513,7 +2683,8 @@ const saveMcpServer = async (id) => {
     const result = await api.call('admin_save_mcp_server',
         { id: id || '', name, url, auth_token: token, auth_header: authHeader, auth_prefix: authPrefix,
           extra_headers: JSON.stringify(extraHeaders),
-          wiki_native: native, search_tool: searchTool, search_arg: searchArg }, 'POST');
+          wiki_native: native, search_tool: searchTool, search_arg: searchArg,
+          instructions: document.getElementById('mcp-f-instructions')?.value ?? '' }, 'POST');
     saveBtn.disabled = false;
     saveBtn.textContent = t('btn.save');
 

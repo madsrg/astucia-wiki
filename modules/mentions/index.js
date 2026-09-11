@@ -2,6 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
+import { watch, rtTopic } from '../realtime/index.js';
 import { displaySearchResults } from '../search/index.js';
 import { showToast } from '../core/utils.js';
 import { t } from '../i18n/index.js';
@@ -26,6 +27,7 @@ import { t } from '../i18n/index.js';
 //    open indefinitely and turn the timeout off for anyone who left a tab open.
 
 const MENTION_POLL_MS = 60000;
+const MENTION_POLL_SLOW_MS = 600000;   // safety net while push is live; see modules/realtime
 
 // Last count this tab knows about, so a toast fires on a rise rather than on every poll.
 // It starts at null: the first fetch establishes the baseline silently, because that
@@ -76,10 +78,16 @@ export const refreshMentionCount = async (announce = false) => {
 
 const startPolling = () => {
     if (_timer) return;
-    _timer = setInterval(() => {
+    const tick = () => {
         if (document.hidden) return;          // an unwatched tab needs no badge
         refreshMentionCount(true);
-    }, MENTION_POLL_MS);
+    };
+    // The mention topic only fires for the one case the server can detect without
+    // re-scanning content — an AI calling wiki_mention_users. A person typing "@Name" into
+    // a page is found by the scan, so the timer still does most of the work here and is
+    // slowed less aggressively than the content watchers.
+    _timer = watch(rtTopic.mention(me().uid), tick,
+                   { fast: MENTION_POLL_MS, slow: MENTION_POLL_SLOW_MS });
     // A tab coming back to the foreground may have missed several ticks.
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) refreshMentionCount(true);

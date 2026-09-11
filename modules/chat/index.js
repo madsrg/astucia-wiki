@@ -3,12 +3,14 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
+import { watch, rtTopic } from '../realtime/index.js';
 import { icons } from '../core/icons.js';
 import { showToast, confirmModal, highlightMentions } from '../core/utils.js';
 import { getUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
 import { openAiModal, closeAiModal, checkAiModal, startStatusPoll } from '../core/ai_modal.js';
+import { aiStatusStep, jobStatusElementId, syncJobStatus, stopJobStatus } from '../core/ai_status.js';
 import { getFocusAi, setFocusAi, applyFocus, createFocusChip } from '../core/chat_focus.js';
 import { openSaveMessageDialog } from '../chat_save/index.js';
 
@@ -30,8 +32,11 @@ const CHAT_COMMANDS = [
 const availableCommands = () =>
     CHAT_COMMANDS.filter(c => !c.editorOnly || window.WIKI_ROLE !== 'reader');
 const POLL_MS = 5000;
+// While the push channel is live the timer stays, slowed to a safety net: an SSE stream can
+// die silently through a proxy, and a poller that stopped entirely would never notice.
+const POLL_SLOW_MS = 120000;
 
-let pollTimer     = null;
+let stopWatch     = null;
 let _chatPath     = null;
 let _hasMore      = false;
 let _minVisibleId = null;
@@ -315,9 +320,17 @@ const buildRow = (msg, grouped) => {
     if (msg.pending && msg.job_id) {
         // A queued /aiJob waits for the cron runner — minutes to hours — so the
         // 5-minute timeout below must not apply to it (the server's stale sweep
-        // skips these for the same reason). Show it as waiting, not working.
+        // skips these for the same reason).
+        //
+        // Once the runner picks it up it reports what it is doing, and this bubble is the
+        // only place that shows: an AI user set to always run in the background gets no
+        // modal. `ai_status` comes down with the message so the first paint is already
+        // right; syncJobStatus() then keeps it current. Until the runner starts there is
+        // no status at all, which is exactly when "Queued…" is the true answer.
+        const jobLabel = aiStatusStep(msg.ai_status) || t('chat.job-queued');
         bubble.innerHTML = `<span class="chat-pending-indicator chat-pending-queued">`
-            + `<span class="chat-spinner"></span>${escHtml(t('chat.job-queued'))}</span>`;
+            + `<span class="chat-spinner"></span>`
+            + `<span id="${jobStatusElementId(msg.id)}">${escHtml(jobLabel)}</span></span>`;
         col.appendChild(bubble);
         row.appendChild(col);
         return row;
@@ -480,6 +493,8 @@ export const renderChatView = (data, hasMore = false, scrollToBottom = true) => 
     updateTopicBar(data.topic || '');
     const messages = data.messages || [];
     buildStickyArea(messages);
+    // Before the early return below, so a thread that has emptied also stops the poll.
+    syncJobStatus(_chatPath, messages);
 
     _minVisibleId = messages.length ? messages[0].id : null;
     container.innerHTML = '';
@@ -517,15 +532,17 @@ const appendNewMessages = (newMsgs, prevUid) => {
 
     if (shouldScroll) container.scrollTop = container.scrollHeight;
     checkAiModal(state.currentChatData?.messages || []);
+    syncJobStatus(_chatPath, state.currentChatData?.messages || []);
 };
 
 // ── Polling ───────────────────────────────────────────────────────────────────
 
 export const stopPolling = () => {
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (stopWatch) { stopWatch(); stopWatch = null; }
     _chatPath = null;
     updateFocus();
     closeAiModal();
+    stopJobStatus();
 };
 
 export const startPolling = (path, initialMtime = 0) => {
@@ -533,7 +550,7 @@ export const startPolling = (path, initialMtime = 0) => {
     stopPolling();
     _chatPath = path;
     updateFocus();
-    pollTimer = setInterval(async () => {
+    const pollOnce = async () => {
         // Stop if a different non-folder page is opened; folder clicks don't unload the chat
         if (state.currentPageType !== 'folder' && state.currentPagePath !== path) { stopPolling(); return; }
 
@@ -574,7 +591,11 @@ export const startPolling = (path, initialMtime = 0) => {
             if (msgEl) msgEl.scrollTop = atBottom ? msgEl.scrollHeight : savedTop;
             checkAiModal(state.currentChatData?.messages || []);
         }
-    }, POLL_MS);
+    };
+
+    // The same body, two triggers: push makes it immediate, the timer is the safety net.
+    stopWatch = watch(rtTopic.chat(state.currentSpace, path), pollOnce,
+                      { fast: POLL_MS, slow: POLL_SLOW_MS });
 };
 
 // ── Mention + command autocomplete ────────────────────────────────────────────

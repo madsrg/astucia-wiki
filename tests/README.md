@@ -68,3 +68,26 @@ collateral damage.
 
 `security_spaces.test.sh` was checked this way: 13 attack assertions fail against the
 pre-2026.9.3 behaviour while all 15 legitimate-access assertions stay green.
+
+`destructive_paths.test.sh` likewise: removing the one-line guard in `delete` turns 17
+assertions red and leaves the positive controls green. Its subject is worth restating —
+`?action=delete` with no `path` at all used to delete an **entire Space** and answer
+`{"success":true}`, because every relative path resolves against the Space directory and a
+path that reduces to nothing resolves to its root.
+
+Some things a suite cannot assert, and where the line is. `realtime.test.sh` checks what the
+wiki *publishes* — the topics, the payload, and that every publish carries `private=on` —
+against a stub that records each POST. Whether the hub then honours a subscriber's token is
+upstream's contract, verified by hand against a real Mercure 0.24.2 hub rather than by
+downloading 34 MB in CI. That check is worth repeating if the hub is ever upgraded: with
+`private=on` removed, a user restricted to Space Main receives Space Bravo's change stream.
+
+## Traps
+
+- **Never `wait` with no arguments.** `fixture_start` runs the web server as a background
+  job of the same shell, so bare `wait` blocks on `php -S` and the suite hangs forever.
+  Record the PIDs you actually care about and wait on those.
+- **`php -r 'code' foo=bar` does not set an environment variable** — it lands in `$argv`.
+  Put the assignment before the command: `FOO=bar php -r '…'`.
+- **Piping a suite through `tail` hides its progress**, which makes a hang look like a slow
+  test. Redirect to a file instead while debugging one.

@@ -39,6 +39,33 @@ RUN apk add --no-cache nginx supervisor git tzdata shadow sqlite-libs \
  && apk del --no-network .build-deps \
  && chown -R www-data:www-data /var/lib/nginx
 
+# --- Realtime hub -------------------------------------------------------------
+# The Mercure reference hub, a single Go binary run as a fourth supervisord program.
+#
+# LICENSING: the hub is AGPL-3.0 and this image redistributes it, so its licence and
+# copyright notice ship alongside the binary in /usr/share/licenses/mercure/. It is the
+# *unmodified* upstream release on purpose — patching it would engage AGPL section 13 and
+# oblige everyone who runs this image to publish those changes to their own users. The
+# wiki itself is unaffected either way: upstream states the licence "applies only to the
+# hub server itself, not to software using this hub", and it runs as a separate process.
+ARG MERCURE_VERSION=0.24.2
+ARG TARGETARCH
+RUN set -eux; \
+    case "$TARGETARCH" in \
+      amd64) MARCH=x86_64 ;; \
+      arm64) MARCH=arm64  ;; \
+      *) echo "unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    cd /tmp; \
+    wget -qO mercure.tar.gz \
+      "https://github.com/dunglas/mercure/releases/download/v${MERCURE_VERSION}/mercure_Linux_${MARCH}.tar.gz"; \
+    mkdir -p mercure && tar -xzf mercure.tar.gz -C mercure; \
+    install -m 0755 mercure/mercure /usr/local/bin/mercure; \
+    mkdir -p /usr/share/licenses/mercure; \
+    cp mercure/LICENSE mercure/COPYRIGHT /usr/share/licenses/mercure/; \
+    rm -rf /tmp/mercure /tmp/mercure.tar.gz; \
+    mercure --version
+
 # Fail the build rather than ship an image that is missing something the app
 # needs at runtime: pdo_sqlite for FTS search, curl for the LLM and MCP clients,
 # mbstring for message length limits and Parsedown, fileinfo for attachments.
@@ -71,6 +98,7 @@ COPY --from=vendor /app/vendor /var/www/html/vendor
 
 # Container plumbing
 COPY docker/nginx.conf        /etc/nginx/nginx.conf
+COPY docker/mercure.Caddyfile /etc/caddy/mercure.Caddyfile
 COPY docker/php-overrides.ini /usr/local/etc/php/conf.d/zz-astucia.ini
 COPY docker/www.conf          /usr/local/etc/php-fpm.d/zz-astucia.conf
 COPY docker/supervisord.conf  /etc/supervisord.conf

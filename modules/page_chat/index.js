@@ -3,15 +3,18 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
+import { watch, rtTopic } from '../realtime/index.js';
 import { icons } from '../core/icons.js';
 import { showToast, confirmModal, highlightMentions } from '../core/utils.js';
 import { getUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
 import { openAiModal, closeAiModal, checkAiModal, startStatusPoll } from '../core/ai_modal.js';
+import { aiStatusStep, jobStatusElementId, syncJobStatus, stopJobStatus } from '../core/ai_status.js';
 import { getFocusAi, setFocusAi, applyFocus, createFocusChip } from '../core/chat_focus.js';
 
 const POLL_MS = 5000;
+const POLL_SLOW_MS = 120000;   // the safety net while push is live; see modules/realtime
 const EMOJIS  = ['😀','😂','😍','🤔','😢','😮','😡','👍','👎','👋','🙏','❤️','🎉','🔥','✅','❌','⭐','💡','🚀','📝','🎯','👀','💬','🤝'];
 const CHAT_COMMANDS = [
     { name: 'newTopic',  description: t('chat.cmd.new-topic') },
@@ -25,7 +28,7 @@ const CHAT_COMMANDS = [
     { name: 'debug',     description: t('chat.cmd.debug'), editorOnly: true },
 ];
 
-let _pollTimer      = null;
+let _stopWatch      = null;
 let _lastMtime      = 0;
 let _linkedMdMtime  = 0;
 let _pcData         = null;
@@ -136,6 +139,23 @@ const buildRow = (msg, grouped) => {
     bubble.className = 'chat-bubble' + (isMe ? ' chat-bubble-mine' : '') + (isAiMsg ? ' chat-bubble-md' : '')
         + (msg.is_debug ? ' chat-bubble-debug' : ''); // /debug report — see api.php's is_debug filters
 
+    if (msg.pending && msg.job_id) {
+        // A queued job waits for the cron runner — minutes to hours — so the 5-minute
+        // timeout below must not apply to it, exactly as in the full chat view. This
+        // branch was missing here, so a background AI's placeholder in a Page Chat showed
+        // "Working…" and then falsely reported a timeout while its job sat in the queue.
+        // Once the runner starts, it reports what it is doing (core/ai_status.js); it
+        // reads "Queued…" only while there is genuinely no run yet. There is no Cancel:
+        // the work belongs to the queue, not to this request.
+        const jobLabel = aiStatusStep(msg.ai_status) || t('chat.job-queued');
+        bubble.innerHTML = `<span class="chat-pending-indicator chat-pending-queued">`
+            + `<span class="chat-spinner"></span>`
+            + `<span id="${jobStatusElementId(msg.id)}">${esc(jobLabel)}</span></span>`;
+        col.appendChild(bubble);
+        row.appendChild(col);
+        return row;
+    }
+
     if (msg.pending) {
         const age = Date.now() - new Date(msg.timestamp).getTime();
         const TIMEOUT_MS = 300_000;
@@ -197,6 +217,8 @@ const renderMessages = (messages, scrollToBottom = true) => {
     const container = document.getElementById('pc-messages');
     if (!container) return;
     container.innerHTML = '';
+    // Before the early return below, so a thread that has emptied also stops the poll.
+    syncJobStatus(_pcPath, messages);
     if (!messages.length) {
         container.innerHTML = `<p class="chat-empty">${t('chat.empty')}</p>`;
         return;
@@ -221,19 +243,20 @@ const appendMessages = (newMsgs, prevUid) => {
     });
     if (shouldScroll) container.scrollTop = container.scrollHeight;
     checkAiModal(_pcData?.messages || []);
+    syncJobStatus(_pcPath, _pcData?.messages || []);
 };
 
 // ── Polling ───────────────────────────────────────────────────────────────────
 
 const stopPoll = () => {
-    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+    if (_stopWatch) { _stopWatch(); _stopWatch = null; }
 };
 
 const startPoll = (path, initialMtime = 0) => {
     _lastMtime = initialMtime;
     stopPoll();
     const linkedMd = path.replace(/\.chat$/, '.md');
-    _pollTimer = setInterval(async () => {
+    const pollOnce = async () => {
         if (_pcPath !== path) { stopPoll(); return; }
         const msgs  = _pcData?.messages || [];
         const maxId = msgs.length ? msgs[msgs.length - 1].id : 0;
@@ -268,7 +291,14 @@ const startPoll = (path, initialMtime = 0) => {
             await pageView.refreshPageContent();
             showToast(t('page-chat.page-updated'), 'info');
         }
-    }, POLL_MS);
+    };
+
+    // Two topics, because this poller does two jobs in one pass: the thread, and the page
+    // beside it — an AI asked to edit the page writes it while you watch the reply arrive,
+    // and that write is a page event, not a chat one.
+    _stopWatch = watch(
+        [rtTopic.chat(state.currentSpace, path), rtTopic.page(state.currentSpace, linkedMd)],
+        pollOnce, { fast: POLL_MS, slow: POLL_SLOW_MS });
 };
 
 // ── Input / send ──────────────────────────────────────────────────────────────
@@ -634,6 +664,7 @@ const setupInput = () => {
 export const closePanel = () => {
     stopPoll();
     closeAiModal();
+    stopJobStatus();
     _pcPath = null;
     updateFocus();
     _linkedMdMtime = 0;

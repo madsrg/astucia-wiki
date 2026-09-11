@@ -155,12 +155,75 @@ sudo -u www-data crontab -e
 ```
 
 ```bash
-*/15 * * * * php /path/to/run_ai_agent_jobs.php >> /var/log/wiki-agent-jobs.log 2>&1
+*/2 * * * * php /path/to/run_ai_agent_jobs.php >> /var/log/wiki-agent-jobs.log 2>&1
 ```
 
-Keep `AGENT_JOB_RUNNER_INTERVAL_MINUTES` in `config.php` equal to the cron interval — it is what the "starts in about N minutes" estimate is calculated from, so a mismatch produces a wrong estimate. Each run executes at most three one-off jobs; the rest wait for the next tick. Per-run logs are written to `LOG_DIR/agent-jobs/`, viewable in the admin panel, and failures are emailed to `ADMIN_EMAIL`.
+Keep `AGENT_JOB_RUNNER_INTERVAL_MINUTES` in `config.php` equal to the cron interval — it is what the "starts in about N minutes" estimate is calculated from, so a mismatch produces a wrong estimate. Each run executes at most three one-off jobs; the rest wait for the next tick. `AGENT_JOB_RUNNER_SLOTS` (default 2) is how many runs may overlap: with one slot the queue is serial, so a slow job delays every job behind it, and each extra slot is another simultaneous LLM call. Per-run logs are written to `LOG_DIR/agent-jobs/`, viewable in the admin panel, and failures are emailed to `ADMIN_EMAIL`.
 
 Which model an AI user runs matters here: reasoning-capable models (Claude Opus/Sonnet 4.6 and newer, OpenAI o-series and GPT-5) are asked to think at length for one-off jobs, while older models simply run the prompt normally. Per-model request rules live in `llm_providers.json` under `model_rules` and can be adjusted without code changes.
+
+## Realtime updates
+
+Turned on with `ENABLE_REALTIME`, the wiki pushes changes over a single SSE connection instead of leaving the UI to poll: a chat message, a page edit or a finished agent job reaches an open browser in a fraction of a second rather than after the next tick. Every poller keeps its timer as a slower safety net, so `ENABLE_REALTIME=false` behaves exactly like every release before the feature existed.
+
+Push is served by a [Mercure](https://mercure.rocks) hub. The Docker image ships one and starts it automatically. On a bare install, `tools/install-mercure.sh` does the whole job — it downloads the release and verifies its checksum, creates a locked-down service account, generates the shared key, writes the hub config and a hardened systemd unit, starts it and checks that it answers:
+
+```bash
+sudo ./tools/install-mercure.sh 0.24.2
+```
+
+It prints every path it writes, and leaves the `config.php` constants (key included) in `/etc/mercure/wiki-config-snippet.php` along with the nginx block you still need. Re-run it with a newer version to upgrade in place; the key is never regenerated, since `config.php` holds a copy. Because an SSE stream occupies one of the browser's ~6 connections per origin, realtime wants **HTTP/2** — that is, TLS at your reverse proxy. It works over HTTP/1.1, but a few open tabs will exhaust the connection budget.
+
+**Events are hints, not payloads.** An event says *"this thread changed, re-read it"*; it never carries the message. Reading still goes through the API and its guards, so nothing bypasses Space or role permissions, and a subscriber that missed events while disconnected is correct again as soon as it re-reads.
+
+### Subscribing from a system user
+
+An integration subscribes with the same `wk_sys_…` service token it already uses for the REST API. Ask for a ticket, then open the stream with it:
+
+```bash
+# 1. Mint a subscriber ticket (scoped to the Spaces this token may read)
+TICKET=$(curl -s -H "Authorization: Bearer $WIKI_TOKEN" \
+  "https://wiki.example.com/api.php?action=realtime_ticket" | jq -r .token)
+
+# 2. Stream events. 'wiki/{+rest}' means "everything the ticket allows".
+curl -N -H "Authorization: Bearer $TICKET" \
+  --data-urlencode 'topic=wiki/{+rest}' -G \
+  "https://wiki.example.com/.well-known/mercure"
+```
+
+The stream then stays open, one event per change (the leading `:` is the hub's keep-alive):
+
+```
+:
+id: urn:uuid:01a082bc-a23e-7e5c-a9af-02c3f1c78237
+data: {"type":"page","space":"Main","path":"Notes.md","change":"create","topic":"wiki/Main/page/Notes.md","ts":1788899795}
+
+id: urn:uuid:01a082bc-a246-7e5c-a305-fbef5f1b8a89
+data: {"type":"tree","space":"Main","topic":"wiki/Main/tree","ts":1788899795}
+```
+
+A runnable version with reconnection and ticket renewal is in [`examples/watch_wiki.py`](examples/watch_wiki.py) — standard library only, no SSE client needed:
+
+```bash
+WIKI_URL=https://wiki.example.com WIKI_TOKEN=wk_sys_... ./examples/watch_wiki.py
+```
+
+There are five topics, and that set is the contract:
+
+| Topic | Published when |
+|---|---|
+| `wiki/{space}/chat/{path}` | a message is posted, edited or deleted, or an AI placeholder resolves |
+| `wiki/{space}/page/{path}` | a page is saved, created, renamed or deleted |
+| `wiki/{space}/tree` | the file tree changes, including from an external edit to `PAGES_DIR` |
+| `wiki/user/{uid}/job` | one of that user's background jobs changes state |
+| `wiki/user/{uid}/mention` | that user is mentioned |
+
+Notes for integrators:
+
+- **The ticket is the permission.** It is minted from the token's Space allowlist and the hub enforces it, so a token restricted to one Space receives only that Space's events — asking for `wiki/{+rest}` cannot widen it.
+- **Tickets expire** (`REALTIME_TICKET_TTL`, one hour by default). Mint a fresh one when the stream drops; that is also what makes revoking a Space take effect.
+- **Re-read on reconnect.** There is no replay buffer, by design — refetch whatever you are tracking when you reconnect and you cannot have missed anything.
+- The hub is normally reverse-proxied under the wiki's own origin, which is why the ticket response reports a relative `url`.
 
 ## Diagrams from text
 
@@ -258,6 +321,7 @@ Full documentation, feature guides, and a step-by-step installation guide for De
 - **Email:** SendGrid or Mailgun via HTTP API (optional)
 - **Diagrams:** Embedded [draw.io](https://www.diagrams.net)
 - **Markdown:** [marked.js](https://marked.js.org) (CDN)
+- **Realtime:** [Mercure](https://mercure.rocks) hub over SSE (optional; bundled in the Docker image)
 - **Static export:** `export_static_site.php` — generates a self-contained HTML site from all pages
 
 ## License

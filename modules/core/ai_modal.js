@@ -2,6 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from './api.js';
+import { aiStatusStep } from './ai_status.js';
 import { t } from '../i18n/index.js';
 
 let _active     = false;
@@ -26,13 +27,6 @@ const _stopTimer = () => {
     clearInterval(_pollTimer); _pollTimer = null;
     document.getElementById('ai-status-panel')?.classList.add('hidden');
 };
-
-const _stepLabel = s => ({
-    preparing:      t('ai.step-preparing'),
-    calling_api:    t('ai.step-calling'),
-    received:       t('ai.step-received'),
-    executing_tool: t('ai.step-tool'),
-}[s] || s || '');
 
 export const isActive = () => _active;
 
@@ -70,12 +64,9 @@ export const startStatusPoll = (filePath, pendingId) => {
         if (!res?.success) return;
         if (!res.data) { if (stepEl && !stepEl.textContent) stepEl.textContent = t('ai.starting'); return; }
         const d = res.data;
-        let step = _stepLabel(d.step);
-        if (d.step === 'calling_api' || d.step === 'received')
-            step += ` (call ${d.api_calls}${d.last_call_ms ? ', ' + (d.last_call_ms / 1000).toFixed(1) + 's' : ''})`;
-        if (d.step === 'executing_tool' && d.tool)
-            step += `: ${d.tool}`;
-        if (stepEl) stepEl.textContent = step;
+        // Shared with the queued-job bubble (see core/ai_status.js) so one run is never
+        // described two different ways.
+        if (stepEl) stepEl.textContent = aiStatusStep(d);
         const parts = [`model: ${d.model || '?'}`, `ctx: ${d.context_messages ?? '?'} msgs`];
         if (d.tools_used?.length) parts.push(`tools: ${[...new Set(d.tools_used)].join(', ')}`);
         if (metaEl) metaEl.textContent = parts.join(' · ');

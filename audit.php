@@ -180,7 +180,7 @@ function wiki_audit_chat_purge(string $abs_path, int $removed, string $mode): vo
 const WIKI_AUDIT_ACTIONS = [
     'save'               => ['update',  'page',       'file'],
     'create_file'        => ['create',  'page',       'path'],
-    'upload_page'        => ['create',  'page',       null],          // named only after the write
+    'upload_page'        => ['create',  'page',       null],          // named by wiki_audit_object() after the write
     'save_message_page'  => ['update',  'page',       'path'],
     'create_folder'      => ['create',  'folder',     'path'],
     'create_filesfolder' => ['create',  'folder',     'path'],
@@ -217,6 +217,21 @@ function wiki_audit_begin(string $action, $indexer = null): ?array {
     $fields = ['object_category' => $category, 'api_action' => $action];
     if ($rel !== '') $fields['object'] = $rel;
 
+    if ($action === 'upload_page' && isset($_FILES['file']['name'])) {
+        // An upload's target is not a request parameter — the name rides on the file part,
+        // and the name that finally lands is only settled after the write, by
+        // wiki_audit_object(). Recording the attempted one here is what gives a *refused*
+        // upload something to name: a reader's drop, or one into a frozen Space, never
+        // reaches the write. Skipped when the browser sends a name that is not valid
+        // UTF-8, since json_encode() would then reject the whole entry and lose the event.
+        $att = trim(str_replace(['/', '\\'], '', preg_replace('/[\x00-\x1F\x7F]/u', '',
+            basename((string)$_FILES['file']['name'])) ?? ''));
+        $dir = ltrim(str_replace('..', '', (string)($_REQUEST['folder'] ?? '')), '/');
+        if ($att !== '' && mb_check_encoding($att, 'UTF-8')) {
+            $fields['object'] = ($dir === '' ? '' : rtrim($dir, '/') . '/') . $att;
+        }
+    }
+
     if ($action === 'update_tags') {
         // Tag changes name a page id rather than a path; resolve the other way round.
         $id = (string)($_REQUEST['id'] ?? '');
@@ -235,6 +250,21 @@ function wiki_audit_begin(string $action, $indexer = null): ?array {
         if ($v !== '') $fields[$k === 'new_path' ? 'object_new' : 'dest'] = ltrim(str_replace('..', '', $v), '/');
     }
     return ['verb' => $verb, 'fields' => $fields];
+}
+
+/**
+ * Name the object of an action that only learns it while running.
+ *
+ * wiki_audit_begin() reads the target out of the request, which is enough for every
+ * action that is told what to write. An upload is not: the drop carries a name, but a
+ * collision turns it into "name (1).md", so the page that was actually created is only
+ * known after the write. Without this the entry says a page was created and never says
+ * which one — and no object also means no id, since wiki_audit_finish() resolves the id
+ * from the path.
+ */
+function wiki_audit_object(?array &$begun, string $rel): void {
+    if ($begun === null) return;
+    $begun['fields']['object'] = ltrim(str_replace('..', '', $rel), '/');
 }
 
 /** Close out a begun action. $reason is the error text on failure. */

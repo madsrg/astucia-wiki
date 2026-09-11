@@ -50,6 +50,7 @@ import { init as initMcpExplorer } from './modules/mcp_explorer/index.js';
 import { init as initGraph } from './modules/graph/index.js';
 import { init as initSelectionActions } from './modules/selection_actions/index.js';
 import { init as initTabs, onSpaceChange as tabsOnSpaceChange, resumeTarget as tabsResumeTarget } from './modules/tabs/index.js';
+import { initRealtime } from './modules/realtime/index.js';
 import { api } from './modules/core/api.js';
 import { state } from './modules/core/state.js';
 
@@ -218,6 +219,7 @@ const init = async () => {
     // file has since been deleted — which needs state.fullFileTree. Also before the
     // first loadPage below, since that is what puts the opening page in the tab bar.
     initTabs();
+    initRealtime();
 
     // Navigate to page from URL param, otherwise reopen the last tab, otherwise the
     // start page. An explicit ?pageid= always wins — it is a deliberate destination.

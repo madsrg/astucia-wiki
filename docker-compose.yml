@@ -58,6 +58,9 @@ services:
       # crontab from this value, so the schedule and the ETA shown to users agree.
       AGENT_JOB_RUNNER_INTERVAL_MINUTES: "15"
       ENABLE_CRON: "true"
+      # One SSE channel instead of polling. "false" falls back to the old behaviour.
+      # Wants HTTP/2 at whatever terminates TLS in front of this.
+      ENABLE_REALTIME: "true"
       DAILY_DIGEST_HOUR: "7"
 
       # Only to override the ownership the container would infer from a bind mount.

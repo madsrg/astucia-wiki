@@ -19,6 +19,7 @@ require_once __DIR__ . '/mentions.php';
 require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/llm_trace.php';
 require_once __DIR__ . '/wikilinks.php';
+require_once __DIR__ . '/realtime.php';
 
 session_start();
 
@@ -334,18 +335,15 @@ if (isset($_REQUEST['action'])) {
         global $indexer, $space_dir;
         if (!defined('WIKI_SYSTEM_DATA') || !file_exists(WIKI_SYSTEM_DATA . 'users.json')) return;
         $all_users = json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? [];
-        foreach ($all_users as $u) {
-            if (empty($u['is_ai'])) continue;
-            $ai_name = $u['name'] ?? '';
-            if (!$ai_name) continue;
-            if (!preg_match('/(^|[\s,])[@#]' . preg_quote($ai_name, '/') . '(\b|$)/iu', $message_text)) continue;
-            ignore_user_abort(true);
-            set_time_limit(0);
-            if (session_id()) session_write_close();
-            if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
-            trigger_ai_response($u, $chat_file, $chat_data, $indexer, $space_dir);
-            return;
-        }
+        // Same resolver as post_chat_message, so this can never disagree with it about
+        // who was addressed. (Nothing calls this function today.)
+        $u = wiki_match_ai_mention($message_text, $all_users);
+        if ($u === null) return;
+        ignore_user_abort(true);
+        set_time_limit(0);
+        if (session_id()) session_write_close();
+        if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+        trigger_ai_response($u, $chat_file, $chat_data, $indexer, $space_dir);
     }
 
     function trigger_ai_response($ai_user, $chat_file, $chat_data, $indexer, $space_dir, $placeholder_id = null) {
@@ -451,35 +449,18 @@ if (isset($_REQUEST['action'])) {
                     $mcp_extra_c .= "\n\nThe user explicitly requested " . implode(' and ', array_column($forced_c, 'name'))
                         . " via src: — use only the tools available to you for this reply.";
                 } else {
-                    $mcp_guidance_c = '';
-                    foreach ($enabled_c as $mcp_srv_c) {
-                        $_add_mcp_server_tools_c($mcp_srv_c);
-                        $instr_c = trim($mcp_instructions_c[$mcp_srv_c['id'] ?? ''] ?? '');
-                        if ($instr_c) $mcp_guidance_c .= "\n[" . $mcp_srv_c['name'] . '] ' . $instr_c;
-                    }
+                    foreach ($enabled_c as $mcp_srv_c) $_add_mcp_server_tools_c($mcp_srv_c);
                     $mcp_srv_count = count($enabled_c);
-                    if ($mcp_guidance_c) $mcp_extra_c .= "\n\nMCP tool guidance:" . $mcp_guidance_c;
+                    $mcp_extra_c .= wiki_mcp_guidance($enabled_c, $mcp_instructions_c);
                 }
             }
         }
         $full_system .= $mcp_extra_c;
 
-        // Respect /newTopic sentinels: only include messages after the last one.
-        // is_debug messages are /debug reports about this very context — they are
-        // never fed back into it, and they don't consume a "last N messages" slot.
-        $all_msgs = array_values(array_filter($chat_data['messages'], fn($m) => empty($m['pending']) && empty($m['is_debug'])));
-        $nt_sentinel = null;
-        $nt_pos = -1;
-        foreach ($all_msgs as $i => $m) {
-            if (!empty($m['is_new_topic'])) { $nt_sentinel = $m; $nt_pos = $i; }
-        }
-        if ($nt_pos >= 0) $all_msgs = array_slice($all_msgs, $nt_pos + 1);
-        $recent = array_slice($all_msgs, -$context_msgs);
-        // Prepend the text portion of the sentinel itself (everything after "/newTopic")
-        if ($nt_sentinel !== null) {
-            $nt_tail = trim(preg_replace('/^\/newTopic\s*/i', '', $nt_sentinel['text'] ?? ''));
-            if ($nt_tail) array_unshift($recent, ['uid' => $nt_sentinel['uid'] ?? 0, 'name' => $nt_sentinel['name'] ?? 'User', 'text' => $nt_tail]);
-        }
+        // /newTopic sentinels, pending placeholders and /debug reports — see
+        // wiki_chat_context_slice(), which the two job paths use as well so a queued
+        // answer and an inline one see the same thread.
+        $recent = wiki_chat_context_slice($chat_data['messages'], $context_msgs);
 
         // Build initial message list (provider-specific format)
         if ($family === 'anthropic') {
@@ -553,15 +534,21 @@ if (isset($_REQUEST['action'])) {
         $openai_token_param  = _openai_token_param($api_url);
         $token_param_swapped = false;
         $drop_temperature    = false;
+        // Whether this AI reasons, for the truncation message: reasoning tokens come out
+        // of the same ceiling, which is the usual reason a high-effort run returns nothing.
+        $_inline_thinking    = wiki_ai_thinking_config($config) !== null;
         // Reserve the final iteration for a tool-free answer: if the model keeps
         // calling tools right up to the cap, forbid tools on the last pass so it
         // must return text — instead of failing with "too many tool calls".
         $max_iters = 10;
         for ($iter = 0; $iter < $max_iters; $iter++) {
             $force_final = ($iter === $max_iters - 1);
-            // Interactive chat never asks for thinking (that is what /aiJob is for),
-            // but still has to skip temperature on models that reject it.
-            $tuning = _llm_tuning_params($family, $model, $temperature, $max_tokens, null, $drop_temperature);
+            // The AI user's own reasoning effort applies here too: it describes the
+            // model, not the delivery route. Note an inline reply is bounded by this
+            // request's curl timeout, so a high-effort AI belongs on the queued setting —
+            // which is why the two controls sit next to each other in the admin panel.
+            $tuning = _llm_tuning_params($family, $model, $temperature, $max_tokens,
+                                        wiki_ai_thinking_config($config), $drop_temperature);
             if ($family === 'anthropic') {
                 $payload = ['model' => $model, 'system' => $full_system, 'messages' => $messages,
                             'max_tokens' => $max_tokens, 'tools' => $tools];
@@ -653,7 +640,7 @@ if (isset($_REQUEST['action'])) {
                 // If the response was truncated by max_tokens, the tool input JSON is incomplete —
                 // content will be missing. Report this immediately rather than looping.
                 if (($data['stop_reason'] ?? '') === 'max_tokens') {
-                    $api_error = 'Response truncated: the Max Tokens limit (' . $max_tokens . ') was reached before the AI could finish its reply. Increase Max Tokens in the AI user settings (recommend ≥ 4096 for page writing).';
+                    $api_error = wiki_ai_truncated_error($max_tokens, $_inline_thinking);
                     break;
                 }
                 // Check for tool calls by content inspection (more reliable than stop_reason alone)
@@ -730,7 +717,7 @@ if (isset($_REQUEST['action'])) {
                     continue;
                 }
                 if ($parsed['truncated']) {
-                    $api_error = 'Response truncated: the Max Tokens limit (' . $max_tokens . ') was reached before the AI could finish its reply. Increase Max Tokens in the AI user settings (recommend ≥ 4096 for page writing).';
+                    $api_error = wiki_ai_truncated_error($max_tokens, $_inline_thinking);
                     break;
                 }
                 $reply = $parsed['text'];
@@ -739,6 +726,14 @@ if (isset($_REQUEST['action'])) {
 
             } else {
                 $choice = $data['choices'][0] ?? [];
+                // The third wire family had no truncation check at all, so a run that
+                // hit the ceiling reported "No response was generated." See
+                // wiki_ai_truncated_error(). Before the tool-call branch, because a
+                // truncated response can carry half a tool call.
+                if (($choice['finish_reason'] ?? '') === 'length') {
+                    $api_error = wiki_ai_truncated_error($max_tokens, $_inline_thinking);
+                    break;
+                }
                 if (($choice['finish_reason'] ?? '') === 'tool_calls') {
                     $tool_calls = $choice['message']['tool_calls'] ?? [];
                     if (!$tool_calls) break;
@@ -881,7 +876,7 @@ if (isset($_REQUEST['action'])) {
             }
             wiki_trace_stop();
         }
-        file_put_contents($chat_file, json_encode($fresh, JSON_PRETTY_PRINT));
+        wiki_chat_write($chat_file, $fresh);
         @unlink($status_file);
     }
 
@@ -906,6 +901,7 @@ if (isset($_REQUEST['action'])) {
                       'git_deleted_files', 'git_restore_deleted',
                       'admin_reindex',
                       'admin_get_mcp_servers', 'admin_save_mcp_server', 'admin_delete_mcp_server', 'admin_test_mcp_server',
+                      'admin_realtime_status', 'admin_realtime_test',
                       'admin_audit_config', 'admin_set_audit_enabled', 'admin_get_audit_entries',
                       'admin_ai_builtin_instructions', 'admin_space_settings', 'admin_set_space_readonly', 'admin_merge_space_preflight', 'admin_merge_space'];
     $requested_action = $_REQUEST['action'];
@@ -1393,6 +1389,19 @@ if (isset($_REQUEST['action'])) {
                 unset($_cm_msg);
                 if ($cm_changed) file_put_contents($cm_path, json_encode($cm_data, JSON_PRETTY_PRINT));
                 $cm_all   = array_values($cm_data['messages'] ?? []);
+                // What a background job is currently doing, so the placeholder is right on
+                // the first paint instead of showing "Queued…" until the next status poll.
+                // Attached to $cm_all and not inside the sweep above: that loop holds
+                // $cm_data by reference and writes it back to disk, and a transient status
+                // must never be persisted into the .chat file.
+                foreach ($cm_all as &$_cm_s) {
+                    if (empty($_cm_s['pending']) || empty($_cm_s['job_id'])) continue;
+                    $_cm_sf = $cm_path . '.ai-status.' . (int)($_cm_s['id'] ?? 0);
+                    if (!is_file($_cm_sf)) continue;
+                    $_cm_sd = json_decode((string)@file_get_contents($_cm_sf), true);
+                    if (is_array($_cm_sd)) $_cm_s['ai_status'] = $_cm_sd;
+                }
+                unset($_cm_s);
                 $cm_total = count($cm_all);
                 $cm_limit = min(max((int)($_GET['limit'] ?? 50), 1), 200);
                 $cm_mtime = filemtime($cm_path);
@@ -1506,7 +1515,7 @@ if (isset($_REQUEST['action'])) {
                 $chat_git_commit  = isset($_POST['git_commit']) && $_POST['git_commit'] === '1';
                 $default_chat = ['topic' => $chat_topic_init, 'git_commit' => $chat_git_commit, 'messages' => [], 'nextMessageId' => 1];
                 if (!file_exists($file_path_sanitized)) {
-                    if (file_put_contents($file_path_sanitized, json_encode($default_chat, JSON_PRETTY_PRINT)) !== false) {
+                    if (wiki_chat_write($file_path_sanitized, $default_chat)) {
                         $actor = get_current_actor();
                         $indexer->addPage($file_path_raw, $actor['uid'], $actor['name']);
                         echo json_encode(['success' => true, 'message' => 'Chat created.']);
@@ -1585,23 +1594,24 @@ if (isset($_REQUEST['action'])) {
                 $_pending_ai_user       = null;
                 $_pending_placeholder_id = null;
                 if (!$ai_auth_user && !$is_action && defined('WIKI_SYSTEM_DATA') && file_exists(WIKI_SYSTEM_DATA . 'users.json')) {
-                    foreach ((json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? []) as $_aiu) {
-                        if (empty($_aiu['is_ai'])) continue;
-                        $_aname = $_aiu['name'] ?? '';
-                        if (!$_aname) continue;
-                        if (!preg_match('/(^|[\s,])[@#]' . preg_quote($_aname, '/') . '(\b|$)/iu', $text)) continue;
+                    // wiki_match_ai_mention() rather than a loop of its own: which AI a
+                    // message addresses has to be answered the same way here and in the
+                    // routing below, and a per-name \b boundary let an AI whose name is a
+                    // prefix of the mentioned one ("gpt120" for "#gpt120-think") claim it.
+                    $_aiu = wiki_match_ai_mention($text,
+                        json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? []);
+                    if ($_aiu !== null) {
                         $_pending_placeholder_id = $chat_data['nextMessageId'];
                         $chat_data['messages'][] = [
                             'id'        => $_pending_placeholder_id,
                             'uid'       => (int)($_aiu['uid'] ?? 0),
-                            'name'      => $_aname,
+                            'name'      => $_aiu['name'],
                             'timestamp' => date('c'),
                             'text'      => '',
                             'pending'   => true,
                         ];
                         $chat_data['nextMessageId']++;
                         $_pending_ai_user = $_aiu;
-                        break;
                     }
                 }
 
@@ -1621,9 +1631,11 @@ if (isset($_REQUEST['action'])) {
                     // recent thread. Without the transcript, switching this on would make
                     // the assistant answer every follow-up with no idea what came before.
                     $_bg_history = [];
-                    foreach (array_slice(array_filter($chat_data['messages'],
-                                 fn($m) => empty($m['pending']) && empty($m['is_debug'])),
-                             -(int)($_pending_ai_user['ai_config']['context_messages'] ?? 10), -1) as $_bm) {
+                    $_bg_ctx = wiki_chat_context_slice($chat_data['messages'],
+                        (int)($_pending_ai_user['ai_config']['context_messages'] ?? 10));
+                    // The message just posted is quoted on its own below.
+                    array_pop($_bg_ctx);
+                    foreach ($_bg_ctx as $_bm) {
                         $_bg_history[] = ($_bm['name'] ?? '?') . ': ' . (string)($_bm['text'] ?? '');
                     }
                     $_bg_prompt = ($_bg_history
@@ -1655,7 +1667,7 @@ if (isset($_REQUEST['action'])) {
                             break;
                         }
                         unset($_bm3);
-                        file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
+                        wiki_chat_write($file_path, $chat_data);
                         echo json_encode(['success' => true, 'data' => $chat_data,
                                           'async_ai' => false, 'queued_job' => null]);
                         break;
@@ -1677,7 +1689,12 @@ if (isset($_REQUEST['action'])) {
                             // it in the system prompt, where the inline path has it.
                             'page_context' => $_bg_page_ctx,
                             'reply_to'     => ['chat' => $_bg_rel, 'message_id' => $_pending_placeholder_id],
-                            'thinking'     => ['enabled' => true, 'effort' => 'high'],
+                            // Queueing says *when* the answer arrives; how hard the model
+                            // thinks is the AI user's own setting, the same on all three
+                            // run paths. This used to be a hardcoded effort => high, which
+                            // made "always run in the background" the most expensive mode
+                            // in the product rather than the quick one it was meant to be.
+                            'thinking'     => wiki_ai_thinking_config($_pending_ai_user['ai_config'] ?? []),
                             'started_at'   => null, 'finished_at' => null, 'log_file' => null, 'error' => null,
                         ];
                     });
@@ -1693,7 +1710,7 @@ if (isset($_REQUEST['action'])) {
                 $_purged = wiki_chat_autopurge($chat_data);
                 if ($_purged > 0) wiki_audit_chat_purge($file_path, $_purged, 'auto');
 
-                file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
+                wiki_chat_write($file_path, $chat_data);
                 echo json_encode(['success' => true, 'data' => $chat_data,
                                   'async_ai' => $_pending_ai_user !== null, 'queued_job' => $_bg_job]);
 
@@ -1746,7 +1763,7 @@ if (isset($_REQUEST['action'])) {
                 // look broken on a thread that is already over the limit.
                 $cr_gone = wiki_chat_autopurge($cr_data);
                 if ($cr_gone > 0) wiki_audit_chat_purge($cr_path, $cr_gone, 'auto');
-                file_put_contents($cr_path, json_encode($cr_data, JSON_PRETTY_PRINT));
+                wiki_chat_write($cr_path, $cr_data);
                 echo json_encode(['success' => true, 'removed' => $cr_gone, 'data' => $cr_data,
                     'retention' => array_key_exists('retention', $cr_data) ? (string)$cr_data['retention'] : null]);
                 break;
@@ -1793,7 +1810,7 @@ if (isset($_REQUEST['action'])) {
                     $td_data['messages'] = array_values(array_filter($td_data['messages'] ?? [], fn($m) => empty($m['is_debug'])));
                     $td_removed = $td_before - count($td_data['messages']);
                 }
-                file_put_contents($td_path, json_encode($td_data, JSON_PRETTY_PRINT));
+                wiki_chat_write($td_path, $td_data);
                 echo json_encode(['success' => true, 'debug' => $td_on, 'removed' => $td_removed, 'data' => $td_data]);
                 break;
 
@@ -1849,6 +1866,19 @@ if (isset($_REQUEST['action'])) {
                 if ($qj_chat === null) throw new Exception('Invalid chat file.');
                 $qj_id   = 'oneoff_' . date('Ymd-His') . '_' . bin2hex(random_bytes(3));
                 $qj_rel  = ltrim(str_replace(rtrim($space_dir, '/'), '', $qj_path), '/');
+                // The same two things the background chat path gives a job, because a job
+                // queued from a thread is about that thread whichever way it was asked
+                // for. The typed prompt still comes last, so it remains the instruction.
+                $qj_page_ctx = wiki_page_context_prompt($qj_path, $space_dir);
+                $qj_history  = [];
+                foreach (wiki_chat_context_slice($qj_chat['messages'] ?? [],
+                             (int)($qj_ai['ai_config']['context_messages'] ?? 10)) as $_qm) {
+                    $qj_history[] = ($_qm['name'] ?? '?') . ': ' . (string)($_qm['text'] ?? '');
+                }
+                if ($qj_history) {
+                    $qj_prompt = "Earlier in this chat thread:\n" . implode("\n", $qj_history)
+                               . "\n\nThe request: " . $qj_prompt;
+                }
 
                 // The request, as the user typed it, so the thread reads normally.
                 $qj_chat['messages'][] = [
@@ -1875,7 +1905,8 @@ if (isset($_REQUEST['action'])) {
 
                 $qj_eta = agent_job_eta_minutes($qj_ahead);
                 agent_job_queue_mutate(function (array &$jobs) use (
-                    $qj_id, $qj_actor, $qj_uid, $qj_ai, $qj_space, $qj_prompt, $qj_rel, $qj_msg_id
+                    $qj_id, $qj_actor, $qj_uid, $qj_ai, $qj_space, $qj_prompt, $qj_rel, $qj_msg_id,
+                    $qj_page_ctx
                 ) {
                     $jobs[] = [
                         'id'           => $qj_id,
@@ -1886,10 +1917,16 @@ if (isset($_REQUEST['action'])) {
                         'ai_user_name' => $qj_ai['name'] ?? 'AI',
                         'space'        => $qj_space,
                         'prompt'       => $qj_prompt,
+                        // The page a page-chat thread is attached to, as the background
+                        // chat path has always passed. Without it /aiJob asked in a page
+                        // chat could not see the page, while mentioning the same AI in the
+                        // same thread could — same destination, different information.
+                        'page_context' => $qj_page_ctx,
                         'reply_to'     => ['chat' => $qj_rel, 'message_id' => $qj_msg_id],
-                        // /aiJob always means "take your time and reason"; that is the
-                        // whole point of queuing instead of replying inline.
-                        'thinking'     => ['enabled' => true, 'effort' => 'high'],
+                        // Effort is the AI user's setting, not something /aiJob decides:
+                        // queuing is about when the answer arrives, not how hard the model
+                        // works. See wiki_ai_thinking_config().
+                        'thinking'     => wiki_ai_thinking_config($qj_ai['ai_config'] ?? []),
                         'started_at'   => null,
                         'finished_at'  => null,
                         'log_file'     => null,
@@ -1899,7 +1936,7 @@ if (isset($_REQUEST['action'])) {
 
                 // Written only after the job is safely queued: a placeholder with no job
                 // behind it would spin until the stale sweep gave up on it.
-                file_put_contents($qj_path, json_encode($qj_chat, JSON_PRETTY_PRINT));
+                wiki_chat_write($qj_path, $qj_chat);
                 echo json_encode([
                     'success'     => true,
                     'job_id'      => $qj_id,
@@ -1962,7 +1999,7 @@ if (isset($_REQUEST['action'])) {
                     throw new Exception('Permission denied.');
                 }
                 array_splice($chat_data['messages'], $idx, 1);
-                file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
+                wiki_chat_write($file_path, $chat_data);
                 echo json_encode(['success' => true, 'data' => $chat_data]);
                 break;
 
@@ -1983,7 +2020,7 @@ if (isset($_REQUEST['action'])) {
                 }
                 unset($_cm);
                 if (!$cancelled) throw new Exception('No pending message found with that ID.');
-                file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
+                wiki_chat_write($file_path, $chat_data);
                 echo json_encode(['success' => true, 'data' => $chat_data]);
                 break;
 
@@ -1993,7 +2030,7 @@ if (isset($_REQUEST['action'])) {
                 $chat_data = json_decode(file_get_contents($file_path), true);
                 if ($chat_data === null) throw new Exception('Invalid chat file.');
                 $chat_data['topic'] = $new_topic;
-                file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
+                wiki_chat_write($file_path, $chat_data);
                 echo json_encode(['success' => true, 'data' => $chat_data]);
                 break;
 
@@ -2006,7 +2043,7 @@ if (isset($_REQUEST['action'])) {
                 $chat_data['messages'] = $keep === 0 ? [] : array_slice($chat_data['messages'] ?? [], -$keep);
                 $_gone = $_before - count($chat_data['messages']);
                 if ($_gone > 0) wiki_audit_chat_purge($file_path, $_gone, 'manual');
-                file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
+                wiki_chat_write($file_path, $chat_data);
                 echo json_encode(['success' => true, 'data' => $chat_data]);
                 break;
 
@@ -2074,7 +2111,7 @@ if (isset($_REQUEST['action'])) {
                     throw new Exception('Permission denied.');
                 }
                 $chat_data['messages'][$idx]['sticky'] = !($chat_data['messages'][$idx]['sticky'] ?? false);
-                file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
+                wiki_chat_write($file_path, $chat_data);
                 echo json_encode(['success' => true, 'data' => $chat_data]);
                 break;
 
@@ -2106,7 +2143,7 @@ if (isset($_REQUEST['action'])) {
                 }
                 if (empty($reactions[$emoji])) unset($reactions[$emoji]);
                 $chat_data['messages'][$idx]['reactions'] = empty($reactions) ? (object)[] : $reactions;
-                file_put_contents($file_path, json_encode($chat_data, JSON_PRETTY_PRINT));
+                wiki_chat_write($file_path, $chat_data);
                 echo json_encode(['success' => true, 'data' => $chat_data]);
                 break;
 
@@ -2680,6 +2717,48 @@ if (isset($_REQUEST['action'])) {
                 ]);
                 break;
 
+            case 'realtime_ticket': {
+                // A subscriber ticket for whoever is asking. The response says whether
+                // realtime is available at all, so the client can decide between
+                // subscribing and staying on its poller without a second round trip.
+                if (!wiki_realtime_enabled()) {
+                    echo json_encode(['success' => true, 'enabled' => false]);
+                    break;
+                }
+                $rt_role    = AUTHENTICATION_ENABLED ? get_current_role() : 'admin';
+                $rt_allowed = AUTHENTICATION_ENABLED
+                    ? actor_spaces_filter($rt_role, $ai_auth_user) : null;
+                $rt_actor   = get_current_actor();
+                $rt_uid     = (int)($rt_actor['uid'] ?? 0);
+                $rt_token   = wiki_realtime_subscribe_token($rt_allowed, $rt_uid);
+
+                // A browser gets the ticket in a cookie the hub reads for itself: a query
+                // parameter would put a bearer credential into every access log and
+                // Referer. A token client has no cookie jar, so it is told the value and
+                // sends it as a bearer header.
+                if (!$ai_auth_user) {
+                    setcookie('mercureAuthorization', $rt_token, [
+                        'expires'  => time() + wiki_realtime_ticket_ttl(),
+                        'path'     => wiki_realtime_public_url(),
+                        'secure'   => !empty($_SERVER['HTTPS']),
+                        'httponly' => true,
+                        'samesite' => 'Strict',
+                    ]);
+                }
+                echo json_encode([
+                    'success'  => true,
+                    'enabled'  => true,
+                    'url'      => wiki_realtime_public_url(),
+                    'uid'      => $rt_uid,
+                    'ttl'      => wiki_realtime_ticket_ttl(),
+                    // Only a token client needs the value; a browser already has the cookie
+                    // and handing the same credential to JavaScript would put it in reach
+                    // of any XSS on the page.
+                    'token'    => $ai_auth_user ? $rt_token : null,
+                ]);
+                break;
+            }
+
             case 'get_mention_count':
                 // The sidebar badge. Runs on every page load, so it takes the cheap
                 // path: index.json timestamps rule out untouched files before any of
@@ -3021,8 +3100,20 @@ if (isset($_REQUEST['action'])) {
                 break;
             
             case 'delete':
-                $path_raw = $_POST['path'];
+                $path_raw = $_POST['path'] ?? '';
                 $path_sanitized = sanitize_path($path_raw);
+                // A missing, empty or dot-only path resolves to the Space root, and this
+                // action deletes recursively — so `?action=delete` with no parameter at all
+                // used to wipe an entire Space and report success. Note that sanitize_path()
+                // strips '..' to nothing, so `path=..` and `path=/` arrive here the same
+                // way; comparing the *resolved* path against the root catches all of them
+                // at once, where checking the raw string for emptiness would not.
+                $_del_root = rtrim(realpath($space_dir) ?: $space_dir, '/');
+                $_del_real = rtrim(realpath($path_sanitized) ?: $path_sanitized, '/');
+                if (trim((string)$path_raw) === '' || $_del_real === $_del_root) {
+                    echo json_encode(['success' => false, 'message' => 'No file specified.']);
+                    break;
+                }
                 function delete_recursive($dir, $indexer, $base_dir, $sidx = null) {
                     if (!is_dir($dir)) {
                         $rel = str_replace($base_dir . '/', '', $dir);
@@ -3341,6 +3432,9 @@ if (isset($_REQUEST['action'])) {
                 $up_rel   = ($up_folder_rel === '' ? '' : $up_folder_rel . '/') . $up_final;
                 $up_actor = get_current_actor();
                 $indexer->addPage($up_rel, $up_actor['uid'], $up_actor['name']);
+                // The audit hook could not know the name: it is chosen here, and a
+                // collision changes it. Recorded after addPage() so the id resolves too.
+                wiki_audit_object($_audit, $up_rel);
                 echo json_encode([
                     'success' => true,
                     'path'    => $up_rel,
@@ -4305,8 +4399,12 @@ if (isset($_REQUEST['action'])) {
                             'max_tokens'       => (int)( $ai_cfg_in['max_tokens']       ?? $ec['max_tokens']       ?? 4096),
                             'temperature'      => (float)($ai_cfg_in['temperature']      ?? $ec['temperature']      ?? 0.7),
                             // Every chat mention of this AI is queued as a one-off job
-                            // instead of answered inline — see post_chat_message.
+                            // instead of answered inline — see post_chat_message. It says
+                            // *when* the answer arrives; reasoning_effort says how hard
+                            // the model works, and the two are independent.
                             'always_background' => !empty($ai_cfg_in['always_background'] ?? $ec['always_background'] ?? false),
+                            'reasoning_effort'  => in_array($ai_cfg_in['reasoning_effort'] ?? $ec['reasoning_effort'] ?? '', WIKI_AI_EFFORTS, true)
+                                ? (string)($ai_cfg_in['reasoning_effort'] ?? $ec['reasoning_effort'] ?? '') : '',
                             'mcp_server_ids'    => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? $ec['mcp_server_ids'] ?? []))),
                             'mcp_instructions'  => (array)($ai_cfg_in['mcp_instructions'] ?? $ec['mcp_instructions'] ?? []),
                             'extra_headers'     => _sanitize_extra_headers($ai_cfg_in['extra_headers'] ?? $ec['extra_headers'] ?? []),
@@ -4351,6 +4449,8 @@ if (isset($_REQUEST['action'])) {
                             'max_tokens'       => (int)( $ai_cfg_in['max_tokens']       ?? 4096),
                             'temperature'      => (float)($ai_cfg_in['temperature']      ?? 0.7),
                             'always_background' => !empty($ai_cfg_in['always_background'] ?? false),
+                            'reasoning_effort'  => in_array($ai_cfg_in['reasoning_effort'] ?? '', WIKI_AI_EFFORTS, true)
+                                ? (string)($ai_cfg_in['reasoning_effort'] ?? '') : '',
                             'mcp_server_ids'   => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? []))),
                             'mcp_instructions' => (array)($ai_cfg_in['mcp_instructions'] ?? []),
                             'extra_headers'    => _sanitize_extra_headers($ai_cfg_in['extra_headers'] ?? []),
@@ -4765,6 +4865,114 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true, 'logs' => $ajl_list]);
                 break;
 
+            case 'admin_realtime_status': {
+                // What an operator cannot otherwise see: whether this PHP process can
+                // reach the hub, and whether the browser's path to it resolves. Reported
+                // as separate facts rather than one "ok", because the two halves fail for
+                // different reasons — a publish goes to MERCURE_INTERNAL_URL directly
+                // while a subscribe goes through nginx at MERCURE_PUBLIC_URL, and the
+                // documented packaging trap is nginx's dot-path rule swallowing the
+                // second while the first works perfectly.
+                $rt_conf = [
+                    'enabled'       => wiki_realtime_enabled(),
+                    'flag'          => defined('ENABLE_REALTIME') && ENABLE_REALTIME,
+                    'key_set'       => wiki_realtime_key() !== '',
+                    'internal_url'  => defined('MERCURE_INTERNAL_URL') ? (string)MERCURE_INTERNAL_URL : '',
+                    'public_url'    => wiki_realtime_public_url(),
+                    'ticket_ttl'    => wiki_realtime_ticket_ttl(),
+                    'curl'          => function_exists('curl_init'),
+                ];
+                // A real publish, to the caller's own diagnostic topic: nothing else
+                // proves the token is accepted. Harmless if nobody is listening.
+                $rt_probe = wiki_realtime_enabled()
+                    ? wiki_realtime_post(wiki_rt_topic_diag((int)(get_current_actor()['uid'] ?? 0)),
+                                         ['kind' => 'probe'])
+                    : ['ok' => false, 'code' => 0, 'ms' => 0, 'error' => '', 'reason' => 'disabled'];
+
+                // The subscriber's side of the path, as the browser would ask for it. A
+                // hub answers a GET with no topic as 400; anything that is not the hub
+                // (404 from nginx, 502) is the interesting result.
+                $rt_sub = ['code' => 0, 'error' => '', 'reason' => 'skipped'];
+                $rt_pub_url = $rt_conf['public_url'];
+                // Resolved whether or not the probe can run: an operator troubleshooting
+                // this row wants the absolute URL, and it is derived here (scheme + Host
+                // + path) so it appears nowhere in config.php to compare against.
+                $rt_abs = $rt_pub_url === '' ? '' : (preg_match('#^https?://#i', $rt_pub_url)
+                    ? $rt_pub_url
+                    : (($_SERVER['REQUEST_SCHEME'] ?? 'http') . '://'
+                       . ($_SERVER['HTTP_HOST'] ?? '127.0.0.1') . $rt_pub_url));
+                $rt_sub['url'] = $rt_abs;
+                if ($rt_conf['enabled'] && function_exists('curl_init') && $rt_pub_url !== '') {
+                    // Two attempts, because a TLS verification failure here says nothing
+                    // about the question being asked. This is an unauthenticated GET of
+                    // the wiki's own public URL whose body is discarded — the only thing
+                    // wanted is the status code — so certificate trust adds no security
+                    // to it, while a chain the server cannot verify hides whether nginx
+                    // forwards the path at all. A browser succeeds where curl fails
+                    // because browsers chase a missing intermediate via the certificate's
+                    // AIA extension and curl does not; that is a real problem, but a
+                    // different one, so it is reported as its own state rather than as
+                    // "nothing answered".
+                    $rt_probe_get = function (bool $verify) use ($rt_abs): array {
+                        $ch = curl_init($rt_abs);
+                        curl_setopt_array($ch, [
+                            CURLOPT_RETURNTRANSFER    => true,
+                            CURLOPT_TIMEOUT           => 3,
+                            CURLOPT_CONNECTTIMEOUT_MS => 1000,
+                            CURLOPT_SSL_VERIFYPEER    => $verify,
+                            CURLOPT_SSL_VERIFYHOST    => $verify ? 2 : 0,
+                        ]);
+                        curl_exec($ch);
+                        $out = [
+                            'code'  => (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE),
+                            'error' => curl_error($ch),
+                            'errno' => curl_errno($ch),
+                        ];
+                        curl_close($ch);
+                        return $out;
+                    };
+                    $rt_got   = $rt_probe_get(true);
+                    $rt_tlsok = true;
+                    // The SSL/certificate family: bad CA bundle, unverifiable peer,
+                    // certificate problem, handshake failure.
+                    if ($rt_got['code'] === 0 && in_array($rt_got['errno'], [35, 51, 58, 60, 77, 83], true)) {
+                        $rt_retry = $rt_probe_get(false);
+                        if ($rt_retry['code'] !== 0) {
+                            $rt_tlsok = false;
+                            $rt_retry['error'] = $rt_got['error'];   // keep the real reason
+                            $rt_got = $rt_retry;
+                        }
+                    }
+                    $rt_sub = ['code' => $rt_got['code'], 'error' => $rt_got['error'],
+                               'url'  => $rt_abs, 'reason' => ''];
+                    // 400/401 both mean "a hub answered". 404 is nginx not forwarding.
+                    $rt_hub = in_array($rt_sub['code'], [200, 400, 401], true);
+                    $rt_sub['reason'] = $rt_hub
+                        ? ($rt_tlsok ? 'hub' : 'hub_unverified')
+                        : ($rt_sub['code'] === 0 ? 'unreachable' : 'not_hub');
+                }
+                echo json_encode(['success' => true, 'data' => [
+                    'config' => $rt_conf, 'publish' => $rt_probe, 'subscribe' => $rt_sub,
+                    'topic'  => wiki_rt_topic_diag((int)(get_current_actor()['uid'] ?? 0)),
+                ]]);
+                break;
+            }
+
+            case 'admin_realtime_test': {
+                // The round trip: this publishes, the admin's own browser is subscribed to
+                // the topic, and the page reports whether it arrived. Nothing short of
+                // this proves the whole path — PHP to hub to nginx to EventSource.
+                $rt_nonce = bin2hex(random_bytes(8));
+                $rt_uid   = (int)(get_current_actor()['uid'] ?? 0);
+                $rt_res   = wiki_realtime_post(wiki_rt_topic_diag($rt_uid),
+                                               ['kind' => 'test', 'nonce' => $rt_nonce]);
+                echo json_encode(['success' => true, 'data' => [
+                    'nonce' => $rt_nonce, 'publish' => $rt_res,
+                    'topic' => wiki_rt_topic_diag($rt_uid),
+                ]]);
+                break;
+            }
+
             case 'admin_get_mcp_servers':
                 $mcp_out = array_map(fn($s) => [
                     'id'             => $s['id']        ?? '',
@@ -4777,6 +4985,7 @@ if (isset($_REQUEST['action'])) {
                     'wiki_native'    => !empty($s['wiki_native']),
                     'search_tool'    => $s['search_tool'] ?? '',
                     'search_arg'     => $s['search_arg']  ?? '',
+                    'instructions'   => $s['instructions'] ?? '',
                     'created_at'     => $s['created_at'] ?? '',
                 ], _load_mcp_servers());
                 echo json_encode(['success' => true, 'data' => $mcp_out]);
@@ -4793,6 +5002,9 @@ if (isset($_REQUEST['action'])) {
                 $mcp_native = !empty($_POST['wiki_native']) && $_POST['wiki_native'] !== '0' && $_POST['wiki_native'] !== 'false';
                 $mcp_search_tool = trim($_POST['search_tool'] ?? '');
                 $mcp_search_arg  = trim($_POST['search_arg']  ?? '');
+                // Shared guidance for every AI user that enables this server — see
+                // wiki_mcp_guidance(). Capped: it goes into every system prompt.
+                $mcp_instructions = mb_substr(trim($_POST['instructions'] ?? ''), 0, 4000);
                 if (!$mcp_name) throw new Exception('MCP server name is required.');
                 if (!$mcp_url)  throw new Exception('MCP server URL is required.');
                 $mcp_servers = _load_mcp_servers();
@@ -4808,6 +5020,7 @@ if (isset($_REQUEST['action'])) {
                         $_ms['wiki_native'] = $mcp_native;
                         $_ms['search_tool'] = $mcp_search_tool;
                         $_ms['search_arg']  = $mcp_search_arg;
+                        $_ms['instructions'] = $mcp_instructions;
                         if ($mcp_token !== '') $_ms['auth_token'] = $mcp_token;
                         $found_mcp = true;
                         break;
@@ -4826,6 +5039,7 @@ if (isset($_REQUEST['action'])) {
                         'wiki_native' => $mcp_native,
                         'search_tool' => $mcp_search_tool,
                         'search_arg'  => $mcp_search_arg,
+                        'instructions' => $mcp_instructions,
                         'created_at'  => date('c'),
                     ];
                 }

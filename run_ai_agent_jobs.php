@@ -55,12 +55,34 @@ function is_job_due(array $job, int $now): bool {
 
 // -- Lock ---------------------------------------------------------------------
 
-$lock_file = WIKI_SYSTEM_DATA . 'agent_jobs.lock';
-$lock_fh   = fopen($lock_file, 'c');
-if (!$lock_fh || !flock($lock_fh, LOCK_EX | LOCK_NB)) {
-    echo date('c') . " [agent-jobs] Already running (lock held). Exiting.\n";
+// One lock per runner slot, tried in order. A tick takes the lowest free slot; if every
+// slot is held, this tick has nothing to add and exits. With a single lock the queue was
+// strictly serial, so one slow job stalled every job behind it no matter how often cron
+// fired — which is the thing a short interval on its own cannot fix.
+//
+// Claiming is already safe for any number of runners: jobs are taken from the queue in
+// one locked read-modify-write (agent_job_queue_mutate), so two runners cannot be handed
+// the same job.
+$lock_slot = 0;
+$lock_fh   = null;
+for ($_s = 1; $_s <= agent_job_runner_slots(); $_s++) {
+    $_fh = fopen(WIKI_SYSTEM_DATA . 'agent_jobs.lock' . ($_s === 1 ? '' : '.' . $_s), 'c');
+    if (!$_fh) continue;
+    if (flock($_fh, LOCK_EX | LOCK_NB)) { $lock_fh = $_fh; $lock_slot = $_s; break; }
+    fclose($_fh);
+}
+if ($lock_fh === null) {
+    echo date('c') . " [agent-jobs] All " . agent_job_runner_slots()
+        . " runner slot(s) busy. Exiting.\n";
     exit(0);
 }
+echo date('c') . " [agent-jobs] Runner slot {$lock_slot}/" . agent_job_runner_slots() . ".\n";
+
+// Slot 1 alone runs the *scheduled* jobs. Their due-check is a read-modify-write of
+// agent_jobs.json with no lock of its own, so two runners could both find a job due and
+// run it twice. Serialising that on one slot keeps it exactly as safe as it was, and
+// costs nothing: the scheduler pass is cheap, and it never had more than one runner.
+$is_scheduler = ($lock_slot === 1);
 
 // Proof-of-life for the web side: /aiJob turns this into "your job starts in
 // x minutes", and its absence into an honest "the runner is not running".
@@ -77,12 +99,15 @@ $users_data = file_exists($users_file) ? (json_decode(file_get_contents($users_f
 $jobs = $jobs_data['jobs'] ?? [];
 $now  = time();
 
-echo date('c') . " [agent-jobs] Checking " . count($jobs) . " job(s). Server: " . date('H:i') . " " . date_default_timezone_get() . "\n";
+echo date('c') . " [agent-jobs] " . ($is_scheduler
+        ? "Checking " . count($jobs) . " scheduled job(s)."
+        : "Scheduled jobs: slot 1's job, skipping.")
+    . " Server: " . date('H:i') . " " . date_default_timezone_get() . "\n";
 
 // No early exit when there are no scheduled jobs: the one-off /aiJob queue is
 // drained further down and must still be serviced.
 
-foreach ($jobs as $idx => &$job) {
+foreach (($is_scheduler ? $jobs : []) as $idx => &$job) {
     if (empty($job['enabled'])) continue;
 
     if (!is_job_due($job, $now)) {
@@ -121,7 +146,8 @@ foreach ($jobs as $idx => &$job) {
 
     // Run
     $indexer = new PageIndexer($space_dir);
-    $result  = run_agent_job($job, $ai_user, $indexer, $space_dir);
+    agent_job_touch_heartbeat();
+    $result  = run_agent_job($job, $ai_user, $indexer, $space_dir, 'agent_job_touch_heartbeat');
     $run_ts  = date('c');
     $status  = $result['error'] ? 'error' : 'ok';
 
@@ -184,8 +210,12 @@ function oneoff_deliver(array $job, ?string $reply, ?string $error): bool {
     return $delivered;
 }
 
-// Recover orphans first. We hold the runner lock, so no other runner is active:
-// anything still 'running' past the timeout lost its process.
+// Recover orphans first: a job left 'running' whose process died.
+//
+// This used to lean on "we hold the only lock, so nothing else is running". With slots
+// that is no longer true, so the age test stands alone — and it is the real test anyway:
+// AGENT_JOB_RUNNING_TIMEOUT_MIN is longer than any run the per-call timeout and iteration
+// cap allow, so a job past it is hung or gone whichever runner started it.
 $oneoff_orphans = agent_job_queue_mutate(function (array &$jobs) {
     $orphans = [];
     foreach ($jobs as &$j) {
@@ -203,6 +233,7 @@ $oneoff_orphans = agent_job_queue_mutate(function (array &$jobs) {
 foreach ($oneoff_orphans as $orphan) {
     echo date('c') . " [agent-jobs] Recovered orphaned one-off job {$orphan['id']}.\n";
     oneoff_deliver($orphan, null, $orphan['error']);
+    agent_job_announce($orphan);
 }
 
 // Claim this tick's batch in one locked pass, so a second runner (or the web
@@ -219,6 +250,8 @@ $oneoff_batch = agent_job_queue_mutate(function (array &$jobs) {
     unset($j);
     return $take;
 });
+
+foreach ($oneoff_batch as $_started) agent_job_announce($_started);
 
 $oneoff_waiting = 0;
 foreach (agent_job_queue_read() as $_q) if (($_q['state'] ?? '') === 'queued') $oneoff_waiting++;
@@ -250,7 +283,9 @@ foreach ($oneoff_batch as $oj) {
         $oj_error = 'The space "' . basename(rtrim($oj_space_dir, '/')) . '" is read-only, so this job was not run.';
     } else {
         try {
-            $oj_result = run_agent_job($oj, $oj_ai, new PageIndexer($oj_space_dir), $oj_space_dir);
+            agent_job_touch_heartbeat();
+            $oj_result = run_agent_job($oj, $oj_ai, new PageIndexer($oj_space_dir), $oj_space_dir,
+                                       'agent_job_touch_heartbeat');
             $oj_reply  = $oj_result['reply'] ?? null;
             $oj_error  = $oj_result['error'] ?? null;
             $oj_debug  = (string)($oj_result['debug'] ?? '');
@@ -295,6 +330,8 @@ foreach ($oneoff_batch as $oj) {
         }
         unset($j);
     });
+    agent_job_announce(['id' => $oj_id, 'state' => $oj_status,
+                        'requested_by' => $oj['requested_by'] ?? []]);
 
     if ($oj_error !== null && defined('ADMIN_EMAIL') && ADMIN_EMAIL && is_mail_configured()) {
         $oj_h = fn($s) => htmlspecialchars((string)$s);

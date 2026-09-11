@@ -103,6 +103,39 @@ done
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
+# 2c. Realtime hub key
+#
+# The wiki and the hub authenticate to each other with one shared HS256 key. It is
+# generated on first boot into the data volume rather than baked into a layer — an image
+# with a known key would let anyone who can reach the hub subscribe to every Space of
+# every install running it.
+#
+# Exported so both this script's config.php generation and supervisord's `mercure`
+# program see the same value; the hub reads MERCURE_*_JWT_KEY, PHP reads MERCURE_JWT_KEY.
+# ---------------------------------------------------------------------------
+ENABLE_REALTIME="${ENABLE_REALTIME:-true}"
+if [ "$ENABLE_REALTIME" = "true" ]; then
+    KEY_FILE="${WIKI_SYSTEM_DATA%/}/mercure.key"
+    if [ -z "${MERCURE_JWT_KEY:-}" ]; then
+        if [ ! -s "$KEY_FILE" ]; then
+            log "generating a realtime hub key in $KEY_FILE"
+            # No openssl in the image; PHP is already here and random_bytes is a CSPRNG.
+            php -r 'echo bin2hex(random_bytes(32));' > "$KEY_FILE"
+            chmod 600 "$KEY_FILE"
+        fi
+        MERCURE_JWT_KEY="$(cat "$KEY_FILE")"
+    fi
+    export MERCURE_JWT_KEY
+    export MERCURE_PUBLISHER_JWT_KEY="$MERCURE_JWT_KEY"
+    export MERCURE_SUBSCRIBER_JWT_KEY="$MERCURE_JWT_KEY"
+else
+    log "realtime disabled (ENABLE_REALTIME=$ENABLE_REALTIME) — the wiki falls back to polling"
+    # supervisord reads this to decide whether to start the hub at all.
+    export MERCURE_JWT_KEY=""
+fi
+export ENABLE_REALTIME
+
+# ---------------------------------------------------------------------------
 # 3. config.php
 #
 # A mounted config.php always wins, so an existing file-based setup keeps working.
@@ -141,9 +174,11 @@ chmod 640 "$APP_DIR/config.php"
 # ---------------------------------------------------------------------------
 CRON_FILE=/etc/crontabs/www-data
 if [ "${ENABLE_CRON:-true}" = "true" ]; then
-    IVL="${AGENT_JOB_RUNNER_INTERVAL_MINUTES:-15}"
-    case "$IVL" in ''|*[!0-9]*) IVL=15 ;; esac
-    [ "$IVL" -ge 1 ] 2>/dev/null || IVL=15
+    IVL="${AGENT_JOB_RUNNER_INTERVAL_MINUTES:-2}"
+    # Fall back to the documented default, not to the old one: a typo in the env var
+    # should give the shipped schedule, not silently a different interval.
+    case "$IVL" in ''|*[!0-9]*) IVL=2 ;; esac
+    [ "$IVL" -ge 1 ] 2>/dev/null || IVL=2
     [ "$IVL" -le 59 ] 2>/dev/null || IVL=59
     DIGEST_HOUR="${DAILY_DIGEST_HOUR:-7}"
     log "cron: agent jobs every ${IVL}m, daily digest at ${DIGEST_HOUR}:00"

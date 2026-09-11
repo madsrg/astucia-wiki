@@ -1,0 +1,43 @@
+# Astucia Wiki — configuration for the bundled Mercure hub.
+#
+# Deliberately NOT the `dev.Caddyfile` that ships with Mercure: that one enables
+# `anonymous`, which lets a client subscribe with no token at all. Every topic this wiki
+# publishes is private and Space-scoped, so anonymous subscription would hand the entire
+# change stream of every Space to anyone who can reach the port.
+#
+# `cors_origins` and `publish_origins` are both left unset. The hub is reached only through
+# nginx on the wiki's own origin, and PHP publishes from loopback with a bearer token, which
+# is not an origin-checked request.
+{
+	auto_https off
+	persist_config off
+	admin off
+}
+
+# 'bind' is what restricts the interface — a site address alone does not. Without it the
+# hub answers on every interface in the container, so publishing port 3000 (or running
+# with --network host) would expose it directly. nginx reaches it on loopback.
+http://:3000 {
+	bind 127.0.0.1
+
+	log {
+		format filter {
+			fields {
+				# A non-browser subscriber may pass its ticket as a query parameter.
+				# Without this the credential is written to the container log.
+				request>uri query {
+					replace authorization REDACTED
+				}
+			}
+		}
+		output stdout
+	}
+
+	mercure {
+		publisher_jwt  {env.MERCURE_PUBLISHER_JWT_KEY}
+		subscriber_jwt {env.MERCURE_SUBSCRIBER_JWT_KEY}
+	}
+
+	respond /healthz 200
+	respond "Not Found" 404
+}

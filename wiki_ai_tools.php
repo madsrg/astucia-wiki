@@ -16,6 +16,7 @@ require_once __DIR__ . '/service_auth.php';   // actor_spaces_filter(), wiki_pat
 require_once __DIR__ . '/search_index.php';
 require_once __DIR__ . '/graph.php';
 require_once __DIR__ . '/llm_providers.php';
+require_once __DIR__ . '/realtime.php';      // wiki_chat_write(), wiki_realtime_publish()
 
 // Pages under a space's top-level templates/ folder are page templates, not
 // content — excluded from every search result (REST search, SQLite FTS, and the
@@ -41,7 +42,7 @@ function wiki_tool_definitions(): array {
         ],
         [
             'name'        => 'wiki_search_pages',
-            'description' => 'Search Markdown pages in the current wiki space by topic, recency, and/or tags. Returns a JSON array of matching pages with "id", "path", "space", "updated" (ISO 8601 last-modified timestamp), and — for text queries — "header" (first heading) and "preview" (a snippet). Provide "query" to search page text, "updated_within_days" to restrict to recently-updated pages (e.g. answer "pages updated in the last 7 days" with updated_within_days=7 and no query), and/or "tags" to require exact tags. At least one of the three is required.',
+            'description' => 'Search Markdown and .json data pages in the current wiki space by topic, recency, and/or tags. Returns a JSON array of matching pages with "id", "path", "space", "updated" (ISO 8601 last-modified timestamp), and — for text queries — "header" (first heading) and "preview" (a snippet). Provide "query" to search page text, "updated_within_days" to restrict to recently-updated pages (e.g. answer "pages updated in the last 7 days" with updated_within_days=7 and no query), and/or "tags" to require exact tags. At least one of the three is required.',
             'params'      => [
                 'type'       => 'object',
                 'properties' => [
@@ -54,7 +55,7 @@ function wiki_tool_definitions(): array {
         ],
         [
             'name'        => 'wiki_read_page',
-            'description' => 'Read the full content of a wiki page by its relative path.',
+            'description' => 'Read the full content of a wiki page by its relative path. Not only Markdown: ".md" returns the markdown source, ".json" returns the raw JSON document — use this to read stored data such as sales figures before summarising or charting it — ".list" returns the structured list file, and ".chat" returns the thread as JSON. Anything else is refused.',
             'params'      => [
                 'type'       => 'object',
                 'properties' => ['path' => ['type' => 'string', 'description' => 'Relative path to the page, e.g. Notes/Meeting.md']],
@@ -210,7 +211,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
     if ($query === '') {
         $rows = [];
         foreach ($all as $id => $data) {
-            if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') continue;
+            if (!isset($data['path']) || !in_array(pathinfo($data['path'], PATHINFO_EXTENSION), WIKI_AI_SEARCH_EXTS, true)) continue;
             if (wiki_is_template_path($data['path'])) continue;
             $upd = (int)($data['updated'] ?? 0);
             if ($cutoff && $upd < $cutoff) continue;
@@ -254,7 +255,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
     }
 
     foreach ($all as $id => $data) {
-        if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') continue;
+        if (!isset($data['path']) || !in_array(pathinfo($data['path'], PATHINFO_EXTENSION), WIKI_AI_SEARCH_EXTS, true)) continue;
         if (wiki_is_template_path($data['path'])) continue;
         if ($cutoff && (int)($data['updated'] ?? 0) < $cutoff) continue;
         if (!$has_all_tags($data['tags'] ?? [])) continue;
@@ -312,6 +313,12 @@ function parse_search_query(string $raw): array {
 // The tools that write. Named here because the read-only check below and any future
 // per-space write rule need the same list, and adding a tool without adding it here
 // would silently exempt it.
+// What wiki_search_pages looks at. Exactly the set the SQLite FTS index holds full text
+// for (see INDEX_SYNC_FTS_EXTS / SearchIndex::scanAndInsert), so the FTS branch and the
+// two scan branches return the same kinds of page — otherwise a dataset is findable on
+// an install with SEARCH_ENGINE=sqlite and invisible on one without it.
+const WIKI_AI_SEARCH_EXTS = ['md', 'json'];
+
 const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_add_tags', 'wiki_set_tags', 'wiki_mention_users', 'wiki_rename_page'];
 
 /**
@@ -339,6 +346,24 @@ const WIKI_AI_AUDIT_TOOLS = [
  * request of the person who posted, and recording them as the author of the page the AI
  * wrote would be exactly wrong. Whoever asked is kept alongside as requested_by.
  */
+/**
+ * Keep the FTS row for a page an AI just wrote.
+ *
+ * PageIndexer is kept in step by every write here, but the search index is separate and
+ * was not: wiki_write_page and wiki_write_json created a page that `wiki_search_pages`
+ * then could not find, which is worst exactly where it matters — an agent writing a
+ * dataset and looking for it again on the next turn. index_sync cannot repair it either,
+ * since it reconciles *drift* and a page written through the indexer is not drift.
+ * Space key matches wiki_rename_page's movePage() call, so a written page and a renamed
+ * one land under the same one.
+ */
+function wiki_ai_fts_upsert(string $space_dir, string $rel, string $content): void {
+    if (!defined('SEARCH_ENGINE') || SEARCH_ENGINE !== 'sqlite') return;
+    // Never let indexing break the write it is indexing.
+    try { (new SearchIndex())->upsertPage(basename(rtrim($space_dir, '/')), $rel, $content); }
+    catch (\Throwable $_e) {}
+}
+
 function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir) {
     // Space isolation, for the same reason the read-only guard is here: this is the one
     // point api.php, mcp.php and run_ai_agent_jobs.php share.
@@ -481,6 +506,7 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             if (!is_dir($dir)) mkdir($dir, 0755, true);
             $is_new  = !file_exists($abs);
             if (file_put_contents($abs, $content) === false) return 'Error: could not write file.';
+            wiki_ai_fts_upsert($space_dir, $rel, $content);
             $ai_git_name  = $ai_user['name'] ?? 'AI';
             $ai_git_email = !empty($ai_user['email']) ? $ai_user['email'] : 'ai@wiki.localhost';
             if ($is_new) {
@@ -513,6 +539,7 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             if (!is_dir($dir)) mkdir($dir, 0755, true);
             $is_new  = !file_exists($abs);
             if (file_put_contents($abs, $content) === false) return 'Error: could not write file.';
+            wiki_ai_fts_upsert($space_dir, $rel, $content);
             $ai_git_name  = $ai_user['name'] ?? 'AI';
             $ai_git_email = !empty($ai_user['email']) ? $ai_user['email'] : 'ai@wiki.localhost';
             if ($is_new) {
@@ -586,7 +613,7 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
                     'text'      => $mu_line,
                 ];
                 $mu_data['nextMessageId'] = ($mu_data['nextMessageId'] ?? count($mu_data['messages'])) + 1;
-                if (file_put_contents($mu_abs, json_encode($mu_data, JSON_PRETTY_PRINT)) === false) {
+                if (!wiki_chat_write($mu_abs, $mu_data)) {
                     return 'Error: could not write to ' . $mu_rel;
                 }
             } else {
@@ -595,6 +622,21 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
                 }
             }
             $indexer->updateModified($mu_rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
+            // The one place the wiki knows a mention was created without re-scanning content
+            // for it. Everything else that can mention somebody is a human typing into a page
+            // or a thread, where finding out costs a scan — so the badge keeps its (demoted)
+            // poll for those, and this path gets to be instant.
+            if (function_exists('wiki_realtime_publish')) {
+                $mu_uids = [];
+                foreach (wiki_all_users() as $mu_u) {
+                    if (in_array((string)($mu_u['name'] ?? ''), $mu_resolved, true)) {
+                        $mu_uids[] = (int)($mu_u['uid'] ?? 0);
+                    }
+                }
+                foreach (array_unique($mu_uids) as $mu_uid) {
+                    if ($mu_uid > 0) wiki_realtime_publish(wiki_rt_topic_mention($mu_uid), ['type' => 'mention']);
+                }
+            }
             git_auto_commit($mu_abs, $mu_git_name, $mu_git_email, 'Mention ' . implode(', ', $mu_resolved) . ' in ' . basename($mu_rel), $space_dir);
             return 'Mentioned ' . implode(', ', $mu_resolved) . ' in ' . $mu_rel
                  . '. They will see it in their My Mentions list.';

@@ -4,6 +4,7 @@
 import { api } from '../core/api.js';
 import { icons } from '../core/icons.js';
 import { state } from '../core/state.js';
+import { watch, rtTopic } from '../realtime/index.js';
 import { loadFilesFolder, loadFolderView, isFolderViewActive } from '../files_folder/index.js';
 import { showToast, canUpload } from '../core/utils.js';
 import { t } from '../i18n/index.js';
@@ -216,7 +217,8 @@ export const refreshFileTree = async () => {
 // ── Background tree polling ───────────────────────────────────────────────────
 
 const TREE_POLL_MS = 15000;
-let _treeTimer    = null;
+const TREE_POLL_SLOW_MS = 300000;   // safety net while push is live; see modules/realtime
+let _stopTreeWatch    = null;
 let _lastTreeMtime = 0;
 
 const getExpandedFolders = () => {
@@ -239,13 +241,13 @@ const restoreExpandedFolders = (paths) => {
 };
 
 export const stopTreePolling = () => {
-    if (_treeTimer) { clearInterval(_treeTimer); _treeTimer = null; }
+    if (_stopTreeWatch) { _stopTreeWatch(); _stopTreeWatch = null; }
     _lastTreeMtime = 0;
 };
 
 export const startTreePolling = (space) => {
     stopTreePolling();
-    _treeTimer = setInterval(async () => {
+    const pollOnce = async () => {
         const res = await api.call('tree_mtime', { space: space || '' });
         if (!res.success) return;
         const mtime = res.mtime || 0;
@@ -256,7 +258,11 @@ export const startTreePolling = (space) => {
             revealAndSelectFile(state.currentPagePath);
         }
         _lastTreeMtime = mtime;
-    }, TREE_POLL_MS);
+    };
+    // The tree event fires for a create, delete, rename or an external reconcile — the same
+    // set that moves tree_mtime, which this still reads to decide whether anything changed.
+    _stopTreeWatch = watch(rtTopic.tree(space), pollOnce,
+                       { fast: TREE_POLL_MS, slow: TREE_POLL_SLOW_MS });
 };
 
 
