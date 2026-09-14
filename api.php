@@ -4913,27 +4913,11 @@ if (isset($_REQUEST['action'])) {
                 $rt_sub = ['code' => 0, 'error' => '', 'reason' => 'skipped', 'url' => ''];
                 $rt_pub_url = $rt_conf['public_url'];
 
-                // Where to ask, in order. A *relative* MERCURE_PUBLIC_URL is a path on
-                // this very server, so loopback on the port nginx is actually bound to is
-                // the reliable way to reach it: the Host header carries the **published**
-                // port, which behind a port mapping — every Docker install — is not
-                // listening inside the container and reports a false "nothing answered".
-                // The Host-header form is kept as a fallback for a deployment where the
-                // public URL is served by something other than this process.
-                $rt_cands = [];
-                if ($rt_pub_url !== '') {
-                    if (preg_match('#^https?://#i', $rt_pub_url)) {
-                        $rt_cands[] = $rt_pub_url;
-                    } else {
-                        $rt_port   = (int)($_SERVER['SERVER_PORT'] ?? 80);
-                        $rt_scheme = $rt_port === 443 ? 'https' : 'http';
-                        $rt_cands[] = $rt_scheme . '://127.0.0.1'
-                            . ($rt_port === 80 || $rt_port === 443 ? '' : ':' . $rt_port) . $rt_pub_url;
-                        $rt_cands[] = ($_SERVER['REQUEST_SCHEME'] ?? 'http') . '://'
-                            . ($_SERVER['HTTP_HOST'] ?? '127.0.0.1') . $rt_pub_url;
-                    }
-                }
-                $rt_sub['url'] = $rt_cands[0] ?? '';
+                // See wiki_realtime_probe_targets(): the hostname is kept so TLS can
+                // verify, and its resolution is pinned to loopback so the request never
+                // depends on the published port being reachable from in here.
+                $rt_cands = wiki_realtime_probe_targets($_SERVER, $rt_pub_url);
+                $rt_sub['url'] = $rt_cands[0][0] ?? '';
 
                 if ($rt_conf['enabled'] && function_exists('curl_init') && $rt_cands) {
                     // Two attempts per candidate, because a TLS verification failure says
@@ -4945,7 +4929,7 @@ if (isset($_REQUEST['action'])) {
                     // their own root store and chase a missing intermediate via the
                     // certificate's AIA extension; that is a real problem, but a
                     // different one, so it gets its own state rather than "unreachable".
-                    $rt_probe_get = function (string $url, bool $verify): array {
+                    $rt_probe_get = function (string $url, bool $verify, ?string $resolve): array {
                         $ch = curl_init($url);
                         curl_setopt_array($ch, [
                             CURLOPT_RETURNTRANSFER    => true,
@@ -4954,18 +4938,21 @@ if (isset($_REQUEST['action'])) {
                             CURLOPT_SSL_VERIFYPEER    => $verify,
                             CURLOPT_SSL_VERIFYHOST    => $verify ? 2 : 0,
                         ]);
+                        // Keeps the hostname (so the certificate matches) while sending the
+                        // request to loopback.
+                        if ($resolve !== null) curl_setopt($ch, CURLOPT_RESOLVE, [$resolve]);
                         curl_exec($ch);
                         $out = ['code'  => (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE),
                                 'error' => curl_error($ch), 'errno' => curl_errno($ch)];
                         return $out;
                     };
-                    foreach ($rt_cands as $rt_try) {
-                        $rt_got   = $rt_probe_get($rt_try, true);
+                    foreach ($rt_cands as [$rt_try, $rt_resolve]) {
+                        $rt_got   = $rt_probe_get($rt_try, true, $rt_resolve);
                         $rt_tlsok = true;
                         // The SSL/certificate family: bad CA bundle, unverifiable peer,
                         // certificate problem, handshake failure.
                         if ($rt_got['code'] === 0 && in_array($rt_got['errno'], [35, 51, 58, 60, 77, 83], true)) {
-                            $rt_retry = $rt_probe_get($rt_try, false);
+                            $rt_retry = $rt_probe_get($rt_try, false, $rt_resolve);
                             if ($rt_retry['code'] !== 0) {
                                 $rt_tlsok = false;
                                 $rt_retry['error'] = $rt_got['error'];   // keep the real reason

@@ -6,6 +6,18 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+### Fixed
+- **The Mercure monitor's "browser path to the hub" check could never verify TLS.** It
+  probed `https://127.0.0.1`, and a public certificate is issued for the hostname — no CA
+  will issue one for a loopback address — so the check failed on a subject-name mismatch
+  ("no alternative certificate subject name matches target ipv4 address") and then blamed
+  CA trust, which was the wrong diagnosis. It now keeps the real hostname, so the
+  certificate matches, and pins that name's resolution to loopback with `CURLOPT_RESOLVE`,
+  which is what made probing locally desirable in the first place: the published port the
+  Host header carries is not listening inside a container. The target-building moved into
+  `wiki_realtime_probe_targets()` so it has a test of its own, and the "could not verify"
+  message now lists an address the certificate does not cover among its causes.
+
 ## [2026.9.7] — 2026-09-14
 
 Two realtime bugs that hid behind a healthy-looking monitor, and a reasoning model that

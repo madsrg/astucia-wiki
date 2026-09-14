@@ -162,6 +162,51 @@ function wiki_rt_topic_diag(int $uid): string {
     return 'wiki/user/' . $uid . '/diag';
 }
 
+/**
+ * Where to probe for the subscriber-facing hub endpoint, in order.
+ *
+ * Returns `[[url, resolve|null], …]` where `resolve` is a `CURLOPT_RESOLVE` entry.
+ *
+ * Two traps, both found in the field:
+ *
+ *  - **The Host header carries the *published* port.** Behind a port mapping — every
+ *    Docker install — that port is not listening inside the container, so probing it
+ *    reports a false "nothing answered" while browsers subscribe perfectly well.
+ *  - **Probing the loopback *address* can never verify TLS.** A public certificate is
+ *    issued for the hostname and no CA will issue one for `127.0.0.1`, so `https://127.0.0.1`
+ *    fails on a subject-name mismatch that says nothing about whether nginx forwards the
+ *    path. That was reported as "no alternative certificate subject name matches target
+ *    ipv4 address".
+ *
+ * So keep the hostname — what the certificate is for, and what an operator recognises —
+ * and pin its resolution to loopback, exactly as `curl --resolve` does. The request never
+ * leaves the machine and TLS still verifies.
+ *
+ * The scheme is what this server speaks *locally*, not what the browser sees: with TLS
+ * terminated further out, nginx here is plain HTTP on port 80 and probing https would fail
+ * for the wrong reason.
+ */
+function wiki_realtime_probe_targets(array $server, string $public_url): array {
+    if ($public_url === '') return [];
+    if (preg_match('#^https?://#i', $public_url)) return [[$public_url, null]];
+
+    $port   = (int)($server['SERVER_PORT'] ?? 80);
+    $secure = $port === 443
+        || (($server['HTTPS'] ?? '') !== '' && ($server['HTTPS'] ?? 'off') !== 'off');
+    $scheme = $secure ? 'https' : 'http';
+    // HTTP_HOST may carry a port; the authority needs the two separately.
+    $host = preg_replace('/:\d+$/', '', (string)($server['HTTP_HOST'] ?? '127.0.0.1'));
+    if ($host === '') $host = '127.0.0.1';
+    $authority = $host . (($port === 80 || $port === 443) ? '' : ':' . $port);
+    $url = $scheme . '://' . $authority . $public_url;
+
+    return [
+        [$url, $host . ':' . $port . ':127.0.0.1'],
+        // Unpinned, for a deployment where that path is served by something else.
+        [$url, null],
+    ];
+}
+
 // ── Publishing ───────────────────────────────────────────────────────────────
 
 /**

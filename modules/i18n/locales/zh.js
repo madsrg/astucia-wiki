@@ -393,7 +393,7 @@ export default {
     'admin.rt.publish-bad': 'Hub 拒绝了请求或无法连接（HTTP {code}）。{error} 保存仍然正常；提示会被丢弃。',
     'admin.rt.row-subscribe': '浏览器到 Hub 的路径',
     'admin.rt.sub-ok': '公开 URL 上有 Hub 响应（HTTP {code}）。',
-    'admin.rt.sub-unverified': '有 Hub 响应（HTTP {code}），因此浏览器可以订阅——但本服务器无法验证 TLS 证书：{error} 在你的浏览器中可用，是因为浏览器使用自己的根证书库，并会通过证书的 AIA 扩展自行获取缺失的中间证书；PHP 的 curl 两者都不做。该维基发出的其他所有 HTTPS 请求也会同样失败。通常是证书由服务器不信任的私有 CA 签发（测试机上很常见）、nginx 的证书链不完整（只提供叶证书而缺少中间证书），或服务器上的 CA 根证书包缺失或过期（curl.cainfo / ca-certificates）。',
+    'admin.rt.sub-unverified': '有 Hub 响应（HTTP {code}），因此浏览器可以订阅——但本服务器无法验证 TLS 证书：{error} 在你的浏览器中可用，是因为浏览器使用自己的根证书库，并会通过证书的 AIA 扩展自行获取缺失的中间证书；PHP 的 curl 两者都不做。该维基发出的其他所有 HTTPS 请求也会同样失败。通常是 证书未覆盖所检查的地址、证书由服务器不信任的私有 CA 签发（测试机上很常见）、nginx 的证书链不完整（只提供叶证书而缺少中间证书），或服务器上的 CA 根证书包缺失或过期（curl.cainfo / ca-certificates）。',
     'admin.rt.sub-not-hub': '有响应，但不是 Hub（HTTP {code}）。通常是 nginx 未转发 /.well-known/mercure 路径——它必须排在拒绝点号路径的规则之前。',
     'admin.rt.sub-unreachable': '公开 URL 上没有任何响应。{error}',
     'admin.rt.row-browser': '本页的连接',

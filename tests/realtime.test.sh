@@ -272,6 +272,50 @@ if [ -n "$nonce" ]; then _pass "a nonce was issued"; else _fail "a nonce was iss
 assert_contains "the nonce went to the hub" "$nonce"        "$(posts)"
 assert_contains "on the diag topic"       'topic=wiki%2Fuser%2F1%2Fdiag' "$(posts)"
 
+section 'the hub probe keeps the real hostname and pins it to loopback'
+# Probing https://127.0.0.1 can never verify: a public certificate is issued for the
+# hostname and no CA will issue one for a loopback address, so TLS fails on a subject-name
+# mismatch that says nothing about whether nginx forwards the path. Reported from
+# production as "no alternative certificate subject name matches target ipv4 address".
+#
+# Tested against wiki_realtime_probe_targets() directly rather than through a forged Host
+# header: overriding Host breaks the cookie the session rides on, so that route tests the
+# fixture's plumbing instead of the code.
+targets=$(cd "$WIKI_APP" && php -r '
+require "realtime.php";
+$out = [];
+foreach ([
+    "tls"          => ["HTTP_HOST" => "wiki.example.test", "SERVER_PORT" => "443"],
+    "plain"        => ["HTTP_HOST" => "wiki.example.test", "SERVER_PORT" => "80"],
+    "mapped_port"  => ["HTTP_HOST" => "127.0.0.1:8099",    "SERVER_PORT" => "80"],
+    "odd_port"     => ["HTTP_HOST" => "wiki.example.test:8443", "SERVER_PORT" => "8443"],
+] as $k => $srv) {
+    $t = wiki_realtime_probe_targets($srv, "/.well-known/mercure");
+    $out[$k] = ["url" => $t[0][0], "resolve" => $t[0][1], "fallback" => $t[1][1]];
+}
+$out["absolute"] = wiki_realtime_probe_targets(["SERVER_PORT" => "443"],
+    "https://hub.example.net/.well-known/mercure");
+echo json_encode($out, JSON_UNESCAPED_SLASHES);')
+
+get() { printf '%s' "$targets" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for k in sys.argv[1].split('.'):
+    d = d[int(k)] if isinstance(d, list) else d[k]
+print('' if d is None else d)" "$1"; }
+
+assert_eq "TLS keeps the hostname"         "https://wiki.example.test/.well-known/mercure" "$(get tls.url)"
+assert_eq "  …pinned to loopback"          "wiki.example.test:443:127.0.0.1"               "$(get tls.resolve)"
+assert_eq "  …and a fallback without it"   ""                                              "$(get tls.fallback)"
+assert_eq "plain http likewise"            "http://wiki.example.test/.well-known/mercure"  "$(get plain.url)"
+# The original reason for probing loopback: the Host header's port is the published one.
+assert_eq "a mapped port is not used"      "http://127.0.0.1/.well-known/mercure"          "$(get mapped_port.url)"
+assert_eq "a non-default port is kept"     "http://wiki.example.test:8443/.well-known/mercure" "$(get odd_port.url)"
+# An operator who set an absolute URL means it — no hostname rewriting, no pin.
+assert_eq "an absolute URL is left alone"  "https://hub.example.net/.well-known/mercure"   "$(get absolute.0.0)"
+assert_eq "  …and not pinned"              ""                                              "$(get absolute.0.1)"
+assert_not_contains "never probes the bare IP over TLS" 'https://127.0.0.1' "$targets"
+
 section 'the monitor is admin-only'
 r=$(get_as "$ED" 'api.php?action=admin_realtime_status')
 assert_contains "an editor is refused"    '"success":false' "$r"
