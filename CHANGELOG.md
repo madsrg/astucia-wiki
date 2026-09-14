@@ -7,6 +7,15 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 ## [Unreleased]
 
 ### Fixed
+- **Realtime never pushed for any page or chat whose name contains a space.** A Mercure
+  topic is a URI and a selector is a URI template, so `wiki/Main/page/Q3 report.md` is not
+  a valid topic: the hub accepts the publish with 200 and then matches it against no
+  subscriber's selectors, delivering it to nobody. Nothing reported an error — publishing
+  is fire-and-forget, the stream stayed open and all three monitor checks passed — so the
+  symptom was simply that the open page did not reload while the file tree did (the tree
+  topic has no space in it). Topics and the subscribe selectors are now percent-encoded per
+  segment, and the browser's encoding is asserted byte-identical to PHP's, because dispatch
+  is string equality on the topic.
 - **A reasoning model that stops after its analysis turn no longer fails the run.** At a
   high Reasoning effort a model can return `finish_reason: stop` with `content: null` and
   its text in `reasoning_content` — nothing about that looks like an error, and it is one

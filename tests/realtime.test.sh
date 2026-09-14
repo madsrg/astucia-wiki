@@ -125,6 +125,80 @@ assert_contains "the write succeeded"  '"success":true'      "$r"
 assert_contains "page topic"  'topic=wiki%2FMain%2Fpage%2FNote.md' "$(posts)"
 assert_contains "tree topic"  'topic=wiki%2FMain%2Ftree'           "$(posts)"
 
+# ── topic encoding ───────────────────────────────────────────────────────────
+# A Mercure topic is a URI and a selector is a URI template, so a raw space makes the topic
+# invalid: the hub accepts the publish with 200 and matches it against nobody's selectors,
+# delivering it to no one. Nothing reports an error — publishing is fire-and-forget, the
+# stream stays open and every check in the monitor passes — so every page and chat whose
+# name contained a space silently never pushed. Reported from production as "the page is not
+# reloaded when the AI updates it", with all three monitor checks green.
+#
+# The browser must produce byte-identical topics, because dispatch is string equality on the
+# topic. rawurlencode() and the adjusted encodeURIComponent() in modules/realtime must agree.
+section 'a name with a space still produces a deliverable topic'
+clear_pubs
+r=$(post_as "$ADMIN" 'api.php?action=create_file&space=Main' "$(printf 'path=%s&content=x' 'Q3%20report.md')")
+assert_contains "the write succeeded"      '"success":true' "$r"
+assert_contains "the space is encoded"     'topic=wiki%2FMain%2Fpage%2FQ3%2520report.md' "$(posts)"
+# The raw name does appear in the JSON payload, which is correct — it is the topic that has
+# to be a valid URI, so the assertion has to look at the topic field alone.
+topics=$(posts | tr '&' '\n' | sed -n 's/^topic=//p')
+assert_not_contains "no raw space in any topic" '%20report' "$(printf '%s' "$topics" | tr -d '%25')"
+assert_contains     "the page topic is there"   'Q3%2520report.md' "$topics"
+
+section 'the encoding matches between PHP and the browser, character for character'
+# Not "both look reasonable": identical. A mismatch means events arrive and are discarded,
+# which is silent. The cases live in a file so neither side is retyped through three layers
+# of shell quoting.
+python3 - "$WIKI_ROOT/enc-cases.json" <<'CASES'
+import json, sys
+json.dump(["Q3 report.md", "Notes/Q3 report.md", "A&B (draft).md", "it's here!.md",
+           "50%+more.md", "\u00c6blegr\u00f8d.md", "a~b_c-d.md", "Plain.md"],
+          open(sys.argv[1], 'w'))
+CASES
+php_side=$(cd "$WIKI_APP" && php -r '
+require "realtime.php";
+$c = json_decode(file_get_contents($argv[1]), true);
+// JSON_UNESCAPED_SLASHES, or PHP writes Notes\/… and node writes Notes/… — identical
+// values that differ only in serialisation, which is not what is under test here.
+echo json_encode(array_map("wiki_rt_path", $c), JSON_UNESCAPED_SLASHES);' "$WIKI_ROOT/enc-cases.json")
+cat > "$WIKI_ROOT/enc.js" <<'ENCJS'
+const fs = require('fs');
+const seg = (s) => encodeURIComponent(String(s ?? ''))
+    .replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+const path = (p) => String(p ?? '').split('/').map(seg).join('/');
+const cases = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+console.log(JSON.stringify(cases.map(path)));
+ENCJS
+js_side=$(node "$WIKI_ROOT/enc.js" "$WIKI_ROOT/enc-cases.json" 2>/dev/null || true)
+if [ -z "$js_side" ]; then
+    echo "    (node unavailable — PHP/JS parity not compared)"
+else
+    assert_eq "PHP and JS encode identically" "$php_side" "$js_side"
+fi
+# Compared as decoded values: PHP's json_encode escapes "/" as "\/", so matching the raw
+# JSON text would fail on a difference that does not exist.
+decoded=$(printf '%s' "$php_side" | python3 -c 'import json,sys; print("\n".join(json.load(sys.stdin)))')
+assert_contains "a space becomes %20"        'Q3%20report.md'       "$decoded"
+assert_contains "and a slash is preserved"   'Notes/Q3%20report.md' "$decoded"
+assert_contains "utf-8 is encoded too"       '%C3%86blegr%C3%B8d'   "$decoded"
+# And the module really uses it, rather than interpolating the raw path.
+assert_contains "rtTopic encodes its path"   'rtPath(path)' "$(cat "$WIKI_APP/modules/realtime/index.js")"
+
+section 'a Space whose name has a space is encoded in the selector too'
+# Otherwise the token carries an invalid template and the user receives nothing at all.
+fixture_space 'Two Words'
+r=$(claim "$ADMIN")
+assert_contains "unrestricted is unaffected" 'wiki/{+rest}' "$r"
+fixture_users '{"users":[
+  {"uid":1,"sub":"s1","name":"Admin","role":"admin","auth":"oidc"},
+  {"uid":2,"sub":"s2","name":"Ed","role":"editor","auth":"oidc","spaces":["Main"]},
+  {"uid":3,"sub":"s3","name":"Reader","role":"reader","auth":"oidc"},
+  {"uid":4,"sub":"s4","name":"Two","role":"editor","auth":"oidc","spaces":["Two Words"]}]}'
+fixture_login "$WIKI_ROOT/jar-2w" "uid=4&sub=s4&name=Two&role=editor&spaces=Two%20Words"
+assert_contains "the Space name is encoded" 'wiki/Two%20Words/{+rest}' "$(claim "$WIKI_ROOT/jar-2w")"
+assert_not_contains "not raw in the template" '"wiki/Two Words/' "$(claim "$WIKI_ROOT/jar-2w")"
+
 section 'private=on — without it the hub broadcasts to everyone'
 # Confirmed by removing it against a real hub: a Main-only subscriber then received
 # Bravo's events. Every publish must carry it.

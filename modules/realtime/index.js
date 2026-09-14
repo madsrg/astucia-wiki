@@ -23,10 +23,20 @@ import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 
 /** Mirrors the PHP topic helpers in realtime.php. Keep the two in step. */
+// Percent-encode a topic component, byte-identically to PHP's rawurlencode() — see
+// wiki_rt_seg() in realtime.php for why this matters. encodeURIComponent leaves !'()* alone
+// and rawurlencode does not, so those are escaped here by hand. A topic containing a raw
+// space is not a valid URI, and the hub delivers such an update to nobody while reporting
+// success, so an unencoded topic loses every event for any page whose name has a space in it.
+const rtSeg = (s) => encodeURIComponent(String(s ?? ''))
+    .replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+// Per segment, so `/` survives and a topic still reads as a path.
+const rtPath = (p) => String(p ?? '').split('/').map(rtSeg).join('/');
+
 export const rtTopic = {
-    chat:    (space, path) => `wiki/${space || ''}/chat/${path}`,
-    page:    (space, path) => `wiki/${space || ''}/page/${path}`,
-    tree:    (space)       => `wiki/${space || ''}/tree`,
+    chat:    (space, path) => `wiki/${rtSeg(space || '')}/chat/${rtPath(path)}`,
+    page:    (space, path) => `wiki/${rtSeg(space || '')}/page/${rtPath(path)}`,
+    tree:    (space)       => `wiki/${rtSeg(space || '')}/tree`,
     job:     (uid)         => `wiki/user/${uid}/job`,
     mention: (uid)         => `wiki/user/${uid}/mention`,
     // The admin monitor's round-trip test. Under wiki/user/<uid>/ so it needs no new

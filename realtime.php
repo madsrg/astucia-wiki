@@ -97,7 +97,7 @@ function wiki_realtime_subscribe_token(?array $allowed_spaces, int $uid): string
         foreach ($allowed_spaces as $s) {
             $s = trim((string)$s);
             if ($s === '' || str_starts_with($s, '.')) continue;
-            $selectors[] = 'wiki/' . $s . '/{+rest}';
+            $selectors[] = 'wiki/' . wiki_rt_seg($s) . '/{+rest}';
         }
         // Root-level content sits outside every Space and stays readable to a restricted
         // actor, exactly as wiki_space_allowed() decides for reads.
@@ -111,14 +111,39 @@ function wiki_realtime_subscribe_token(?array $allowed_spaces, int $uid): string
 // A closed vocabulary of five. This is the public contract an external bridge is written
 // against, so it is built from helpers rather than string-concatenated at each call site.
 
+/**
+ * Percent-encode one topic component.
+ *
+ * **A raw space in a topic silently costs you the update.** A Mercure topic is a URI and a
+ * selector is a URI template, so `wiki/Main/page/Q3 report.md` is not a valid topic: the hub
+ * accepts the publish with 200 and then matches it against no subscriber's selectors, so it
+ * is delivered to nobody. Nothing reports an error — publishing is fire-and-forget, the
+ * stream stays open, and every check in the monitor passes. Every page and chat whose name
+ * contains a space had never pushed.
+ *
+ * `/` is preserved by encoding per segment, so a topic still reads as a path in a log.
+ *
+ * **The browser must produce byte-identical topics**, because dispatch is string equality on
+ * the topic (`fire(data.topic)` in modules/realtime). `rawurlencode()` escapes everything
+ * outside RFC 3986 unreserved — `A-Za-z0-9-_.~` — and the JS side deliberately post-processes
+ * `encodeURIComponent`, which otherwise leaves `!'()*` alone. Change one and you must change
+ * the other, or events arrive and are dropped on the floor.
+ */
+function wiki_rt_seg(string $s): string {
+    return rawurlencode($s);
+}
+function wiki_rt_path(string $rel_path): string {
+    return implode('/', array_map('rawurlencode', explode('/', $rel_path)));
+}
+
 function wiki_rt_topic_chat(?string $space, string $rel_path): string {
-    return 'wiki/' . (string)$space . '/chat/' . $rel_path;
+    return 'wiki/' . wiki_rt_seg((string)$space) . '/chat/' . wiki_rt_path($rel_path);
 }
 function wiki_rt_topic_page(?string $space, string $rel_path): string {
-    return 'wiki/' . (string)$space . '/page/' . $rel_path;
+    return 'wiki/' . wiki_rt_seg((string)$space) . '/page/' . wiki_rt_path($rel_path);
 }
 function wiki_rt_topic_tree(?string $space): string {
-    return 'wiki/' . (string)$space . '/tree';
+    return 'wiki/' . wiki_rt_seg((string)$space) . '/tree';
 }
 function wiki_rt_topic_job(int $uid): string {
     return 'wiki/user/' . $uid . '/job';
