@@ -6,6 +6,12 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.9.7] — 2026-09-14
+
+Two realtime bugs that hid behind a healthy-looking monitor, and a reasoning model that
+stopped one turn short of an answer. Both were reported from a production install where
+every status check was green.
+
 ### Fixed
 - **Realtime never pushed for any page or chat whose name contains a space.** A Mercure
   topic is a URI and a selector is a URI template, so `wiki/Main/page/Q3 report.md` is not
