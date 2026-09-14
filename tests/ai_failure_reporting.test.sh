@@ -50,11 +50,26 @@ if ($mode === 'phantom_tool') {
                       'message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => []]]]]);
     return;
 }
-// A reasoning model whose answer arrived in a field the reply is not read from.
+// A reasoning model that stops after its analysis turn. This is the shape reported from a
+// real gpt120b run at effort=high: finish_reason stop, content null, and the text in both
+// reasoning fields. Repeated on every call, so the nudge gets a second one just like it.
 if ($mode === 'reasoning_only') {
     echo json_encode(['choices' => [['finish_reason' => 'stop', 'message' => [
-        'role' => 'assistant', 'content' => '',
+        'role' => 'assistant', 'content' => null, 'refusal' => null, 'tool_calls' => [],
+        'reasoning' => 'I considered the sales figures and concluded...',
         'reasoning_content' => 'I considered the sales figures and concluded...']]]]);
+    return;
+}
+// Analysis first, then a proper answer when asked — what the nudge is for.
+if ($mode === 'reasoning_then_answer') {
+    if ($n === 1) {
+        echo json_encode(['choices' => [['finish_reason' => 'stop', 'message' => [
+            'role' => 'assistant', 'content' => null,
+            'reasoning_content' => 'Let me think about the figures first.']]]]);
+    } else {
+        echo json_encode(['choices' => [['finish_reason' => 'stop',
+            'message' => ['role' => 'assistant', 'content' => 'Revenue grew 50% in Q1.']]]]);
+    }
     return;
 }
 echo json_encode($stop);
@@ -117,15 +132,24 @@ assert_contains     "names what happened"        'signalled a tool call but sent
 assert_contains     "with the evidence"          'finish_reason=tool_calls'  "$r"
 assert_not_contains "not the catch-all"          'No response was generated' "$r"
 
-section 'a reasoning model whose text landed in the wrong field'
+section 'a model that stops after its analysis turn is asked to finish'
+# The reported case: gpt120b at effort=high returned 214 characters of reasoning, no
+# content, finish_reason=stop. That is one turn short of an answer, not a failed run, so
+# the loop asks for the answer instead of reporting "Lower this AI user's Reasoning effort".
+r=$(run_job reasoning_then_answer high)
+assert_contains     "the answer comes back"      'REPLY=Revenue grew 50% in Q1.' "$r"
+assert_contains     "no error"                   'ERROR=(none)'                  "$r"
+assert_eq           "it took exactly two calls"  "2" "$(cat "$WIKI_ROOT/calls.txt")"
+
+section '  …and if it still will not answer, its reasoning is handed over'
 r=$(run_job reasoning_only high)
-assert_contains     "names the field"            'reasoning_content'         "$r"
-assert_contains     "explains the consequence"   'not the field the reply is read from' "$r"
-assert_contains     "and what to change"         'Reasoning effort'          "$r"
-assert_not_contains "not the catch-all"          'No response was generated' "$r"
-# The chain of thought itself must not be quoted into a message editors can read.
-assert_not_contains "never quotes the reasoning" 'I considered the sales figures' "$r"
-assert_contains     "only its size"              'reasoning_content=' "$r"
+assert_contains     "the reasoning is the reply"  'I considered the sales figures' "$r"
+assert_contains     "labelled as reasoning only"  'only its reasoning'            "$r"
+assert_contains     "and it is not an error"      'ERROR=(none)'                  "$r"
+assert_not_contains "not the old failure"         'Lower this AI'                 "$r"
+assert_not_contains "not the catch-all"           'No response was generated'     "$r"
+# Nudged once, not in a loop: the first call, the nudge, and no more.
+assert_eq           "nudged exactly once"        "2" "$(cat "$WIKI_ROOT/calls.txt")"
 
 section 'and a working run is unaffected'
 r=$(run_job ok high)

@@ -75,7 +75,15 @@ SHIM
 
     local port; port="$(_free_port)"
     WIKI_URL="http://127.0.0.1:$port"
-    ( cd "$WIKI_APP" && exec php -S "127.0.0.1:$port" ) > "$WIKI_ROOT/server.log" 2>&1 &
+    # Sessions in the fixture's own directory, not PHP's shared save_path. Every fixture
+    # otherwise writes into /var/lib/php/sessions, which is swept on a timer by the
+    # distribution (phpsessionclean) with no regard for a test run — so a suite could lose
+    # its logged-in session mid-way and report "Admin access required" for assertions that
+    # pass when the suite runs alone. Isolating it also stops one suite's sessions from
+    # outliving its fixture.
+    mkdir -p "$WIKI_ROOT/sessions"
+    ( cd "$WIKI_APP" && exec php -d "session.save_path=$WIKI_ROOT/sessions" \
+        -S "127.0.0.1:$port" ) > "$WIKI_ROOT/server.log" 2>&1 &
     WIKI_PID=$!
 
     # Poll for readiness rather than sleeping a guessed interval.

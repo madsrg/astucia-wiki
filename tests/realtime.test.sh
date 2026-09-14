@@ -231,6 +231,10 @@ assert_not_contains "and not as working"         '"ok":true'       "$r"
 # needs a certificate curl refuses. CN=localhost probed as 127.0.0.1 fails verification
 # deterministically (curl errno 60 — the same class as a missing local issuer).
 section 'an unverifiable certificate is a warning, not "nothing answered"'
+# Re-establish the session first: this section runs minutes into the suite, after several
+# config rewrites and a killed hub, and an assertion that fails because the login has gone
+# stale is indistinguishable from the behaviour under test.
+fixture_login "$ADMIN" "uid=1&sub=s1&name=Admin&role=admin"
 enable_rt true
 TLS_DIR=$WIKI_ROOT/tls; mkdir -p "$TLS_DIR"
 TLS_PID=

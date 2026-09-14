@@ -720,6 +720,27 @@ function _ai_message_shape(array $choice): string {
          . '; message: ' . ($bits ? implode(', ', $bits) : '(nothing but role)');
 }
 
+/**
+ * The reasoning text a model returned when `content` came back empty, or ''.
+ *
+ * A reasoning model behind a gateway splits its turn: the analysis channel lands in
+ * `reasoning_content` and the answer in `content`. Some stop after the analysis — more
+ * likely at a high effort setting, and `finish_reason` is still `stop`, so nothing about
+ * the response looks like an error. Treating that as a failed run throws away work that
+ * only needed to be asked to finish.
+ */
+function _ai_reasoning_only_text(array $choice): string {
+    foreach (WIKI_AI_REASONING_FIELDS as $k) {
+        $v = $choice['message'][$k] ?? null;
+        if (is_string($v) && trim($v) !== '') return trim($v);
+    }
+    return '';
+}
+
+/** What to say when the model's reasoning is all there is. */
+const WIKI_AI_REASONING_ONLY_NOTE =
+    "\n\n*(the model returned only its reasoning; it produced no final answer)*";
+
 /** Fields a provider may put a reasoning model's text in instead of `content`. */
 const WIKI_AI_REASONING_FIELDS = ['reasoning_content', 'reasoning', 'thinking'];
 
@@ -1301,7 +1322,8 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     $api_error    = null;
     $tools_called = false;
     // What the last message looked like, if it yielded no reply — see _ai_message_shape().
-    $no_reply_note = '';
+    $no_reply_note   = '';
+    $nudged_for_final = false;   // one "give the answer" turn, never a loop of them
     // OpenAI token-limit param + sampling/thinking handling (see helpers above).
     $openai_token_param  = _openai_token_param($api_url);
     $token_param_swapped = false;
@@ -1532,18 +1554,29 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
             }
             if ($note) $reply = trim($reply . "\n\n" . $note);
             if ($reply === '') {
-                // Nothing usable in `content`. Say which field the model did fill, since
-                // a reasoning model behind a gateway can put its whole answer in one this
-                // API shape does not read.
+                // Nothing usable in `content`. Record what the message did contain, for
+                // the error if it comes to that.
                 $no_reply_note = _ai_message_shape($choice);
-                foreach (WIKI_AI_REASONING_FIELDS as $_rk) {
-                    $_rv = $choice['message'][$_rk] ?? null;
-                    if (!is_string($_rv) || trim($_rv) === '') continue;
-                    $api_error = 'The model returned reasoning but no answer: its text arrived in "'
-                        . $_rk . '", which is not the field the reply is read from. Lower this AI '
-                        . 'user\'s Reasoning effort, or point it at a model whose final message puts '
-                        . 'the reply in "content". [' . $no_reply_note . ']';
-                    break 2;
+                $_reason_text  = _ai_reasoning_only_text($choice);
+                if ($_reason_text !== '') {
+                    // Ask once for the answer, mirroring the nudge the anthropic branch
+                    // already does when a model narrates instead of acting. This used to
+                    // report a failure and tell the operator to lower Reasoning effort —
+                    // advice that is sometimes right but throws away a run that had only
+                    // stopped one turn early.
+                    if (!$nudged_for_final && $iter < $max_iters - 1) {
+                        $nudged_for_final = true;
+                        $messages[] = ['role' => 'assistant', 'content' => $_reason_text];
+                        $messages[] = ['role' => 'user', 'content' =>
+                            'That was your reasoning, not an answer. Give the final answer now, as plain text.'];
+                        $reply = null;
+                        continue;
+                    }
+                    // Asked, and still nothing: the reasoning is everything the model
+                    // produced, so hand it over rather than losing the run entirely.
+                    // Labelled, because it is analysis and not a composed answer.
+                    $reply = $_reason_text . WIKI_AI_REASONING_ONLY_NOTE;
+                    break;
                 }
             }
             break;

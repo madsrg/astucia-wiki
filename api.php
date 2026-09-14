@@ -537,6 +537,7 @@ if (isset($_REQUEST['action'])) {
         // Whether this AI reasons, for the truncation message: reasoning tokens come out
         // of the same ceiling, which is the usual reason a high-effort run returns nothing.
         $_inline_thinking    = wiki_ai_thinking_config($config) !== null;
+        $nudged_for_final    = false;   // one "give the answer" turn, never a loop of them
         // Reserve the final iteration for a tool-free answer: if the model keeps
         // calling tools right up to the cap, forbid tools on the last pass so it
         // must return text — instead of failing with "too many tool calls".
@@ -785,6 +786,24 @@ if (isset($_REQUEST['action'])) {
                     continue;
                 }
                 if ($note) $reply = trim($reply . "\n\n" . $note);
+                if ($reply === '') {
+                    // Same as the job path (see run_agent_job): a reasoning model can stop
+                    // after its analysis turn with finish_reason=stop and content=null,
+                    // which is not an error and not worth losing the reply over. Ask once,
+                    // then hand over what it did produce.
+                    $_reason_text = _ai_reasoning_only_text($choice);
+                    if ($_reason_text !== '') {
+                        if (!$nudged_for_final && $iter < $max_iters - 1) {
+                            $nudged_for_final = true;
+                            $messages[] = ['role' => 'assistant', 'content' => $_reason_text];
+                            $messages[] = ['role' => 'user', 'content' =>
+                                'That was your reasoning, not an answer. Give the final answer now, as plain text.'];
+                            $reply = null;
+                            continue;
+                        }
+                        $reply = $_reason_text . WIKI_AI_REASONING_ONLY_NOTE;
+                    }
+                }
                 break;
             }
         }

@@ -6,6 +6,17 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+### Fixed
+- **A reasoning model that stops after its analysis turn no longer fails the run.** At a
+  high Reasoning effort a model can return `finish_reason: stop` with `content: null` and
+  its text in `reasoning_content` — nothing about that looks like an error, and it is one
+  turn short of an answer rather than a failure. The loop now asks once for the final
+  answer, and if the model still will not produce one, hands over what it did produce
+  (labelled) instead of losing the run. Previously it reported "The model returned
+  reasoning but no answer" and advised lowering the effort setting.
+- The inline chat path had no handling for this at all — the same model answering a chat
+  mention showed "No response was generated."
+
 ## [2026.9.6] — 2026-09-11
 
 A patch for v2026.9.5, entirely from building the image and running it: the container's own
