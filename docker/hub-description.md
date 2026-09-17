@@ -10,9 +10,17 @@ A flat-file, self-hosted team wiki with AI assistants and an MCP server. **No da
 every page is a file on disk, so a backup is an archive of one directory.
 
 **Content** — Markdown pages with **Mermaid** and draw.io diagrams · structured lists and
-JSON data pages · page and diagram templates · attachments and file libraries · wikilinks,
-transclusion and tags · full-text search with saved searches · a knowledge graph · optional
-git version history · static site export.
+JSON data pages · **YAML front matter** · page and diagram templates · attachments and file
+libraries · wikilinks, transclusion and tags · full-text search with saved searches · a
+knowledge graph · optional git version history · static site export.
+
+**Page metadata that travels with the file** — a page may open with a `---` block of YAML,
+as Obsidian, Hugo and Jekyll write it. The wiki keeps it out of the editor and out of
+search, shows it on request, and puts it back byte-for-byte when the page is saved — so an
+imported note keeps its metadata, and a page copied out of the wiki takes its own with it.
+Per Space you can also let people **edit** those fields, or have the wiki **maintain**
+`created`, `createdBy`, `updated` and `updatedBy` itself. Both off by default: on a Space
+that mirrors somebody's vault, the wiki does not touch the block at all.
 
 **AI** — AI users that read and write wiki pages · one-off and scheduled agent jobs · team
 and per-page chat · an **MCP server** so other tools can use your wiki, and an **MCP client**
@@ -35,7 +43,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.9.7
+    madsrotwitt/astucia-wiki:2026.9.8
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -61,7 +69,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.9.7
+    madsrotwitt/astucia-wiki:2026.9.8
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -73,7 +81,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.9.7` | moves only if that release is rebuilt |
+| `2026.9.8` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
