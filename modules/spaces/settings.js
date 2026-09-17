@@ -35,8 +35,10 @@ const section = (title, hint) => {
  *   onRenamed(oldName, newName)        after a successful rename
  *   onMerged(sourceName, targetName)   after the source space has been dissolved
  *   onReadOnly(spaceName, readonly)    after the flag was flipped
+ *   onFmEdit(spaceName, mode)           after the metadata mode changed
+ *   onFmStamp(spaceName, mode)          after automatic stamping was switched
  */
-export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onReadOnly } = {}) => {
+export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onReadOnly, onFmEdit, onFmStamp } = {}) => {
     document.getElementById(OVERLAY_ID)?.remove();
 
     const info = await api.call('admin_space_settings');
@@ -122,6 +124,79 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onRead
         // A frozen space cannot be merged into or away, so the merge section follows.
         refreshMerge();
         onReadOnly?.(spaceName, want);
+    });
+
+    // ── Page metadata (front matter) ──────────────────────────────────────────
+    //
+    // Per Space, because the granularity is the point: one Space can mirror an Obsidian
+    // vault the wiki should keep its hands off, while another wants its metadata editable.
+    const fmSec = section(t('spaces.settings.fm-title'), t('spaces.settings.fm-hint'));
+    const fmRow = el('div', 'space-settings-row');
+    const fmSel = el('select', 'form-control');
+    fmSel.id = 'space-fm-edit';
+    [['off', 'spaces.settings.fm-off'], ['manual', 'spaces.settings.fm-manual']]
+        .forEach(([value, key]) => {
+            const o = el('option', '', t(key));
+            o.value = value;
+            fmSel.appendChild(o);
+        });
+    fmSel.value = self.fm_edit || 'off';
+    fmRow.appendChild(fmSel);
+    fmSec.appendChild(fmRow);
+    body.appendChild(fmSec);
+
+    fmSel.addEventListener('change', async () => {
+        const want = fmSel.value;
+        fmSel.disabled = true;
+        const res = await api.call('admin_set_space_fm_edit',
+            { space_name: spaceName, mode: want }, 'POST');
+        fmSel.disabled = false;
+        if (!res.success) {
+            fmSel.value = self.fm_edit || 'off';         // the server is the truth
+            showToast(res.message || t('spaces.settings.fm-failed'), 'error');
+            return;
+        }
+        self.fm_edit = want;
+        showToast(t('spaces.settings.fm-saved'), 'success');
+        onFmEdit?.(spaceName, want);
+    });
+
+    // ── Automatic stamping ────────────────────────────────────────────────────
+    //
+    // Independent of the setting above, not a third mode of it: maintaining the timestamps
+    // while still editing your own fields by hand is the combination people want.
+    const stampSec = section(t('spaces.settings.stamp-title'), t('spaces.settings.stamp-hint'));
+    const stampRow = el('div', 'space-settings-row');
+    const stampSel = el('select', 'form-control');
+    stampSel.id = 'space-fm-stamp';
+    [['off', 'spaces.settings.stamp-off'], ['on', 'spaces.settings.stamp-on']]
+        .forEach(([value, key]) => {
+            const o = el('option', '', t(key));
+            o.value = value;
+            stampSel.appendChild(o);
+        });
+    stampSel.value = self.fm_autostamp || 'off';
+    stampRow.appendChild(stampSel);
+    stampSec.appendChild(stampRow);
+    // The consequence spelled out, because it is the one surprise in the feature: those
+    // four fields stop being the author's, and a hand-edited value is overwritten.
+    stampSec.appendChild(el('p', 'pref-hint', t('spaces.settings.stamp-warn')));
+    body.appendChild(stampSec);
+
+    stampSel.addEventListener('change', async () => {
+        const want = stampSel.value;
+        stampSel.disabled = true;
+        const res = await api.call('admin_set_space_fm_autostamp',
+            { space_name: spaceName, mode: want }, 'POST');
+        stampSel.disabled = false;
+        if (!res.success) {
+            stampSel.value = self.fm_autostamp || 'off';     // the server is the truth
+            showToast(res.message || t('spaces.settings.fm-failed'), 'error');
+            return;
+        }
+        self.fm_autostamp = want;
+        showToast(t('spaces.settings.fm-saved'), 'success');
+        onFmStamp?.(spaceName, want);
     });
 
     // ── Merge ─────────────────────────────────────────────────────────────────

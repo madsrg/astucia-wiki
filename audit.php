@@ -179,6 +179,7 @@ function wiki_audit_chat_purge(string $abs_path, int $removed, string $mode): vo
 
 const WIKI_AUDIT_ACTIONS = [
     'save'               => ['update',  'page',       'file'],
+    'set_frontmatter'    => ['update',  'page',       'file'],
     'create_file'        => ['create',  'page',       'path'],
     'upload_page'        => ['create',  'page',       null],          // named by wiki_audit_object() after the write
     'save_message_page'  => ['update',  'page',       'path'],

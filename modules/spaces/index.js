@@ -15,6 +15,8 @@ let _allSpaces = [];
 // Names of the spaces that are frozen. Read from list_spaces, which every client
 // calls on load — a reader has to know too, since the flag hides the edit UI.
 let _readOnly = new Set();
+let _fmEdit   = new Set();
+let _fmStamp  = new Set();
 
 export const getAllSpaces = () => _allSpaces;
 export const isSpaceReadOnly = (name) => _readOnly.has(name);
@@ -30,6 +32,11 @@ export const isSpaceReadOnly = (name) => _readOnly.has(name);
 const _applyReadOnly = () => {
     state.spaceReadOnly = !!state.currentSpace && _readOnly.has(state.currentSpace);
     document.body.classList.toggle('space-readonly', state.spaceReadOnly);
+    // Whether this Space lets page metadata be edited from the Metadata panel. Per Space,
+    // so like the frozen flag it has to be re-read on every switch rather than decided
+    // once at render. No body class: it gates one panel, not a set of controls.
+    state.spaceFmEdit = !!state.currentSpace && _fmEdit.has(state.currentSpace);
+    state.spaceFmStamp = !!state.currentSpace && _fmStamp.has(state.currentSpace);
 };
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -41,6 +48,8 @@ export const initSpaces = async ({ onSpaceChange }) => {
     const spaces = result.data || [];
     _allSpaces = spaces;
     _readOnly  = new Set(result.readonly || []);
+    _fmEdit    = new Set(result.fm_edit || []);
+    _fmStamp   = new Set(result.fm_autostamp || []);
     setAvailableSpaces(spaces);
 
     // Determine active space: URL param → localStorage → first available
@@ -118,6 +127,8 @@ const _reload = async (activeName) => {
     const refreshed = await api.call('list_spaces');
     _allSpaces = refreshed.data || [];
     _readOnly  = new Set(refreshed.readonly || []);
+    _fmEdit    = new Set(refreshed.fm_edit || []);
+    _fmStamp   = new Set(refreshed.fm_autostamp || []);
     setAvailableSpaces(_allSpaces);
     const container = document.getElementById('space-switcher');
     if (container) {
@@ -257,9 +268,37 @@ const _render = (spaces, active) => {
         newBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> ${t('spaces.new-btn')}`;
         newBtn.addEventListener('click', async () => {
             dropdown.classList.add('hidden');
-            const name = await promptModal(t('spaces.prompt'), '', t('spaces.ph'), icons.space);
-            if (!name) return;
-            const res = await api.call('create_space', { name }, 'POST');
+            const html = `<div class="form-group">
+                    <label class="form-label" for="new-space-name">${t('spaces.prompt')}</label>
+                    <input type="text" id="new-space-name" class="form-control" placeholder="${t('spaces.ph')}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="new-space-fm">${t('spaces.settings.fm-title')}</label>
+                    <select id="new-space-fm" class="form-control">
+                        <option value="off">${t('spaces.settings.fm-off')}</option>
+                        <option value="manual">${t('spaces.settings.fm-manual')}</option>
+                    </select>
+                    <p class="form-hint">${t('spaces.settings.fm-hint')}</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="new-space-stamp">${t('spaces.settings.stamp-title')}</label>
+                    <select id="new-space-stamp" class="form-control">
+                        <option value="off">${t('spaces.settings.stamp-off')}</option>
+                        <option value="on">${t('spaces.settings.stamp-on')}</option>
+                    </select>
+                    <p class="form-hint">${t('spaces.settings.stamp-hint')}</p>
+                </div>`;
+            const ok = await confirmModal(t('spaces.new-btn'), {
+                messageHtml: html, confirmLabel: t('spaces.new-create-btn'), icon: icons.space,
+            });
+            // The fields are still in the dialog's DOM when it resolves, which is how the
+            // gallery and the audit detail view read theirs too.
+            const name   = document.getElementById('new-space-name')?.value.trim() || '';
+            const fmEdit = document.getElementById('new-space-fm')?.value || 'off';
+            const fmStamp = document.getElementById('new-space-stamp')?.value || 'off';
+            if (!ok || !name) return;
+            const res = await api.call('create_space',
+                { name, fm_edit: fmEdit, fm_autostamp: fmStamp }, 'POST');
             if (res.success) {
                 showToast(t('spaces.created', { name }), 'success');
                 const newSpaces = await _reload(name);
@@ -303,6 +342,16 @@ const _render = (spaces, active) => {
                 onMerged:  (source, target)   => _afterMerge(source, target),
                 onReadOnly: async (name, readonly) => {
                     if (readonly) _readOnly.add(name); else _readOnly.delete(name);
+                    await _reload(state.currentSpace);
+                },
+                onFmStamp: async (name, mode) => {
+                    if (mode === 'on') _fmStamp.add(name); else _fmStamp.delete(name);
+                    await _reload(state.currentSpace);
+                },
+                onFmEdit: async (name, mode) => {
+                    if (mode === 'manual') _fmEdit.add(name); else _fmEdit.delete(name);
+                    // Re-applies state.spaceFmEdit for the active space, so the Metadata
+                    // panel follows the change without a reload.
                     await _reload(state.currentSpace);
                 },
             });

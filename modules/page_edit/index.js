@@ -51,7 +51,7 @@ export const setEditingMode = async (editing, opts = {}) => {
     const pageActionsGroup = document.getElementById('page-actions-group');
     const indicator = document.getElementById('line-indicator');
 
-    const showAttachments = !editing && state.currentPageType === 'file';
+    const showAttachments = !editing && state.currentPageType === 'md';
     tagsContainer.classList.toggle('hidden', editing);
     attachmentsSection.classList.toggle('hidden', !showAttachments);
     if (pageMetaRow) pageMetaRow.classList.toggle('hidden', editing || !!state.pageChatPath);
@@ -59,7 +59,7 @@ export const setEditingMode = async (editing, opts = {}) => {
 
     const pageChatBtn = document.getElementById('page-chat-btn');
     if (pageChatBtn) {
-        const showChat = !editing && state.currentPageType === 'file';
+        const showChat = !editing && state.currentPageType === 'md';
         pageChatBtn.classList.toggle('hidden', !showChat);
     }
     if (editing && state.pageChatPath) {
@@ -114,7 +114,7 @@ export const setEditingMode = async (editing, opts = {}) => {
         saveBtn.classList.add('hidden');
         cancelBtn.classList.add('hidden');
         searchBtn.classList.add('hidden');
-        editBtn.classList.toggle('hidden', state.currentPageType !== 'file');
+        editBtn.classList.toggle('hidden', state.currentPageType !== 'md');
         const _nav = document.getElementById('toc-panel-nav');
         const _tb  = document.getElementById('toc-btn');
         if (_tb && _nav?.children.length > 0) _tb.classList.remove('hidden');
@@ -183,8 +183,19 @@ export const savePage = async () => {
             showToast(t('edit.saved'), 'success');
             // Tell the on-disk watcher these bytes are ours, or its next poll reports
             // this very save as an external change and reloads the page.
-            const { rebaselineFileWatch } = await import('../page_view/index.js');
+            const { rebaselineFileWatch, updateFrontmatterBadge } = await import('../page_view/index.js');
             rebaselineFileWatch(state.currentPagePath, resultData.lastUpdated, resultData.size);
+            // The save may have changed the page's own front matter — automatic stamping
+            // rewrites four fields, and can add the block to a page that had none. The
+            // cached copy came from the `get` that rendered the page, so without taking the
+            // block back off the response the Metadata panel and its indicator keep
+            // describing the state before this save.
+            if (resultData.frontmatter !== undefined) {
+                state.currentPageFrontmatter = resultData.frontmatter ?? null;
+                state.currentPageFrontmatterNested = resultData.frontmatter_nested ?? null;
+                state.currentPageFrontmatterManaged = resultData.frontmatter_managed ?? null;
+                updateFrontmatterBadge();
+            }
             state.initialContent = markdownContent;
             viewerContent.innerHTML = await renderCurrentPage(state.initialContent);
             setEditingMode(false);

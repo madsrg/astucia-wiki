@@ -83,6 +83,88 @@ function wiki_space_set_readonly(string $space, bool $readonly): bool {
     return wiki_space_settings_save($all);
 }
 
+/**
+ * How a Space treats page metadata (front matter).
+ *
+ * Per-Space rather than wiki-wide from the start, because the granularity is what the
+ * feature is about: one Space can be a mirror of an Obsidian vault, where the wiki should
+ * keep its hands off the `---` block, while another is exported to a static site and wants
+ * its metadata maintained. A wiki-wide switch forces the same policy on both.
+ *
+ * Both settings default to **off**, and a Space with no record in spaces.json is off —
+ * which is what makes a new Space off without anything being written for it.
+ *
+ * A root-level wiki (no Space) has no record to carry a setting and is therefore always
+ * off. That only affects installs whose content predates Spaces, since the UI cannot
+ * select PAGES_DIR itself once any Space exists.
+ */
+const WIKI_FM_EDIT_MODES = ['off', 'manual'];
+const WIKI_FM_AUTOSTAMP_MODES = ['off', 'on'];
+
+function wiki_space_fm_edit(?string $space): string {
+    $space = trim((string)$space);
+    if ($space === '') return 'off';
+    $mode = wiki_space_settings_get(basename($space))['fm_edit'] ?? 'off';
+    return in_array($mode, WIKI_FM_EDIT_MODES, true) ? $mode : 'off';
+}
+
+// Convenience for the callers that hold a directory rather than a name (mirrors
+// wiki_space_dir_is_readonly).
+function wiki_space_dir_fm_edit(?string $space_dir): string {
+    if (!$space_dir) return 'off';
+    $dir = rtrim($space_dir, '/');
+    if ($dir === rtrim(PAGES_DIR, '/')) return 'off';
+    return wiki_space_fm_edit(basename($dir));
+}
+
+function wiki_space_set_fm_edit(string $space, string $mode): bool {
+    $space = basename(trim($space));
+    if ($space === '') return false;
+    if (!in_array($mode, WIKI_FM_EDIT_MODES, true)) return false;
+    $all = wiki_space_settings_all(true);
+    $rec = is_array($all[$space] ?? null) ? $all[$space] : [];
+    // 'off' removes the key rather than storing it, so spaces.json stays a list of
+    // exceptions and wiki_space_settings_save() can drop a record that holds nothing.
+    if ($mode === 'off') unset($rec['fm_edit']);
+    else                 $rec['fm_edit'] = $mode;
+    $all[$space] = $rec;
+    return wiki_space_settings_save($all);
+}
+
+/**
+ * Does this Space maintain `created` / `createdBy` / `updated` / `updatedBy` in a page's
+ * own front matter when the page is saved?
+ *
+ * Independent of fm_edit rather than a third mode of it, because the combination is the
+ * case people want: maintain your own `status:` by hand *and* have the timestamps kept
+ * current. Three exclusive modes forbid exactly that.
+ */
+function wiki_space_fm_autostamp(?string $space): string {
+    $space = trim((string)$space);
+    if ($space === '') return 'off';
+    $mode = wiki_space_settings_get(basename($space))['fm_autostamp'] ?? 'off';
+    return in_array($mode, WIKI_FM_AUTOSTAMP_MODES, true) ? $mode : 'off';
+}
+
+function wiki_space_dir_fm_autostamp(?string $space_dir): string {
+    if (!$space_dir) return 'off';
+    $dir = rtrim($space_dir, '/');
+    if ($dir === rtrim(PAGES_DIR, '/')) return 'off';
+    return wiki_space_fm_autostamp(basename($dir));
+}
+
+function wiki_space_set_fm_autostamp(string $space, string $mode): bool {
+    $space = basename(trim($space));
+    if ($space === '') return false;
+    if (!in_array($mode, WIKI_FM_AUTOSTAMP_MODES, true)) return false;
+    $all = wiki_space_settings_all(true);
+    $rec = is_array($all[$space] ?? null) ? $all[$space] : [];
+    if ($mode === 'off') unset($rec['fm_autostamp']);
+    else                 $rec['fm_autostamp'] = $mode;
+    $all[$space] = $rec;
+    return wiki_space_settings_save($all);
+}
+
 // Keep settings attached to the space through a rename (mirrors what rename_space
 // already does for the `spaces` arrays in users.json).
 function wiki_space_settings_rename(string $old, string $new): void {
