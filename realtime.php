@@ -285,7 +285,15 @@ function wiki_realtime_publish(string $topic, array $data = []): void {
  * tree when the file appears, disappears or is renamed. Keeping that decision here means the
  * ~25 call sites do not each have to remember it.
  */
-function wiki_realtime_publish_path(?string $space, string $rel_path, string $change = 'update'): void {
+/**
+ * @param bool $with_tree Also announce the tree when this change adds or removes a file.
+ *                        A **bulk** caller passes false and announces the tree once for
+ *                        the whole batch: a reconcile of 60 new files would otherwise send
+ *                        61 tree events alongside the page ones, which is the publish storm
+ *                        the per-file cap exists to avoid.
+ */
+function wiki_realtime_publish_path(?string $space, string $rel_path, string $change = 'update',
+                                    bool $with_tree = true): void {
     if (!wiki_realtime_enabled()) return;
     $rel_path = ltrim(str_replace('\\', '/', $rel_path), '/');
     if ($rel_path === '') return;
@@ -297,7 +305,7 @@ function wiki_realtime_publish_path(?string $space, string $rel_path, string $ch
                                    'space' => (string)$space, 'path' => $rel_path,
                                    'change' => $change]);
 
-    if ($change !== 'update') wiki_realtime_publish_tree($space);
+    if ($with_tree && $change !== 'update') wiki_realtime_publish_tree($space);
 }
 
 function wiki_realtime_publish_tree(?string $space): void {

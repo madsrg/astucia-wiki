@@ -322,6 +322,68 @@ assert_contains "an editor is refused"    '"success":false' "$r"
 r=$(post_as "$ED" 'api.php?action=admin_realtime_test' '')
 assert_contains "  …for the test too"     '"success":false' "$r"
 
+section 'a page edited outside the wiki announces that page, not just the tree'
+# This is the case push could not help with. Nothing on the server watches the filesystem,
+# so drift is found by index_sync_maybe() from the api.php bootstrap — and that used to
+# announce only the tree. The file tree therefore refreshed while the *open page*, which
+# subscribes per path, was never told and sat stale until its own fallback poll.
+enable_rt true
+
+# Two separate waits are needed here, for two unrelated reasons, and each one silently
+# empties the publish log if it is missing:
+#
+#   - a scan is debounced for INDEX_SYNC_INTERVAL_SECONDS (30 by default, and a configured
+#     0 is clamped up to it). Rather than rewrite config.php — which is opcached, so the
+#     new value would not be in force for the very next request — drop the stamp file the
+#     debounce reads.
+#   - drift is `file mtime > the index's own updated stamp`, both at 1-second resolution
+#     (the same resolution trap as the open-page watcher and the mentions marker). A file
+#     written in the same second as its index entry is not newer, so it is not drift.
+unstamp() { rm -f "$WIKI_SYS/index-sync/Main.json"; }
+settle()  { sleep 1.1; }
+
+post_as "$ADMIN" 'api.php?action=create_file&space=Main' 'path=Outside.md' > /dev/null
+get_as "$ADMIN" 'api.php?action=indexfiles&space=Main' > /dev/null
+
+settle; clear_pubs; unstamp
+printf '# Outside\n\nEdited by a text editor.\n' > "$WIKI_PAGES/Main/Outside.md"
+# Any request triggers the reconcile; the open-page watcher's own poll is one of these.
+get_as "$ADMIN" 'api.php?action=tree_mtime&space=Main' > /dev/null
+pubs=$(posts)
+assert_contains "the tree is announced"           'topic=wiki%2FMain%2Ftree' "$pubs"
+assert_contains "and so is the changed page"      'page%2FOutside.md'        "$pubs"
+assert_contains "  as an update"                  '%22change%22%3A%22update%22'         "$pubs"
+assert_contains "  privately, like every publish" 'private=on'               "$pubs"
+
+settle; clear_pubs; unstamp
+printf '# Appeared\n' > "$WIKI_PAGES/Main/Appeared.md"
+get_as "$ADMIN" 'api.php?action=tree_mtime&space=Main' > /dev/null
+assert_contains "a new file is announced" 'page%2FAppeared.md' "$(posts)"
+assert_contains "  as a create"           '%22change%22%3A%22create%22'   "$(posts)"
+
+settle; clear_pubs; unstamp
+rm -f "$WIKI_PAGES/Main/Appeared.md"
+get_as "$ADMIN" 'api.php?action=tree_mtime&space=Main' > /dev/null
+assert_contains "a removed file is announced" 'page%2FAppeared.md' "$(posts)"
+assert_contains "  as a delete"               '%22change%22%3A%22delete%22'   "$(posts)"
+
+section 'a bulk reconcile does not turn into hundreds of publishes'
+# Each publish is a synchronous POST to the hub inside whichever request happened to
+# trigger the reconcile, so a `git pull` of a large tree is capped. Past the cap the tree
+# event and the clients' fallback polls carry the rest, as they did for every file before.
+settle; clear_pubs; unstamp
+for i in $(seq 1 60); do printf '# Bulk %s\n' "$i" > "$WIKI_PAGES/Main/Bulk$i.md"; done
+get_as "$ADMIN" 'api.php?action=tree_mtime&space=Main' > /dev/null
+page_pubs=$(posts | grep -c 'page%2F' || true)
+tree_pubs=$(posts | grep -c 'Ftree' || true)
+printf '  %s\n' "$(_dim "60 new files → ${page_pubs} page events, ${tree_pubs} tree event(s)")"
+assert_eq "the tree is announced once" '1' "$tree_pubs"
+if [ "${page_pubs:-0}" -le 50 ] && [ "${page_pubs:-0}" -gt 0 ]; then
+    _pass "page events are capped"
+else
+    _fail "page events are capped" "got ${page_pubs} of them"
+fi
+
 section 'a publish failure never breaks the write'
 kill "$HUB_PID" 2>/dev/null; wait "$HUB_PID" 2>/dev/null; HUB_PID=
 r=$(post_as "$ADMIN" 'api.php?action=create_file&space=Main' 'path=HubDown.md')
@@ -385,6 +447,5 @@ r=$(get_as "$ADMIN" 'api.php?action=admin_realtime_status')
 assert_contains "reported disabled"       '"enabled":false' "$r"
 assert_contains "the reason is visible"   '"flag":false'    "$r"
 assert_contains "and it still answers"    '"success":true'  "$r"
-
 printf '\n'
 exit $(( ASSERT_FAIL > 0 ))

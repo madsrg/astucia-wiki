@@ -75,6 +75,26 @@ assertions red and leaves the positive controls green. Its subject is worth rest
 `{"success":true}`, because every relative path resolves against the Space directory and a
 path that reduces to nothing resolves to its root.
 
+`frontmatter.test.sh` uses the same method on a feature that is not a security one, because
+its failure mode is equally quiet. Mutating `wiki_fm_body()` into a no-op turns 13 assertions
+red — one per surface that reads a page body — and mutating `wiki_fm_preserve()` turns 5 red,
+the ones asserting that a save keeps the block. Writing it that way found a real defect the
+green suite had not: `graph.php` was stripping via an undefined `$path`, so the graph and the
+backlink list disagreed about whether a `[[link]]` in someone's metadata was a link.
+
+`realtime.test.sh` grew an external-change section, and writing it hit three traps worth
+repeating, each of which silently leaves the publish log empty rather than failing loudly:
+
+- **The suite kills the stub hub part-way through**, on purpose, to prove a publish failure
+  does not break a write — and never restarts it. Anything asserting on publishes has to sit
+  *above* that point.
+- **A scan is debounced** (`INDEX_SYNC_INTERVAL_SECONDS`, 30 s; a configured 0 is clamped up
+  to it). Rewriting config.php does not help, because it is opcached and the new value is
+  not in force for the very next request — drop the stamp file the debounce reads instead.
+- **Drift is `mtime > the index's updated stamp`, at 1-second resolution.** A file written
+  in the same second as its index entry is not newer, so it is not drift. The same
+  resolution trap as the open-page watcher and the mentions marker.
+
 Some things a suite cannot assert, and where the line is. `realtime.test.sh` checks what the
 wiki *publishes* — the topics, the payload, and that every publish carries `private=on` —
 against a stub that records each POST. Whether the hub then honours a subscriber's token is

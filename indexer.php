@@ -92,11 +92,22 @@ class PageIndexer {
      * necessarily been through here. A publish call bolted onto each action would drift
      * from that set the first time someone added an action and forgot one line.
      *
-     * Bulk methods do not call this per file — they announce the tree once instead.
+     * Bulk methods announce the tree **once** rather than once per file — but they still
+     * announce the individual pages, because the two topics answer different questions and
+     * different subscribers listen to them. Only the tree used to be announced after a
+     * reconcile, which meant a page edited outside the wiki produced no `page/<path>` event
+     * at all: the file tree refreshed while the open page, which subscribes per path, was
+     * never told and sat there stale until its own slow fallback poll.
      */
-    private function announce($path, $change) {
+    /**
+     * How many individual page events one reconcile will publish before it stops and
+     * leaves the rest to the tree event and the clients' fallback polls.
+     */
+    const RECONCILE_ANNOUNCE_CAP = 50;
+
+    private function announce($path, $change, $with_tree = true) {
         if (!function_exists('wiki_realtime_publish_path')) return;
-        wiki_realtime_publish_path($this->space, (string)$path, $change);
+        wiki_realtime_publish_path($this->space, (string)$path, $change, $with_tree);
     }
 
     private function announceTree() {
@@ -197,7 +208,25 @@ class PageIndexer {
             $this->indexData[$id]['updated'] = $stamp($path);
             $touched++;
         }
-        if ($added || $removed || $touched) { $this->saveIndex(); $this->announceTree(); }
+        if ($added || $removed || $touched) {
+            $this->saveIndex();
+            $this->announceTree();
+            // One page event per file that actually changed, so an open page hears about an
+            // edit made outside the wiki. Capped: a `git pull` can touch hundreds of files
+            // and each publish is a synchronous POST to the hub inside the request that
+            // happened to trigger the reconcile. Past the cap the tree event and the
+            // clients' own fallback polls carry it, which is the behaviour this had for
+            // every file before.
+            $announced = 0;
+            foreach ([[$addPaths, 'create'], [$touchPaths, 'update'], [$removePaths, 'delete']] as [$paths, $change]) {
+                foreach ($paths as $path) {
+                    if ($announced >= self::RECONCILE_ANNOUNCE_CAP) break 2;
+                    // No tree event per file: this method announced it once above.
+                    $this->announce($path, $change, false);
+                    $announced++;
+                }
+            }
+        }
         return ['added' => $added, 'removed' => $removed, 'touched' => $touched];
     }
 
