@@ -6,7 +6,57 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.9.8] — 2026-09-17
+
+Page metadata as YAML front matter: read and preserved always, editable or maintained by
+the wiki per Space. Plus the realtime half of the same story — a page edited outside the
+wiki now tells the browser about itself.
+
+### Added
+- **A page's own `---` front matter block is read, preserved and shown.** A Markdown file
+  may open with a block of YAML, as Obsidian, Hugo and Jekyll write it, and that metadata
+  is what travels when the file is copied elsewhere or read by a tool that never talks to
+  the API. The wiki keeps it out of everything that renders or indexes a page body, shows
+  it on request (**Metadata** in the page's `…` menu, and an icon beside that menu when a
+  page has one), and puts it back byte-for-byte when the page is saved. It does not author
+  the block: `index.json` remains the wiki's own metadata.
+  - The invariant is `block . body === the original bytes`. There is deliberately no
+    serialiser, so the wiki cannot reformat somebody's YAML, reorder their keys or churn
+    git.
+  - A page whose body opens with a thematic break, or whose first line is a Setext heading,
+    is still content — detection requires the enclosed text to look like YAML mappings, not
+    merely to sit between two `---` lines.
+- **Editing it, per Space** (`Page metadata` in the Space settings dialog): add, change and
+  remove fields, including multi-value ones. Lists are written back in whichever style the
+  file already used — block or flow, at its own indentation — because rewriting a block
+  list as `[a, b]` is a reformat rather than an edit. A nested mapping is shown but not
+  editable: there is no honest one-line editor for one. Off by default.
+- **Maintaining dates and authors, per Space** (`Stamp dates and authors`): `created`,
+  `createdBy`, `updated` and `updatedBy`, camelCase and full ISO-8601, added to the block
+  as the page is saved and creating the block on a page that has none. `updated`/`updatedBy`
+  are always rewritten; `created`/`createdBy` are filled only when the file claims neither,
+  as a pair — an imported note's own `created` is real information, and attaching this
+  wiki's author to that date would invent a combination that never existed. A save that
+  changes nothing writes nothing, so the block cannot churn git on its own. Off by default.
+  - `index.json` stays the source of truth, so a value typed by hand into one of those four
+    is overwritten on the next save. The settings page says so, and the panel shows them
+    read-only above the file's own fields.
+- **Whether an LLM sees the block is a setting** (Admin → Content → Page Metadata), off by
+  default. A front matter block can be written as instructions addressed to a model, which
+  is useful when it is meant that way and prompt injection when it is not.
+- A new Space is asked about both metadata settings in the same dialog as its name.
+
 ### Fixed
+- **A page edited outside the wiki now reloads in the browser.** Reported from an install
+  where the Mercure monitor's "Send test event" worked: the hub was fine, but the reconcile
+  that notices external changes announced only the *tree*, so the file tree refreshed while
+  the open page — which subscribes per path — was never told and sat stale. It now
+  announces each changed file too, capped per reconcile so a `git pull` cannot turn into
+  hundreds of publishes.
+  - The open-page watcher's interval while push is live drops from five minutes to one.
+    That poll is not only a safety net against a stalled stream: nothing on the server
+    watches the filesystem, so with an otherwise idle browser it is the main thing that
+    *triggers* external-change detection at all.
 - **The Mercure monitor's "browser path to the hub" check could never verify TLS.** It
   probed `https://127.0.0.1`, and a public certificate is issued for the hostname — no CA
   will issue one for a loopback address — so the check failed on a subject-name mismatch
@@ -17,6 +67,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   Host header carries is not listening inside a container. The target-building moved into
   `wiki_realtime_probe_targets()` so it has a test of its own, and the "could not verify"
   message now lists an address the certificate does not cover among its causes.
+
+### Changed
+- The editor toolbar's **Metadata** menu is now **Auto text**. Its items insert
+  `{filename}`, `{lastUpdated}`, a table of contents and a hidden comment — none of which
+  is metadata, and the word now means front matter everywhere else in the product.
 
 ## [2026.9.7] — 2026-09-14
 
