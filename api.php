@@ -16,6 +16,7 @@ require_once __DIR__ . '/chat_retention.php';
 require_once __DIR__ . '/system_prompt_gallery.php';
 require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/mentions.php';
+require_once __DIR__ . '/frontmatter.php';
 require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/llm_trace.php';
 require_once __DIR__ . '/wikilinks.php';
@@ -903,8 +904,9 @@ if (isset($_REQUEST['action'])) {
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags',
                       'save_diagram_svg', 'upload_page', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
-                      'retarget_wikilinks'];
-    $admin_actions = ['admin_chat_retention', 'admin_prompt_gallery',
+                      'retarget_wikilinks', 'set_frontmatter'];
+    $admin_actions = ['admin_chat_retention', 'admin_frontmatter_settings', 'admin_prompt_gallery',
+                      'admin_set_space_fm_edit', 'admin_set_space_fm_autostamp',
                       'admin_get_users', 'admin_save_users', 'admin_get_user_requests',
                       'admin_approve_request', 'admin_deny_request',
                       'admin_get_logs', 'admin_get_log_content',
@@ -1354,6 +1356,33 @@ if (isset($_REQUEST['action'])) {
                 if (file_exists($file_path) && is_file($file_path)) {
                     $content      = file_get_contents($file_path);
                     $last_updated = filemtime($file_path);
+                    // Front matter is metadata, not content: the renderer, both editors,
+                    // {include:ID} and the wikilink embeds all read through this one
+                    // action, so stripping here keeps it out of every one of them.
+                    //
+                    // `size` must stay the size **on disk**, because that is what the
+                    // open-page watcher compares against (see file_mtime). Reporting the
+                    // stripped length would make the watcher see a mismatch on its very
+                    // first poll and reload the page forever.
+                    $fm_disk_size   = strlen($content);
+                    $fm_raw_get     = $content;    // before stripping, for structure detection
+                    $fm_meta        = [];
+                    $fm_managed_get = [];
+                    $fm_locked_get = [];
+                    if ($ext_get === 'md') {
+                        $fm_split = wiki_fm_split($content);
+                        $content  = $fm_split['body'];
+                        $fm_meta  = wiki_fm_ordered($fm_split['meta']);
+                        // Which fields the manual editor must not offer at all. A list is
+                        // not among them: it is editable as a comma-separated box.
+                        $fm_locked_get = wiki_fm_nested_keys($fm_raw_get ?? '');
+                        // …and which ones it must show but not let anyone edit, because
+                        // the wiki rewrites them on the next save. Letting somebody type
+                        // into a field that is about to be overwritten is a trap.
+                        if (wiki_space_dir_fm_autostamp($space_dir) === 'on') {
+                            $fm_managed_get = WIKI_FM_STAMP_KEYS;
+                        }
+                    }
                     if (in_array($ext_get, ['md', 'drawio'], true)) {
                         $git_commit = $indexer->getGitCommit($rel_get, true);
                     } elseif (in_array($ext_get, ['chat', 'list'], true)) {
@@ -1364,7 +1393,11 @@ if (isset($_REQUEST['action'])) {
                     }
                     // "size" lets a client baseline exactly the bytes it rendered, which
                     // mtime alone cannot do at 1-second resolution (see file_mtime).
-                    echo json_encode(['success' => true, 'data' => $content, 'lastUpdated' => $last_updated, 'size' => strlen($content), 'git_commit' => $git_commit]);
+                    echo json_encode(['success' => true, 'data' => $content, 'lastUpdated' => $last_updated,
+                                      'size' => $fm_disk_size, 'git_commit' => $git_commit,
+                                      'frontmatter' => $fm_meta ?: null,
+                                      'frontmatter_nested' => $fm_locked_get ?: null,
+                                      'frontmatter_managed' => $fm_managed_get ?: null]);
                 } else {
                     echo json_encode(['success' => true, 'data' => '', 'lastUpdated' => time(), 'size' => 0, 'git_commit' => true]);
                 }
@@ -1807,6 +1840,175 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true,
                     'policy'  => wiki_chat_policy_default(),
                     'options' => WIKI_CHAT_POLICIES]);
+                break;
+
+            case 'set_frontmatter':
+                // Manual metadata editing. Unlike every other page write this one does not
+                // ride along with a page save: the panel is open in read mode, so it is its
+                // own write and its own commit. That was a deliberate choice — the
+                // alternative was making the panel editable only in edit mode.
+                $fm_path = sanitize_path($_POST['file'] ?? '');
+                $fm_rel  = ltrim(str_replace('..', '', $_POST['file'] ?? ''), '/');
+                if (strtolower(pathinfo($fm_rel, PATHINFO_EXTENSION)) !== 'md') {
+                    throw new Exception('Only Markdown pages carry front matter.');
+                }
+                // Per-Space, and checked here rather than trusted from the client: the
+                // client hides the editor, this refuses it. Answered before the page is
+                // looked for, because the policy is a property of the Space — otherwise
+                // "is this allowed at all" comes back as "Page not found".
+                if (wiki_space_dir_fm_edit($space_dir) !== 'manual') {
+                    throw new Exception('Editing page metadata is turned off for this Space.');
+                }
+                if (!is_file($fm_path)) throw new Exception('Page not found.');
+
+                $fm_updates  = json_decode((string)($_POST['updates'] ?? '{}'), true);
+                $fm_removals = json_decode((string)($_POST['removals'] ?? '[]'), true);
+                if (!is_array($fm_updates) || !is_array($fm_removals)) throw new Exception('Malformed request.');
+
+                $fm_raw      = (string)file_get_contents($fm_path);
+                $fm_existing = wiki_fm_split($fm_raw)['meta'];
+                // Only a *nested* value is off limits now: a list round-trips through the
+                // panel and is written back in its own style (see wiki_fm_emit_field).
+                $fm_kinds  = wiki_fm_value_kinds($fm_raw);
+                $fm_nested = [];
+                foreach ($fm_kinds as $fm_kk => $fm_kind) {
+                    if ($fm_kind === 'nested') $fm_nested[] = strtolower($fm_kk);
+                }
+                // With stamping on, the four maintained fields are the wiki's. The client
+                // draws them read-only; this is what makes that true, since a client-side
+                // rule is a hint and not a guard.
+                $fm_stamping = wiki_space_dir_fm_autostamp($space_dir) === 'on';
+                $fm_managed  = $fm_stamping ? array_map('strtolower', WIKI_FM_STAMP_KEYS) : [];
+
+                // Validation, because a typed value must not be able to break the block —
+                // a stray line break would put the rest of the value into the document as
+                // loose YAML, and a key that is not a plain scalar cannot be found again.
+                $fm_clean = [];
+                foreach ($fm_updates as $fm_k => $fm_v) {
+                    $fm_k = trim((string)$fm_k);
+                    if (!preg_match('/^[A-Za-z_][A-Za-z0-9_.\- ]*$/', $fm_k)) {
+                        throw new Exception('Invalid field name: ' . $fm_k);
+                    }
+                    // A list arrives as an array. Each item is a scalar on one line, for
+                    // the same reason a scalar value is: a line break would end the line
+                    // and drop the rest of the value into the document as loose YAML.
+                    if (is_array($fm_v)) {
+                        $fm_items = [];
+                        foreach ($fm_v as $fm_item) {
+                            if (is_array($fm_item)) throw new Exception('Field "' . $fm_k . '" cannot hold nested items.');
+                            $fm_item = (string)$fm_item;
+                            if (preg_match('/[\r\n]/', $fm_item)) throw new Exception('A value cannot contain a line break: ' . $fm_k);
+                            if (strlen($fm_item) > 2000) throw new Exception('Field "' . $fm_k . '" has an item that is too long.');
+                            if (trim($fm_item) !== '') $fm_items[] = $fm_item;
+                        }
+                        if (count($fm_items) > 200) throw new Exception('Field "' . $fm_k . '" has too many values.');
+                        if (in_array(strtolower($fm_k), $fm_nested, true)) {
+                            throw new Exception('Field "' . $fm_k . '" holds a nested value; edit that in a text editor.');
+                        }
+                        if (in_array(strtolower($fm_k), $fm_managed, true)) {
+                            throw new Exception('Field "' . $fm_k . '" is maintained by the wiki for this Space and would be overwritten on the next save.');
+                        }
+                        $fm_clean[$fm_k] = $fm_items;
+                        continue;
+                    }
+                    // A key that *currently* holds a list or a nested mapping is refused
+                    // for the same reason: the writer drops continuation lines when a key
+                    // becomes a scalar, so this would silently delete their structure.
+                    // Checked against the block text — a parsed nested mapping is a string
+                    // and is_array() would wave it through (see wiki_fm_structured_keys).
+                    if (in_array(strtolower($fm_k), $fm_nested, true)) {
+                        throw new Exception('Field "' . $fm_k . '" holds a nested value; edit that in a text editor.');
+                    }
+                    if (in_array(strtolower($fm_k), $fm_managed, true)) {
+                        throw new Exception('Field "' . $fm_k . '" is maintained by the wiki for this Space and would be overwritten on the next save.');
+                    }
+                    $fm_v = (string)$fm_v;
+                    if (preg_match('/[\r\n]/', $fm_v)) throw new Exception('A field value cannot contain a line break: ' . $fm_k);
+                    if (strlen($fm_v) > 2000) throw new Exception('Field "' . $fm_k . '" is too long.');
+                    $fm_clean[$fm_k] = $fm_v;
+                }
+                $fm_drop = [];
+                foreach ($fm_removals as $fm_r) {
+                    $fm_r = trim((string)$fm_r);
+                    if ($fm_r !== '') $fm_drop[] = $fm_r;
+                }
+
+                // The panel edits the block it was handed at page load. Refuse a blind
+                // overwrite of a file that has moved on since — same mtime+size signal the
+                // open-page watcher uses, and for the same reason (filemtime has 1-second
+                // resolution, so size is what catches a write in the same second).
+                $fm_base_m = isset($_POST['base_mtime']) ? (int)$_POST['base_mtime'] : 0;
+                $fm_base_s = isset($_POST['base_size'])  ? (int)$_POST['base_size']  : -1;
+                if ($fm_base_m > 0 && $fm_base_s >= 0) {
+                    clearstatcache(true, $fm_path);
+                    if (filemtime($fm_path) !== $fm_base_m || filesize($fm_path) !== $fm_base_s) {
+                        echo json_encode(['success' => false, 'stale' => true,
+                            'message' => 'The page changed on disk since you opened it. Reload and try again.']);
+                        break;
+                    }
+                }
+
+                $fm_new = wiki_fm_set($fm_raw, $fm_clean, $fm_drop);
+                if ($fm_new === $fm_raw) {
+                    // Nothing actually changed: no write, no commit, no index touch. An
+                    // edit that changes nothing should not appear in the history.
+                    clearstatcache(true, $fm_path);
+                    echo json_encode(['success' => true, 'unchanged' => true,
+                                      'frontmatter' => wiki_fm_ordered($fm_existing) ?: null,
+                                      'lastUpdated' => filemtime($fm_path), 'size' => strlen($fm_raw)]);
+                    break;
+                }
+                if (file_put_contents($fm_path, $fm_new) === false) throw new Exception('Failed to save metadata.');
+
+                $actor = get_current_actor();
+                $indexer->updateModified($_POST['file'], $actor['uid'] ?? null, $actor['name'] ?? null);
+                // The FTS index holds the *body*, which this cannot change — front matter
+                // is stripped on the way in (see the save action), so there is nothing to
+                // re-index and a no-op upsert would only cost a write.
+                //
+                // Stamping does run, with `changed` true: editing a page's metadata is
+                // editing the page, so `updated` moving is right even though the body did
+                // not. The body-changed rule exists to stop *no-op saves* churning git,
+                // and this is not one — something was deliberately changed.
+                $fm_final = $fm_new;
+                if ($fm_stamping) {
+                    $fm_entry_now = $indexer->getAllPages()[$indexer->getId($fm_rel)] ?? null;
+                    if (wiki_fm_autostamp_file($fm_path, $fm_entry_now, $actor['name'] ?? null, true) !== null) {
+                        $fm_final = (string)file_get_contents($fm_path);
+                    }
+                }
+                clearstatcache(true, $fm_path);
+                echo json_encode([
+                    'success'     => true,
+                    'frontmatter' => wiki_fm_ordered(wiki_fm_split($fm_final)['meta']) ?: null,
+                    'frontmatter_nested' => wiki_fm_nested_keys($fm_final) ?: null,
+                    'frontmatter_managed' => $fm_stamping ? WIKI_FM_STAMP_KEYS : null,
+                    'lastUpdated' => filemtime($fm_path),
+                    'size'        => strlen($fm_final),
+                ]);
+                if ($indexer->getGitCommit($fm_rel, true)) {
+                    if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+                    $fm_git_name  = $actor['name'] ?? 'Wiki';
+                    $fm_git_email = (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email']))
+                        ? $_SESSION['user']['email'] : 'wiki@localhost';
+                    git_auto_commit($fm_path, $fm_git_name, $fm_git_email,
+                                    'Update metadata of ' . basename($fm_rel));
+                }
+                break;
+
+            case 'admin_frontmatter_settings':
+                // How the wiki treats a page's own `---` metadata block. Reading and
+                // preserving it is unconditional — these are the choices that are not.
+                if (isset($_POST['expose_ai'])) {
+                    $fm_exp = in_array($_POST['expose_ai'], ['1', 'true'], true);
+                    if (!wiki_setting_set('frontmatter_expose_ai', $fm_exp)) {
+                        throw new Exception('Could not save the setting — is WIKI_SYSTEM_DATA writable?');
+                    }
+                    wiki_audit_log('update', 'success', ['object' => 'settings.json',
+                        'object_type' => 'setting', 'change_type' => 'frontmatter_expose_ai',
+                        'value' => $fm_exp ? '1' : '0']);
+                }
+                echo json_encode(['success' => true, 'expose_ai' => wiki_fm_expose_to_ai()]);
                 break;
 
             case 'toggle_chat_debug':
@@ -2286,10 +2488,15 @@ if (isset($_REQUEST['action'])) {
                     if ($rw_rel === $rw_new) continue;                 // the renamed page itself
                     $rw_abs = sanitize_path($rw_rel);
                     if (!is_file($rw_abs)) continue;
-                    $rw_body = file_get_contents($rw_abs);
-                    if (strpos($rw_body, '[[') === false) continue;    // cheap reject
+                    $rw_raw = file_get_contents($rw_abs);
+                    if (strpos($rw_raw, '[[') === false) continue;     // cheap reject
+                    // Retarget the body and put the block back untouched: the wiki never
+                    // rewrites somebody's front matter, not even to fix a link in it.
+                    $rw_fm   = wiki_fm_split($rw_raw);
+                    $rw_body = $rw_fm['body'];
                     [$rw_out, $rw_n] = wikilink_retarget($rw_body, $rw_old, $rw_new);
                     if ($rw_n === 0) continue;
+                    $rw_out = wiki_fm_join($rw_fm['block'], $rw_out);
                     $rw_total += $rw_n;
                     $rw_files[] = ['id' => (string)$rw_id, 'path' => $rw_rel, 'links' => $rw_n];
                     if (!$rw_apply) continue;
@@ -2325,7 +2532,10 @@ if (isset($_REQUEST['action'])) {
                     if (!isset($bl_data['path'])) continue;
                     $bl_path = sanitize_path($bl_data['path']);
                     if (!file_exists($bl_path)) continue;
-                    $bl_body = file_get_contents($bl_path);
+                    // Body only, so this agrees with the graph, which also reads
+                    // through wiki_fm_body — a link declared in an `aliases:` list is
+                    // metadata, and counting it here but not there is two answers.
+                    $bl_body = wiki_fm_body(file_get_contents($bl_path));
                     if (strpos($bl_body, $pattern) !== false
                         || in_array((string)$target_id, wikilink_ids($bl_body, $bl_resolve), true)) {
                         $backlinks[] = [
@@ -2379,7 +2589,9 @@ if (isset($_REQUEST['action'])) {
 
                 // Helper: extract header + preview lines from page content.
                 $extract_preview = function(string $content): array {
-                    $lines   = explode("\n", $content);
+                    // Front matter is not a preview. Unconditional: no content type other
+                    // than Markdown opens with a `---` block, so there is nothing to gate.
+                    $lines   = explode("\n", wiki_fm_body($content));
                     $header  = '';
                     $preview = [];
                     foreach ($lines as $line) {
@@ -2498,7 +2710,9 @@ if (isset($_REQUEST['action'])) {
                         if (wiki_is_template_path($data['path'])) continue;
                         $full_path = sanitize_path($data['path']);
                         if (!file_exists($full_path)) continue;
-                        $content = file_get_contents($full_path);
+                        // Body only, or every page matches "status" and the snippet
+                        // for a real hit near the top of a page is a block of YAML.
+                        $content = wiki_fm_body(file_get_contents($full_path));
 
                         $content_pos = stripos($content, $query);
                         $path_pos    = stripos($data['path'], $query);
@@ -2845,7 +3059,7 @@ if (isset($_REQUEST['action'])) {
                     if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') continue;
                     $full_path = sanitize_path($data['path']);
                     if (!file_exists($full_path)) continue;
-                    $content = file_get_contents($full_path);
+                    $content = wiki_fm_body(file_get_contents($full_path));
                     if (strpos($content, $needle) === false) continue;
                     $lines = explode("\n", $content);
                     $header = '';
@@ -2880,6 +3094,22 @@ if (isset($_REQUEST['action'])) {
                 $rel_save   = ltrim(str_replace('..', '', $_GET['file']), '/');
                 $ext_save   = pathinfo($rel_save, PATHINFO_EXTENSION);
                 $content    = file_get_contents('php://input');
+                $fm_body_changed = true;
+                if ($ext_save === 'md') {
+                    // The editor is handed the body without its front matter, so the save
+                    // comes back without it too. Re-attach what the file already had, or
+                    // editing a page would silently delete its metadata. Byte-for-byte,
+                    // so the block never appears in the diff and costs no extra commit.
+                    $fm_prev_raw = is_file($file_path) ? (string)file_get_contents($file_path) : '';
+                    $content = wiki_fm_preserve($file_path, $content);
+                    // Did the *body* change? Only this request can answer that, and
+                    // automatic stamping needs the answer: without it, opening a page and
+                    // saving it untouched produces a commit whose entire diff is a new
+                    // `updated:` line. Compared body-to-body, since the block differing is
+                    // exactly what stamping is about to do.
+                    $fm_body_changed = $fm_prev_raw === ''
+                        || wiki_fm_body($fm_prev_raw) !== wiki_fm_body($content);
+                }
                 if ($ext_save === 'json') {
                     // Data pages must stay well-formed; validate and normalise before writing
                     // (text-mode edits can produce invalid JSON — the grid/tree modes can't).
@@ -2900,15 +3130,46 @@ if (isset($_REQUEST['action'])) {
                     // so filemtime() here can otherwise return the mtime from before
                     // this write. `size` counts $content after the .json re-encode above,
                     // which is what actually landed on disk.
+                    // Stamping runs here: after the index has the page (so `created` and
+                    // `createdBy` can be read from it), before the response is built (whose
+                    // `size` the open-page watcher re-baselines from), and before the git
+                    // commit below — so the stamp lands in the *same* commit as the edit
+                    // rather than producing a second one.
+                    $fm_size = strlen($content);
+                    if ($ext_save === 'md' && wiki_space_dir_fm_autostamp($space_dir) === 'on') {
+                        $fm_entry   = $indexer->getAllPages()[$indexer->getId($rel_save)] ?? null;
+                        $fm_stamped = wiki_fm_autostamp_file($file_path, $fm_entry,
+                                                             $actor['name'] ?? null, $fm_body_changed);
+                        if ($fm_stamped !== null) $fm_size = $fm_stamped;
+                    }
                     clearstatcache(true, $file_path);
+                    // The block as it stands *after* stamping, so the client's cached copy
+                    // is replaced rather than left holding what it read before the save.
+                    // Without this the four stamped fields are in the file but the Metadata
+                    // panel keeps showing the pre-save state until the page is reopened.
+                    $fm_meta_out = null;
+                    $fm_nest_out = null;
+                    if ($ext_save === 'md') {
+                        $fm_after    = isset($fm_stamped) && $fm_stamped !== null
+                            ? (string)file_get_contents($file_path) : $content;
+                        $fm_meta_out = wiki_fm_ordered(wiki_fm_split($fm_after)['meta']) ?: null;
+                        $fm_nest_out = wiki_fm_nested_keys($fm_after) ?: null;
+                    }
                     echo json_encode([
                         'success'     => true,
                         'message'     => 'File saved successfully.',
                         'lastUpdated' => filemtime($file_path),
-                        'size'        => strlen($content),
+                        'size'        => $fm_size,
+                        'frontmatter' => $fm_meta_out,
+                        'frontmatter_nested' => $fm_nest_out,
+                        'frontmatter_managed' => ($ext_save === 'md'
+                            && wiki_space_dir_fm_autostamp($space_dir) === 'on') ? WIKI_FM_STAMP_KEYS : null,
                     ]);
                     if ($search_idx && in_array($ext_save, ['md', 'json'], true)) {
-                        try { $search_idx->upsertPage(_sidx_space(), $rel_save, $content); } catch (\Throwable $_e) {}
+                        // Body only: front matter in the index would put YAML in every
+                        // search preview and match on key names like "status".
+                        $idx_body = $ext_save === 'md' ? wiki_fm_body($content) : $content;
+                        try { $search_idx->upsertPage(_sidx_space(), $rel_save, $idx_body); } catch (\Throwable $_e) {}
                     }
                     if (in_array($ext_save, ['md', 'drawio', 'json'], true) && $indexer->getGitCommit($rel_save, true)) {
                         if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
@@ -3043,6 +3304,14 @@ if (isset($_REQUEST['action'])) {
                     if (file_put_contents($file_path_sanitized, $content) !== false) {
                         $actor = get_current_actor();
                         $indexer->addPage($file_path_raw, $actor['uid'], $actor['name']);
+                        // A new page is the one moment `created` is knowable and certainly
+                        // correct, so it is stamped now rather than on the first edit.
+                        if (strtolower(pathinfo($file_path_raw, PATHINFO_EXTENSION)) === 'md'
+                            && wiki_space_dir_fm_autostamp($space_dir) === 'on') {
+                            $cf_rel   = ltrim(str_replace('..', '', $file_path_raw), '/');
+                            $cf_entry = $indexer->getAllPages()[$indexer->getId($cf_rel)] ?? null;
+                            wiki_fm_autostamp_file($file_path_sanitized, $cf_entry, $actor['name'] ?? null);
+                        }
                         echo json_encode(['success' => true, 'message' => 'File created.']);
                         if ($search_idx) { try { $search_idx->upsertPage(_sidx_space(), ltrim(str_replace('..','', $file_path_raw),'/'), $content); } catch(\Throwable $_e){} }
                         if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
@@ -4128,7 +4397,13 @@ if (isset($_REQUEST['action'])) {
                 // list of names for its nine existing callers. Every client needs the
                 // flag, not just admins: it drives the frozen-space UI.
                 $_ls_readonly = array_values(array_filter($spaces_list, 'wiki_space_is_readonly'));
-                echo json_encode(['success' => true, 'data' => $spaces_list, 'readonly' => $_ls_readonly]);
+                $_ls_fm_edit  = array_values(array_filter($spaces_list,
+                    fn($s) => wiki_space_fm_edit($s) === 'manual'));
+                $_ls_fm_stamp = array_values(array_filter($spaces_list,
+                    fn($s) => wiki_space_fm_autostamp($s) === 'on'));
+                echo json_encode(['success' => true, 'data' => $spaces_list,
+                                  'readonly' => $_ls_readonly, 'fm_edit' => $_ls_fm_edit,
+                                  'fm_autostamp' => $_ls_fm_stamp]);
                 break;
 
             case 'get_all_tags':
@@ -4256,7 +4531,21 @@ if (isset($_REQUEST['action'])) {
                 // Start page + a copy of the app templates (see wiki_scaffold_space).
                 $actor = get_current_actor();
                 wiki_scaffold_space($new_space_dir, $actor['uid'] ?? null, $actor['name'] ?? null);
-                echo json_encode(['success' => true]);
+                // Chosen in the same dialog as the name. 'off' writes nothing, so a Space
+                // created with the defaults has no record in spaces.json at all.
+                $cs_fm = trim($_POST['fm_edit'] ?? 'off');
+                if ($cs_fm !== 'off') {
+                    if (!in_array($cs_fm, WIKI_FM_EDIT_MODES, true)) throw new Exception('Unknown metadata mode.');
+                    wiki_space_set_fm_edit($safe_space_name, $cs_fm);
+                }
+                $cs_stamp = trim($_POST['fm_autostamp'] ?? 'off');
+                if ($cs_stamp !== 'off') {
+                    if (!in_array($cs_stamp, WIKI_FM_AUTOSTAMP_MODES, true)) throw new Exception('Unknown stamping mode.');
+                    wiki_space_set_fm_autostamp($safe_space_name, $cs_stamp);
+                }
+                echo json_encode(['success' => true,
+                                  'fm_edit' => wiki_space_fm_edit($safe_space_name),
+                                  'fm_autostamp' => wiki_space_fm_autostamp($safe_space_name)]);
                 break;
 
             case 'admin_ai_builtin_instructions':
@@ -4283,6 +4572,34 @@ if (isset($_REQUEST['action'])) {
                 ]);
                 break;
 
+            case 'admin_set_space_fm_autostamp':
+                $sas_name = basename(trim($_POST['space_name'] ?? ''));
+                $sas_mode = trim($_POST['mode'] ?? 'off');
+                if ($sas_name === '' || !is_dir(PAGES_DIR . '/' . $sas_name)) throw new Exception('No such space.');
+                if (!in_array($sas_mode, WIKI_FM_AUTOSTAMP_MODES, true)) throw new Exception('Unknown stamping mode.');
+                if (!wiki_space_set_fm_autostamp($sas_name, $sas_mode)) {
+                    throw new Exception('Could not save the setting — is WIKI_SYSTEM_DATA writable?');
+                }
+                wiki_audit_log('update', 'success', ['object' => 'spaces.json',
+                    'object_type' => 'setting', 'change_type' => 'frontmatter_autostamp',
+                    'object_category' => 'settings', 'value' => $sas_name . '=' . $sas_mode]);
+                echo json_encode(['success' => true, 'space' => $sas_name, 'mode' => $sas_mode]);
+                break;
+
+            case 'admin_set_space_fm_edit':
+                $sfm_name = basename(trim($_POST['space_name'] ?? ''));
+                $sfm_mode = trim($_POST['mode'] ?? 'off');
+                if ($sfm_name === '' || !is_dir(PAGES_DIR . '/' . $sfm_name)) throw new Exception('No such space.');
+                if (!in_array($sfm_mode, WIKI_FM_EDIT_MODES, true)) throw new Exception('Unknown metadata mode.');
+                if (!wiki_space_set_fm_edit($sfm_name, $sfm_mode)) {
+                    throw new Exception('Could not save the setting — is WIKI_SYSTEM_DATA writable?');
+                }
+                wiki_audit_log('update', 'success', ['object' => 'spaces.json',
+                    'object_type' => 'setting', 'change_type' => 'frontmatter_edit',
+                    'object_category' => 'settings', 'value' => $sfm_name . '=' . $sfm_mode]);
+                echo json_encode(['success' => true, 'space' => $sfm_name, 'mode' => $sfm_mode]);
+                break;
+
             case 'admin_space_settings':
                 // Everything the Space settings dialog needs, for every space, in one
                 // call: the read-only flag, a page count, and whether the space is its
@@ -4296,6 +4613,8 @@ if (isset($_REQUEST['action'])) {
                     $ss_out[] = [
                         'name'     => $ss_f,
                         'readonly' => wiki_space_is_readonly($ss_f),
+                        'fm_edit'  => wiki_space_fm_edit($ss_f),
+                        'fm_autostamp' => wiki_space_fm_autostamp($ss_f),
                         'own_git'  => is_dir($ss_dir . '/.git'),
                         'pages'    => is_file($ss_index)
                             ? count(json_decode((string)file_get_contents($ss_index), true) ?: [])

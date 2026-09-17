@@ -8,6 +8,7 @@
 // =================================================================
 
 require_once __DIR__ . '/llm_providers.php';
+require_once __DIR__ . '/frontmatter.php';
 require_once __DIR__ . '/wiki_ai_tools.php';
 require_once __DIR__ . '/llm_trace.php';
 
@@ -245,7 +246,8 @@ function wiki_page_context_prompt(string $chat_file, string $space_dir): string 
     return "The following is the current content of the wiki page \"{$chat_name}\" that this chat is attached to. "
          . "Its full path (use this exact value when calling wiki_write_page to update it) is: \"{$rel}\". "
          . "Use it as context when answering questions:\n\n```markdown\n"
-         . (string)file_get_contents($linked_md)
+         . (wiki_fm_expose_to_ai() ? (string)file_get_contents($linked_md)
+                                   : wiki_fm_body((string)file_get_contents($linked_md)))
          . "\n```\n\n";
 }
 

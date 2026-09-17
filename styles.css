@@ -171,8 +171,32 @@ body {
 /* Space settings (admin only) */
 .space-settings-btn { background: none; border: none; padding: 2px; margin: -2px -2px -2px 0; cursor: pointer; color: rgba(255,255,255,0.7); border-radius: 4px; display: flex; align-items: center; flex-shrink: 0; }
 .space-settings-btn:hover { background: rgba(255,255,255,0.15); color: white; }
-.space-settings-content { width: 520px; max-width: 95vw; }
-.space-settings-body { display: flex; flex-direction: column; gap: 1.1rem; margin: 0.75rem 0 0.25rem; }
+/* 600 wide x 800 high.
+
+   Two traps, both measured rather than read off the sheet:
+
+   - **`.lightbox-content` is further down this file** and sets `height: 500px`. A bare
+     `.space-settings-content` has the same specificity, so the later rule won and this
+     one's height did nothing at all — the same source-order trap as `.sidebar-icon-btn`
+     over `.sidebar-rail-only`. Qualifying it with both classes settles it by specificity
+     instead of by position.
+   - **This sheet is content-box**, so `width: 600px` plus `.lightbox-content`'s 1.5rem
+     padding rendered as 644. `border-box` here makes 600 mean 600.
+
+   The viewport caps stay deliberately: a hard 800px puts the Close button off-screen on
+   anything shorter than a ~940px viewport (a 700px-tall window gives 613px), which is the
+   bug this dialog just had. So it is 800 where there is room and shrinks where there is
+   not — the body scrolls either way. `min-height: 0` on the body is what lets a flex child
+   shrink below its content and therefore scroll at all. */
+.lightbox-content.space-settings-content {
+    box-sizing: border-box;
+    width: 600px; max-width: 95vw;
+    height: 800px; max-height: 85vh;
+}
+.space-settings-body {
+    display: flex; flex-direction: column; gap: 1.1rem; margin: 0.75rem 0 0.25rem;
+    overflow-y: auto; min-height: 0; padding-right: 0.25rem;
+}
 .space-settings-section { display: flex; flex-direction: column; gap: 0.35rem; }
 .space-settings-title { margin: 0; font-size: 0.85rem; font-weight: 600; }
 .space-settings-hint { margin: 0; font-size: 0.78rem; color: var(--accent-gray); line-height: 1.45; }
@@ -2250,3 +2274,80 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 .admin-rt-endpoint { margin-top: 0.2rem; }
 .admin-rt-endpoint code { font-size: 0.76rem; word-break: break-all; }
 .admin-rt-verdict { font-weight: 600; margin-bottom: 0.5rem; }
+
+/* Front matter viewer (ellipsis menu -> Metadata). Read-only: the wiki does not author
+   this block, it shows what the file carries. */
+.fm-source { margin: 0 0 0.6rem; }
+.fm-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.fm-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+.fm-table tr:last-child td { border-bottom: 0; }
+.fm-key { font-weight: 600; width: 34%; white-space: nowrap; }
+/* A value may be a long list or an unwrapped URL, and truncating the thing someone opened
+   this panel to read would defeat the point. */
+.fm-val { color: var(--accent-gray); word-break: break-word; }
+
+/* Page Metadata (Admin → Content). The switch borrows the AI page's boxed style, which is
+   sized to fill a grid column there; standing alone it should hug its own label instead of
+   drawing a box across the pane. */
+#admin-pane-metadata .admin-ai-switch-boxed { width: fit-content; max-width: 100%; }
+#admin-pane-metadata .pref-hint { margin: 0.35rem 0 1rem; max-width: 62ch; }
+#admin-pane-metadata .admin-reindex-desc { max-width: 78ch; }
+
+
+/* The Metadata panel in its editable form (per-Space; see frontmatter.php). Rows keep the
+   read-only layout so the two forms look like one panel rather than two screens. */
+.fm-table td.fm-val .fm-input { width: 100%; font-size: 0.82rem; padding: 3px 6px; }
+/* Wide enough for the longest translation of the Add button that shares this column:
+   "Hinzufügen" needs 60px of text at this size, measured, and 88px leaves room for the
+   button's padding. The × buttons right-align in it. */
+.fm-rm-cell { width: 88px; text-align: right; }
+.fm-rm {
+    border: 0; background: none; cursor: pointer; line-height: 1;
+    font-size: 1rem; color: var(--accent-gray); padding: 2px 4px; border-radius: 3px;
+}
+.fm-rm:hover { background: #fed7d7; color: var(--accent-red, #c53030); }
+/* A row marked for removal is struck through rather than deleted: the change stays
+   visible, and reversible, until Save. */
+.fm-removed .fm-key, .fm-removed .fm-val { text-decoration: line-through; opacity: 0.55; }
+.fm-removed .fm-input { text-decoration: line-through; opacity: 0.55; }
+.fm-new .fm-key::after { content: ' +'; color: var(--accent-green); font-weight: 700; }
+/* A list or nested value: shown, but not offered as a text box — writing a scalar over it
+   would delete its structure. */
+.fm-locked {
+    font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+    background: #e2e8f0; color: #718096; border-radius: 3px; padding: 1px 4px; margin-left: 4px;
+}
+/* The add row is a row of the same table, so the inputs inherit the columns rather than
+   trying to match them: as a separate flex row its boxes lined up only if a percentage
+   width and a cell padding were kept in step with the table's, which they were not. */
+.fm-add-row td { padding-top: 0.5rem; }
+.fm-add-row .form-control { width: 100%; font-size: 0.82rem; padding: 3px 6px; }
+.fm-add-row .btn-sm { padding: 3px 8px; font-size: 0.75rem; width: 100%; }
+.fm-save-hint { margin: 0.5rem 0 0; }
+/* The fields the wiki maintains are grouped above a rule, with the author's own fields
+   below it — which is what a per-row "auto" label used to say, once per row. The last row
+   of the first group drops its own 1px line so the 2px divider is not doubled. */
+.fm-table tr.fm-group-end > td { border-bottom: 0; }
+.fm-table tr.fm-sep > td { padding: 0; height: 7px; border-bottom: 2px solid var(--border-color); }
+/* And breathing room below the rule, not only above it — a table row cannot carry a
+   margin, so it goes on the first row of the group that follows. */
+.fm-table tr.fm-sep + tr > td { padding-top: 0.7rem; }
+.fm-managed-note { margin: 0 0 0.5rem; }
+
+/* The Metadata panel borrows the shared confirm dialog, which is sized for a sentence of
+   prose — a table of fields with inputs needs room. Keyed on the .fm-view wrapper the panel
+   renders inside, the same way the jobs dialog keys on .jobs-view, so only this use of the
+   dialog grows. Height goes on the message area rather than the box, so the title and the
+   Save/Cancel buttons stay put and only the field list scrolls. */
+#confirm-modal .input-modal-content:has(.fm-view) { max-width: 680px; }
+#confirm-modal .input-modal-content:has(.fm-view) .confirm-modal-message {
+    min-height: 40vh; max-height: 65vh; overflow-y: auto;
+}
+/* The table wants the width; the key column stops being 34% of a much wider box. */
+.fm-view .fm-table { table-layout: fixed; }
+.fm-view .fm-key { width: 30%; }
+/* The multi-value control sits under the add row rather than in it: three boxes and a
+   button already fill that line, and a checkbox squeezed in reads as part of the button. */
+.fm-multi-row { display: flex; align-items: center; gap: 0.4rem; margin: 0.4rem 0 0; font-size: 0.78rem; color: var(--accent-gray); cursor: pointer; }
+.fm-multi-row input { margin: 0; }
+.fm-multi-note { font-size: 0.7rem; color: var(--accent-gray); margin-left: 4px; white-space: nowrap; }

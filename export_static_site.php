@@ -12,6 +12,7 @@ if (PHP_SAPI !== 'cli') { die("Run from CLI only.\n"); }
 if ($argc < 2) { echo "Usage: php export_static_site.php <destination_folder>\n"; exit(1); }
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/frontmatter.php';
 require_once __DIR__ . '/indexer.php';
 require_once __DIR__ . '/vendor/autoload.php';
 
@@ -94,6 +95,7 @@ function processIncludes(string $content, array $idToPath, string $pagesDir, arr
         $full = "$pagesDir/$path";
         if (!file_exists($full)) return "[Error: File not found for ID $id]";
         $sub = file_get_contents($full);
+        if (substr($full, -3) === '.md') $sub = wiki_fm_body($sub);
         $sub = processIncludes($sub, $idToPath, $pagesDir, [...$seen, $id]);
         $filename = preg_replace('/\.(md|drawio|list)$/', '', basename($path));
         $sub = str_replace('{filename}', $filename, $sub);
@@ -448,6 +450,8 @@ foreach ($allPages as $id => $pageData) {
     } else {
         echo "  [md]      $relPath\n";
         $raw     = file_get_contents($fullPath);
+        // Parsedown would render the block as a rule plus a line of text.
+        $raw = wiki_fm_body($raw);
         $mtime   = filemtime($fullPath);
         $raw     = processIncludes($raw, $idToPath, $pagesDir);
         $raw     = processDiagramTags($raw, $idToPath, $pagesDir);

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/frontmatter.php';
 // Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
@@ -309,6 +310,10 @@ class SearchIndex {
             if (!in_array($ext, ['md', 'drawio', 'list', 'chat', 'json'], true)) continue;
             $rel = ltrim(str_replace($base . '/', '', $full), '/');
             $raw = in_array($ext, ['md', 'json'], true) ? (file_get_contents($full) ?: '') : '';
+            // Front matter is metadata, not body text: indexing it would put YAML in every
+            // search preview (extractInfo builds one from the first non-heading lines) and
+            // match pages on key names like "status". Same rule as the save path.
+            if ($ext === 'md') $raw = wiki_fm_body($raw);
             [$title, $content, $preview] = $this->extractInfo($ext, $item, $raw);
             $stmt->execute([$space, $rel, $title, $content, $preview, time()]);
             $count++;

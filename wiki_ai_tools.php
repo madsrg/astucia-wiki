@@ -8,6 +8,7 @@
 // =================================================================
 
 require_once __DIR__ . '/git_helpers.php';
+require_once __DIR__ . '/frontmatter.php';
 require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/llm_trace.php';
 require_once __DIR__ . '/wikilinks.php';
@@ -262,6 +263,10 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
         $abs = rtrim($space_dir, '/') . '/' . $data['path'];
         if (!file_exists($abs)) continue;
         $content = file_get_contents($abs);
+        // The FTS branch above indexes the body only (see wiki_ai_fts_upsert), so this
+        // fallback has to match it, or the same query answers differently depending on
+        // whether the install has SQLite.
+        if (pathinfo($data['path'], PATHINFO_EXTENSION) === 'md') $content = wiki_fm_body($content);
         $pos = stripos($content, $query);
         if ($pos === false && stripos($data['path'], $query) === false) continue;
 
@@ -490,7 +495,13 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             if (!in_array($ext, ['md', 'list', 'chat', 'json'], true)) return 'Error: only .md, .list, .chat and .json files can be read.';
             $abs = rtrim($space_dir, '/') . '/' . $rel;
             if (!file_exists($abs) || !is_file($abs)) return 'Error: page not found.';
-            return file_get_contents($abs);
+            $raw_read = (string)file_get_contents($abs);
+            // A page's front matter is withheld unless an admin has enabled it. It is
+            // author-controlled text that the model would read as guidance — which is the
+            // point when it carries "keep this table sorted by date", and prompt injection
+            // when it does not. Off by default, so turning it on is a deliberate act.
+            if ($ext === 'md' && !wiki_fm_expose_to_ai()) $raw_read = wiki_fm_body($raw_read);
+            return $raw_read;
 
         case 'wiki_write_page':
             if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot write pages.';
@@ -505,17 +516,29 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             $dir     = dirname($abs);
             if (!is_dir($dir)) mkdir($dir, 0755, true);
             $is_new  = !file_exists($abs);
+            // The model is shown the body without front matter (unless exposed), so it
+            // returns one without it. Re-attach, or an AI edit deletes a page's metadata.
+            $fm_prev = $is_new ? '' : (string)@file_get_contents($abs);
+            $content = wiki_fm_preserve($abs, $content);
+            $fm_changed = $is_new || wiki_fm_body($fm_prev) !== wiki_fm_body($content);
             if (file_put_contents($abs, $content) === false) return 'Error: could not write file.';
-            wiki_ai_fts_upsert($space_dir, $rel, $content);
+            // Index the body only, matching the save path.
+            wiki_ai_fts_upsert($space_dir, $rel, wiki_fm_body($content));
             $ai_git_name  = $ai_user['name'] ?? 'AI';
             $ai_git_email = !empty($ai_user['email']) ? $ai_user['email'] : 'ai@wiki.localhost';
-            if ($is_new) {
-                $indexer->addPage($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
-                git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Create ' . basename($rel), $space_dir);
-                return "Page created: {$rel}";
+            if ($is_new) $indexer->addPage($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
+            else         $indexer->updateModified($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
+            // An AI user is a writer like any other, and `updatedBy: <ai name>` is useful
+            // provenance rather than noise — it answers "who changed this page" on the one
+            // kind of edit nobody watched happen. Stamped before the commit, so the stamp
+            // is part of the same revision as the edit.
+            if (wiki_space_dir_fm_autostamp($space_dir) === 'on') {
+                $fm_entry = $indexer->getAllPages()[$indexer->getId($rel)] ?? null;
+                wiki_fm_autostamp_file($abs, $fm_entry, $ai_user['name'] ?? null, $fm_changed);
             }
-            $indexer->updateModified($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
-            git_auto_commit($abs, $ai_git_name, $ai_git_email, 'Update ' . basename($rel), $space_dir);
+            git_auto_commit($abs, $ai_git_name, $ai_git_email,
+                            ($is_new ? 'Create ' : 'Update ') . basename($rel), $space_dir);
+            if ($is_new) return "Page created: {$rel}";
             return "Page updated: {$rel}";
 
         case 'wiki_write_json':
@@ -686,11 +709,15 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
                 if (strtolower(pathinfo($rn_rel, PATHINFO_EXTENSION)) !== 'md') continue;   // only Markdown carries them
                 $rn_file = rtrim($space_dir, '/') . '/' . $rn_rel;
                 if (!is_file($rn_file)) continue;
-                $rn_text = (string)file_get_contents($rn_file);
-                [$rn_out, $rn_n] = wikilink_retarget($rn_text, $rn_old, $rn_new);
+                $rn_raw = (string)file_get_contents($rn_file);
+                // Retarget the body and put the block back untouched: the wiki never
+                // rewrites somebody's front matter, not even to fix a link inside it.
+                $rn_fm  = wiki_fm_split($rn_raw);
+                [$rn_out, $rn_n] = wikilink_retarget($rn_fm['body'], $rn_old, $rn_new);
                 if ($rn_n === 0) continue;
+                $rn_out = wiki_fm_join($rn_fm['block'], $rn_out);
                 $rn_links += $rn_n;
-                if (!empty($tool_input['retarget_links']) && $rn_out !== $rn_text
+                if (!empty($tool_input['retarget_links']) && $rn_out !== $rn_raw
                     && file_put_contents($rn_file, $rn_out) !== false) {
                     $rn_fixed += $rn_n;
                     $indexer->updateModified($rn_rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);

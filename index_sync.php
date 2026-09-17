@@ -33,6 +33,8 @@
 // Extensions the SQLite FTS index covers, mirroring SearchIndex::scanAndInsert(). It
 // is narrower than PageIndexer::CONTENT_EXTS: .search pages are saved queries, not
 // prose. Only these carry full text; the rest are indexed by title alone.
+require_once __DIR__ . '/frontmatter.php';
+
 const INDEX_SYNC_FTS_EXTS  = ['md', 'drawio', 'list', 'chat', 'json'];
 const INDEX_SYNC_FTS_RAW   = ['md', 'json'];
 
@@ -137,6 +139,10 @@ function index_sync_maybe(string $space_dir, PageIndexer $indexer, $search_idx =
                 if (str_starts_with($rel, 'templates/')) continue;
                 $raw = in_array($ext, INDEX_SYNC_FTS_RAW, true)
                     ? (string)@file_get_contents(rtrim($space_dir, '/') . '/' . $rel) : '';
+                // Body only, as a save through the wiki indexes it — an rsynced Obsidian
+                // note would otherwise put its YAML into search while the same file
+                // edited here would not.
+                if ($ext === 'md') $raw = wiki_fm_body($raw);
                 try { $search_idx->upsertPage($space_name, $rel, $raw); } catch (\Throwable $_e) {}
             }
             foreach ($removed as $rel) {

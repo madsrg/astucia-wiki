@@ -274,8 +274,33 @@ export const processIncludes = async (content, processedIds = []) => {
     return processedContent;
 };
 
+/**
+ * The front-matter indicator in the page title row.
+ *
+ * A page's `---` block is invisible everywhere else by design — stripped from the reader,
+ * stripped from the editor — so without this nothing says it is there. Somebody editing an
+ * imported page would have no way to know the file carries metadata their save is
+ * preserving, and the Metadata panel would be a menu item you only find by accident.
+ *
+ * Deliberately shown in **edit mode too**: that is where knowing the block exists matters
+ * most, since the editor is the one view that has silently dropped it from view.
+ *
+ * It is an indicator first and a shortcut second — the count is what makes it an
+ * indicator, since "this page has metadata" is otherwise a chip with no information in it.
+ */
+export const updateFrontmatterBadge = () => {
+    const badge = document.getElementById('frontmatter-badge');
+    if (!badge) return;
+    const keys = Object.keys(state.currentPageFrontmatter || {});
+    badge.classList.toggle('hidden', keys.length === 0);
+    if (!keys.length) return;
+    // The count and the field names live in the tooltip: this is a 32x32 icon button like
+    // its neighbours, so there is nowhere in it to put a number without breaking the row.
+    badge.title = t('fm.badge-title', { count: keys.length, keys: keys.join(', ') });
+};
+
 export const refreshPageContent = async () => {
-    if (!state.currentPagePath || state.currentPageType !== 'file' || state.isEditing) return;
+    if (!state.currentPagePath || state.currentPageType !== 'md' || state.isEditing) return;
     const path = state.currentPagePath;
     const result = await api.call('get', { file: path });
     if (!result.success) return;
@@ -283,6 +308,12 @@ export const refreshPageContent = async () => {
     state.initialContent = result.data;
     state.currentPageLastUpdated = result.lastUpdated;
     state.currentPageSize = result.size ?? null;
+    // `data` is the body with any front matter removed, so the dirty-check and both
+    // editors compare bodies. `size` is still the size on disk — see the get action.
+    state.currentPageFrontmatter = result.frontmatter ?? null;
+    state.currentPageFrontmatterNested = result.frontmatter_nested ?? null;
+    state.currentPageFrontmatterManaged = result.frontmatter_managed ?? null;
+    updateFrontmatterBadge();
     document.getElementById('editor-container').value = state.initialContent;
 
     // Wikilinks first: a `![[Page]]` embed becomes an `{include:ID}` tag, which the next
@@ -317,8 +348,14 @@ export const refreshPageContent = async () => {
 // alone (re-initialising the draw.io embed mid-view is jarring, and a `.search` file
 // barely changes — its results are computed).
 const FILE_WATCH_MS  = 10000;
-const FILE_WATCH_SLOW_MS = 300000;   // safety net while push is live; see modules/realtime
-const WATCHED_TYPES  = ['file', 'list', 'json'];
+// While push is live this poll is *not* only a safety net against a zombie SSE stream: it
+// is also the main thing that triggers external-change detection. Nothing on the server
+// watches the filesystem — `index_sync_maybe()` runs from the api.php bootstrap — so with
+// an otherwise idle browser, this request is what notices that a page was edited outside
+// the wiki. At five minutes that read as "nothing happens"; a minute bounds it while still
+// being a sixth of the idle rate, and the request itself is one `filemtime` call.
+const FILE_WATCH_SLOW_MS = 60000;    // see modules/realtime, and index_sync.php
+const WATCHED_TYPES  = ['md', 'list', 'json'];
 let _stopWatchTimer  = null;
 let _watchPath   = null;
 let _watchMtime  = 0;
@@ -336,7 +373,7 @@ export const stopFileWatch = () => {
 // Re-render the current page from disk without the rest of loadPage's work (no
 // scroll reset, no visit tracking, no browse-pane rebuild).
 const reloadWatchedPage = async (path) => {
-    if (state.currentPageType === 'file') {
+    if (state.currentPageType === 'md') {
         await refreshPageContent();
         return true;
     }
@@ -344,6 +381,10 @@ const reloadWatchedPage = async (path) => {
     if (!result.success) return false;
     state.currentPageLastUpdated = result.lastUpdated;
     state.currentPageSize = result.size ?? null;
+    state.currentPageFrontmatter = result.frontmatter ?? null;
+    state.currentPageFrontmatterNested = result.frontmatter_nested ?? null;
+    state.currentPageFrontmatterManaged = result.frontmatter_managed ?? null;
+    updateFrontmatterBadge();
     if (state.currentPageType === 'json') {
         const { renderJsonView } = await import('../json_view/index.js');
         await renderJsonView(result.data, path);
@@ -460,6 +501,8 @@ export const showBlankPage = async () => {
     document.getElementById('print-lightbox')?.classList.add('hidden');
     document.getElementById('current-page-title').innerHTML = '';
     document.getElementById('page-id-display').classList.add('hidden');
+    state.currentPageFrontmatter = null;
+    updateFrontmatterBadge();
     updateBreadcrumb('', state.currentSpace);
     updateFavoriteBtn(null); // no page id → hides the star
 
@@ -475,7 +518,7 @@ export const showBlankPage = async () => {
     // left open), the attachments/tags meta row, and every page-scoped header button.
     ['page-actions-group', 'file-actions-menu', 'page-meta-row', 'tags-container',
      'attachments-section', 'save-btn', 'cancel-btn', 'search-btn', 'edit-btn',
-     'diagram-edit-btn', 'copy-btn', 'move-btn', 'backlinks-btn', 'print-btn',
+     'diagram-edit-btn', 'copy-btn', 'move-btn', 'backlinks-btn', 'print-btn', 'metadata-btn',
      'graph-focus-btn', 'page-chat-btn', 'share-btn', 'chat-topic-btn', 'toc-btn',
      'editor-mode-group', 'git-history-btn', 'git-commit-toggle-btn',
      'git-snapshot-btn'].forEach(id =>
@@ -550,7 +593,14 @@ export const loadPage = async (path, id, tags, opts = {}) => {
     state.currentPagePath = path;
     state.currentPageId = id;
     state.currentPageTags = tags || [];
-    state.currentPageType = isDiagram ? 'diagram' : (isList ? 'list' : (isChat ? 'chat' : (isSearch ? 'search' : (isJson ? 'json' : 'file'))));
+    state.currentPageType = isDiagram ? 'diagram' : (isList ? 'list' : (isChat ? 'chat' : (isSearch ? 'search' : (isJson ? 'json' : 'md'))));
+    // A page's own front matter, for the Metadata panel. Captured here because this is the
+    // one read an ordinary page open performs — refreshPageContent() and
+    // reloadWatchedPage() capture it too, but neither of those runs on a plain navigation.
+    state.currentPageFrontmatter = result.frontmatter ?? null;
+    state.currentPageFrontmatterNested = result.frontmatter_nested ?? null;
+    state.currentPageFrontmatterManaged = result.frontmatter_managed ?? null;
+    updateFrontmatterBadge();
 
     document.getElementById('print-lightbox')?.classList.add('hidden');
     updateBreadcrumb(path, state.currentSpace);
@@ -778,6 +828,11 @@ export const loadPage = async (path, id, tags, opts = {}) => {
     document.getElementById('copy-btn').classList.remove('hidden');
     document.getElementById('move-btn').classList.remove('hidden');
     document.getElementById('backlinks-btn').classList.toggle('hidden', isSearch);
+    // Front matter is a Markdown-file thing; a .list or .chat cannot carry one. Keyed on
+    // the `isMarkdownPage` local like the two buttons above, rather than on
+    // state.currentPageType — one source of truth for "is this a Markdown page" in this
+    // function, and no second string to keep in step with the assignment above.
+    document.getElementById('metadata-btn')?.classList.toggle('hidden', !isMarkdownPage);
     document.getElementById('graph-focus-btn')?.classList.toggle('hidden', isSearch);
     document.getElementById('print-btn').classList.toggle('hidden', isChat || isSearch);
 

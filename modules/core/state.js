@@ -23,12 +23,20 @@ export const state = {
     sortState: { colId: null, direction: 'asc' },
     currentPageLastUpdated: null,
     currentPageSize: null,          // byte size of the loaded file; baseline for the on-disk watcher
+    // The open page's own front matter, captured from the `get` that rendered it, and the
+    // subset of its fields that hold a list or a nested mapping (which the Metadata panel
+    // shows but will not edit). See frontmatter.php.
+    currentPageFrontmatter: null,
+    currentPageFrontmatterNested: null,    // fields holding a nested mapping; never editable
+    currentPageFrontmatterManaged: null,   // fields the wiki stamps; shown, never editable
     editorLineHeight: 0,
     editMode: localStorage.getItem('wiki_editMode') || 'classic', // 'classic' | 'inline'
     inlineBlocks: [],
     lastApiCallTime: Date.now(),
     currentSpaceHasGit: false,
     spaceReadOnly: false,           // the active space is frozen (see modules/spaces)
+    spaceFmEdit: false,             // the active space allows manual front-matter editing
+    spaceFmStamp: false,            // the active space stamps created/updated into the block
     pageChatPath: null,
     isMobile: false, // effective mobile layout (from viewport + user override)
     displayMode: localStorage.getItem('wiki_displayMode') || 'auto', // 'auto' | 'desktop' | 'mobile'

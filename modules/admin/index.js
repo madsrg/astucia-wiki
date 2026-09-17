@@ -49,7 +49,7 @@ const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
     ai:         ['ai', 'jobs', 'mcp'],
     monitoring: ['logs', 'errorlog', 'audit', 'diagnostics', 'realtime'],
-    content:    ['reindex', 'deleted', 'chatpolicy'],
+    content:    ['reindex', 'deleted', 'chatpolicy', 'metadata'],
 };
 const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 'reindex' };
 
@@ -91,6 +91,7 @@ const switchTab = (name) => {
     if (name === 'deleted')     loadDeletedPages();
     if (name === 'reindex')     loadReindexPane();
     if (name === 'chatpolicy')  loadChatPolicyPane();
+    if (name === 'metadata')    loadMetadataPane();
     if (name === 'mcp')         loadMcpServers();
 };
 
@@ -181,6 +182,35 @@ const loadChatPolicyPane = async () => {
     }
     const res = await api.call('admin_chat_retention');
     if (res.success) sel.value = res.policy ?? '';
+};
+
+// ── Page Metadata tab (Content) ───────────────────────────────────────────────
+//
+// Reading a page's `---` front matter and preserving it across a save are unconditional —
+// a file's own metadata is its own, and losing it would be a bug rather than a setting.
+// What *is* a choice is whether an LLM sees it: a block can carry instructions addressed
+// to a model ("status: draft — do not publish"), which is useful when it is intended and
+// prompt injection when it is not. Off by default, therefore, and an explicit decision.
+
+const loadMetadataPane = async () => {
+    const box  = document.getElementById('admin-fm-expose-ai');
+    const save = document.getElementById('admin-fm-save');
+    if (!box || !save) return;
+
+    if (!save.dataset.bound) {
+        save.dataset.bound = '1';
+        save.addEventListener('click', async () => {
+            save.disabled = true;
+            const res = await api.call('admin_frontmatter_settings',
+                                       { expose_ai: box.checked ? '1' : '0' }, 'POST');
+            save.disabled = false;
+            if (res.success) box.checked = !!res.expose_ai;
+            showToast(res.success ? t('admin.metadata.saved') : (res.message || t('admin.metadata.failed')),
+                      res.success ? 'success' : 'error');
+        });
+    }
+    const res = await api.call('admin_frontmatter_settings');
+    if (res.success) box.checked = !!res.expose_ai;
 };
 
 // ── Audit Log tab ─────────────────────────────────────────────────────────────

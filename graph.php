@@ -18,6 +18,7 @@
 // =================================================================
 
 require_once __DIR__ . '/wikilinks.php';
+require_once __DIR__ . '/frontmatter.php';
 
 class WikiGraph {
     // Bumped whenever the body scanner learns a new link form, so existing caches are
@@ -96,6 +97,9 @@ class WikiGraph {
             // Changed / new — re-scan the body for both link forms: explicit ?pageid=<n>
             // links and `[[wikilinks]]` / `![[embeds]]`, which name their target instead.
             $body = file_get_contents($abs);
+            // Without stripping, an Obsidian `related: "[[Some Page]]"` in front matter
+            // becomes a real graph edge and a backlink on the target.
+            if (substr($data['path'], -3) === '.md') $body = wiki_fm_body($body);
             $out  = [];
             if (preg_match_all('/pageid=(\d+)/', $body, $m)) {
                 $out = $m[1];

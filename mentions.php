@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/frontmatter.php';
 // Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
@@ -112,6 +113,8 @@ function wiki_scan_mentions(string $name, int $uid, ?array $allowed_spaces,
             $abs = $dir . '/' . ltrim($path, '/');
             if (!is_file($abs)) continue;
             $raw = (string)@file_get_contents($abs);
+            // An `@name` inside front matter is metadata, not somebody addressing a person.
+            if ($ext === 'md') $raw = wiki_fm_body($raw);
 
             $hit = $ext === 'chat'
                 ? _mention_hit_chat($raw, $name_re, $since)

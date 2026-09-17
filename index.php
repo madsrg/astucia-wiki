@@ -222,6 +222,9 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 </div>
                 <div class="header-actions">
                     <div id="page-actions-group" class="page-actions-group hidden">
+                        <button id="frontmatter-badge" class="btn btn-icon btn-secondary hidden" type="button">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+                        </button>
                         <div class="file-actions-dropdown">
                             <button id="file-actions-menu-btn" class="btn btn-icon btn-secondary" title="File actions">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
@@ -242,6 +245,10 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                                 <button id="backlinks-btn" class="file-actions-menu-item" data-i18n-title="header.backlinks">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                                     <span data-i18n="header.backlinks">Backlinks</span>
+                                </button>
+                                <button id="metadata-btn" class="file-actions-menu-item" data-i18n-title="header.metadata">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+                                    <span data-i18n="header.metadata">Metadata</span>
                                 </button>
                                 <button id="print-btn" class="file-actions-menu-item" data-i18n-title="header.print">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
@@ -1269,6 +1276,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab hidden" data-tab="reindex" data-group="content" data-i18n="admin.tab.reindex">Index Pages</button>
                 <button class="admin-tab hidden" data-tab="deleted" data-group="content" data-i18n="admin.tab.deleted">Deleted Pages</button>
                 <button class="admin-tab hidden" data-tab="chatpolicy" data-group="content" data-i18n="admin.tab.chatpolicy">Chat Retention</button>
+                <button class="admin-tab hidden" data-tab="metadata" data-group="content" data-i18n="admin.tab.metadata">Page Metadata</button>
             </div>
 
             <!-- Users pane -->
@@ -1358,6 +1366,23 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <button id="admin-chat-retention-save" class="btn btn-blue" data-i18n="btn.save">Save</button>
                         </div>
                         <p class="pref-hint" data-i18n="admin.chatpolicy.hint"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Page metadata (front matter) pane -->
+            <div id="admin-pane-metadata" class="admin-pane hidden">
+                <div class="admin-scroll-area">
+                    <div class="admin-reindex-body">
+                        <p class="admin-reindex-desc" data-i18n="admin.metadata.desc"></p>
+                        <div class="form-group">
+                            <label class="admin-ai-switch-boxed" for="admin-fm-expose-ai">
+                                <input type="checkbox" id="admin-fm-expose-ai">
+                                <span data-i18n="admin.metadata.expose-ai">Show front matter to AI users and MCP clients</span>
+                            </label>
+                            <p class="pref-hint" data-i18n="admin.metadata.expose-ai-hint"></p>
+                        </div>
+                        <button id="admin-fm-save" class="btn btn-blue" data-i18n="btn.save">Save</button>
                     </div>
                 </div>
             </div>
