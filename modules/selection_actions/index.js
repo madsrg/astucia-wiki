@@ -19,7 +19,7 @@ let _explainPop = null;
 let _lastSel = null; // { text, rect } captured on the last valid selection
 
 // Only markdown pages in read mode (not the editor, lists, diagrams, JSON, search).
-const inReadModeMd = () => !state.isEditing && state.currentPageType === 'file';
+const inReadModeMd = () => !state.isEditing && state.currentPageType === 'md';
 
 const ICONS = {
     quote:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',

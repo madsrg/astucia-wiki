@@ -395,7 +395,7 @@ export const createEditorToolbar = () => {
     });
 
     // ── Metadata dropdown ───────────────────────────────────────────────────
-    makeDropdown(t('tb.menu-metadata'), add => {
+    makeDropdown(t('tb.menu-autotext'), add => {
         add(t('tb.meta-filename'), t('tb.meta-filename-title'), () => insertMarkdown('{filename}'));
         add(t('tb.meta-updated'), t('tb.meta-updated-title'), () => insertMarkdown('{lastUpdated}'));
         add(t('tb.meta-toc'), t('tb.meta-toc-title'), () => insertBlock('{toc maxLevels:3}'));

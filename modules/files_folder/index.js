@@ -83,7 +83,7 @@ const showListingPane = (mode) => {
     document.querySelector('.editor-container-wrapper')?.classList.add('hidden');
     document.getElementById('files-folder-container').classList.remove('hidden');
 
-    ['page-id-display', 'diagram-edit-btn', 'editor-mode-group', 'save-btn', 'cancel-btn',
+    ['page-id-display', 'frontmatter-badge', 'diagram-edit-btn', 'editor-mode-group', 'save-btn', 'cancel-btn',
      'search-btn', 'page-meta-row', 'copy-btn', 'backlinks-btn', 'print-btn', 'toc-btn',
      'page-chat-btn', 'share-btn', 'chat-topic-btn', 'graph-focus-btn', 'git-history-btn',
      'git-commit-toggle-btn', 'git-snapshot-btn'].forEach(id =>

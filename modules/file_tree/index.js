@@ -167,7 +167,7 @@ export const showFolderPlaceholder = (path) => {
     document.getElementById('files-folder-container').classList.add('hidden');
     document.getElementById('viewer-content').innerHTML = '';
     document.getElementById('diagram-viewer').innerHTML = '';
-    ['tags-container', 'attachments-section', 'page-id-display', 'edit-btn',
+    ['tags-container', 'attachments-section', 'page-id-display', 'frontmatter-badge', 'edit-btn',
      'diagram-edit-btn', 'page-chat-btn', 'editor-mode-group', 'toc-btn', 'copy-btn',
      'backlinks-btn', 'print-btn'].forEach(id =>
         document.getElementById(id)?.classList.add('hidden'));

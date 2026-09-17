@@ -11,7 +11,7 @@ export const renderAttachments = async () => {
     const attachmentsSection = document.getElementById('attachments-section');
     const attachmentList = document.getElementById('attachment-list');
 
-    if (!state.currentPagePath || state.currentPageType !== 'file') {
+    if (!state.currentPagePath || state.currentPageType !== 'md') {
         attachmentsSection.classList.add('hidden');
         return;
     }
@@ -32,7 +32,7 @@ export const renderAttachments = async () => {
             });
         }
         attachmentsSection.classList.remove('hidden');
-        document.getElementById('attach-file-btn').classList.toggle('hidden', state.currentPageType !== 'file');
+        document.getElementById('attach-file-btn').classList.toggle('hidden', state.currentPageType !== 'md');
     }
 };
 

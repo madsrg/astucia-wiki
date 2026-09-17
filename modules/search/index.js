@@ -122,6 +122,7 @@ export const displaySearchResults = (title, results, showSpace = false) => {
     _title     = title;
 
     document.getElementById('page-id-display').classList.add('hidden');
+    document.getElementById('frontmatter-badge')?.classList.add('hidden');
     document.getElementById('edit-btn').disabled = true;
     document.getElementById('viewer-container').classList.remove('hidden');
     document.getElementById('list-view-container').classList.add('hidden');

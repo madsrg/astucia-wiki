@@ -64,7 +64,7 @@ const typeForPath = (path) => {
     if (path.endsWith('.chat'))   return 'chat';
     if (path.endsWith('.search')) return 'search';
     if (path.endsWith('.json'))   return 'json';
-    return 'file';
+    return 'md';
 };
 
 const titleForPath = (path) =>
@@ -106,7 +106,7 @@ const makeTab = (path, id, tags, isPreview) => ({
 // Only Markdown read-mode scroll is worth restoring: loadPage deliberately starts
 // lists, chats and search results at the top, so "restoring" those would differ
 // from opening them normally.
-const scrollEl = (type) => (type === 'file' ? document.getElementById('viewer-content') : null);
+const scrollEl = (type) => (type === 'md' ? document.getElementById('viewer-content') : null);
 
 /**
  * Capture the outgoing tab's resume record.
@@ -128,7 +128,7 @@ const snapshotOutgoing = (nextPath) => {
 
     const editor = document.getElementById('editor-container');
     const canDraft = state.isEditing && state.editMode !== 'inline'
-                     && state.currentPageType === 'file' && editor;
+                     && state.currentPageType === 'md' && editor;
     if (!canDraft) {
         // Dirty inline/json page: we cannot reconstruct it, so fall through to
         // loadPage's prompt. Clear any older draft so a discarded edit cannot
