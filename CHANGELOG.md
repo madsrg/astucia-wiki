@@ -6,6 +6,38 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.9.10] — 2026-09-23
+
+Two ways the editor could appear to eat what you typed. Both were reported as "typing
+`##` deletes a character", and they turned out to be unrelated — one a keyboard modifier
+the shortcut handler read too loosely, the other the font.
+
+### Fixed
+- **Typing `##` no longer looks like it swallowed a character.** The editor, the inline
+  editor, the sidebar search box and the tag box are set in a coding font, and a coding
+  font ligates `##` into one joined glyph — which reads as a single hash with a gap in
+  front of it. Nothing was ever changed in the text; the font was substituting a glyph,
+  which is why it appeared in the search box as well and why copying the value out showed
+  it was correct all along. Ligatures are now off in the four fields you type Markdown
+  into, where `##`, `->` and `!=` are syntax rather than decoration.
+  - It bites hardest where the webfont does *not* load — an offline install, a blocked
+    `fonts.googleapis.com`, a privacy extension — because the stack then falls back to
+    the reader's own default monospace, which is often Fira Code or Cascadia Code. Both
+    ligate `##`; JetBrains Mono, which the wiki asks for, does not.
+- **AltGr is no longer treated as Alt in the editor.** The editor's shortcuts are `Alt`
+  plus a letter or digit, and the handler tested `e.altKey` alone. On Windows and Linux
+  **AltGr arrives as Ctrl+Alt**, so on any layout that needs AltGr to type a character —
+  and there are many — that character was swallowed and a heading or snippet inserted
+  instead, for every key the editor claims (`1`–`3`, `b`, `i`, `k`, `l`, `c`, `n`, `t`,
+  `s`, `f`, `a`). macOS had the mirror image: `Cmd+Alt+I`, which opens the browser's dev
+  tools, was answered with a pair of italic markers and cancelled. The shortcuts
+  themselves are unchanged on bare `Alt`.
+  - `tests/editor_hotkeys_ui.test.sh` is the new guard. It has to drive a real browser:
+    the whole behaviour is which keystrokes a document-level listener claims, and the
+    evidence is a `defaultPrevented` flag that nothing black-box can see. Every denial is
+    paired with a positive control, or a handler that had stopped firing altogether would
+    pass the lot.
+
 ## [2026.9.9] — 2026-09-23
 
 Three things the editor and the reader were missing: pasting a screenshot straight into a

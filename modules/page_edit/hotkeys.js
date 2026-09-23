@@ -100,7 +100,14 @@ export const init = () => {
             if (!state.isEditing) return;
             const key = e.key.toLowerCase();
 
-            if (e.altKey) {
+            // Alt *alone*. On Windows and Linux AltGr reports as Ctrl+Alt, so a layout
+            // that needs AltGr for a character — and there are many — had that character
+            // swallowed by preventDefault() and a heading or snippet inserted instead,
+            // whenever the key underneath it was one of these. macOS is the mirror image:
+            // Cmd+Alt+I is how the browser's dev tools open, and that was being answered
+            // with a pair of italic markers. modules/tabs already draws the line here for
+            // the same reason; this handler did not.
+            if (e.altKey && !e.ctrlKey && !e.metaKey) {
                 if (key === 's') { e.preventDefault(); if (!document.getElementById('save-btn').disabled) savePage(); return; }
                 if (key === 'l') { e.preventDefault(); state.linkInsertionMode = 'link'; openLinkLightbox(); return; }
                 if (key === 'p') { e.preventDefault(); state.linkInsertionMode = 'include'; openLinkLightbox(); return; }

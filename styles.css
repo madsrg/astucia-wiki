@@ -1128,6 +1128,29 @@ body {
     overflow: hidden;
 }
 
+/*
+ * No ligatures in anything you type Markdown into.
+ *
+ * A coding font ligates `##`, `->`, `!=`, `//` — which is pleasant in source code and
+ * wrong here, because in Markdown `##` *is* the syntax: the pair is drawn as one joined
+ * glyph and reads as a single hash with a gap in front of it, so typing a level-2
+ * heading looks like the editor ate a character. Nothing is ever changed in the value —
+ * it is the font substituting a glyph — which is precisely what makes it so confusing to
+ * report and so invisible to every test we have.
+ *
+ * It bites hardest where the webfont does NOT load (an offline install, a blocked
+ * fonts.googleapis.com, a privacy extension): the stack falls back to the reader's own
+ * default monospace, which on a developer's machine is very often Fira Code or Cascadia
+ * Code — both of which ligate `##`, where JetBrains Mono itself does not.
+ */
+#editor-container,
+.inline-block-textarea,
+#tags-pane #search-query-input,
+#tag-input {
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "clig" 0, "calt" 0;
+}
+
 .inline-block-textarea:focus {
     outline: none;
 }
