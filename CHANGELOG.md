@@ -6,6 +6,50 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.9.9] — 2026-09-23
+
+Three things the editor and the reader were missing: pasting a screenshot straight into a
+page, copying a code block without selecting it, and a tab menu that can be opened when
+nothing has overflowed. Plus the Metadata panel finally saying *why* it is read-only.
+
+### Added
+- **Paste an image into the Markdown editor.** Ctrl+V a screenshot — or any bitmap on the
+  clipboard — while editing, and it is uploaded as an attachment of that page and linked
+  at the caret. It becomes an ordinary attachment: same `.uploads` directory, same
+  attachments list, same `getfile.php` URL, so nothing else in the product has to learn
+  about it. A clipboard carrying no image is still pasted by the browser exactly as
+  before, and a paste into a chat composer or a dialog is left alone.
+  - The clipboard carries no filename, so every screenshot arrives as `image.png`.
+    `upload_attachment` therefore takes `no_overwrite=1` and counts instead —
+    `image.png`, `image2.png`, `image3.png` — and returns the name it actually wrote,
+    which is what the link is built from. Without that, the second paste into a page
+    silently replaced the first. The flag is opt-in, so the attach button and
+    Insert → Image still replace a file on purpose.
+  - The image is uploaded at the moment it is pasted, so cancelling the edit afterwards
+    leaves it in the attachments list to delete.
+- **A copy button on every fenced code block.** It appears in the block's top-right corner
+  on hover, and unconditionally on a touch screen, which has none. It copies the source
+  the author typed rather than the renderer's HTML-escaped version, and falls back to
+  `execCommand` where `navigator.clipboard` does not exist — a wiki on plain HTTP on a LAN
+  hostname is an ordinary install here, and copying is the one thing that must not be the
+  feature broken on it. Mermaid blocks are skipped: that block becomes a diagram moments
+  later.
+
+### Changed
+- **The tab overflow menu opens whenever more than one tab is open**, not only when
+  something is hidden — it is also where *Close all but current* lives, which is most
+  wanted exactly when nothing has overflowed. The count beside the `⌄` is what is hidden
+  *from you*, so it is blank at zero rather than reading `⌄ 0`, and the hidden tabs scroll
+  while the action beneath them stays in place.
+- **The Metadata panel says why it is read-only, and where that is changed.** It stated a
+  fact with no cause, so the only available reading was "this wiki cannot do it" when it
+  is one per-Space setting. The explanation appears only where that setting is the single
+  thing in the way — not to a reader, not in a frozen Space, not on a wiki with no Spaces,
+  where it would point at a switch that would not help — and is worded for who is reading:
+  Space settings is an admin-only dialog, so an editor is told who to ask. The intro
+  dropped "the wiki does not write this block", which directly above a sentence offering
+  to turn writing on read as a contradiction.
+
 ## [2026.9.8] — 2026-09-17
 
 Page metadata as YAML front matter: read and preserved always, editable or maintained by

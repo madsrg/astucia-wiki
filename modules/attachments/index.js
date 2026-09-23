@@ -31,7 +31,9 @@ export const renderAttachments = async () => {
                 attachmentList.appendChild(el);
             });
         }
-        attachmentsSection.classList.remove('hidden');
+        // Not shown while editing — setEditingMode() hides it, and a paste refreshing the
+        // list mid-edit must not pop the strip back into view under the author.
+        attachmentsSection.classList.toggle('hidden', !!state.isEditing);
         document.getElementById('attach-file-btn').classList.toggle('hidden', state.currentPageType !== 'md');
     }
 };

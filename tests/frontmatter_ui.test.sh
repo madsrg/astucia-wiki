@@ -229,6 +229,14 @@ setTimeout(() => {
   } else if (probe === 'open-item') {
     document.getElementById('metadata-btn')?.click();
     setTimeout(report, 1500);
+  } else if (probe === 'open-item-editor') {
+    // The read-only panel's hint names Space settings, which is an admin-only dialog — so
+    // an editor is told who to ask instead. The role is read off the body class, which is
+    // what index.php sets it from, so swapping it here exercises the real branch.
+    document.body.classList.remove('role-admin');
+    document.body.classList.add('role-editor');
+    document.getElementById('metadata-btn')?.click();
+    setTimeout(report, 1500);
   } else if (probe === 'add-field' || probe === 'type-only') {
     // Add a field to a page that has no front matter at all. `type-only` leaves it in the
     // add row without pressing Add, which is what people actually do before hitting Save.
@@ -540,11 +548,16 @@ load Plain.md open-item
 assert_eq "the panel still opens" 'Page metadata' "$(modal_title)"
 assert_eq "with no table"         ''              "$(rows)"
 assert_contains "and an explanation" 'no front matter' "$DOM"
+# The emptiest panel is the one that most needs to say where editing is turned on: "this
+# file has no front matter" on its own answers nothing about how to give it some.
+assert_contains "  and where editing is turned on" 'fm-edit-off' "$(modal_body)"
+assert_contains "  naming Space settings" 'Space settings' "$(modal_body)"
 
 section 'where the Space allows it, the panel is an editor'
 load Edit.md open-item Editable
 panel=$(modal_body)
 assert_eq "the panel opens" 'Page metadata' "$(modal_title)"
+assert_not_contains "and no hint about turning editing on" 'fm-edit-off' "$panel"
 assert_contains "the scalar fields are inputs"  'class="form-control fm-input"' "$panel"
 assert_contains "  including status"            'data-key="status"'             "$panel"
 # A list is editable now, as a comma-separated box marked data-multi.
@@ -560,6 +573,15 @@ assert_contains     "the values are still shown" 'Ada Lovelace'  "$panel"
 assert_not_contains "but there are no inputs"    'fm-input'      "$panel"
 assert_not_contains "no add row"                 'fm-add-btn'    "$panel"
 assert_not_contains "no remove buttons"          'class="fm-rm"' "$panel"
+# Read-only is a Space setting, not a property of the file, so the panel says so and says
+# where it is changed — otherwise the only reading available is "this wiki cannot do it".
+assert_contains "it says why it is read-only" 'read-only' "$panel"
+assert_contains "  and where to change it"    'Turn editing on in Space settings' "$panel"
+
+load Report.md open-item-editor Main
+panel=$(modal_body)
+assert_contains "an editor is told who can change it" 'An administrator can change that' "$panel"
+assert_not_contains "  and is not sent to a dialog they cannot open" 'the gear beside' "$panel"
 
 section 'editing writes through to the file'
 load Edit.md edit-field Editable
@@ -666,12 +688,15 @@ assert_contains     "and the nested value survived" '  a: 1'    "$lists"
 
 section 'the panel describes what it actually is'
 # It said "the wiki does not write this block", which stopped being true the moment
-# editing and stamping existed — and it has to say something different per Space.
+# editing and stamping existed — and it has to say something different per Space. The
+# intro is now only about where the values *came from*; whether they can be changed, and
+# where that is decided, is the sentence under it.
 load Edit.md open-item Editable
 assert_contains     "an editable Space says so"  'written into the file itself' "$(modal_body)"
-assert_not_contains "  not the read-only line"   'does not write this block'    "$(modal_body)"
+assert_not_contains "  not the read-only line"   'nothing can be added'         "$(modal_body)"
 load Report.md open-item Main
-assert_contains     "a read-only Space says that" 'does not write this block'   "$(modal_body)"
+assert_contains     "a read-only Space says that" 'nothing can be added or changed here' "$(modal_body)"
+assert_not_contains "  without claiming the wiki never writes it" 'does not write' "$(modal_body)"
 load Stamped.md open-item Editable
 assert_contains     "and a stamped Space names the four" 'maintained by the wiki' "$(modal_body)"
 

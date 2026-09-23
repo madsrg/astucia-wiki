@@ -30,6 +30,7 @@ import { init as initGlobalSearch, generateTagCloud } from './modules/search/ind
 import { init as initDiagram } from './modules/diagram/index.js';
 import { init as initInsertMedia } from './modules/page_edit/insert_media.js';
 import { init as initInsertComment } from './modules/page_edit/insert_comment.js';
+import { init as initPasteImage } from './modules/page_edit/paste_image.js';
 import { init as initFilesFolder } from './modules/files_folder/index.js';
 import { init as initAdmin } from './modules/admin/index.js';
 import { init as initPreferences } from './modules/preferences/index.js';
@@ -177,6 +178,7 @@ const init = async () => {
     initDiagram();
     initInsertMedia();
     initInsertComment();
+    initPasteImage();
     initFilesFolder();
     initAdmin();
     initPreferences();

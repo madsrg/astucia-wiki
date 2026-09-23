@@ -69,16 +69,21 @@ const initSingleDiagram = async (el) => {
 };
 
 // Watches the viewer for content that needs a second pass after Markdown rendering:
-// embedded .drawio previews, and ```mermaid fenced blocks. Observing beats calling the
-// renderers at each site that writes HTML here — page load, in-place refresh, the
-// inline editor's preview and {include:} transclusion all go through this one hook.
+// embedded .drawio previews, ```mermaid fenced blocks, callouts, and a copy button on
+// each code block. Observing beats calling the renderers at each site that writes HTML
+// here — page load, in-place refresh, the inline editor's preview and {include:}
+// transclusion all go through this one hook.
 let diagramObserverSetup = false;
+// A block already wired by modules/code_copy is excluded from the selector rather than
+// only from that module's own pass: wrapping a <pre> is a mutation of the viewer, so the
+// wrapper itself lands back here, and matching it would schedule a pass per pass.
+const CODE_SEL = 'pre:not([data-copy-ready]) > code';
 const setupDiagramObserver = () => {
     if (diagramObserverSetup) return;
     diagramObserverSetup = true;
     const viewer = document.getElementById('viewer-content');
     new MutationObserver(mutations => {
-        let sawMermaid = false, sawQuote = false;
+        let sawMermaid = false, sawQuote = false, sawCode = false;
         for (const m of mutations) {
             for (const node of m.addedNodes) {
                 if (node.nodeType !== 1) continue;
@@ -91,6 +96,8 @@ const setupDiagramObserver = () => {
                 // cannot re-trigger itself.
                 if (!sawQuote && (node.querySelector?.('blockquote')
                                   || node.matches?.('blockquote'))) sawQuote = true;
+                if (!sawCode && (node.querySelector?.(CODE_SEL)
+                                 || node.matches?.(CODE_SEL))) sawCode = true;
             }
         }
         if (sawMermaid) {
@@ -98,6 +105,9 @@ const setupDiagramObserver = () => {
         }
         if (sawQuote) {
             import('../callouts/index.js').then(m => m.scheduleCalloutRender(viewer)).catch(() => {});
+        }
+        if (sawCode) {
+            import('../code_copy/index.js').then(m => m.scheduleCodeCopyRender(viewer)).catch(() => {});
         }
     }).observe(viewer, { childList: true, subtree: true });
 };

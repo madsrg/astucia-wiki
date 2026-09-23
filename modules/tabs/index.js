@@ -343,9 +343,26 @@ const render = () => {
 //     It is shown last, next to the ⌄ button; the tab order in the model is untouched,
 //     so dragging still means what it did.
 //   - at least one tab is shown, however narrow the window.
+//
+// The ⌄ button is shown whenever **more than one tab** is open, whether or not anything
+// is hidden: it is the menu's only entry point, and the menu carries *Close all but
+// current* as well as the hidden tabs. With a single tab there is nothing in it — no tab
+// to list and none to close — so it stays away rather than opening an empty box.
+//
+// It is therefore in the bar *before* the strip's budget is measured, which is what let
+// the two-pass measurement below collapse into one: a hidden `display: none` button took
+// no width, so the old code had to measure, reveal it, then measure again.
 
 // Model indices currently in the menu, in tab order. Read when the menu is opened.
 let _overflowIdx = [];
+
+// The count is what tabs are *hidden from you*, so at zero there is no number to show —
+// a `⌄ 0` beside a row where everything is visible states a problem that isn't there.
+// The tooltip changes with it: `tabs.more` reads "n more tab(s)", which is a lie at zero.
+const setMoreCount = (more, n) => {
+    more.querySelector('.wiki-tabs-more-count').textContent = n ? String(n) : '';
+    more.title = n ? t('tabs.more', { n }) : t('tabs.menu');
+};
 
 const layoutOverflow = () => {
     const bar   = document.getElementById(BAR_ID);
@@ -356,18 +373,17 @@ const layoutOverflow = () => {
     const els = [...strip.children];
     // Measure with everything shown: a display:none tab has no width to measure.
     els.forEach(el => el.classList.remove('overflowed'));
-    more.classList.add('hidden');
     _overflowIdx = [];
+    // One tab is the only case with an empty menu, so it is the only case without the
+    // button. Toggled before anything is measured, since it takes width off the strip.
+    more.classList.toggle('hidden', els.length < 2);
+    setMoreCount(more, 0);
     if (els.length < 2) return;
 
     const widths = els.map(el => el.offsetWidth);
     const total  = widths.reduce((a, b) => a + b, 0);
-    if (total <= strip.clientWidth) return;
-
-    // Only now does the ⌄ button exist, and it takes width off the strip — so the
-    // budget has to be read again with it in place.
-    more.classList.remove('hidden');
-    const avail = strip.clientWidth;
+    const avail  = strip.clientWidth;
+    if (total <= avail) return;     // nothing hidden — the button stays, without a count
 
     const visible = new Set();
     let used = 0;
@@ -395,8 +411,7 @@ const layoutOverflow = () => {
         el.classList.add('overflowed');
         _overflowIdx.push(i);
     });
-    more.querySelector('.wiki-tabs-more-count').textContent = String(_overflowIdx.length);
-    more.title = t('tabs.more', { n: _overflowIdx.length });
+    setMoreCount(more, _overflowIdx.length);
 };
 
 // One observer for the life of the page. The bar is full width, so hiding tabs cannot
@@ -411,25 +426,56 @@ const observeWidth = (bar) => {
 
 const openOverflowMenu = (anchor) => {
     closeMenu();
-    if (!_overflowIdx.length) return;
     const w = ws();
+    // `activeIdx >= 0` is not redundant: a drag can leave the active tab unknown, and
+    // "all but current" with no current would close the lot.
+    const canCloseOthers = w.tabs.length > 1 && w.activeIdx >= 0;
+    if (!_overflowIdx.length && !canCloseOthers) return;
 
     _menu = document.createElement('div');
     _menu.className = 'wiki-tab-menu wiki-tab-menu-overflow';
-    _overflowIdx.forEach(idx => {
-        const tab = w.tabs[idx];
-        if (!tab) return;
+
+    if (_overflowIdx.length) {
+        // The hidden tabs scroll; the action below them does not (see styles.css). A
+        // session runs to dozens of tabs, and an action at the end of a scroll area is
+        // one you have to go looking for.
+        const list = document.createElement('div');
+        list.className = 'wiki-tab-menu-list';
+        _overflowIdx.forEach(idx => {
+            const tab = w.tabs[idx];
+            if (!tab) return;
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.title = tab.path;
+            b.innerHTML = `<span class="wiki-tab-icon">${tab.path ? iconForType(tab.type) : icons.file}</span>`;
+            const name = document.createElement('span');
+            name.className = 'wiki-tab-name';
+            name.textContent = labelFor(tab, w.tabs);   // unshortened: the menu has the room
+            b.appendChild(name);
+            b.addEventListener('click', () => { closeMenu(); activate(idx); });
+            list.appendChild(b);
+        });
+        _menu.appendChild(list);
+    }
+
+    if (canCloseOthers) {
+        // A rule only where there is something on both sides of it: with nothing hidden
+        // this is the whole menu, and a line above the only row separates it from nothing.
+        if (_overflowIdx.length) {
+            const sep = document.createElement('div');
+            sep.className = 'wiki-tab-menu-sep';
+            _menu.appendChild(sep);
+        }
         const b = document.createElement('button');
         b.type = 'button';
-        b.title = tab.path;
-        b.innerHTML = `<span class="wiki-tab-icon">${tab.path ? iconForType(tab.type) : icons.file}</span>`;
-        const name = document.createElement('span');
-        name.className = 'wiki-tab-name';
-        name.textContent = labelFor(tab, w.tabs);   // unshortened: the menu has the room
-        b.appendChild(name);
-        b.addEventListener('click', () => { closeMenu(); activate(idx); });
+        b.className = 'wiki-tab-menu-action';
+        b.textContent = t('tabs.close-but-current');
+        // The active tab is re-read at click time rather than captured when the menu was
+        // built, so the action is always relative to the tab actually on screen.
+        b.addEventListener('click', () => { closeMenu(); closeMany(i => i !== ws().activeIdx); });
         _menu.appendChild(b);
-    });
+    }
+
     document.body.appendChild(_menu);
 
     // Hang it under the button's right edge, kept on screen.

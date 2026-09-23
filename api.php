@@ -3594,9 +3594,36 @@ if (isset($_REQUEST['action'])) {
                     mkdir($upload_dir, 0777, true);
                 }
                 $file = $_FILES['file'];
-                $destination = $upload_dir . '/' . basename($file['name']);
+                $att_name  = basename($file['name']);
+                $att_final = $att_name;
+
+                // Opt-in, for the clipboard paste path. Every screenshot arrives called
+                // "image.png", so without this the second paste into a page silently
+                // replaces the first — and any older revision still links to it. The
+                // counter starts at 2 (image.png, image2.png, …) rather than the space
+                // merge's "name (1)" convention, which is for names a person chose and
+                // reads badly on a name the browser made up. Off by default so the attach
+                // button and the image lightbox keep replacing a file on purpose.
+                if (!empty($_POST['no_overwrite'])) {
+                    $att_base = pathinfo($att_name, PATHINFO_FILENAME);
+                    $att_ext  = pathinfo($att_name, PATHINFO_EXTENSION);
+                    $att_ext  = $att_ext === '' ? '' : '.' . $att_ext;
+                    $att_n    = 1;
+                    while (file_exists($upload_dir . '/' . $att_final)) {
+                        $att_final = $att_base . (++$att_n) . $att_ext;
+                    }
+                }
+
+                $destination = $upload_dir . '/' . $att_final;
                 if (move_uploaded_file($file['tmp_name'], $destination)) {
-                    echo json_encode(['success' => true, 'message' => 'File uploaded.']);
+                    // The caller cannot know the final name — a collision changed it — and
+                    // it is what the Markdown link has to point at.
+                    echo json_encode([
+                        'success'  => true,
+                        'message'  => 'File uploaded.',
+                        'filename' => $att_final,
+                        'renamed'  => $att_final !== $att_name,
+                    ]);
                 } else {
                     throw new Exception('Failed to upload file.');
                 }

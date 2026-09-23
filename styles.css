@@ -1151,6 +1151,28 @@ body {
                  border-radius: 4px 4px 0 0; font-size: 0.85rem; margin: 1rem 0 0; }
 .mermaid-error-source { margin-top: 0; border-radius: 0 0 4px 4px; }
 
+/* Copy button on a rendered code block — see modules/code_copy. Positioned against the
+   .code-block wrapper rather than the <pre>: pre scrolls on mobile (below), and an
+   absolutely positioned child of a scrolling box scrolls away with the content. */
+#viewer-content .code-block { position: relative; }
+/* Room reserved for the button, so a long first line wraps before it rather than under it. */
+#viewer-content .code-block > pre { padding-right: 48px; }
+#viewer-content .code-copy-btn {
+    position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border-color); border-radius: 4px; background: #fff;
+    color: var(--accent-gray); cursor: pointer;
+    opacity: 0; transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+}
+/* Revealed on hover, as every other Markdown viewer does — but a touch screen has no
+   hover and a keyboard has no pointer, so focus and mobile show it unconditionally. */
+#viewer-content .code-block:hover .code-copy-btn,
+#viewer-content .code-copy-btn:focus-visible,
+#viewer-content .code-copy-btn.code-copy-done,
+body.mobile #viewer-content .code-copy-btn { opacity: 1; }
+#viewer-content .code-copy-btn:hover { color: var(--accent-blue-hover); border-color: var(--accent-blue); }
+#viewer-content .code-copy-btn.code-copy-done { color: var(--accent-green-hover); border-color: var(--accent-green); }
+
 /* Wikilinks — `[[Page]]`, see modules/wikilinks. A resolved link is an ordinary internal link,
    so it inherits the anchor styling; only the two special states need rules. */
 #viewer-content .wikilink-missing {
@@ -2243,11 +2265,15 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 }
 .wiki-tabs-more:hover { background: #edf2f7; color: var(--text-color); }
 .wiki-tabs-more svg { width: 13px; height: 13px; }
-/* The overflow list can be long — a wiki session runs to dozens of tabs. */
-.wiki-tab-menu-overflow { max-height: 60vh; overflow-y: auto; max-width: 320px; }
-.wiki-tab-menu-overflow button { display: flex; align-items: center; gap: 7px; }
-.wiki-tab-menu-overflow .wiki-tab-icon { opacity: 0.6; }
-.wiki-tab-menu-overflow .wiki-tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The overflow list can be long — a wiki session runs to dozens of tabs — so it is the
+   *list* that scrolls, not the menu: `Close all but current` sits under it and stays put,
+   rather than being an action you scroll to the end of the tab list to reach. */
+.wiki-tab-menu-overflow { max-width: 320px; }
+.wiki-tab-menu-list { display: flex; flex-direction: column; max-height: 55vh; overflow-y: auto; }
+.wiki-tab-menu-list button { display: flex; align-items: center; gap: 7px; }
+.wiki-tab-menu-list .wiki-tab-icon { opacity: 0.6; }
+.wiki-tab-menu-list .wiki-tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wiki-tab-menu-sep { flex-shrink: 0; height: 1px; margin: 4px 2px; background: var(--border-color); }
 .wiki-tab-menu {
     position: fixed; z-index: 3000; display: flex; flex-direction: column; min-width: 175px;
     padding: 4px; background: white; border: 1px solid var(--border-color); border-radius: 4px;
@@ -2278,6 +2304,10 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 /* Front matter viewer (ellipsis menu -> Metadata). Read-only: the wiki does not author
    this block, it shows what the file carries. */
 .fm-source { margin: 0 0 0.6rem; }
+/* "…and here is where that is changed" belongs *with* the sentence above it, so the two
+   close up and the gap moves below the pair. */
+.fm-source:has(+ .fm-edit-off) { margin-bottom: 0.2rem; }
+.fm-edit-off { margin: 0 0 0.6rem; }
 .fm-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
 .fm-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border-color); vertical-align: top; }
 .fm-table tr:last-child td { border-bottom: 0; }

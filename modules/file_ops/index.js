@@ -246,9 +246,23 @@ const showFrontmatter = async () => {
     const ownRows      = allRows.filter(([k]) => !managed.has(k.toLowerCase()));
     const rows         = [...managedRows, ...ownRows];
 
+    // Why the panel is read-only, and where that is changed — but only where the Space's
+    // own setting is the single thing in the way. A frozen Space and a reader cannot edit
+    // anything, so pointing either at a switch that would not help them is a dead end;
+    // neither can a root-level wiki, which has no Space record to carry the setting.
+    // Wording follows who is reading: Space settings is an admin-only dialog, so an editor
+    // is told who to ask rather than sent to a gear they do not have.
+    const fmOffHint = !editable && !!state.currentSpace && !state.spaceReadOnly
+        && !document.body.classList.contains('role-reader')
+        ? t(document.body.classList.contains('role-admin') ? 'fm.edit-off-admin' : 'fm.edit-off')
+        : '';
+    const fmOffHtml = fmOffHint ? `<p class="form-hint fm-edit-off">${_fmEsc(fmOffHint)}</p>` : '';
+
     if (!rows.length && !editable) {
+        // The emptiest case, and the one that most needs the hint: "this file has no front
+        // matter" alone leaves no answer to the obvious next question.
         await confirmModal(t('fm.title'), {
-            messageHtml: `<p class="form-hint">${_fmEsc(t('fm.none'))}</p>`,
+            messageHtml: `<p class="form-hint">${_fmEsc(t('fm.none'))}</p>` + fmOffHtml,
             confirmLabel: t('btn.close'), hideCancel: true,
         });
         return;
@@ -281,18 +295,22 @@ const showFrontmatter = async () => {
           + ` title="${_fmEsc(t('fm.remove'))}">×</button></td>`
         : (editable ? '<td class="fm-rm-cell"></td>' : '');
 
-    // What this panel *is* depends on the Space, so the explanation does too: saying "the
-    // wiki does not write this block" is false where stamping is on, and "read-only" is
-    // false where editing is.
-    // A read-only Space with stamping on was still told "the wiki does not write this
-    // block", which is false: it writes four of them. The two axes are independent, so the
-    // text picks on both.
+    // What this panel *is* depends on the Space, so the explanation does too, and it picks
+    // on both axes: a read-only Space with stamping on used to be told "the wiki does not
+    // write this block", which is false — it writes four of them.
+    //
+    // The intro now answers only "where did these values come from"; whether they can be
+    // changed, and where that is decided, is `fmOffHint` above. Splitting the two is what
+    // stopped the paragraph contradicting itself the moment editing became a per-Space
+    // choice: a sentence claiming the wiki never writes the block, directly above one
+    // offering to turn writing on.
     const intro = managed.size
         ? (editable ? t('fm.from-file-edit-stamped') : t('fm.from-file-stamped'))
         : (editable ? t('fm.from-file-edit') : t('fm.from-file'));
     const emptyText = editable ? t('fm.none-edit') : t('fm.none');
     const body = `<div class="fm-view">`
         + `<p class="form-hint fm-source">${_fmEsc(intro)}</p>`
+        + fmOffHtml
         + (!rows.length ? `<p class="form-hint">${_fmEsc(emptyText)}</p>` : '')
         + (managedRows.length && ownRows.length
             ? `<p class="form-hint fm-managed-note">${_fmEsc(t('fm.managed-note'))}</p>` : '')
