@@ -12,6 +12,7 @@
  */
 
 import { icons } from './modules/core/icons.js';
+import { noteLoaded } from './modules/core/versions.js';
 import { init as initI18n, t } from './modules/i18n/index.js';
 import { refreshFileTree, revealAndSelectFile, startTreePolling, stopTreePolling, syncFolderPane, init as initFileTree } from './modules/file_tree/index.js';
 import { loadPage } from './modules/page_view/index.js';
@@ -130,6 +131,10 @@ const populateDropdownIcons = () => {
 // --- Boot ---
 const init = async () => {
     initI18n();
+    // marked is the one CDN library loaded up front rather than on demand, and its build
+    // exposes no version field — so this records "loaded, version not exposed", which is
+    // a different answer from "not loaded" and the honest one for Admin → Wiki Info.
+    noteLoaded('marked', window.marked?.version || '');
     window.addEventListener('wiki:languagechange', populateDropdownIcons);
     populateDropdownIcons();
     initSidebarToggle();

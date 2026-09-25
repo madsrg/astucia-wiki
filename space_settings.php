@@ -165,6 +165,44 @@ function wiki_space_set_fm_autostamp(string $space, string $mode): bool {
     return wiki_space_settings_save($all);
 }
 
+/**
+ * Does this space keep an AI memory store?
+ *
+ * Off unless the record says otherwise, so a new space — and a space that predates the
+ * feature — has no memory folder and no memory tools, without anything being written for
+ * it. Per space rather than wiki-wide because the *store* is per space: memories live in
+ * `memory/` inside the space they were learned in, which is what keeps them inside the
+ * Space isolation every other read already obeys.
+ *
+ * This is only half the switch. An AI User also has to have learning enabled
+ * (`wiki_ai_memory_enabled()`); the space says whether memories may be kept here, the AI
+ * User says whether it keeps any. Both, for the same reason a frozen space overrides an
+ * editor: the space owns its content, the AI User owns its behaviour.
+ */
+function wiki_space_memory(?string $space): bool {
+    $space = trim((string)$space);
+    if ($space === '') return false;
+    return !empty(wiki_space_settings_get(basename($space))['memory']);
+}
+
+function wiki_space_dir_memory(?string $space_dir): bool {
+    if (!$space_dir) return false;
+    $dir = rtrim($space_dir, '/');
+    if ($dir === rtrim(PAGES_DIR, '/')) return false;   // a root-level wiki has no record
+    return wiki_space_memory(basename($dir));
+}
+
+function wiki_space_set_memory(string $space, bool $on): bool {
+    $space = basename(trim($space));
+    if ($space === '') return false;
+    $all = wiki_space_settings_all(true);
+    $rec = is_array($all[$space] ?? null) ? $all[$space] : [];
+    if ($on) $rec['memory'] = true;
+    else     unset($rec['memory']);
+    $all[$space] = $rec;
+    return wiki_space_settings_save($all);
+}
+
 // Keep settings attached to the space through a rename (mirrors what rename_space
 // already does for the `spaces` arrays in users.json).
 function wiki_space_settings_rename(string $old, string $new): void {

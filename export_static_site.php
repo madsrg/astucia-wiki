@@ -239,6 +239,10 @@ function renderHtmlPage(string $pageTitle, string $content, string $navHtml, str
   .sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;flex-shrink:0}
   .main-content{flex:1;min-width:0;overflow-y:auto;padding:2rem}
   .viewer-content img{max-width:100%;height:auto}
+  /* styles.css keys its code-block rules off #viewer-content and the export renders into
+     a .viewer-content, so the tab width has to be restated here. Same variable, so an
+     exported page indents a code block exactly as the wiki did. */
+  .viewer-content pre{tab-size:var(--tab-size)}
   .mermaid-diagram{margin:1rem 0;overflow-x:auto}
   .mermaid-diagram svg{max-width:100%;height:auto}
   /* hide interactive chrome */

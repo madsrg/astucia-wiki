@@ -130,7 +130,80 @@ setTimeout(async () => {
           press(ta, '#', { shiftKey: true }, '#');
           press(ta, ' ', {}, ' ');
           return ta.value;
-        })());
+        })())
+      // Tab indents rather than moving the focus. Built from char codes because this
+      // lives in a Python heredoc inside a shell script and a stray backslash would
+      // take the whole module down with a parse error.
+      + (() => {
+          const TAB = String.fromCharCode(9), LF = String.fromCharCode(10);
+          const set = (v, a, b) => { ta.value = v; ta.focus();
+                                     ta.setSelectionRange(a, b === undefined ? a : b); };
+          const shot = (p) => p + '|' + JSON.stringify(ta.value);
+          let out = '';
+
+          // What the tab the key inserts is actually worth on screen. CSS defaults
+          // tab-size to 8, a terminal convention that makes one level of list nesting
+          // look like three.
+          out += ' tabSize=' + JSON.stringify(getComputedStyle(ta).tabSize);
+
+          set('');
+          out += ' tabCaret=' + shot(press(ta, 'Tab', {}, null));
+
+          set(TAB + 'a', 2);
+          out += ' shiftTab=' + shot(press(ta, 'Tab', { shiftKey: true }, null));
+
+          // Three lines, the middle one empty: a blank line must stay blank rather
+          // than collecting trailing whitespace nothing renders.
+          set('- a' + LF + LF + '- b', 0, 8);
+          out += ' block=' + shot(press(ta, 'Tab', {}, null));
+          out += ' blockOut=' + shot(press(ta, 'Tab', { shiftKey: true }, null));
+
+          // Shift+Tab with nothing to give back is still the editor's key.
+          set('a', 1);
+          out += ' outdentNoop=' + shot(press(ta, 'Tab', { shiftKey: true }, null));
+
+          // The escape hatch: Esc hands the next Tab back to the focus order, and the
+          // one after that indents again.
+          set('x', 1);
+          press(ta, 'Escape', {}, null);
+          out += ' escThenTab=' + press(ta, 'Tab', {}, null);
+          out += ' tabAfterThat=' + press(ta, 'Tab', {}, null);
+
+          // Esc followed by Shift+Tab still escapes: holding the modifier must not
+          // cancel the hatch before the Tab arrives.
+          set('x', 1);
+          press(ta, 'Escape', {}, null);
+          press(ta, 'Shift', { shiftKey: true }, null);
+          out += ' escThenShiftTab=' + press(ta, 'Tab', { shiftKey: true }, null);
+
+          // Esc then any ordinary key cancels it again.
+          set('x', 1);
+          press(ta, 'Escape', {}, null);
+          press(ta, 'y', {}, 'y');
+          out += ' escThenTyping=' + press(ta, 'Tab', {}, null);
+
+          // Undo has to survive an indent. setRangeText() would have dropped the
+          // browser's native undo stack, so this is what says insertText was used.
+          set('a', 1);
+          press(ta, 'Tab', {}, null);
+          const indented = ta.value;
+          document.execCommand('undo');
+          out += ' undo=' + JSON.stringify(indented) + '>' + JSON.stringify(ta.value);
+
+          // The window manager's combinations are never ours.
+          set('x', 1);
+          out += ' ctrlTab=' + press(ta, 'Tab', { ctrlKey: true }, null);
+          out += ' altTab=' + press(ta, 'Tab', { altKey: true }, null);
+
+          // A textarea that is not the editor keeps Tab as focus movement — a chat
+          // composer is one, and this is what stops the claim being a blanket one.
+          const plain = document.createElement('textarea');
+          document.body.appendChild(plain);
+          plain.focus();
+          out += ' plainTab=' + press(plain, 'Tab', {}, null) +
+                 '|' + JSON.stringify(plain.value);
+          return out;
+        })();
   } catch (e) {
     document.title = 'PROBE fatal=' + (e && e.message || e);
   }
@@ -181,6 +254,41 @@ assert_contains "Alt+N inserts the filename placeholder" 'altN="{filename}"' "$P
 
 section 'and ordinary typing is untouched'
 assert_contains "Shift+3 twice, then a space" 'hashes="## "' "$PROBE"
+
+section 'Tab indents instead of moving the focus'
+# A real tab: one press is one nesting level, and both renderers (marked in the browser,
+# Parsedown in the static export) read a leading tab as exactly that.
+assert_contains "Tab is claimed, and inserts a tab"  'tabCaret=true|"\t"'  "$PROBE"
+assert_contains "Shift+Tab takes it back off"        'shiftTab=true|"a"'    "$PROBE"
+# The reason indentLines() goes through execCommand('insertText') rather than the
+# setRangeText() every other helper in editor.js uses: a scripted mutation drops the
+# browser's native undo stack, and an editor where Ctrl+Z stops working after each
+# indent is worse than no Tab key at all. This is what says the native path was taken.
+assert_contains "and Ctrl+Z still undoes it"         'undo="a\t">"a"'      "$PROBE"
+# --tab-size in styles.css, shared by the editor, the rendered page, a chat bubble and
+# the static export, so a code block never changes width between typing it and reading it.
+assert_contains "one tab is four columns, not the CSS default eight" 'tabSize="4"' "$PROBE"
+
+section 'a multi-line selection moves as a block'
+assert_contains "every line gains one level"  'block=true|"\t- a\n\n\t- b"' "$PROBE"
+# Indenting a blank line writes trailing whitespace into the file and renders as nothing.
+assert_not_contains "and the blank line stays blank" 'block=true|"\t- a\n\t\n' "$PROBE"
+assert_contains "Shift+Tab gives the level back"     'blockOut=true|"- a\n\n- b"' "$PROBE"
+assert_contains "Shift+Tab at column zero is a no-op, not a focus jump" \
+                'outdentNoop=true|"a"' "$PROBE"
+
+section 'Esc is the way out of the keyboard trap'
+# Swallowing Tab leaves a textarea with no keyboard exit, which is what WCAG 2.1.2 is
+# about. Esc hands the next Tab back; the one after that is the editor's again.
+assert_contains "Esc then Tab moves the focus"      'escThenTab=false'      "$PROBE"
+assert_contains "and the next Tab indents again"    'tabAfterThat=true'     "$PROBE"
+assert_contains "Esc then Shift+Tab escapes too"    'escThenShiftTab=false' "$PROBE"
+assert_contains "typing after Esc cancels the hatch" 'escThenTyping=true'   "$PROBE"
+
+section 'and the claim is narrow'
+assert_contains "Ctrl+Tab is left to the browser"  'ctrlTab=false'  "$PROBE"
+assert_contains "Alt+Tab is left to the window manager" 'altTab=false' "$PROBE"
+assert_contains "a textarea that is not the editor still tabs away" 'plainTab=false|""' "$PROBE"
 
 printf '\n'
 exit $(( ASSERT_FAIL > 0 ))

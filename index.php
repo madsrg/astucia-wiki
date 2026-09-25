@@ -71,7 +71,12 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
         <div id="page-chat-panel" class="page-chat-panel">
             <div class="pc-panel-header">
                 <span class="pc-panel-title" id="pc-panel-title" data-i18n="page-chat.panel-title">Page Chat</span>
-                <button id="pc-close-btn" class="pc-close-btn" title="Close">&times;</button>
+                <span class="pc-panel-actions">
+                    <button id="pc-expand-btn" class="pc-panel-btn" data-i18n-title="page-chat.expand-btn" title="Open as a page">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
+                    </button>
+                    <button id="pc-close-btn" class="pc-close-btn" title="Close">&times;</button>
+                </span>
             </div>
             <div id="pc-messages" class="pc-messages"></div>
         </div>
@@ -276,6 +281,9 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     </button>
                     <button id="chat-topic-btn" class="btn btn-icon btn-secondary hidden" data-i18n-title="header.chat-topic" title="Chat settings">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2"/></svg>
+                    </button>
+                    <button id="chat-dock-btn" class="btn btn-icon btn-secondary hidden" data-i18n-title="page-chat.dock-btn" title="Show beside its page">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
                     </button>
                     <button id="diagram-edit-btn" class="btn btn-icon btn-blue hidden" data-i18n-title="header.diagram-edit" title="Edit diagram">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
@@ -787,6 +795,8 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <span data-i18n="hotkeys.hint1">When in edit mode, press 'Alt' + the desired key.</span>
                 <br>
                 <span data-i18n="hotkeys.hint2">While this menu is open, just press the key.</span>
+                <br>
+                <span data-i18n="hotkeys.hint3">Tab indents, Shift+Tab outdents. Press Esc then Tab to move focus out of the editor.</span>
             </p>
         </div>
     </div>
@@ -1273,6 +1283,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab hidden" data-tab="audit" data-group="monitoring" data-i18n="admin.tab.audit">Audit Log</button>
                 <button class="admin-tab hidden" data-tab="diagnostics" data-group="monitoring" data-i18n="admin.tab.diag">Diagnostics</button>
                 <button class="admin-tab hidden" data-tab="realtime" data-group="monitoring" data-i18n="admin.tab.realtime">Mercure</button>
+                <button class="admin-tab hidden" data-tab="sysinfo" data-group="monitoring" data-i18n="admin.tab.sysinfo">Wiki Info</button>
                 <button class="admin-tab hidden" data-tab="reindex" data-group="content" data-i18n="admin.tab.reindex">Index Pages</button>
                 <button class="admin-tab hidden" data-tab="deleted" data-group="content" data-i18n="admin.tab.deleted">Deleted Pages</button>
                 <button class="admin-tab hidden" data-tab="chatpolicy" data-group="content" data-i18n="admin.tab.chatpolicy">Chat Retention</button>
@@ -1404,6 +1415,13 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <div id="admin-pane-realtime" class="admin-pane hidden">
                 <div class="admin-scroll-area">
                     <div id="admin-rt-body"></div>
+                </div>
+            </div>
+
+            <!-- Wiki Info pane -->
+            <div id="admin-pane-sysinfo" class="admin-pane hidden">
+                <div class="admin-scroll-area">
+                    <div id="admin-sysinfo-body"></div>
                 </div>
             </div>
 

@@ -144,6 +144,7 @@ export const displaySearchResults = (title, results, showSpace = false) => {
     document.getElementById('edit-btn').classList.add('hidden');
     document.getElementById('editor-mode-group')?.classList.add('hidden');
     document.getElementById('page-chat-btn')?.classList.add('hidden');
+    document.getElementById('chat-dock-btn')?.classList.add('hidden');
     document.getElementById('toc-btn')?.classList.add('hidden');
     // A results list is not a page, so there is nothing to star. Left alone the button
     // stays visible from whatever page was open before, still lit for *that* page, and

@@ -67,8 +67,14 @@ function git_auto_commit(string $abs_path, string $git_name, string $git_email, 
     ], $git_root['root']);
 }
 
+/**
+ * @param array $also Extra [old_abs, new_abs] pairs to stage into the *same* commit — a
+ *                    page's `.chat` thread, which moves with it. A second commit would
+ *                    split one rename into two entries in the history, and leave a commit
+ *                    in the middle where the page and its thread disagree.
+ */
 function git_move_commit(string $old_abs, string $new_abs, string $git_name, string $git_email,
-                         ?string $for_space = null): void {
+                         ?string $for_space = null, array $also = []): void {
     // Same reason git_auto_commit takes one: a rename made by an AI tool can run from the
     // cron job runner, where the $space_dir global belongs to whichever job ran last.
     $git_root = find_git_root($for_space);
@@ -78,7 +84,15 @@ function git_move_commit(string $old_abs, string $new_abs, string $git_name, str
     $old_rel = strpos($old_abs, $root_prefix) === 0 ? substr($old_abs, strlen($root_prefix)) : null;
     $new_rel = strpos($new_abs, $root_prefix) === 0 ? substr($new_abs, strlen($root_prefix)) : null;
     if ($old_rel === null) return;
-    $to_stage = array_values(array_filter([$old_rel, $new_rel]));
+    $to_stage = [$old_rel, $new_rel];
+    foreach ($also as $pair) {
+        foreach ((array)$pair as $abs) {
+            if (is_string($abs) && strpos($abs, $root_prefix) === 0) {
+                $to_stage[] = substr($abs, strlen($root_prefix));
+            }
+        }
+    }
+    $to_stage = array_values(array_filter($to_stage));
     git_run(array_merge(['add'], $to_stage), $git_root['root']);
     $old_name = basename($old_abs);
     $new_name = basename($new_abs);

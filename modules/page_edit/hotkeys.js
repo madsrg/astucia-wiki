@@ -2,7 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { state } from '../core/state.js';
-import { insertMarkdown, insertHeading, insertSmart } from './editor.js';
+import { insertMarkdown, insertHeading, insertSmart, indentLines, isMarkdownEditor } from './editor.js';
 import { savePage } from './index.js';
 import { openSearchReplace } from './search.js';
 import { openLinkLightbox } from './link_lightbox.js';
@@ -16,6 +16,11 @@ export const loadHotkeys = async () => {
         console.error('Could not load hotkeys.json', error);
     }
 };
+
+// Esc, pressed in the editor, lets the *next* Tab move the focus instead of indenting.
+// See the keydown handler for why that exists at all.
+let tabMovesFocus = false;
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta']);
 
 const handleLightboxHotkey = (e) => {
     e.preventDefault();
@@ -93,6 +98,36 @@ export const init = () => {
     // Global keyboard shortcuts
     document.addEventListener('keydown', (e) => {
         if (!hotkeyLightbox.classList.contains('hidden')) return;
+
+        // ── Tab indents; it does not move the focus ──────────────────────────────
+        //
+        // Nesting a list item is the single most common thing to want in a Markdown
+        // editor, and Tab was spending the keystroke on jumping to the next control.
+        // INDENT is a real tab — see editor.js for why, and for what it means to press
+        // this on a line that is not in a list.
+        //
+        // **Claiming Tab makes a keyboard trap, so there is an escape hatch.** A textarea
+        // whose Tab is swallowed has no keyboard way out, which WCAG 2.1.2 is explicitly
+        // about; Esc then Tab moves the focus, which is the convention CodeMirror and Ace
+        // established. Esc is not otherwise bound in the editor and is deliberately *not*
+        // consumed here, so anything else listening for it still sees it.
+        //
+        // Gated on the element, not on `state.isEditing`: a chat composer is a textarea
+        // too and can be focused while a page is open, and Tab there is focus movement.
+        if (isMarkdownEditor(e.target)) {
+            if (e.key === 'Escape') { tabMovesFocus = true; return; }
+            if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                // The one Tab that Esc bought. Ctrl/Cmd/Alt+Tab are the window manager's
+                // and are never ours, which is the same line modules/tabs draws.
+                if (tabMovesFocus) { tabMovesFocus = false; return; }
+                e.preventDefault();
+                indentLines(e.shiftKey, e.target);
+                return;
+            }
+            // Any other key cancels the hatch — but not the modifiers themselves, or
+            // holding Shift for Shift+Tab would cancel it before the Tab arrived.
+            if (!MODIFIER_KEYS.has(e.key)) tabMovesFocus = false;
+        }
 
         const activeTag = document.activeElement.tagName;
 

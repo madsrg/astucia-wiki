@@ -129,7 +129,10 @@ switch ($method) {
             'name'        => $t['name'],
             'description' => $t['description'],
             'inputSchema' => $t['params'],
-        ], wiki_tool_definitions());
+            // Same gate as the chat and job paths: a memory tool is only listed where
+            // the space keeps memories and this token's AI user learns.
+        ], wiki_tool_definitions(wiki_ai_memory_enabled($ai_auth_user['ai_config'] ?? [])
+                                 && wiki_space_dir_memory($space_dir)));
         echo json_encode(['jsonrpc' => '2.0', 'id' => $id, 'result' => ['tools' => $tools]]);
         break;
 

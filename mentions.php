@@ -23,8 +23,13 @@ const MENTION_EXTS = ['md', 'chat'];
 // Same rule as wiki_is_template_path(), spelled out here rather than depended on: this
 // file is also loaded by the digest cron, which has no reason to pull in the whole AI
 // tool set, and a missing dependency would have silently started matching templates.
+//
+// memory/ is skipped for a sharper reason than tidiness: an AI that remembers "Alice
+// prefers short summaries" would otherwise notify Alice — again on every edit of that
+// memory, and again in her daily digest.
 function _mention_is_template(string $path): bool {
-    return str_starts_with(ltrim($path, '/'), 'templates/');
+    $rel = ltrim($path, '/');
+    return str_starts_with($rel, 'templates/') || str_starts_with($rel, 'memory/');
 }
 
 /** Every space this actor may read, as names. null $allowed means unrestricted. */

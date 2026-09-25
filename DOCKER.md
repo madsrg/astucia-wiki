@@ -306,6 +306,17 @@ The ones worth setting on any real deployment:
 | `ENABLE_REALTIME` | `true` | `false` stops the hub starting; the UI falls back to polling |
 | `MERCURE_JWT_KEY` | generated | Shared key for the hub. Written to `/data/system/mercure.key` on first boot; set it only to share a hub between containers |
 | `REALTIME_TICKET_TTL` | `3600` | Seconds a subscriber ticket is valid. Revoking someone's Space takes effect within one TTL |
+| `MERCURE_ISSUER` | `https://astucia.invalid/wiki` | The `iss` the wiki signs its hub tokens with. The entrypoint writes the same value into the hub's config |
+| `MERCURE_RESOURCE_ID` | `https://astucia.invalid/.well-known/mercure` | The `aud` those tokens target. Must end in `/.well-known/mercure` |
+| `MERCURE_COOKIE_NAME` | `mercure_access_token` | Cookie a browser's ticket travels in. On an HTTPS-only install you may set `__Secure-mercure_access_token` |
+
+The last three exist because Mercure 1.0 tokens are OAuth 2.0 access tokens: the wiki and
+the hub must agree on the issuer, the audience and the cookie name. The entrypoint defaults
+all three and configures both sides, so they are only worth setting if you point the wiki at
+a hub you run yourself — in which case that hub's `issuer`, `resource_identifier` and
+`cookie_name` have to match exactly, or every publish comes back `401` while the hub reports
+itself healthy. They are identifiers, never fetched, which is why the defaults use a name
+RFC 2606 reserves as unresolvable.
 
 ### Realtime needs HTTP/2 — i.e. TLS at your proxy
 

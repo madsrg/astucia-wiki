@@ -50,6 +50,27 @@ export const renderTree = (items, parentElement) => {
     return ul;
 };
 
+/**
+ * What the tree knows about a path: its page id and tags, or null when it has no node.
+ *
+ * Read out of the rendered tree rather than fetched, because the tree's own click
+ * handler is where `loadPage()` gets these from — `data-id` / `data-tags` on the node.
+ * The whole tree is in the DOM (collapsing is CSS), so a node exists for every file,
+ * which is the same assumption `revealAndSelectFile()` already makes.
+ *
+ * Returning null is the useful answer as much as the id is: it is how a caller asks
+ * "is there a page here at all", which is what decides whether a `.chat` can be shown
+ * beside a page or is a thread of its own.
+ */
+export const treeEntry = (path) => {
+    if (!path) return null;
+    const el = document.querySelector(`#file-navigator [data-path="${path}"]`);
+    if (!el) return null;
+    let tags = [];
+    try { tags = JSON.parse(el.dataset.tags || '[]'); } catch { tags = []; }
+    return { id: el.dataset.id, tags };
+};
+
 export const findItemsByPath = (path) => {
     if (!path) return state.fullFileTree;
     let currentItems = state.fullFileTree;
@@ -168,7 +189,7 @@ export const showFolderPlaceholder = (path) => {
     document.getElementById('viewer-content').innerHTML = '';
     document.getElementById('diagram-viewer').innerHTML = '';
     ['tags-container', 'attachments-section', 'page-id-display', 'frontmatter-badge', 'edit-btn',
-     'diagram-edit-btn', 'page-chat-btn', 'editor-mode-group', 'toc-btn', 'copy-btn',
+     'diagram-edit-btn', 'page-chat-btn', 'chat-dock-btn', 'editor-mode-group', 'toc-btn', 'copy-btn',
      'backlinks-btn', 'print-btn'].forEach(id =>
         document.getElementById(id)?.classList.add('hidden'));
     document.getElementById('page-actions-group').classList.remove('hidden');

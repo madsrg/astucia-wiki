@@ -8,8 +8,13 @@
 #   - **What the wiki publishes** is ours, so it is asserted here against a stub standing in
 #     for the hub, which records every POST. That covers the topics, the payload and — most
 #     importantly — `private=on`.
-#   - **Whether the hub honours a token's selectors** is upstream's contract, verified by
-#     hand against a real Mercure 0.24 hub rather than by downloading 34 MB in CI.
+#   - **Whether the hub honours a token's matchers** is upstream's contract, verified by
+#     hand against a real Mercure 1.0.2 hub rather than by downloading 34 MB in CI. What
+#     that check covers, and what nothing here can: a Main-only ticket minted by this
+#     wiki's own code, against the Caddyfile tools/install-mercure.sh generates, receives
+#     Main, root-level and its own user topics and is refused Bravo, Main2 and another
+#     user's. The assertions below can see a token's *shape*; only that can see whether a
+#     hub accepts it.
 #
 # The `private=on` assertion is the one to keep. Removing that one form field makes the hub
 # broadcast every update to every subscriber regardless of their token, which was confirmed
@@ -96,15 +101,35 @@ SPU
 posts()      { cat "$HUB_DIR/posts" 2>/dev/null; }
 npubs()      { local n; n=$(grep -c . "$HUB_DIR/posts" 2>/dev/null); echo "${n:-0}"; }
 clear_pubs() { : > "$HUB_DIR/posts"; }
-claim() {   # decode the mercure claim out of a ticket cookie
+# The ticket cookie, raw. Mercure 1.0 reads one configured cookie name and the wiki's is
+# prefix-less on purpose — a __Secure- cookie is refused by browsers over plain HTTP, which
+# is an ordinary install here. See wiki_realtime_cookie_name().
+ticket() {
     curl -si -b "$1" -c "$1" --max-time 15 "$WIKI_URL/api.php?action=realtime_ticket" \
-      | grep -i '^set-cookie: mercureAuthorization' | sed 's/.*mercureAuthorization=\([^;]*\).*/\1/' \
-      | python3 -c "
+      | grep -i '^set-cookie: mercure_access_token' \
+      | sed 's/.*mercure_access_token=\([^;]*\).*/\1/' | tr -d '\r'
+}
+# One part of the token as JSON: `jwt_part 0` is the header, `jwt_part 1` the claims.
+jwt_part() {
+    python3 -c "
+import sys, base64, json
+t = sys.stdin.read().strip()
+if not t: print('NO-COOKIE'); raise SystemExit
+b = t.split('.')[$1]; b += '=' * (-len(b) % 4)
+print(json.dumps(json.loads(base64.urlsafe_b64decode(b)), sort_keys=True))"
+}
+claim() {   # the subscribe matchers out of a ticket, in the order the wiki wrote them
+    ticket "$1" | python3 -c "
 import sys, base64, json
 t = sys.stdin.read().strip()
 if not t: print('NO-COOKIE'); raise SystemExit
 b = t.split('.')[1]; b += '=' * (-len(b) % 4)
-print(json.dumps(json.loads(base64.urlsafe_b64decode(b))['mercure'], sort_keys=True))"
+c = json.loads(base64.urlsafe_b64decode(b))
+out = []
+for d in c.get('authorization_details', []):
+    if 'subscribe' in d.get('actions', []):
+        out += d.get('topics', [])
+print(json.dumps({'subscribe': out}, sort_keys=True))"
 }
 
 # ── off by default ───────────────────────────────────────────────────────────
@@ -185,19 +210,32 @@ assert_contains "utf-8 is encoded too"       '%C3%86blegr%C3%B8d'   "$decoded"
 # And the module really uses it, rather than interpolating the raw path.
 assert_contains "rtTopic encodes its path"   'rtPath(path)' "$(cat "$WIKI_APP/modules/realtime/index.js")"
 
-section 'a Space whose name has a space is encoded in the selector too'
-# Otherwise the token carries an invalid template and the user receives nothing at all.
+section 'a Space whose name has a space is encoded in the matcher too'
+# Otherwise the token carries an invalid pattern and the user receives nothing at all.
 fixture_space 'Two Words'
 r=$(claim "$ADMIN")
-assert_contains "unrestricted is unaffected" 'wiki/{+rest}' "$r"
+assert_contains "unrestricted is unaffected" 'wiki/*' "$r"
 fixture_users '{"users":[
   {"uid":1,"sub":"s1","name":"Admin","role":"admin","auth":"oidc"},
   {"uid":2,"sub":"s2","name":"Ed","role":"editor","auth":"oidc","spaces":["Main"]},
   {"uid":3,"sub":"s3","name":"Reader","role":"reader","auth":"oidc"},
   {"uid":4,"sub":"s4","name":"Two","role":"editor","auth":"oidc","spaces":["Two Words"]}]}'
 fixture_login "$WIKI_ROOT/jar-2w" "uid=4&sub=s4&name=Two&role=editor&spaces=Two%20Words"
-assert_contains "the Space name is encoded" 'wiki/Two%20Words/{+rest}' "$(claim "$WIKI_ROOT/jar-2w")"
-assert_not_contains "not raw in the template" '"wiki/Two Words/' "$(claim "$WIKI_ROOT/jar-2w")"
+assert_contains "the Space name is encoded" 'wiki/Two%20Words/*' "$(claim "$WIKI_ROOT/jar-2w")"
+assert_not_contains "not raw in the pattern" '"wiki/Two Words/' "$(claim "$WIKI_ROOT/jar-2w")"
+# rawurlencode() leaves only A-Za-z0-9-_.~ alone, so every character URL Pattern treats as
+# syntax is already a %XX literal by the time the hub compiles the matcher. Verified against
+# a real 1.0.2 hub: a Space called 'A (draft)' grants exactly itself, not a capture group.
+fixture_space 'A (draft)'
+fixture_users '{"users":[
+  {"uid":1,"sub":"s1","name":"Admin","role":"admin","auth":"oidc"},
+  {"uid":2,"sub":"s2","name":"Ed","role":"editor","auth":"oidc","spaces":["Main"]},
+  {"uid":3,"sub":"s3","name":"Reader","role":"reader","auth":"oidc"},
+  {"uid":4,"sub":"s4","name":"Two","role":"editor","auth":"oidc","spaces":["Two Words"]},
+  {"uid":5,"sub":"s5","name":"Par","role":"editor","auth":"oidc","spaces":["A (draft)"]}]}'
+fixture_login "$WIKI_ROOT/jar-par" "uid=5&sub=s5&name=Par&role=editor&spaces=A%20(draft)"
+assert_contains "pattern syntax in a Space name is escaped" \
+  'wiki/A%20%28draft%29/*' "$(claim "$WIKI_ROOT/jar-par")"
 
 section 'private=on — without it the hub broadcasts to everyone'
 # Confirmed by removing it against a real hub: a Main-only subscriber then received
@@ -227,10 +265,33 @@ assert_contains "and tree"   'topic=wiki%2FMain%2Ftree'           "$(posts)"
 
 # ── the ticket ───────────────────────────────────────────────────────────────
 section 'the ticket is the ACL, in the token'
+# `*` is a URL Pattern wildcard and matches across `/`, which is what `{+rest}` did before
+# Mercure 1.0 retired URI Templates. The trailing separator is what carries the isolation:
+# confirmed against a real 1.0.2 hub, `wiki/Main/*` matches wiki/Main/page/Note.md and does
+# not match wiki/Main2/page/Leak.md — the same containment rule as service_auth.php's paths.
 assert_eq 'an unrestricted user gets the whole tree' \
-  '{"subscribe": ["wiki/{+rest}"]}' "$(claim "$ADMIN")"
+  '{"subscribe": [{"match": "wiki/*", "match_type": "urlpattern"}]}' "$(claim "$ADMIN")"
 assert_eq 'a Space-restricted user gets exactly their Spaces' \
-  '{"subscribe": ["wiki/Main/{+rest}", "wiki//{+rest}", "wiki/user/2/{+rest}"]}' "$(claim "$ED")"
+  '{"subscribe": [{"match": "wiki/Main/*", "match_type": "urlpattern"}, {"match": "wiki//*", "match_type": "urlpattern"}, {"match": "wiki/user/2/*", "match_type": "urlpattern"}]}' "$(claim "$ED")"
+
+section 'the ticket is an RFC 9068 access token, not the retired 0.x claim'
+# Mercure 1.0 rejects the bespoke `mercure` claim outright unless the hub is run in
+# compatibility mode — which also switches off the exp, audience, at+jwt and issuer checks.
+# Each of these is load-bearing on its own; a token missing any one is a 401 on subscribe,
+# and the only symptom in the product is that realtime silently never goes live.
+t=$(ticket "$ADMIN")
+h=$(printf '%s' "$t" | jwt_part 0)
+c=$(printf '%s' "$t" | jwt_part 1)
+assert_contains "the header types it as an access token" '"typ": "at+jwt"' "$h"
+assert_contains "signed HS256"                           '"alg": "HS256"'  "$h"
+assert_contains "it names an issuer the hub trusts"      '"iss":'          "$c"
+assert_contains "and the hub as its audience"            '.well-known/mercure' "$c"
+assert_contains "it expires"                             '"exp":'          "$c"
+assert_contains "grants live in authorization_details"   '"authorization_details"' "$c"
+assert_not_contains "and not in the 0.x claim"           '"mercure":'      "$c"
+# Bare strings are rejected by the hub: a matcher is an object, and the type is spelled out
+# rather than left to the `exact` default, which would match no topic this wiki publishes.
+assert_contains "each matcher says which kind it is"     '"match_type": "urlpattern"' "$c"
 
 section 'a reader may subscribe — they have chats and mentions too'
 r=$(get_as "$READER" 'api.php?action=realtime_ticket')
@@ -243,6 +304,12 @@ assert_contains "the body carries no token" '"token":null' "$r"
 h=$(curl -si -b "$ADMIN" -c "$ADMIN" --max-time 15 "$WIKI_URL/api.php?action=realtime_ticket")
 assert_contains "the cookie is HttpOnly"           'HttpOnly'                    "$h"
 assert_contains "and scoped to the hub path"       'path=/.well-known/mercure'   "$h"
+# The name the hub's `cookie_name` directive configures. 1.0 defaults to the __Secure-
+# prefixed name, which a browser refuses over plain HTTP — that would leave realtime dead
+# on a wiki served over HTTP on a LAN hostname, so both sides use the prefix-less name and
+# the cookie is marked Secure per request instead.
+assert_contains "under the name the hub is configured with" 'mercure_access_token' "$h"
+assert_not_contains "not the 0.x name"             'mercureAuthorization'        "$h"
 
 # ── the admin monitor ────────────────────────────────────────────────────────
 # Publishing is fire-and-forget by design, so a broken hub is silent and every module
@@ -260,6 +327,11 @@ assert_contains "the diag topic is the caller's own" '"topic":"wiki\/user\/1\/di
 assert_contains "the probed URL is reported" '.well-known\/mercure"' "$r"
 assert_contains "  …resolved to an absolute URL" '"url":"http' "$r"
 assert_not_contains "and never the key itself" "$KEY"       "$r"
+# The three values the hub's Caddyfile has to match. A mismatch is a flat 401 on publish
+# with nothing else to see, so the monitor is where the two sides get compared.
+assert_contains "the issuer is shown"     '"issuer":'      "$r"
+assert_contains "the audience too"        '"resource_id":' "$r"
+assert_contains "and the cookie name"     '"cookie_name":"mercure_access_token"' "$r"
 assert_eq       "which took one real publish" "1" "$(npubs)"
 assert_contains "carrying private=on"     'private=on'      "$(posts)"
 

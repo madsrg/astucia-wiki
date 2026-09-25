@@ -40,6 +40,10 @@ export const handleRename = async () => {
         // Before the path moves: the open tab follows the file (keeping any draft) rather
         // than being left pointing at a name that no longer exists.
         retargetTab(state.currentPagePath, newPath);
+        // The server moves a page's chat thread with the page, and a rename does not
+        // reload the page — so the open panel has to be told, or it polls a path that is
+        // gone and posts the next message into a thread under the old name.
+        (await import('../page_chat/index.js')).retargetPanel(oldPath, newPath);
         state.currentPagePath = newPath;
         await refreshFileTree();
         if (state.currentPageType === 'chat') {

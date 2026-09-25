@@ -10,6 +10,8 @@ import { state, notifyPageState } from '../core/state.js';
 import { showToast } from '../core/utils.js';
 import { t } from '../i18n/index.js';
 
+import { noteLoaded } from '../core/versions.js';
+
 const EDITOR_CDN = 'https://cdn.jsdelivr.net/npm/vanilla-jsoneditor/standalone.js';
 
 let _editor = null;       // active JSONEditor instance
@@ -139,7 +141,9 @@ export const renderJsonView = async (rawText, path) => {
 
     let createJSONEditor;
     try {
-        ({ createJSONEditor } = await import(EDITOR_CDN));
+        const _jsonEdMod = await import(EDITOR_CDN);
+        ({ createJSONEditor } = _jsonEdMod);
+        noteLoaded('vanilla-jsoneditor', _jsonEdMod?.version || '');
     } catch (e) {
         renderFallback(container, rawText);
         return;

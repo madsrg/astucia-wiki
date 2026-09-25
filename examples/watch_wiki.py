@@ -32,9 +32,11 @@ def ticket():
 
 def stream(jwt, url):
     """One SSE connection. Yields each event payload as a dict."""
-    # 'wiki/{+rest}' is an RFC 6570 template meaning "everything". Asking broadly is safe:
-    # the *ticket* decides what actually arrives, so this never over-delivers.
-    q = urllib.parse.urlencode({"topic": "wiki/{+rest}"})
+    # 'wiki/*' is a WHATWG URL Pattern meaning "everything" — Mercure 1.0 replaced the old
+    # 'topic=' parameter (an RFC 6570 template) with 'match=' for an exact topic and
+    # 'match_urlpattern=' for a pattern. Asking broadly is safe: the *ticket* decides what
+    # actually arrives, so this never over-delivers.
+    q = urllib.parse.urlencode({"match_urlpattern": "wiki/*"})
     req = urllib.request.Request(f"{url}?{q}", headers={
         "Authorization": f"Bearer {jwt}",
         "Accept": "text/event-stream",

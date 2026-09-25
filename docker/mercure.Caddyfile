@@ -1,13 +1,18 @@
-# Astucia Wiki — configuration for the bundled Mercure hub.
+# Astucia Wiki — configuration for the bundled Mercure hub (1.0 or newer).
 #
-# Deliberately NOT the `dev.Caddyfile` that ships with Mercure: that one enables
-# `anonymous`, which lets a client subscribe with no token at all. Every topic this wiki
-# publishes is private and Space-scoped, so anonymous subscription would hand the entire
-# change stream of every Space to anyone who can reach the port.
+# Deliberately NOT upstream's stock Caddyfile: that one is written for a hub on its own
+# public domain, and `playground` (0.x's `demo`) turns on `anonymous`, which lets a client
+# subscribe with no token at all. Every topic this wiki publishes is private and
+# Space-scoped, so anonymous subscription would hand the entire change stream of every
+# Space to anyone who can reach the port.
 #
 # `cors_origins` and `publish_origins` are both left unset. The hub is reached only through
 # nginx on the wiki's own origin, and PHP publishes from loopback with a bearer token, which
 # is not an origin-checked request.
+#
+# An unrecognised directive inside the `mercure` block is a hard error since 1.0 — a typo
+# used to silently disable whatever it configured. entrypoint.sh validates this file before
+# supervisord is allowed to start the hub.
 {
 	auto_https off
 	persist_config off
@@ -21,23 +26,50 @@ http://:3000 {
 	bind 127.0.0.1
 
 	log {
-		format filter {
-			fields {
-				# A non-browser subscriber may pass its ticket as a query parameter.
-				# Without this the credential is written to the container log.
-				request>uri query {
-					replace authorization REDACTED
-				}
-			}
-		}
 		output stdout
 	}
 
 	mercure {
-		publisher_jwt  {env.MERCURE_PUBLISHER_JWT_KEY}
-		subscriber_jwt {env.MERCURE_SUBSCRIBER_JWT_KEY}
+		# The wiki is its own authorization server: it signs its access tokens with the
+		# shared key and the hub verifies them with the same one. `issuer` binds the `iss`
+		# those tokens carry to the key that may verify it, which is what replaced the
+		# top-level publisher_jwt/subscriber_jwt directives — those now work only in
+		# compatibility mode, which switches off the exp, audience, at+jwt and issuer
+		# checks. The value must equal MERCURE_ISSUER in the wiki's config.php.
+		#
+		# **The three values below are literals, and they have to be.** `{env.…}` is
+		# expanded for `jwt` but not for `issuer`, `resource_identifier` or `cookie_name`,
+		# and the failure is silent in the worst way: the hub validates, starts, and trusts
+		# an issuer literally named `{env.MERCURE_ISSUER}` — so a correctly configured wiki
+		# gets 401 on every publish while the hub reports itself healthy. Confirmed against
+		# 1.0.2 by minting a token with that literal as its `iss` and being let in.
+		# entrypoint.sh rewrites these three lines at boot from the environment.
+		issuer https://astucia.invalid/wiki {
+			publisher {
+				jwt {env.MERCURE_PUBLISHER_JWT_KEY}
+			}
+			subscriber {
+				jwt {env.MERCURE_SUBSCRIBER_JWT_KEY}
+			}
+		}
+
+		# The audience every token must carry. Pinned rather than derived per request,
+		# because PHP reaches this hub on loopback while the browser reaches it through
+		# nginx on the wiki's origin — two URLs, one hub, and without pinning two different
+		# audiences that one token cannot satisfy. Must equal MERCURE_RESOURCE_ID in
+		# config.php, and must end in /.well-known/mercure: that suffix is what the hub
+		# uses as the base for the relative URL Patterns in a subscribe grant.
+		resource_identifier https://astucia.invalid/.well-known/mercure
+
+		# 1.0 defaults to `__Secure-mercure_access_token`, and browsers refuse a
+		# `__Secure-` cookie over plain HTTP — which would kill realtime outright on a wiki
+		# served over HTTP on a LAN hostname. The wiki sets the cookie's `secure` attribute
+		# per request instead. Must equal MERCURE_COOKIE_NAME in config.php.
+		cookie_name mercure_access_token
 	}
 
+	# Kept for the container's own health check. Upstream dropped /healthz in 1.0 in favour
+	# of the admin API's /mercure/health/ready, which `admin off` does not expose.
 	respond /healthz 200
 	respond "Not Found" 404
 }

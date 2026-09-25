@@ -7,7 +7,7 @@ import { watch, rtTopic } from '../realtime/index.js';
 import { icons } from '../core/icons.js';
 import { showToast, confirmModal, highlightMentions } from '../core/utils.js';
 import { setEditingMode } from '../page_edit/index.js';
-import { renderBrowsePane, findItemsByPath } from '../file_tree/index.js';
+import { renderBrowsePane, findItemsByPath, treeEntry } from '../file_tree/index.js';
 import { renderTags } from '../tags/index.js';
 import { renderAttachments } from '../attachments/index.js';
 import { getUsers } from '../core/users.js';
@@ -529,7 +529,7 @@ export const showBlankPage = async () => {
     ['page-actions-group', 'file-actions-menu', 'page-meta-row', 'tags-container',
      'attachments-section', 'save-btn', 'cancel-btn', 'search-btn', 'edit-btn',
      'diagram-edit-btn', 'copy-btn', 'move-btn', 'backlinks-btn', 'print-btn', 'metadata-btn',
-     'graph-focus-btn', 'page-chat-btn', 'share-btn', 'chat-topic-btn', 'toc-btn',
+     'graph-focus-btn', 'page-chat-btn', 'share-btn', 'chat-topic-btn', 'chat-dock-btn', 'toc-btn',
      'editor-mode-group', 'git-history-btn', 'git-commit-toggle-btn',
      'git-snapshot-btn'].forEach(id =>
         document.getElementById(id)?.classList.add('hidden'));
@@ -832,6 +832,15 @@ export const loadPage = async (path, id, tags, opts = {}) => {
 
     const isMarkdownPage = !isDiagram && !isList && !isChat && !isSearch && !isJson;
     document.getElementById('page-chat-btn')?.classList.toggle('hidden', !isMarkdownPage);
+    // The other direction: a thread opened as a page can be shown beside its page
+    // instead. Only a thread that *has* a page — a standalone one made with New → Chat
+    // has no `.md` beside it, and the button's absence is how you can tell which kind
+    // of thread you are in.
+    const _dockBtn = document.getElementById('chat-dock-btn');
+    if (_dockBtn) {
+        const _siblingMd = isChat ? path.replace(/\.chat$/i, '.md') : '';
+        _dockBtn.classList.toggle('hidden', !isChat || !treeEntry(_siblingMd));
+    }
     document.getElementById('share-btn')?.classList.toggle('hidden', !isMarkdownPage);
     const pageChatMod = await import('../page_chat/index.js');
     pageChatMod.closePanel();

@@ -48,7 +48,7 @@ const updateRequestsBadge = () => {
 const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
     ai:         ['ai', 'jobs', 'mcp'],
-    monitoring: ['logs', 'errorlog', 'audit', 'diagnostics', 'realtime'],
+    monitoring: ['logs', 'errorlog', 'audit', 'diagnostics', 'realtime', 'sysinfo'],
     content:    ['reindex', 'deleted', 'chatpolicy', 'metadata'],
 };
 const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 'reindex' };
@@ -85,6 +85,7 @@ const switchTab = (name) => {
     if (name === 'errorlog')    loadErrorLogFiles();
     if (name === 'diagnostics') loadDiagnostics();
     if (name === 'realtime')    loadRealtimeStatus();
+    if (name === 'sysinfo')     loadSystemInfo();
     if (name === 'ai')          loadAiUsers();
     if (name === 'api')         loadApiAccounts();
     if (name === 'jobs')        loadAgentJobs();
@@ -949,6 +950,78 @@ const loadDiagLog = async (type, outputId) => {
     }
 };
 
+// ── Wiki Info ────────────────────────────────────────────────────────────────
+//
+// What every component here actually is, which is not answerable from the source tree
+// alone: three of the four CDN libraries float (marked and vanilla-jsoneditor unpinned,
+// mermaid inside major 11), so the version an install runs is whatever jsdelivr served
+// that browser, changing with no release. The Mercure hub is the same problem from the
+// other side — the image pins one version and a bare-metal install has whatever was last
+// installed there, which is exactly the mismatch that makes realtime fail silently.
+//
+// So the pane has two halves by necessity rather than tidiness: the server reports what
+// it can see, and the browser reports what *it* loaded.
+const _siRow = (label, value, note = '') =>
+    `<tr><td>${escHtml(label)}</td><td><code>${escHtml(value || '—')}</code>`
+    + (note ? ` <span class="admin-si-note">${escHtml(note)}</span>` : '') + `</td></tr>`;
+
+const loadSystemInfo = async () => {
+    const body = document.getElementById('admin-sysinfo-body');
+    if (!body) return;
+    body.innerHTML = `<p class="form-hint">${t('admin.si.loading')}</p>`;
+    const res = await api.call('admin_system_info');
+    if (!res.success) {
+        body.innerHTML = `<p class="form-hint">${escHtml(res.message || t('admin.si.failed'))}</p>`;
+        return;
+    }
+
+    const { cdnVersions } = await import('../core/versions.js');
+    const libs = cdnVersions().map(l => {
+        // Three states, and they are genuinely different: not loaded on this page, loaded
+        // but exposing no version (marked's build has no version field at all), or a real
+        // version to compare against the pin.
+        const got = !l.loaded ? t('admin.si.not-loaded')
+                  : (l.version || t('admin.si.no-version'));
+        return `<tr><td>${escHtml(l.label)}</td><td><code>${escHtml(got)}</code>`
+             + ` <span class="admin-si-note">${escHtml(t('admin.si.pin', { pin: l.pin }))} · ${escHtml(l.where)}</span></td></tr>`;
+    }).join('');
+
+    const exts = res.ext.map(e =>
+        `<tr><td>${escHtml(e.name)}</td><td><code>${e.loaded ? t('admin.si.present') : t('admin.si.missing')}</code>`
+        + ` <span class="admin-si-note">${escHtml(e.why)}</span></td></tr>`).join('');
+
+    const composer = (res.composer || []).map(p => _siRow(p.name, p.version)).join('')
+        || `<tr><td colspan="2"><span class="admin-si-note">${escHtml(t('admin.si.no-composer'))}</span></td></tr>`;
+
+    body.innerHTML = `
+        <div class="admin-si-section">
+            <h4>${t('admin.si.wiki')}</h4>
+            <table class="admin-si-table">
+                ${_siRow(t('admin.si.version'), res.wiki)}
+                ${_siRow('PHP', res.php)}
+                ${_siRow(t('admin.si.webserver'), res.server)}
+                ${_siRow('SQLite', res.sqlite)}
+                ${_siRow(t('admin.si.search'), res.search)}
+                ${_siRow(t('admin.si.auth'), res.auth)}
+                ${_siRow('Mercure', res.mercure || t('admin.si.hub-unknown'),
+                         res.realtime ? '' : t('admin.si.rt-off'))}
+            </table>
+        </div>
+        <div class="admin-si-section">
+            <h4>${t('admin.si.browser')}</h4>
+            <p class="form-hint">${t('admin.si.browser-hint')}</p>
+            <table class="admin-si-table">${libs}</table>
+        </div>
+        <div class="admin-si-section">
+            <h4>${t('admin.si.php-ext')}</h4>
+            <table class="admin-si-table">${exts}</table>
+        </div>
+        <div class="admin-si-section">
+            <h4>${t('admin.si.composer')}</h4>
+            <table class="admin-si-table">${composer}</table>
+        </div>`;
+};
+
 // ── Mercure / realtime status ────────────────────────────────────────────────
 // "Is it working?" is genuinely hard to see from outside: publishing is fire-and-forget by
 // design (a save must not fail because a hint could not be delivered), so a broken hub is
@@ -1002,10 +1075,16 @@ const loadRealtimeStatus = async () => {
     }
 
     const rows = [
+        // A 401/403 is called out separately because it has one overwhelmingly likely
+        // cause and a generic "the hub refused" sends the reader looking at the network.
+        // The wiki signs Mercure 1.0 access tokens; a 0.x hub rejects every one of them,
+        // and so does a 1.0 hub whose issuer, resource identifier or cookie name differs.
         _rtRow(t('admin.rt.row-publish'),
                pub.ok ? 'ok' : 'bad',
                pub.ok ? t('admin.rt.publish-ok', { ms: pub.ms })
-                      : t('admin.rt.publish-bad', { code: pub.code || '-', error: _rtErr(pub.error || pub.reason) })),
+                      : (pub.code === 401 || pub.code === 403)
+                        ? t('admin.rt.publish-401', { code: pub.code })
+                        : t('admin.rt.publish-bad', { code: pub.code || '-', error: _rtErr(pub.error || pub.reason) })),
         // hub_unverified is a warning, not a failure: a hub did answer, so browsers can
         // subscribe — it is this server's own TLS verification that could not confirm it.
         _rtRow(t('admin.rt.row-subscribe'),
@@ -1037,6 +1116,9 @@ const loadRealtimeStatus = async () => {
                 <tr><td>MERCURE_INTERNAL_URL</td><td colspan="2"><code>${escHtml(c.internal_url || '—')}</code></td></tr>
                 <tr><td>MERCURE_PUBLIC_URL</td><td colspan="2"><code>${escHtml(c.public_url || '—')}</code></td></tr>
                 <tr><td>MERCURE_JWT_KEY</td><td colspan="2">${c.key_set ? t('admin.rt.key-set') : t('admin.rt.key-missing')}</td></tr>
+                <tr><td>MERCURE_ISSUER</td><td colspan="2"><code>${escHtml(c.issuer || '—')}</code></td></tr>
+                <tr><td>MERCURE_RESOURCE_ID</td><td colspan="2"><code>${escHtml(c.resource_id || '—')}</code></td></tr>
+                <tr><td>MERCURE_COOKIE_NAME</td><td colspan="2"><code>${escHtml(c.cookie_name || '—')}</code></td></tr>
                 <tr><td>REALTIME_TICKET_TTL</td><td colspan="2"><code>${escHtml(String(c.ticket_ttl ?? ''))}s</code></td></tr>
                 <tr><td>${t('admin.rt.topic')}</td><td colspan="2"><code>${escHtml(d.topic || '')}</code></td></tr>
             </tbody></table>
@@ -1186,7 +1268,10 @@ const showAgentInstructions = async (token) => {
  */
 const showBuiltinInstructions = async () => {
     document.getElementById('builtin-instructions-lightbox')?.remove();
-    const res = await api.call('admin_ai_builtin_instructions');
+    // The Learning setting currently in the form, not the saved one: the preview is
+    // read while deciding, and the memory block is part of what this AI gets told.
+    const res = await api.call('admin_ai_builtin_instructions',
+                               { memory: document.getElementById('ai-f-memory')?.value || '' });
     if (!res.success) { showToast(res.message || t('admin.ai.instructions-failed'), 'error'); return; }
 
     const el = (tag, cls, text) => {
@@ -1425,6 +1510,17 @@ const openAiUserForm = async (u) => {
                         </label>
                         <p class="form-hint">${t('admin.ai.background-hint')}</p>
                     </div>
+                </div>
+                <!-- Learning. Tri-state rather than a checkbox: the empty value follows
+                     the wiki default, and an explicit Off stays off when that default is
+                     switched on — a memory outlives the run that wrote it, so an AI
+                     somebody exempted must not quietly start keeping them. -->
+                <div class="form-group">
+                    <label>${t('admin.ai.memory')}</label>
+                    <select id="ai-f-memory" class="form-control">
+                        ${['', 'on', 'off'].map(v => `<option value="${v}"${(cfg.memory ?? '') === v ? ' selected' : ''}>${t('admin.ai.memory-' + (v || 'default'))}</option>`).join('')}
+                    </select>
+                    <p class="form-hint">${t('admin.ai.memory-hint')}</p>
                 </div>
                 <div class="form-group">
                     <label>${t('admin.xhdr.label')} <span style="font-weight:400;color:var(--text-muted)">${t('admin.optional')}</span></label>
@@ -1736,6 +1832,7 @@ const saveAiUser = async (uid) => {
     const max_tokens       = parseInt(document.getElementById('ai-f-tokens')?.value || '4096', 10);
     const always_background = !!document.getElementById('ai-f-background')?.checked;
     const reasoning_effort  = document.getElementById('ai-f-effort')?.value || '';
+    const memory            = document.getElementById('ai-f-memory')?.value || '';
     const mcp_server_ids   = [...document.querySelectorAll('.ai-f-mcp-cb:checked')].map(cb => cb.value);
     const mcp_instructions = {};
     document.querySelectorAll('.ai-f-mcp-instr').forEach(ta => {
@@ -1758,7 +1855,7 @@ const saveAiUser = async (uid) => {
         source_uid,
         name, role,
         spaces: JSON.stringify(spaces),
-        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, system_prompt_space, system_prompt_page, context_messages, temperature, max_tokens, always_background, reasoning_effort, mcp_server_ids, mcp_instructions, extra_headers }),
+        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, system_prompt_space, system_prompt_page, context_messages, temperature, max_tokens, always_background, reasoning_effort, memory, mcp_server_ids, mcp_instructions, extra_headers }),
     }, 'POST');
 
     saveBtn.disabled = false;

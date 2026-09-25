@@ -21,6 +21,8 @@ require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/llm_trace.php';
 require_once __DIR__ . '/wikilinks.php';
 require_once __DIR__ . '/realtime.php';
+require_once __DIR__ . '/page_chat.php';
+require_once __DIR__ . '/memory.php';
 
 session_start();
 
@@ -390,7 +392,8 @@ if (isset($_REQUEST['action'])) {
         // Prepend wiki context so the AI knows where it is and what tools are available.
         // Built by ai_core so the admin panel can show the same text (see
         // admin_ai_builtin_instructions) instead of a copy that drifts.
-        $wiki_ctx = wiki_chat_context_prompt($space_name, $chat_name, $chat_dir_rel);
+        $wiki_ctx = wiki_chat_context_prompt($space_name, $chat_name, $chat_dir_rel,
+                                            $space_dir, $indexer, $config);
 
         // The page this chat is attached to, if any. Built by ai_core so the queued-job
         // path (an AI set to always run in the background) gets exactly the same block;
@@ -401,7 +404,9 @@ if (isset($_REQUEST['action'])) {
         $full_system = $wiki_ctx . $page_ctx . $system_prompt;
         $debug_on    = !empty($chat_data['debug']);
 
-        $tools          = get_wiki_tools($provider);
+        // Memory tools only where memory is actually on — see wiki_tool_definitions().
+        $tools          = get_wiki_tools($provider,
+                              wiki_ai_memory_enabled($config) && wiki_space_dir_memory($space_dir));
         $mcp_tool_map_c    = [];
         $mcp_calls_c       = [];
         $mcp_server_ids_c  = $config['mcp_server_ids']   ?? [];
@@ -905,8 +910,8 @@ if (isset($_REQUEST['action'])) {
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags',
                       'save_diagram_svg', 'upload_page', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
                       'retarget_wikilinks', 'set_frontmatter'];
-    $admin_actions = ['admin_chat_retention', 'admin_frontmatter_settings', 'admin_prompt_gallery',
-                      'admin_set_space_fm_edit', 'admin_set_space_fm_autostamp',
+    $admin_actions = ['admin_chat_retention', 'admin_frontmatter_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
+                      'admin_set_space_fm_edit', 'admin_set_space_fm_autostamp', 'admin_set_space_memory',
                       'admin_get_users', 'admin_save_users', 'admin_get_user_requests',
                       'admin_approve_request', 'admin_deny_request',
                       'admin_get_logs', 'admin_get_log_content',
@@ -1996,6 +2001,62 @@ if (isset($_REQUEST['action'])) {
                 }
                 break;
 
+            case 'admin_system_info':
+                // Everything an operator would otherwise have to ssh in to find out.
+                // The server half; the browser reports the CDN libraries itself, because
+                // for three of the four the version is whatever jsdelivr served *that
+                // browser* and is not knowable here at all.
+                $si_lock = [];
+                $si_lock_file = __DIR__ . '/composer.lock';
+                if (is_file($si_lock_file)) {
+                    $si_json = json_decode((string)@file_get_contents($si_lock_file), true) ?: [];
+                    foreach (($si_json['packages'] ?? []) as $si_p) {
+                        $si_lock[] = ['name' => (string)($si_p['name'] ?? ''),
+                                      'version' => (string)($si_p['version'] ?? '')];
+                    }
+                }
+                // Extensions the features actually depend on, named so a missing one
+                // reads as a cause rather than a curiosity.
+                $si_ext = [];
+                foreach (['curl' => 'AI, MCP and realtime publishing',
+                          'pdo_sqlite' => 'FTS5 search',
+                          'mbstring' => 'non-ASCII titles and search',
+                          'openssl' => 'OIDC login',
+                          'json' => 'everything'] as $si_name => $si_why) {
+                    $si_ext[] = ['name' => $si_name, 'loaded' => extension_loaded($si_name), 'why' => $si_why];
+                }
+                echo json_encode([
+                    'success'  => true,
+                    'wiki'     => is_file(__DIR__ . '/VERSION')
+                        ? trim((string)file_get_contents(__DIR__ . '/VERSION')) : '',
+                    'php'      => PHP_VERSION,
+                    'server'   => $_SERVER['SERVER_SOFTWARE'] ?? '',
+                    'sqlite'   => class_exists('SQLite3') ? SQLite3::version()['versionString'] : '',
+                    'search'   => defined('SEARCH_ENGINE') ? (string)SEARCH_ENGINE : '',
+                    'auth'     => defined('AUTHENTICATION') ? (string)AUTHENTICATION : '',
+                    'realtime' => wiki_realtime_enabled(),
+                    'mercure'  => wiki_mercure_version(),
+                    'composer' => $si_lock,
+                    'ext'      => $si_ext,
+                ]);
+                break;
+
+            case 'admin_ai_memory_settings':
+                // The house default for "does this AI User learn". Per-AI values still
+                // win, including an explicit 'off' — see the note on the tri-state in
+                // admin_save_ai_user.
+                if (isset($_POST['enabled'])) {
+                    $aim_on = in_array($_POST['enabled'], ['1', 'true'], true);
+                    if (!wiki_setting_set('ai_memory_default', $aim_on)) {
+                        throw new Exception('Could not save the setting — is WIKI_SYSTEM_DATA writable?');
+                    }
+                    wiki_audit_log('update', 'success', ['object' => 'settings.json',
+                        'object_type' => 'setting', 'change_type' => 'ai_memory_default',
+                        'value' => $aim_on ? '1' : '0']);
+                }
+                echo json_encode(['success' => true, 'enabled' => (bool)wiki_setting('ai_memory_default', false)]);
+                break;
+
             case 'admin_frontmatter_settings':
                 // How the wiki treats a page's own `---` metadata block. Reading and
                 // preserving it is unconditional — these are the choices that are not.
@@ -2671,7 +2732,7 @@ if (isset($_REQUEST['action'])) {
                     $space_indexers = []; // lazy cache
                     $results = [];
                     foreach ($fts_rows as $row) {
-                        if (wiki_is_template_path($row['path'])) continue;
+                        if (wiki_is_template_path($row['path']) || wiki_is_memory_path($row['path'])) continue;
                         $sp = $row['space'];
                         if (!isset($space_indexers[$sp])) {
                             $sp_dir = rtrim(PAGES_DIR, '/') . '/' . $sp;
@@ -2707,7 +2768,7 @@ if (isset($_REQUEST['action'])) {
                         if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') {
                             continue;
                         }
-                        if (wiki_is_template_path($data['path'])) continue;
+                        if (wiki_is_template_path($data['path']) || wiki_is_memory_path($data['path'])) continue;
                         $full_path = sanitize_path($data['path']);
                         if (!file_exists($full_path)) continue;
                         // Body only, or every page matches "status" and the snippet
@@ -2966,10 +3027,14 @@ if (isset($_REQUEST['action'])) {
 
                 // A browser gets the ticket in a cookie the hub reads for itself: a query
                 // parameter would put a bearer credential into every access log and
-                // Referer. A token client has no cookie jar, so it is told the value and
-                // sends it as a bearer header.
+                // Referer — and since Mercure 1.0 there is no query parameter to put it in,
+                // so a token client has to send the value as a bearer header. It has no
+                // cookie jar either way, which is why only it is told the value.
+                //
+                // The name has to be the one the hub's `cookie_name` directive configures;
+                // see wiki_realtime_cookie_name() for why it is not 1.0's `__Secure-` default.
                 if (!$ai_auth_user) {
-                    setcookie('mercureAuthorization', $rt_token, [
+                    setcookie(wiki_realtime_cookie_name(), $rt_token, [
                         'expires'  => time() + wiki_realtime_ticket_ttl(),
                         'path'     => wiki_realtime_public_url(),
                         'secure'   => !empty($_SERVER['HTTPS']),
@@ -3453,6 +3518,14 @@ if (isset($_REQUEST['action'])) {
                 if (file_exists($new_path_sanitized)) {
                     throw new Exception('Destination already exists.');
                 }
+                // A page's chat thread moves with it, so its destination has to be free
+                // too. Checked here rather than after the page has moved: the alternative
+                // is a half-applied rename that leaves the conversation under the old
+                // name, which is the orphan this whole thing exists to prevent.
+                if (wiki_page_chat_blocks_move($old_path_sanitized, $new_path_sanitized)) {
+                    throw new Exception('A chat thread already exists at '
+                        . wiki_page_chat_sidecar(ltrim(str_replace('..', '', $new_path_raw), '/')) . '.');
+                }
                 // Ensure parent directory exists in target space
                 $new_parent = dirname($new_path_sanitized);
                 if (!is_dir($new_parent)) {
@@ -3518,13 +3591,31 @@ if (isset($_REQUEST['action'])) {
                         if (file_exists($old_svg_cache)) {
                             rename($old_svg_cache, $new_svg_cache);
                         }
+                        // And the page's chat thread. Not a bare rename() like the two
+                        // above: a .chat is an indexed page with an id of its own, an FTS
+                        // row and possibly a queued job addressing it. See page_chat.php.
+                        $new_rel_for_chat = $is_cross_space
+                            ? ltrim($new_path_rel, '/')
+                            : ltrim(str_replace('..', '', $new_path_raw), '/');
+                        $chat_moved = wiki_page_chat_move(
+                            $old_path_sanitized, $new_path_sanitized, $old_rel, $new_rel_for_chat,
+                            $indexer, $src_space_name,
+                            $is_cross_space ? $target_indexer : null,
+                            $is_cross_space ? $tgt_space_name : '',
+                            get_current_actor()
+                        );
                     }
                     echo json_encode(['success' => true, 'message' => 'Item moved/renamed successfully.']);
                     if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
                     $actor_mv    = get_current_actor();
                     $git_name_mv  = $actor_mv['name'] ?? 'Wiki';
                     $git_email_mv = (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost';
-                    git_move_commit($old_path_sanitized, $new_path_sanitized, $git_name_mv, $git_email_mv);
+                    // One commit for one rename: the thread is staged alongside the page.
+                    $git_also_mv = (!empty($chat_moved))
+                        ? [[wiki_page_chat_sidecar($old_path_sanitized), wiki_page_chat_sidecar($new_path_sanitized)]]
+                        : [];
+                    git_move_commit($old_path_sanitized, $new_path_sanitized, $git_name_mv, $git_email_mv,
+                                    null, $git_also_mv);
                 } else {
                     throw new Exception('Could not move/rename item.');
                 }
@@ -4588,14 +4679,24 @@ if (isset($_REQUEST['action'])) {
                 }
                 if ($bi_space === '') $bi_space = 'Main';
                 $bi_actor = get_current_actor()['name'] ?? 'Alice';
+                // The memory block is part of what this AI is told, so the preview has to
+                // carry it — and it depends on the AI being edited, which the form knows
+                // and the server does not. Passed in rather than guessed: a preview that
+                // shows a memory listing to an AI that does not learn is a different lie
+                // from the one showing nothing to an AI that does.
+                $bi_dir = rtrim(PAGES_DIR, '/') . '/' . $bi_space;
+                $bi_ix  = is_dir($bi_dir) ? new PageIndexer($bi_dir) : null;
+                $bi_cfg = ['memory' => in_array($_GET['memory'] ?? '', ['on', 'off'], true)
+                                       ? (string)$_GET['memory'] : ''];
+                $bi_mem = wiki_ai_memory_enabled($bi_cfg) && wiki_space_dir_memory($bi_dir);
                 echo json_encode([
                     'success' => true,
                     'space'   => $bi_space,
-                    'chat'    => wiki_chat_context_prompt($bi_space, 'Standup', 'Team'),
-                    'job'     => wiki_job_context_prompt($bi_space, 'Team', $bi_actor),
+                    'chat'    => wiki_chat_context_prompt($bi_space, 'Standup', 'Team', $bi_dir, $bi_ix, $bi_cfg),
+                    'job'     => wiki_job_context_prompt($bi_space, 'Team', $bi_actor, $bi_dir, $bi_ix, $bi_cfg),
                     'tools'   => array_map(
                         fn($t) => ['name' => $t['name'], 'description' => $t['description']],
-                        wiki_tool_definitions()),
+                        wiki_tool_definitions($bi_mem)),
                 ]);
                 break;
 
@@ -4627,6 +4728,22 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true, 'space' => $sfm_name, 'mode' => $sfm_mode]);
                 break;
 
+            case 'admin_set_space_memory':
+                // Whether this space keeps an AI memory store. The folder itself is not
+                // created here — the first remembered fact creates it, so switching the
+                // setting on and off again leaves nothing behind.
+                $ssm_name = basename(trim($_POST['space_name'] ?? ''));
+                $ssm_on   = ($_POST['memory'] ?? '0') === '1';
+                if ($ssm_name === '' || !is_dir(PAGES_DIR . '/' . $ssm_name)) throw new Exception('No such space.');
+                if (!wiki_space_set_memory($ssm_name, $ssm_on)) {
+                    throw new Exception('Could not save the setting — is WIKI_SYSTEM_DATA writable?');
+                }
+                wiki_audit_log('update', 'success', ['object' => 'spaces.json',
+                    'object_type' => 'setting', 'change_type' => 'ai_memory',
+                    'object_category' => 'settings', 'value' => $ssm_name . '=' . ($ssm_on ? 'on' : 'off')]);
+                echo json_encode(['success' => true, 'space' => $ssm_name, 'memory' => $ssm_on]);
+                break;
+
             case 'admin_space_settings':
                 // Everything the Space settings dialog needs, for every space, in one
                 // call: the read-only flag, a page count, and whether the space is its
@@ -4642,6 +4759,10 @@ if (isset($_REQUEST['action'])) {
                         'readonly' => wiki_space_is_readonly($ss_f),
                         'fm_edit'  => wiki_space_fm_edit($ss_f),
                         'fm_autostamp' => wiki_space_fm_autostamp($ss_f),
+                        'memory'   => wiki_space_memory($ss_f),
+                        // So the dialog can say how much is in there without a second call.
+                        'memories' => is_dir($ss_dir . '/' . WIKI_MEMORY_DIR)
+                            ? count(glob($ss_dir . '/' . WIKI_MEMORY_DIR . '/*.md') ?: []) : 0,
                         'own_git'  => is_dir($ss_dir . '/.git'),
                         'pages'    => is_file($ss_index)
                             ? count(json_decode((string)file_get_contents($ss_index), true) ?: [])
@@ -4769,6 +4890,12 @@ if (isset($_REQUEST['action'])) {
                             'always_background' => !empty($ai_cfg_in['always_background'] ?? $ec['always_background'] ?? false),
                             'reasoning_effort'  => in_array($ai_cfg_in['reasoning_effort'] ?? $ec['reasoning_effort'] ?? '', WIKI_AI_EFFORTS, true)
                                 ? (string)($ai_cfg_in['reasoning_effort'] ?? $ec['reasoning_effort'] ?? '') : '',
+                            // '' = follow the wiki default, 'on'/'off' = this AI's own
+                            // answer. The empty case is not the same as 'off': an AI
+                            // deliberately exempted must stay exempt when the house
+                            // default is switched on. Same tri-state as chat retention.
+                            'memory'            => in_array($ai_cfg_in['memory'] ?? $ec['memory'] ?? '', ['', 'on', 'off'], true)
+                                ? (string)($ai_cfg_in['memory'] ?? $ec['memory'] ?? '') : '',
                             'mcp_server_ids'    => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? $ec['mcp_server_ids'] ?? []))),
                             'mcp_instructions'  => (array)($ai_cfg_in['mcp_instructions'] ?? $ec['mcp_instructions'] ?? []),
                             'extra_headers'     => _sanitize_extra_headers($ai_cfg_in['extra_headers'] ?? $ec['extra_headers'] ?? []),
@@ -4815,6 +4942,8 @@ if (isset($_REQUEST['action'])) {
                             'always_background' => !empty($ai_cfg_in['always_background'] ?? false),
                             'reasoning_effort'  => in_array($ai_cfg_in['reasoning_effort'] ?? '', WIKI_AI_EFFORTS, true)
                                 ? (string)($ai_cfg_in['reasoning_effort'] ?? '') : '',
+                            'memory'            => in_array($ai_cfg_in['memory'] ?? '', ['', 'on', 'off'], true)
+                                ? (string)($ai_cfg_in['memory'] ?? '') : '',
                             'mcp_server_ids'   => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? []))),
                             'mcp_instructions' => (array)($ai_cfg_in['mcp_instructions'] ?? []),
                             'extra_headers'    => _sanitize_extra_headers($ai_cfg_in['extra_headers'] ?? []),
@@ -5245,6 +5374,14 @@ if (isset($_REQUEST['action'])) {
                     'public_url'    => wiki_realtime_public_url(),
                     'ticket_ttl'    => wiki_realtime_ticket_ttl(),
                     'curl'          => function_exists('curl_init'),
+                    // The three identities the hub's Caddyfile has to agree with. Shown
+                    // because a mismatch is the likeliest way realtime breaks since
+                    // Mercure 1.0, and it presents as a flat 401 on publish — this is
+                    // where an operator can compare the two sides without a shell.
+                    // None of them is a secret; the key is reported as a boolean above.
+                    'issuer'        => wiki_realtime_issuer(),
+                    'resource_id'   => wiki_realtime_audience(),
+                    'cookie_name'   => wiki_realtime_cookie_name(),
                 ];
                 // A real publish, to the caller's own diagnostic topic: nothing else
                 // proves the token is accepted. Harmless if nobody is listening.

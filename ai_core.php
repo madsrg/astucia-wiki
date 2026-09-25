@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/llm_providers.php';
 require_once __DIR__ . '/frontmatter.php';
+require_once __DIR__ . '/memory.php';
 require_once __DIR__ . '/wiki_ai_tools.php';
 require_once __DIR__ . '/llm_trace.php';
 
@@ -292,8 +293,42 @@ function wiki_location_prompt(string $dir_rel, string $asker = 'request'): strin
  * the real thing the first time either was edited, which is the whole reason for showing
  * it at all.
  */
-function wiki_chat_context_prompt(string $space_name, string $chat_name, string $chat_dir_rel): string {
-    return "You are operating in the \"{$space_name}\" wiki space (current chat: \"{$chat_name}\"). "
+/**
+ * The memory block for a system prompt: the protocol, then what is already known.
+ *
+ * Emitted only when **both** switches are on — the space keeps memories, and this AI User
+ * learns. Two switches because they answer different questions: the space owns its
+ * content (the same argument that lets a frozen space overrule an editor), and the AI
+ * User owns its behaviour (the same argument as reasoning effort).
+ *
+ * Shared by the chat and job prompts rather than written at either call site, for the
+ * reason `wiki_mentions_prompt()` is: the first time one of them was edited, the two
+ * would start describing different memories.
+ */
+function wiki_memory_prompt(string $space_dir, $indexer, array $ai_config): string {
+    if ($space_dir === '' || $indexer === null) return '';
+    if (!wiki_ai_memory_enabled($ai_config)) return '';
+    if (!function_exists('wiki_space_dir_memory') || !wiki_space_dir_memory($space_dir)) return '';
+
+    return "You have a persistent memory in this space, kept as ordinary wiki pages.\n"
+        . "REMEMBER — call wiki_remember when the user tells you something worth keeping beyond "
+        . "this conversation: a decision, a preference, a convention, a fact about how they work. "
+        . "One fact per memory. Give it a title that reads as a sentence, because the title is what "
+        . "you will see later. Do not store secrets, and do not store what is already on a wiki page — "
+        . "remember where it is instead.\n"
+        . "RECALL — the list below is what you already know. When one of them might bear on the "
+        . "question, call wiki_recall to read it before you answer.\n"
+        . "CORRECT — when something you remembered turns out to be wrong or out of date, call "
+        . "wiki_remember again with the same title to replace it, or wiki_forget to drop it. Two "
+        . "contradictory memories are worse than none.\n"
+        . "The user can read, edit and delete all of this themselves; it is not private to you.\n\n"
+        . wiki_memory_index_prompt($indexer);
+}
+
+function wiki_chat_context_prompt(string $space_name, string $chat_name, string $chat_dir_rel,
+                                  string $space_dir = '', $indexer = null, array $ai_config = []): string {
+    return wiki_memory_prompt($space_dir, $indexer, $ai_config)
+        . "You are operating in the \"{$space_name}\" wiki space (current chat: \"{$chat_name}\"). "
         . "Each message below is prefixed with its author's name, so \"me\" is whoever wrote the message you are answering. "
         . wiki_location_prompt($chat_dir_rel, 'request')
         . "Use wiki_list_pages to discover available pages, wiki_read_page to read content, "
@@ -308,14 +343,16 @@ function wiki_chat_context_prompt(string $space_name, string $chat_name, string 
 }
 
 /** The same, for an agent job. $requester is '' for a scheduled job, which has none. */
-function wiki_job_context_prompt(string $space_name, string $dir_rel, string $requester = ''): string {
+function wiki_job_context_prompt(string $space_name, string $dir_rel, string $requester = '',
+                                 string $space_dir = '', $indexer = null, array $ai_config = []): string {
     // Who asked. Without it "mention me when you are done" — the natural way to ask —
     // has no referent, since the model sees the prompt text and never the queue entry
     // around it.
     $who_ctx = $requester !== ''
         ? "This job was requested by {$requester}; \"me\" and \"the requester\" mean @{$requester}. "
         : '';
-    return "You are an AI agent operating in the \"{$space_name}\" wiki space. "
+    return wiki_memory_prompt($space_dir, $indexer, $ai_config)
+        . "You are an AI agent operating in the \"{$space_name}\" wiki space. "
         . $who_ctx
         . wiki_location_prompt($dir_rel, 'task')
         . "Use wiki_list_pages to discover pages, wiki_read_page to read content, "
@@ -1159,7 +1196,8 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     // Held in its own variable so the run log can price the built-in instructions
     // separately from the AI user's own system prompt.
     $wiki_ctx = wiki_job_context_prompt($space_name, $job_dir_rel,
-                                        trim((string)($job['requested_by']['name'] ?? '')));
+                                        trim((string)($job['requested_by']['name'] ?? '')),
+                                        $space_dir, $indexer, $config);
 
     // A job queued from a page chat carries that page (see wiki_page_context_prompt);
     // scheduled jobs have none. Placed exactly where the inline path puts it.
@@ -1230,7 +1268,8 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     // wiki_list_pages returned bare paths where everywhere else returned objects — a
     // difference nobody could see from the outside until a job was asked to do one of
     // those things and simply could not.
-    $tools_def = wiki_tool_definitions();
+    $tools_def = wiki_tool_definitions(
+        wiki_ai_memory_enabled($config) && wiki_space_dir_memory($space_dir));
 
     $mcp_server_ids    = $config['mcp_server_ids']   ?? [];
     $mcp_instructions  = $config['mcp_instructions'] ?? [];

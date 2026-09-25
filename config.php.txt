@@ -181,6 +181,28 @@ define('MERCURE_PUBLIC_URL', '/.well-known/mercure');
 // revocation machinery to the hub.
 define('REALTIME_TICKET_TTL', 3600);
 
+// --- Hub identity (Mercure 1.0 and newer) ---
+// Since 1.0 a Mercure token is an ordinary OAuth 2.0 access token, so the wiki and the hub
+// have to agree on three more things than just the key. tools/install-mercure.sh writes the
+// matching `issuer`, `resource_identifier` and `cookie_name` into the hub's Caddyfile, so
+// change one only by changing both. A mismatch is a 401 on every publish and every
+// subscribe, and nothing else in the product looks any different — Admin -> Monitoring ->
+// Mercure is where it shows.
+//
+// These two are identifiers, never fetched: the default is under a name RFC 2606 reserves as
+// permanently unresolvable, so it cannot collide with a real host. MERCURE_RESOURCE_ID must
+// end in /.well-known/mercure — the hub uses it as the base for the URL Patterns in a ticket.
+define('MERCURE_ISSUER', 'https://astucia.invalid/wiki');
+define('MERCURE_RESOURCE_ID', 'https://astucia.invalid/.well-known/mercure');
+
+// The cookie a browser's ticket travels in. Mercure 1.0 defaults to
+// '__Secure-mercure_access_token', and the __Secure- prefix makes browsers refuse the cookie
+// over plain HTTP — which would leave realtime permanently dead on a wiki served over HTTP on
+// a LAN hostname. The prefix-less name keeps that install working; the cookie is still
+// HttpOnly, SameSite=Strict and marked Secure whenever the request arrived over HTTPS. On an
+// HTTPS-only install, set this and the hub's `cookie_name` to the prefixed name.
+define('MERCURE_COOKIE_NAME', 'mercure_access_token');
+
 // --- Diagnostics (optional) ---
 // Absolute paths to server log files shown in Admin → Diagnostics.
 // Leave empty ('') to hide the section.

@@ -77,6 +77,42 @@ assert_not_contains "the abandoned topic is gone"  'OLDTOPIC'   "$prompt"
 assert_contains     "the reset's subject is there" 'NEWSUBJECT' "$prompt"
 assert_contains     "the typed request is last"    'The request: investigate' "$prompt"
 
+section "the attached page travels with the thread, whichever way it is displayed"
+# A page chat can be a panel beside its page or a page in the main area, and the two are
+# a purely client-side difference: both post the same `post_chat_message` with the same
+# `file=`, and the server pairs a thread with its page by filename alone. So the page's
+# content reaches the AI identically from either view — asserted here because the two
+# presentations look different enough that it is a fair thing to doubt, and because
+# nothing else covered wiki_page_context_prompt() at all.
+fixture_page 'Main/Report.md' '# Report
+
+REPORTBODY the quarterly numbers.'
+printf '%s' '{"messages":[],"nextMessageId":1}' > "$WIKI_PAGES/Main/Report.chat"
+printf '%s' '{"messages":[],"nextMessageId":1}' > "$WIKI_PAGES/Main/Freestanding.chat"
+mkdir -p "$WIKI_PAGES/Main/Sub"
+fixture_page 'Main/Sub/Deep.md' '# Deep
+
+DEEPBODY nested page.'
+printf '%s' '{"messages":[],"nextMessageId":1}' > "$WIKI_PAGES/Main/Sub/Deep.chat"
+
+ctx=$(cd "$WIKI_APP" && php -r '
+require "config.php"; require "indexer.php"; require "llm_providers.php";
+require "wiki_ai_tools.php"; require "ai_core.php";
+$dir = rtrim(PAGES_DIR, "/") . "/Main";
+$one = fn($f) => str_replace("\n", " ", wiki_page_context_prompt($dir . "/" . $f, $dir));
+echo "PAGED=",  $one("Report.chat"), "\n";
+echo "ALONE=[", $one("Freestanding.chat"), "]\n";
+echo "NESTED=", $one("Sub/Deep.chat"), "\n";')
+
+assert_contains "a page chat carries the page's content" 'REPORTBODY'  "$ctx"
+assert_contains "  and the path to write back to"        'Report.md'   "$ctx"
+# The pairing is the filename, so a thread with no page beside it gets nothing — the
+# same rule that decides whether the dock button appears in the UI.
+assert_contains "a standalone thread carries nothing"    'ALONE=[]'    "$ctx"
+# dirname-relative, not root-relative: a nested thread must find the page beside *it*.
+assert_contains "a nested page chat finds its own page"  'DEEPBODY'    "$ctx"
+assert_contains "  with the nested path"                 'Sub/Deep.md' "$ctx"
+
 section 'one implementation, not three'
 assert_eq "only the helper knows the sentinel" "1" \
     "$(command grep -c 'is_new_topic' "$WIKI_APP/ai_core.php")"

@@ -11,7 +11,8 @@ import { getMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
 import { openAiModal, closeAiModal, checkAiModal, startStatusPoll } from '../core/ai_modal.js';
 import { aiStatusStep, jobStatusElementId, syncJobStatus, stopJobStatus } from '../core/ai_status.js';
-import { getFocusAi, setFocusAi, applyFocus, createFocusChip } from '../core/chat_focus.js';
+import { getFocusAi, setFocusAi, renameFocusKey, applyFocus, createFocusChip } from '../core/chat_focus.js';
+import { treeEntry, revealAndSelectFile } from '../file_tree/index.js';
 
 const POLL_MS = 5000;
 const POLL_SLOW_MS = 120000;   // the safety net while push is live; see modules/realtime
@@ -661,6 +662,31 @@ const setupInput = () => {
 
 // ── Panel open/close ──────────────────────────────────────────────────────────
 
+/**
+ * Follow a page that has just been renamed.
+ *
+ * The server moves a page's thread with the page (page_chat.php), and a rename does not
+ * reload the page — so without this the open panel keeps polling a path that no longer
+ * exists, and the next message posted would recreate a thread under the *old* name. The
+ * poller is restarted rather than patched: its realtime subscription is keyed on the
+ * path, and `pollOnce` bails the moment `_pcPath` changes under it.
+ *
+ * The AI focus follows too. It is remembered per chat path, so leaving it behind would
+ * quietly drop the reader back into "nobody is focused" on a thread they had set up.
+ */
+export const retargetPanel = (oldPagePath, newPagePath) => {
+    const oldChat = String(oldPagePath || '').replace(/\.md$/i, '.chat');
+    const newChat = String(newPagePath || '').replace(/\.md$/i, '.chat');
+    if (!oldChat.endsWith('.chat') || oldChat === newChat) return;
+    renameFocusKey(oldChat, newChat);
+    if (_pcPath !== oldChat) return;   // that page's chat is not the one on screen
+    stopPoll();
+    _pcPath = newChat;
+    state.pageChatPath = newChat;
+    updateFocus();
+    startPoll(newChat, _lastMtime);
+};
+
 export const closePanel = () => {
     stopPoll();
     closeAiModal();
@@ -854,8 +880,52 @@ export const askAiAboutSelection = async (text) => {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+/**
+ * The same thread, the other way round.
+ *
+ * A page chat has two presentations — a panel beside its page, and the thread opened as
+ * an ordinary page in the main area — and until now each was reachable only from where
+ * it started: the button on a Markdown page, or clicking the `.chat` in the tree. These
+ * two handlers are the swap, one in each direction.
+ *
+ * `loadPage()` needs the id and tags, which is why both go through `treeEntry()`: the
+ * tree's own click handler reads them off the same nodes, so this is the established way
+ * to navigate to a path the user did not click.
+ *
+ * The imports are dynamic because page_view imports *this* module dynamically for the
+ * same reason — the two know about each other, and only a dynamic edge in both
+ * directions keeps that from being a cycle.
+ */
+const _openAsPage = async () => {
+    const path = _pcPath;
+    if (!path) return;
+    const entry = treeEntry(path);
+    const { loadPage } = await import('../page_view/index.js');
+    closePanel();                                  // loadPage would anyway; this is explicit
+    await loadPage(path, entry?.id, entry?.tags || []);
+    revealAndSelectFile(path);
+};
+
+const _showBesidePage = async () => {
+    const chatPath = state.currentPagePath;
+    if (!/\.chat$/i.test(chatPath || '')) return;
+    const mdPath = chatPath.replace(/\.chat$/i, '.md');
+    const entry  = treeEntry(mdPath);
+    // The button is hidden when there is no page to show it beside, so this is only
+    // reachable if the tree changed under us — navigating to a page that is not there
+    // would be worse than doing nothing.
+    if (!entry) return;
+    const { loadPage } = await import('../page_view/index.js');
+    await loadPage(mdPath, entry.id, entry.tags);
+    revealAndSelectFile(mdPath);
+    // loadPage closed the panel, so this opens rather than toggling shut.
+    await openPageChat(mdPath);
+};
+
 export const init = () => {
     document.getElementById('pc-close-btn')?.addEventListener('click', closePanel);
+    document.getElementById('pc-expand-btn')?.addEventListener('click', _openAsPage);
+    document.getElementById('chat-dock-btn')?.addEventListener('click', _showBesidePage);
 
     document.getElementById('page-chat-btn')?.addEventListener('click', () => {
         if (state.currentPagePath?.endsWith('.md')) {

@@ -380,25 +380,67 @@ setTimeout(() => {
             e => { window.__err = String(e.reason && e.reason.message || e.reason); });
         if (st) { st.value = 'on'; st.dispatchEvent(new Event('change')); }
         setTimeout(() => {
-          // Geometry as well as behaviour: this dialog has grown a section at a time and
-          // at a fixed height its last section and its Close button fell outside the box
-          // with nothing to scroll.
+          // Geometry as well as behaviour: this dialog grew a section at a time until its
+          // last section and its Close button fell outside the box with nothing to
+          // scroll. It is grouped into tabs now, so the check is per tab — every pane has
+          // to fit with the Close button still inside, not just whichever one opens first.
           const c = document.querySelector('.space-settings-content');
           const b = document.querySelector('.space-settings-body');
           const btn = document.querySelector('.space-settings-content .lightbox-footer button');
-          const r = c && c.getBoundingClientRect();
-          const br = btn && btn.getBoundingClientRect();
-          const reachable = b
-            ? (b.scrollTop = b.scrollHeight,
-               Math.round(b.scrollTop + b.clientHeight) >= b.scrollHeight - 2)
-            : false;
+          const tabs = [...document.querySelectorAll('.space-settings-content .admin-tab')];
+          let fitsAll = tabs.length > 0, closeAll = tabs.length > 0, reachAll = tabs.length > 0;
+          for (const tb of tabs) {
+            tb.click();
+            const r = c && c.getBoundingClientRect();
+            const br = btn && btn.getBoundingClientRect();
+            if (!(r && r.bottom <= window.innerHeight && r.top >= 0)) fitsAll = false;
+            if (!(br && br.bottom <= window.innerHeight && br.top >= 0)) closeAll = false;
+            if (b) {
+              b.scrollTop = b.scrollHeight;
+              if (!(Math.round(b.scrollTop + b.clientHeight) >= b.scrollHeight - 2)) reachAll = false;
+            } else { reachAll = false; }
+          }
+          // Switching has to actually reveal one pane and hide the others, or the
+          // geometry above measured the same visible pane four times. Checked by
+          // going back to the tab the setting under test lives in, after the sweep
+          // above has left a different one open.
+          const paneOf = (el) => el && el.closest('.space-settings-pane');
+          const contentTab = tabs.find(t => t.dataset.tab === 'content');
+          if (contentTab) contentTab.click();
+          const stPane = paneOf(st);
+          const others = [...document.querySelectorAll('.space-settings-pane')]
+            .filter(x => x !== stPane);
+          const contentPaneShown = !!stPane && !stPane.classList.contains('hidden')
+            && others.every(x => x.classList.contains('hidden'));
           document.title = 'PROBE edit=' + (ed ? ed.value : 'absent')
             + ' stamp=' + (st ? st.value : 'absent')
             + ' error=' + (window.__err ? 'YES:' + window.__err : 'none')
             + ' sections=' + (b ? b.querySelectorAll('.space-settings-section').length : 0)
-            + ' fits=' + (r && r.bottom <= window.innerHeight && r.top >= 0 ? 'yes' : 'NO')
-            + ' closeVisible=' + (br && br.bottom <= window.innerHeight && br.top >= 0 ? 'yes' : 'NO')
-            + ' lastReachable=' + (reachable ? 'yes' : 'NO');
+            + ' tabs=' + tabs.length
+            + ' tabNames=' + tabs.map(t => t.dataset.tab).join(',')
+            + ' fitsAll=' + (fitsAll ? 'yes' : 'NO')
+            + ' closeAll=' + (closeAll ? 'yes' : 'NO')
+            + ' reachAll=' + (reachAll ? 'yes' : 'NO')
+            + ' paneSwitches=' + (contentPaneShown ? 'yes' : 'NO')
+            // Measured, not assumed: the dialog was shrunk by 200px once tabs meant no
+            // pane had to hold everything, so the numbers are worth printing when one of
+            // the assertions above goes red.
+            + ' boxH=' + (c ? Math.round(c.getBoundingClientRect().height) : 0)
+            + ' viewH=' + (b ? b.clientHeight : 0)
+            // Freezing makes the Content and AI settings inert, and the dialog has to
+            // say so on the tab you are looking at — the server refuses the writes
+            // either way, so nothing else would tell you.
+            + ' frozenNotesHidden=' + document.querySelectorAll(
+                  '.space-settings-pane .space-settings-status.is-blocked.hidden').length
+            // …and below the settings they are about, not above them.
+            + ' frozenNotesLast=' + [...document.querySelectorAll(
+                  '.space-settings-pane .space-settings-status.is-blocked')]
+                  .filter(n => n.parentElement.lastElementChild === n).length
+            + ' paneH=' + tabs.map(t => {
+                  t.click();
+                  const pane = document.querySelector('.space-settings-pane:not(.hidden)');
+                  return t.dataset.tab + ':' + (pane ? Math.round(pane.scrollHeight) : 0);
+              }).join(',');
         }, 1200);
       }, 1200);
     }, 600);
@@ -762,11 +804,24 @@ assert_contains "the stamping select is there"  'stamp=on'    "$PROBE"
 # The callback fired by that change was once referenced without being declared, which threw
 # only in the browser, only after the request had already succeeded.
 assert_contains "and changing it raises no error" 'error=none' "$PROBE"
-# The box has to hold what it now contains: five sections plus the Close button.
-assert_contains "every section is present"    'sections=5'       "$PROBE"
-assert_contains "the dialog fits the window"  'fits=yes'         "$PROBE"
-assert_contains "the Close button is inside it" 'closeVisible=yes' "$PROBE"
-assert_contains "and the last section is reachable" 'lastReachable=yes' "$PROBE"
+# Six sections now, grouped into four tabs — which is what stopped the dialog growing
+# past its box again. Every pane is measured, not just the one that opens first: a tab
+# nobody looked at is exactly where an oversized section would hide.
+assert_contains "every section is present"      'sections=6'       "$PROBE"
+assert_contains "grouped into four tabs"        'tabs=4'           "$PROBE"
+assert_contains "named as expected"             'tabNames=general,content,ai,advanced' "$PROBE"
+assert_contains "every tab fits the window"     'fitsAll=yes'      "$PROBE"
+assert_contains "with the Close button inside"  'closeAll=yes'     "$PROBE"
+assert_contains "and each pane fully reachable" 'reachAll=yes'     "$PROBE"
+# Switching tabs has to actually reveal a pane, or the geometry above is measuring the
+# same visible pane four times and proving nothing about the other three.
+assert_contains "and switching tabs shows the pane" 'paneSwitches=yes' "$PROBE"
+# Main is not frozen in this fixture, so both notes must be out of the way. The
+# freeze-on case is asserted over HTTP in tests/ai_memory.test.sh, where what matters is
+# that the write is actually refused rather than merely explained.
+assert_contains "the read-only notes stay hidden while it is not" 'frozenNotesHidden=2' "$PROBE"
+assert_contains "and sit under their settings, as the merge status does" 'frozenNotesLast=2' "$PROBE"
+printf '  %s\n' "$(_dim "measured: box $(field boxH)px, viewport $(field viewH)px, panes $(field paneH)")"
 sleep 1
 after=$(curl -s "$WIKI_URL/api.php?action=admin_space_settings")
 assert_contains "the change reached the server" '"name":"Main","readonly":false,"fm_edit":"off","fm_autostamp":"on"' "$after"

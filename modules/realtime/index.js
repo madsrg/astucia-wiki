@@ -114,7 +114,7 @@ const close = () => {
 /**
  * Mint a ticket and open the stream.
  *
- * One connection for everything: the request asks for `wiki/{+rest}` and the *token* decides
+ * One connection for everything: the request asks for `wiki/*` and the *token* decides
  * what actually arrives. That is the point of the design — the Space allowlist is enforced
  * by the hub from the JWT, not re-implemented here — and it means navigating between pages
  * or Spaces never reopens the connection.
@@ -137,7 +137,12 @@ const connect = async () => {
     ticketUrl = res.url || ticketUrl;
     myUid     = Number(res.uid || 0);
 
-    const url = `${ticketUrl}?topic=${encodeURIComponent('wiki/{+rest}')}`;
+    // One matcher for everything the token allows. Mercure 1.0 replaced `topic=` (URI
+    // Template) with `match=` (exact) or `match_urlpattern=`; `*` is the URL Pattern
+    // wildcard and matches across `/`, so this is the whole tree, exactly as
+    // `wiki/{+rest}` was. An unrecognised name under the `match` prefix is a 400, so a
+    // typo here fails loudly rather than silently subscribing to nothing.
+    const url = `${ticketUrl}?match_urlpattern=${encodeURIComponent('wiki/*')}`;
     try {
         es = new EventSource(url, { withCredentials: true });
     } catch {

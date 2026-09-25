@@ -98,7 +98,7 @@ repeating, each of which silently leaves the publish log empty rather than faili
 Some things a suite cannot assert, and where the line is. `realtime.test.sh` checks what the
 wiki *publishes* — the topics, the payload, and that every publish carries `private=on` —
 against a stub that records each POST. Whether the hub then honours a subscriber's token is
-upstream's contract, verified by hand against a real Mercure 0.24.2 hub rather than by
+upstream's contract, verified by hand against a real Mercure 1.0.2 hub rather than by
 downloading 34 MB in CI. That check is worth repeating if the hub is ever upgraded: with
 `private=on` removed, a user restricted to Space Main receives Space Bravo's change stream.
 

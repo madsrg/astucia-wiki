@@ -12,6 +12,8 @@ import { t } from '../i18n/index.js';
 // {include:ID} — which runs before marked.parse — makes a page holding just a diagram
 // embeddable anywhere, which is the only thing a dedicated content type would have added.
 
+import { noteLoaded } from '../core/versions.js';
+
 const CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
 
 let _lib = null;    // in-flight or resolved import
@@ -24,6 +26,9 @@ const loadMermaid = () => {
         _lib = import(/* @vite-ignore */ CDN)
             .then(mod => {
                 const mermaid = mod.default;
+                // What `@11` actually resolved to, for Admin → Wiki Info. Recorded here
+                // because only the loader knows; nothing loads mermaid to find out.
+                noteLoaded('mermaid', mermaid?.version || mod?.version || '');
                 mermaid.initialize({
                     startOnLoad:   false,
                     // Page content is user-authored, so labels must not become live HTML.

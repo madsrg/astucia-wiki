@@ -32,6 +32,17 @@ export const setFocusAi = (chatPath, name) => {
     _save(map);
 };
 
+// Move a chat's focus to its new path. Focus is keyed by path, so a renamed thread
+// would otherwise arrive unfocused and leave its old key behind for ever.
+export const renameFocusKey = (oldPath, newPath) => {
+    if (!oldPath || !newPath || oldPath === newPath) return;
+    const map = _load();
+    if (!(oldPath in map)) return;
+    map[newPath] = map[oldPath];
+    delete map[oldPath];
+    _save(map);
+};
+
 // Decide who should handle a reply and rewrite the outgoing text accordingly.
 // An explicit AI mention always wins; otherwise, if the chat is focused on an
 // AI, prefix the message with that mention. Slash commands are left untouched.

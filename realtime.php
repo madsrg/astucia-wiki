@@ -12,9 +12,9 @@
 //      actual read still goes through api.php and its guards, so the hub never becomes a
 //      second content-serving path that would need its own copy of Space filtering. A
 //      client that misses an event refetches on reconnect and is immediately correct.
-//   2. **The subscribe JWT is the ACL.** The hub enforces the token's topic selectors
+//   2. **The subscribe JWT is the ACL.** The hub enforces the token's topic matchers
 //      itself, so Space isolation on the push channel is declarative and lives outside our
-//      code. The selectors come from `actor_spaces_filter()` — the same allowlist every
+//      code. The matchers come from `actor_spaces_filter()` — the same allowlist every
 //      other entry point uses, not a second copy of it.
 //   3. **A write must never fail because the hub is down.** Every failure here is swallowed
 //      and logged, exactly as the audit writer does.
@@ -45,23 +45,92 @@ function wiki_realtime_public_url(): string {
     return defined('MERCURE_PUBLIC_URL') ? (string)MERCURE_PUBLIC_URL : '/.well-known/mercure';
 }
 
-// ── JWT ──────────────────────────────────────────────────────────────────────
+// ── Access tokens ────────────────────────────────────────────────────────────
 // HS256 by hand rather than a composer package. It is a hash and two base64url encodings,
 // the wiki installs by copying a directory, and the OIDC dependency is already optional —
-// adding a hard one for thirty lines would be the wrong trade.
+// adding a hard one for forty lines would be the wrong trade.
+//
+// **Mercure 1.0 retired its own JWT claim.** A token is now an ordinary OAuth 2.0 access
+// token (RFC 9068): a `typ: at+jwt` header, an `iss` the hub is configured to trust, an
+// `aud` naming the hub, a required `exp`, and an `authorization_details` array in place of
+// the old `mercure.publish` / `mercure.subscribe` string lists. The hub rejects a 0.x token
+// outright unless it is run in compatibility mode, which switches off the `exp`, audience,
+// `at+jwt` and issuer checks wholesale — so the wiki mints modern tokens and requires a
+// hub of 1.0 or newer. A mismatch is a 401 on every publish and every subscribe.
+
+/**
+ * The `aud` every token carries, and the `resource_identifier` the hub is configured with.
+ * They must be the same string.
+ *
+ * **Why it is pinned rather than derived.** 1.0 computes the hub's identity from each
+ * request, so one hub answers as many audiences as it has URLs — and the wiki reaches it on
+ * loopback (`MERCURE_INTERNAL_URL`) while the browser reaches it through nginx on the wiki's
+ * own origin. Deriving would mean two different audiences for one hub and a token minted for
+ * whichever leg happened to ask. `resource_identifier` pins one for both.
+ *
+ * It is an *identifier*, never fetched, which is why the default is under a name reserved by
+ * RFC 2606 as permanently unresolvable: it cannot collide with a real host or be dereferenced
+ * by accident. Ending it in `/.well-known/mercure` is load-bearing — that is what the hub
+ * uses as the base for the relative URL Patterns in a subscribe grant.
+ */
+function wiki_realtime_audience(): string {
+    return defined('MERCURE_RESOURCE_ID') && MERCURE_RESOURCE_ID !== ''
+        ? (string)MERCURE_RESOURCE_ID : 'https://astucia.invalid/.well-known/mercure';
+}
+
+/** The `iss` the wiki signs with; the hub's `issuer` block must name the same value. */
+function wiki_realtime_issuer(): string {
+    return defined('MERCURE_ISSUER') && MERCURE_ISSUER !== ''
+        ? (string)MERCURE_ISSUER : 'https://astucia.invalid/wiki';
+}
+
+/**
+ * The cookie the browser's ticket travels in. The hub reads exactly one name, set by
+ * `cookie_name` in its Caddyfile, so this constant and that directive move together.
+ *
+ * 1.0 defaults it to `__Secure-mercure_access_token`, and the `__Secure-` prefix makes a
+ * browser refuse the cookie over plain HTTP — which would leave realtime permanently dead on
+ * a wiki served over HTTP on a LAN hostname, an ordinary install here. So the default is
+ * prefix-less and the `secure` attribute is set per request instead (api.php), exactly as it
+ * was before. An HTTPS-only install can set both sides back to the prefixed name.
+ */
+function wiki_realtime_cookie_name(): string {
+    return defined('MERCURE_COOKIE_NAME') && MERCURE_COOKIE_NAME !== ''
+        ? (string)MERCURE_COOKIE_NAME : 'mercure_access_token';
+}
 
 function _wiki_rt_b64(string $raw): string {
     return rtrim(strtr(base64_encode($raw), '+/', '-_'), '=');
 }
 
-function wiki_realtime_jwt(array $mercure_claim, int $ttl): string {
+/** One `authorization_details` entry: what may be done, and to which topics. */
+function wiki_rt_grant(string $action, array $topics): array {
+    return [
+        'type'    => 'https://mercure.rocks/authorization-detail',
+        'actions' => [$action],
+        'topics'  => $topics,
+    ];
+}
+
+/**
+ * @param array  $details `authorization_details` entries, from wiki_rt_grant().
+ * @param string $subject `sub`. RFC 9068 requires it, and the hub derives a subscriber
+ *                        identifier from it for the subscription API.
+ */
+function wiki_realtime_jwt(array $details, int $ttl, string $subject): string {
     $key = wiki_realtime_key();
     if ($key === '') return '';
-    $header  = _wiki_rt_b64(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
+    $now     = time();
+    $header  = _wiki_rt_b64(json_encode(['alg' => 'HS256', 'typ' => 'at+jwt']));
     $payload = _wiki_rt_b64(json_encode([
-        'mercure' => $mercure_claim,
-        'iat'     => time(),
-        'exp'     => time() + $ttl,
+        'iss'       => wiki_realtime_issuer(),
+        'aud'       => wiki_realtime_audience(),
+        'sub'       => $subject,
+        'client_id' => 'astucia-wiki',
+        'iat'       => $now,
+        'exp'       => $now + $ttl,
+        'jti'       => bin2hex(random_bytes(9)),
+        'authorization_details' => $details,
     ], JSON_UNESCAPED_SLASHES));
     $sig = hash_hmac('sha256', "$header.$payload", $key, true);
     return "$header.$payload." . _wiki_rt_b64($sig);
@@ -70,41 +139,94 @@ function wiki_realtime_jwt(array $mercure_claim, int $ttl): string {
 /**
  * The publisher token. Short-lived and never leaves the server.
  *
- * `publish: ['*']` lets the wiki publish any topic; it is the wiki's own hub. The
- * interesting restriction is on the *subscribe* side, which is where an untrusted party is.
+ * `{ "match": "*" }` is the reserved matcher meaning every topic; the wiki publishes
+ * anything, it is the wiki's own hub. The interesting restriction is on the *subscribe*
+ * side, which is where an untrusted party is.
  */
 function wiki_realtime_publish_token(): string {
     static $tok = null;
-    if ($tok === null) $tok = wiki_realtime_jwt(['publish' => ['*']], 300);
+    if ($tok === null) {
+        $tok = wiki_realtime_jwt([wiki_rt_grant('publish', [['match' => '*']])], 300, 'wiki');
+    }
     return $tok;
 }
 
 /**
  * A subscriber ticket for one actor.
  *
- * The selector list *is* the Space allowlist. `null` from actor_spaces_filter() means
+ * The matcher list *is* the Space allowlist. `null` from actor_spaces_filter() means
  * unrestricted, which gets the whole tree; anything else is enumerated, plus the actor's own
  * user topics so they can receive their job and mention events.
  *
- * `{+rest}` is RFC 6570 reserved expansion — it matches slashes, so one selector per Space
- * covers every resource inside it.
+ * **`*` is a URL Pattern wildcard, not a glob, and it matches across `/`** — so one matcher
+ * per Space still covers every resource inside it, which is what `{+rest}` did before 1.0
+ * retired URI Templates. Three things about it, all confirmed against a real 1.0.2 hub
+ * because none of them is obvious:
+ *
+ *  - **The trailing separator carries the isolation.** `wiki/Main/*` matches
+ *    `wiki/Main/page/Note.md` and does *not* match `wiki/Main2/page/Leak.md` — the same
+ *    containment rule, and the same trap, as the `strpos($real, $base . '/')` checks in
+ *    service_auth.php.
+ *  - **A pattern is matched as a URL**, resolved against the hub's base — the
+ *    `resource_identifier`, which is why it has to end in `/.well-known/mercure`. The wiki's
+ *    topics are relative paths rather than absolute URLs, and they resolve against the same
+ *    base, so they match.
+ *  - **A Space name cannot become pattern syntax.** `wiki_rt_seg()` is `rawurlencode()`,
+ *    which leaves only `A-Za-z0-9-_.~` unescaped, so every character URL Pattern treats as
+ *    syntax — `:*{}()?+` — is already a `%XX` literal by the time it reaches the matcher. A
+ *    Space called `A (draft)` grants exactly itself, not a capture group.
  */
 function wiki_realtime_subscribe_token(?array $allowed_spaces, int $uid): string {
-    $selectors = [];
+    $matchers = [];
     if ($allowed_spaces === null) {
-        $selectors[] = 'wiki/{+rest}';
+        $matchers[] = 'wiki/*';
     } else {
         foreach ($allowed_spaces as $s) {
             $s = trim((string)$s);
             if ($s === '' || str_starts_with($s, '.')) continue;
-            $selectors[] = 'wiki/' . wiki_rt_seg($s) . '/{+rest}';
+            $matchers[] = 'wiki/' . wiki_rt_seg($s) . '/*';
         }
         // Root-level content sits outside every Space and stays readable to a restricted
         // actor, exactly as wiki_space_allowed() decides for reads.
-        $selectors[] = 'wiki//{+rest}';
-        if ($uid > 0) $selectors[] = 'wiki/user/' . $uid . '/{+rest}';
+        $matchers[] = 'wiki//*';
+        if ($uid > 0) $matchers[] = 'wiki/user/' . $uid . '/*';
     }
-    return wiki_realtime_jwt(['subscribe' => $selectors], wiki_realtime_ticket_ttl());
+    $topics = array_map(fn($m) => ['match' => $m, 'match_type' => 'urlpattern'], $matchers);
+    return wiki_realtime_jwt([wiki_rt_grant('subscribe', $topics)],
+                             wiki_realtime_ticket_ttl(), 'uid:' . $uid);
+}
+
+/**
+ * Which Mercure the hub beside this wiki actually is.
+ *
+ * **The hub does not advertise its version over HTTP** — no header, no endpoint — so it
+ * cannot be discovered by asking it. What it can do is record itself at the moment it is
+ * installed, which is what the Dockerfile and tools/install-mercure.sh now do. Reporting
+ * the pin from the source tree instead would be worse than reporting nothing: the pin is
+ * what the *image* intends, and a bare-metal hub is whatever was last installed there —
+ * exactly the mismatch that makes realtime fail silently.
+ *
+ * Returns '' when nothing wrote a stamp, which the panel shows as unknown rather than
+ * guessing.
+ */
+function wiki_mercure_version(): string {
+    // WIKI_SYSTEM_DATA first: it is the one location that belongs to *this* install
+    // rather than to the machine, so a container that mounts its data elsewhere, and a
+    // test fixture, can both say what hub they are paired with. The two absolute paths
+    // after it are where the image and tools/install-mercure.sh write their stamp.
+    $paths = [];
+    if (defined('WIKI_SYSTEM_DATA') && WIKI_SYSTEM_DATA) {
+        $paths[] = rtrim(WIKI_SYSTEM_DATA, '/') . '/mercure.version';
+    }
+    $paths[] = '/usr/local/share/astucia/mercure.version';
+    $paths[] = '/etc/mercure/version';
+    foreach ($paths as $f) {
+        if (is_file($f)) {
+            $v = trim((string)@file_get_contents($f));
+            if ($v !== '') return $v;
+        }
+    }
+    return '';
 }
 
 // ── Topics ───────────────────────────────────────────────────────────────────
@@ -115,7 +237,7 @@ function wiki_realtime_subscribe_token(?array $allowed_spaces, int $uid): string
  * Percent-encode one topic component.
  *
  * **A raw space in a topic silently costs you the update.** A Mercure topic is a URI and a
- * selector is a URI template, so `wiki/Main/page/Q3 report.md` is not a valid topic: the hub
+ * matcher is matched as one, so `wiki/Main/page/Q3 report.md` is not a valid topic: the hub
  * accepts the publish with 200 and then matches it against no subscriber's selectors, so it
  * is delivered to nobody. Nothing reports an error — publishing is fire-and-forget, the
  * stream stays open, and every check in the monitor passes. Every page and chat whose name
@@ -275,7 +397,15 @@ function wiki_realtime_publish(string $topic, array $data = []): void {
     }
     // Logged, never propagated: a save that succeeded must not report failure because
     // a notification could not be delivered. Subscribers notice on their next poll.
-    @error_log("realtime publish failed ($topic): HTTP {$r['code']} {$r['error']}");
+    //
+    // 401/403 is named rather than left as a bare status because it has one overwhelmingly
+    // likely cause: the wiki mints Mercure 1.0 access tokens, and a hub older than that
+    // rejects every one of them. The symptom is otherwise indistinguishable from a wrong key.
+    $hint = ($r['code'] === 401 || $r['code'] === 403)
+        ? ' — the hub rejected the token; check MERCURE_JWT_KEY, and that the hub is'
+          . ' Mercure 1.0 or newer with a matching issuer and resource_identifier'
+        : '';
+    @error_log("realtime publish failed ($topic): HTTP {$r['code']} {$r['error']}$hint");
 }
 
 /**

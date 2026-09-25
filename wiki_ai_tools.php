@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/git_helpers.php';
 require_once __DIR__ . '/frontmatter.php';
+require_once __DIR__ . '/memory.php';
 require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/llm_trace.php';
 require_once __DIR__ . '/wikilinks.php';
@@ -18,6 +19,7 @@ require_once __DIR__ . '/search_index.php';
 require_once __DIR__ . '/graph.php';
 require_once __DIR__ . '/llm_providers.php';
 require_once __DIR__ . '/realtime.php';      // wiki_chat_write(), wiki_realtime_publish()
+require_once __DIR__ . '/page_chat.php';    // a page's .chat thread moves with it
 
 // Pages under a space's top-level templates/ folder are page templates, not
 // content — excluded from every search result (REST search, SQLite FTS, and the
@@ -34,8 +36,14 @@ function wiki_all_users(): array {
     return json_decode((string)file_get_contents($f), true)['users'] ?? [];
 }
 
-function wiki_tool_definitions(): array {
-    return [
+/**
+ * @param bool $with_memory Include the three memory tools. False when this space does not
+ *        keep memories or this AI user does not learn — an offered tool that can only
+ *        ever answer "Error: memory is off" costs tokens on every call and invites the
+ *        model to keep trying it.
+ */
+function wiki_tool_definitions(bool $with_memory = true): array {
+    $defs = [
         [
             'name'        => 'wiki_list_pages',
             'description' => 'List all pages in the current wiki space. Returns a JSON array of objects with "id", "path", "space", and "tags" (array, only present when non-empty) fields. Use this to find pages by tag or to discover what content exists before reading.',
@@ -142,8 +150,44 @@ function wiki_tool_definitions(): array {
             ],
         ],
         [
+            'name'        => 'wiki_remember',
+            'description' => 'Store one fact in your persistent memory for this space, as an ordinary wiki page in memory/. Use it when the user tells you something worth keeping beyond this conversation — a decision, a preference, a convention, how they work. One fact per memory. The title is what you see in your memory listing later, so write it as a short sentence rather than a keyword. Calling it again with the same title replaces that memory, which is how you correct one. Do not store secrets, and do not copy what is already on a wiki page — remember where it is instead. Only available when the space keeps memories and this AI user has learning enabled.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => [
+                    'title' => ['type' => 'string', 'description' => 'A short sentence naming the fact, e.g. "Deploys go out on Thursday afternoons"'],
+                    'fact'  => ['type' => 'string', 'description' => 'The thing to remember, in a sentence or two. Include why, if it matters.'],
+                    'tags'  => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Optional tags for grouping, e.g. ["process", "deploys"]. Tags are how memories are grouped — there are no folders.'],
+                ],
+                'required'   => ['title', 'fact'],
+            ],
+        ],
+        [
+            'name'        => 'wiki_recall',
+            'description' => 'Read what you have remembered in this space. With a query, returns the memories whose title, tags or text match it; with no query, returns the most recent ones. Your system prompt already lists the titles you know — use this to read the full text of one before relying on it.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => [
+                    'query' => ['type' => 'string', 'description' => 'What to look for. Omit to list the most recent memories.'],
+                    'limit' => ['type' => 'integer', 'description' => 'How many to return (default 10).'],
+                ],
+                'required'   => [],
+            ],
+        ],
+        [
+            'name'        => 'wiki_forget',
+            'description' => 'Delete one memory by its exact title, when it is wrong or out of date and there is nothing to replace it with. To correct a memory instead, call wiki_remember with the same title.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => [
+                    'title' => ['type' => 'string', 'description' => 'The exact title of the memory, as shown in your memory listing.'],
+                ],
+                'required'   => ['title'],
+            ],
+        ],
+        [
             'name'        => 'wiki_rename_page',
-            'description' => 'Rename or move a page within the current space, keeping its identity: the page id, tags, authorship, attachments and history all follow it, so existing ?pageid= links and {include:ID} tags keep working. The file extension cannot change. Give "new_path" the same folder to rename in place, or a different folder to move it. Wikilinks elsewhere that name the old title stop resolving — the result says how many, and you can pass retarget_links=true to rewrite them. Only available when the AI user has editor role.',
+            'description' => 'Rename or move a page within the current space, keeping its identity: the page id, tags, authorship, attachments, its page chat thread and history all follow it, so existing ?pageid= links and {include:ID} tags keep working. The file extension cannot change. Give "new_path" the same folder to rename in place, or a different folder to move it. Wikilinks elsewhere that name the old title stop resolving — the result says how many, and you can pass retarget_links=true to rewrite them. Only available when the AI user has editor role.',
             'params'      => [
                 'type'       => 'object',
                 'properties' => [
@@ -155,10 +199,13 @@ function wiki_tool_definitions(): array {
             ],
         ],
     ];
+    if ($with_memory) return $defs;
+    return array_values(array_filter($defs,
+        fn($t) => !in_array($t['name'], ['wiki_remember', 'wiki_recall', 'wiki_forget'], true)));
 }
 
-function get_wiki_tools($provider) {
-    $tools_def = wiki_tool_definitions();
+function get_wiki_tools($provider, bool $with_memory = true) {
+    $tools_def = wiki_tool_definitions($with_memory);
     $family = llm_family($provider);
     if ($family === 'anthropic') {
         return array_map(fn($t) => [
@@ -213,7 +260,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
         $rows = [];
         foreach ($all as $id => $data) {
             if (!isset($data['path']) || !in_array(pathinfo($data['path'], PATHINFO_EXTENSION), WIKI_AI_SEARCH_EXTS, true)) continue;
-            if (wiki_is_template_path($data['path'])) continue;
+            if (wiki_is_template_path($data['path']) || wiki_is_memory_path($data['path'])) continue;
             $upd = (int)($data['updated'] ?? 0);
             if ($cutoff && $upd < $cutoff) continue;
             if (!$has_all_tags($data['tags'] ?? [])) continue;
@@ -235,7 +282,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
         try {
             $search_idx = new SearchIndex();
             foreach ($search_idx->search($query, [$space_name], false) as $row) {
-                if (wiki_is_template_path($row['path'])) continue;
+                if (wiki_is_template_path($row['path']) || wiki_is_memory_path($row['path'])) continue;
                 $page_id = $indexer->getId($row['path']);
                 if ($page_id === null) continue;
                 if ($cutoff && $updated_of($page_id) < $cutoff) continue;
@@ -257,7 +304,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
 
     foreach ($all as $id => $data) {
         if (!isset($data['path']) || !in_array(pathinfo($data['path'], PATHINFO_EXTENSION), WIKI_AI_SEARCH_EXTS, true)) continue;
-        if (wiki_is_template_path($data['path'])) continue;
+        if (wiki_is_template_path($data['path']) || wiki_is_memory_path($data['path'])) continue;
         if ($cutoff && (int)($data['updated'] ?? 0) < $cutoff) continue;
         if (!$has_all_tags($data['tags'] ?? [])) continue;
         $abs = rtrim($space_dir, '/') . '/' . $data['path'];
@@ -324,7 +371,7 @@ function parse_search_query(string $raw): array {
 // an install with SEARCH_ENGINE=sqlite and invisible on one without it.
 const WIKI_AI_SEARCH_EXTS = ['md', 'json'];
 
-const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_add_tags', 'wiki_set_tags', 'wiki_mention_users', 'wiki_rename_page'];
+const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_add_tags', 'wiki_set_tags', 'wiki_mention_users', 'wiki_rename_page', 'wiki_remember', 'wiki_forget'];
 
 /**
  * What an AI tool is about to touch, for the audit log. Same shape as the REST map in
@@ -336,6 +383,11 @@ const WIKI_AI_AUDIT_TOOLS = [
     'wiki_add_tags'      => ['tags',       'path'],
     'wiki_set_tags'      => ['tags',       'path'],
     'wiki_rename_page'   => ['page',       'path'],
+    // A memory is a page write like any other, and an AI writing into somebody's wiki
+    // unattended is exactly what the log is for. The param is a title rather than a
+    // path, so _wiki_ai_audit() resolves it to memory/<slug>.md below.
+    'wiki_remember'      => ['page',       'title'],
+    'wiki_forget'        => ['page',       'title'],
     // Only when it appends to a .md page: a mention posted into a .chat is a chat
     // message, and those are out of scope wherever they come from — see the note on
     // WIKI_AUDIT_ACTIONS in audit.php. Gated on the target's type below rather than
@@ -367,6 +419,35 @@ function wiki_ai_fts_upsert(string $space_dir, string $rel, string $content): vo
     // Never let indexing break the write it is indexing.
     try { (new SearchIndex())->upsertPage(basename(rtrim($space_dir, '/')), $rel, $content); }
     catch (\Throwable $_e) {}
+}
+
+/**
+ * Why a memory tool is unavailable, or '' when it is fine.
+ *
+ * Both switches are named separately in the message because "memory is off" with two
+ * places to look is a support question; this way the model can tell the user which one.
+ */
+function _wiki_memory_guard(string $tool, array $ai_user, string $space_dir): string {
+    if (!wiki_space_dir_memory($space_dir)) {
+        return 'Error: the space "' . basename(rtrim($space_dir, '/'))
+             . '" does not keep AI memories. An administrator can turn that on in Space settings.';
+    }
+    if (!wiki_ai_memory_enabled($ai_user['ai_config'] ?? [])) {
+        return 'Error: learning is switched off for this AI user. An administrator can turn it on '
+             . 'in Admin → AI Users.';
+    }
+    if ($tool !== 'wiki_recall' && ($ai_user['role'] ?? 'reader') === 'reader') {
+        return 'Error: this AI user has read-only (reader) role and cannot write memories.';
+    }
+    return '';
+}
+
+/** A memory lands in git like any other page write. */
+function _wiki_memory_commit(string $space_dir, string $rel, array $ai_user, string $verb): void {
+    git_auto_commit(rtrim($space_dir, '/') . '/' . $rel,
+                    $ai_user['name'] ?? 'AI',
+                    !empty($ai_user['email']) ? $ai_user['email'] : 'ai@wiki.localhost',
+                    $verb . ' ' . basename($rel), $space_dir);
 }
 
 function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir) {
@@ -428,6 +509,10 @@ function _wiki_ai_audit(string $tool, array $input, $ai_user, $indexer, string $
     if (!wiki_audit_enabled() || !isset(WIKI_AI_AUDIT_TOOLS[$tool])) return;
     [$category, $param] = WIKI_AI_AUDIT_TOOLS[$tool];
     $rel = ltrim(str_replace('..', '', (string)($input[$param] ?? '')), '/');
+    // The memory tools take a title, not a path; the page they write is derived from it.
+    if ($tool === 'wiki_remember' || $tool === 'wiki_forget') {
+        $rel = WIKI_MEMORY_DIR . '/' . wiki_memory_slug($rel) . '.md';
+    }
     if ($tool === 'wiki_mention_users' && strtolower(pathinfo($rel, PATHINFO_EXTENSION)) === 'chat') return;
 
     $verb = 'update';
@@ -664,6 +749,47 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             return 'Mentioned ' . implode(', ', $mu_resolved) . ' in ' . $mu_rel
                  . '. They will see it in their My Mentions list.';
 
+        case 'wiki_remember':
+        case 'wiki_recall':
+        case 'wiki_forget': {
+            // Both switches, checked here rather than only at prompt-assembly time: the
+            // tools are not offered when memory is off, but MCP clients and a retried
+            // tool call can name a tool that was never advertised.
+            $mem_err = _wiki_memory_guard($tool_name, $ai_user, $space_dir);
+            if ($mem_err !== '') return $mem_err;
+
+            if ($tool_name === 'wiki_recall') {
+                $hits = wiki_memory_search($space_dir, $indexer,
+                                           (string)($tool_input['query'] ?? ''),
+                                           (int)($tool_input['limit'] ?? 10));
+                if (!$hits) return 'No memories match that. Your memory listing is in the system prompt.';
+                $out = [];
+                foreach ($hits as $h) {
+                    $out[] = ['title' => $h['title'], 'tags' => $h['tags'], 'memory' => $h['text']];
+                }
+                return json_encode($out, JSON_UNESCAPED_SLASHES);
+            }
+
+            $mem_title = trim((string)($tool_input['title'] ?? ''));
+            if ($mem_title === '') return 'Error: "title" is required.';
+
+            if ($tool_name === 'wiki_forget') {
+                $res = wiki_memory_forget($space_dir, $indexer, $mem_title);
+                if (!$res['ok']) return 'Error: ' . $res['error'] . '.';
+                _wiki_memory_commit($space_dir, $res['path'], $ai_user, 'Forget');
+                return 'Forgotten: ' . $mem_title;
+            }
+
+            $res = wiki_memory_write($space_dir, $indexer, $mem_title,
+                                     (string)($tool_input['fact'] ?? ''),
+                                     (array)($tool_input['tags'] ?? []),
+                                     ['uid' => $ai_user['uid'] ?? null, 'name' => $ai_user['name'] ?? 'AI']);
+            if (!$res['ok']) return 'Error: ' . $res['error'] . '.';
+            wiki_ai_fts_upsert($space_dir, $res['path'], (string)($tool_input['fact'] ?? ''));
+            _wiki_memory_commit($space_dir, $res['path'], $ai_user, $res['created'] ? 'Remember' : 'Update memory');
+            return ($res['created'] ? 'Remembered: ' : 'Updated memory: ') . $mem_title;
+        }
+
         case 'wiki_rename_page':
             if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot rename pages.';
             $rn_old = ltrim(str_replace('..', '', (string)($tool_input['path'] ?? '')), '/');
@@ -679,6 +805,12 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             $rn_abs_new = rtrim($space_dir, '/') . '/' . $rn_new;
             if (!is_file($rn_abs_old)) return 'Error: page not found: ' . $rn_old;
             if (file_exists($rn_abs_new)) return 'Error: something already exists at ' . $rn_new;
+            // The page's chat thread comes too, so its destination must be free as well —
+            // refused before anything moves rather than leaving the conversation orphaned
+            // under the old name.
+            if (wiki_page_chat_blocks_move($rn_abs_old, $rn_abs_new)) {
+                return 'Error: a chat thread already exists at ' . wiki_page_chat_sidecar($rn_new) . '.';
+            }
             $rn_parent = dirname($rn_abs_new);
             if (!is_dir($rn_parent)) return 'Error: target folder does not exist: ' . ltrim(dirname($rn_new), '.');
 
@@ -692,6 +824,11 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             // it — the single-page move in api.php does the same.
             if (is_dir($rn_abs_old . '.uploads')) @rename($rn_abs_old . '.uploads', $rn_abs_new . '.uploads');
             if (is_file($rn_abs_old . '.svg'))     @rename($rn_abs_old . '.svg',     $rn_abs_new . '.svg');
+            // And the page's chat thread, which is an indexed page of its own rather than
+            // a plain sidecar — id, FTS row and any queued job addressing it. page_chat.php
+            // is shared with api.php's move so the two renames cannot drift.
+            $rn_chat = wiki_page_chat_move($rn_abs_old, $rn_abs_new, $rn_old, $rn_new,
+                                           $indexer, basename(rtrim($space_dir, '/')));
 
             if (defined('SEARCH_ENGINE') && SEARCH_ENGINE === 'sqlite') {
                 try { (new SearchIndex())->movePage(basename(rtrim($space_dir, '/')), $rn_old, $rn_new); }
@@ -726,9 +863,13 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
 
             $rn_git_name  = $ai_user['name'] ?? 'AI';
             $rn_git_email = !empty($ai_user['email']) ? $ai_user['email'] : 'ai@wiki.localhost';
-            git_move_commit($rn_abs_old, $rn_abs_new, $rn_git_name, $rn_git_email, $space_dir);
+            git_move_commit($rn_abs_old, $rn_abs_new, $rn_git_name, $rn_git_email, $space_dir,
+                            $rn_chat ? [[wiki_page_chat_sidecar($rn_abs_old), wiki_page_chat_sidecar($rn_abs_new)]] : []);
 
             $rn_msg = 'Renamed ' . $rn_old . ' to ' . $rn_new . '. The page keeps its id, tags and attachments.';
+            // Said out loud because the model may have been told to look at the thread next,
+            // and its path is no longer the one it was given.
+            if ($rn_chat) $rn_msg .= ' Its chat thread moved with it, to ' . wiki_page_chat_sidecar($rn_new) . '.';
             if ($rn_fixed > 0)      $rn_msg .= ' Also updated ' . $rn_fixed . ' wikilink(s) that named the old title.';
             elseif ($rn_links > 0)  $rn_msg .= ' ' . $rn_links . ' wikilink(s) elsewhere still name the old title and no longer resolve'
                                              . ' — call again with retarget_links=true to rewrite them, or tell the user.';

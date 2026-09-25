@@ -6,6 +6,71 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.9.11] — 2026-09-25
+
+A security upgrade of the realtime hub, AI users that can remember what they learn, and
+several things that were enforced but never said out loud.
+
+### Security
+- **The bundled Mercure hub is 1.0.2**, which upstream released as a security fix after
+  an audit found ten vulnerabilities, four of them high — including one hub in a
+  multi-hub Caddy process receiving another's private updates, a subscriber able to crash
+  the hub or make it retain gigabytes, and a publisher able to forge subscription events
+  with a path-relative topic. Everyone running the Docker image should update, since the
+  hub ships inside it.
+  - The wiki now speaks the **Mercure 1.0 protocol**, which replaced the bespoke
+    `mercure` JWT claim with an OAuth 2.0 access token (`typ: at+jwt`, `iss`, `aud`,
+    `exp`, `authorization_details`) and URI Template selectors with WHATWG URL Patterns.
+    A 0.x hub answers `401` to every publish, so `tools/install-mercure.sh` refuses one
+    outright, warns for any 1.0.x below 1.0.2, and refuses 1.0.1 by name — it was tagged
+    but never built.
+  - **Bare-metal installs must re-run `sudo ./tools/install-mercure.sh 1.0.2`.** The
+    three new constants it writes (`MERCURE_ISSUER`, `MERCURE_RESOURCE_ID`,
+    `MERCURE_COOKIE_NAME`) default to the same values the installer uses, so an untouched
+    `config.php` keeps working. Docker installs need nothing.
+  - Space isolation on the push channel was re-verified end to end against a real 1.0.2
+    hub: a Space-restricted ticket receives its own Spaces, root-level content and its own
+    user topics, and is refused everything else.
+
+### Added
+- **AI memory.** An AI user can keep what it learns, as ordinary Markdown pages in a
+  `memory/` folder inside the space — one fact per page, listed back to it on every run,
+  and readable, correctable and deletable by anyone who can read the space. Switched on
+  per space (Space settings → AI) and per AI user (Admin → AI Users → Learning, with a
+  wiki-wide default). Memories never leave the space they were learned in, are kept out
+  of ordinary search, the graph and mention notifications, and every write is audited.
+  Replaces a five-step convention that routed the wiki back through its own MCP server.
+- **Admin → Monitoring → Wiki Info.** Every version this install is actually running:
+  the wiki, PHP, SQLite, the search engine, the Mercure hub, every Composer package, the
+  PHP extensions each feature needs — and, from the browser, the CDN libraries with the
+  pin each was asked for beside what it resolved to. Three of those float, so their
+  version cannot be read from the source tree at all.
+- **Tab indents in the Markdown editor**, Shift+Tab outdents, and a multi-line selection
+  moves as a block. Esc then Tab moves the focus, so the editor is not a keyboard trap.
+  A tab is four columns wide rather than the CSS default of eight.
+- **A page chat can be swapped between its two presentations** — a panel beside its page,
+  or the thread open as a page — with a button in each view. The button is absent for a
+  thread that belongs to no page, which is also how you can tell the two apart.
+- **Space settings is grouped into tabs** (General, Content, AI, Advanced), and the
+  dialog is 200px shorter now that no pane has to hold every setting.
+
+### Fixed
+- **Renaming a page takes its chat thread with it.** Nothing records that `Notes.chat`
+  belongs to `Notes.md` — the pairing is the filename — so renaming the page silently
+  orphaned the conversation under the old name. The thread now moves with the page,
+  keeping its id, its search entry and any queued job addressing it, in the same commit;
+  a name collision refuses the whole rename rather than half-applying it. Covers both the
+  UI and the `wiki_rename_page` tool.
+- **Read-only spaces now say what they have always enforced.** Metadata editing and AI
+  memory were already refused in a frozen space; the Content and AI tabs said nothing
+  about it, so their settings read as though they still applied.
+- The space settings sections lost their spacing when the dialog gained tabs.
+
+### Changed
+- `marked` now resolves to 18.x and `mermaid` to 11.17 — both verified to treat a leading
+  tab as one level of list nesting, identically, for the new Tab behaviour.
+
+
 ## [2026.9.10] — 2026-09-23
 
 Two ways the editor could appear to eat what you typed. Both were reported as "typing

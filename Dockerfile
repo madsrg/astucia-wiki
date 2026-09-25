@@ -48,7 +48,7 @@ RUN apk add --no-cache nginx supervisor git tzdata shadow sqlite-libs \
 # oblige everyone who runs this image to publish those changes to their own users. The
 # wiki itself is unaffected either way: upstream states the licence "applies only to the
 # hub server itself, not to software using this hub", and it runs as a separate process.
-ARG MERCURE_VERSION=0.24.2
+ARG MERCURE_VERSION=1.0.2
 ARG TARGETARCH
 RUN set -eux; \
     case "$TARGETARCH" in \
@@ -64,7 +64,11 @@ RUN set -eux; \
     mkdir -p /usr/share/licenses/mercure; \
     cp mercure/LICENSE mercure/COPYRIGHT /usr/share/licenses/mercure/; \
     rm -rf /tmp/mercure /tmp/mercure.tar.gz; \
-    mercure --version
+    mercure --version; \
+    # Stamped so Admin → Wiki Info can report the hub that is actually here. The hub
+    # advertises no version over HTTP, and the build ARG is not readable at runtime.
+    mkdir -p /usr/local/share/astucia; \
+    mercure --version | head -1 > /usr/local/share/astucia/mercure.version
 
 # Fail the build rather than ship an image that is missing something the app
 # needs at runtime: pdo_sqlite for FTS search, curl for the LLM and MCP clients,

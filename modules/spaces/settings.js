@@ -67,6 +67,42 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onRead
     const body = el('div', 'space-settings-body');
     content.appendChild(body);
 
+    // ── Tabs ──────────────────────────────────────────────────────────────────
+    //
+    // Five sections had already pushed this dialog past its box once (see the
+    // `.space-settings-content` note in CLAUDE.md); memory is the sixth. Grouping beats
+    // growing it again — a taller box runs out of viewport, and scrolling past four
+    // settings to reach the fifth is how the Close button ended up off-screen before.
+    //
+    // The bar reuses the admin panel's `.admin-tab-bar` / `.admin-tab`, rather than a
+    // second tab system that would have to be kept looking like the first.
+    //
+    // **Every pane stays in the DOM**, hidden rather than removed. Freezing a space
+    // disables merging it, and that coupling now crosses a tab boundary — with the nodes
+    // always present, `refreshMerge()` keeps working exactly as it did when the two
+    // sections were neighbours.
+    const tabBar = el('div', 'admin-tab-bar');
+    body.appendChild(tabBar);
+    const panes = {};
+    const pane = (name, labelKey, isFirst = false) => {
+        const btn = el('button', 'admin-tab' + (isFirst ? ' active' : ''), t(labelKey));
+        btn.dataset.tab = name;
+        tabBar.appendChild(btn);
+        const box = el('div', 'space-settings-pane' + (isFirst ? '' : ' hidden'));
+        body.appendChild(box);
+        panes[name] = box;
+        btn.addEventListener('click', () => {
+            tabBar.querySelectorAll('.admin-tab').forEach(b => b.classList.toggle('active', b === btn));
+            Object.entries(panes).forEach(([k, v]) => v.classList.toggle('hidden', k !== name));
+        });
+        return box;
+    };
+    pane('general',  'spaces.settings.tab-general', true);
+    pane('content',  'spaces.settings.tab-content');
+    pane('ai',       'spaces.settings.tab-ai');
+    pane('advanced', 'spaces.settings.tab-advanced');
+
+
     // ── Rename ────────────────────────────────────────────────────────────────
     const renameSec = section(t('spaces.settings.rename-title'), t('spaces.settings.rename-hint'));
     const renameRow = el('div', 'space-settings-row');
@@ -77,7 +113,7 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onRead
     renameRow.appendChild(renameInput);
     renameRow.appendChild(renameBtn);
     renameSec.appendChild(renameRow);
-    body.appendChild(renameSec);
+    panes.general.appendChild(renameSec);
 
     renameBtn.addEventListener('click', async () => {
         const next = renameInput.value.trim();
@@ -105,7 +141,7 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onRead
     roRow.appendChild(roBox);
     roRow.appendChild(el('span', '', t('spaces.settings.readonly-label')));
     roSec.appendChild(roRow);
-    body.appendChild(roSec);
+    panes.general.appendChild(roSec);
 
     roBox.addEventListener('change', async () => {
         const want = roBox.checked;
@@ -121,8 +157,12 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onRead
         self.readonly = want;
         showToast(want ? t('spaces.settings.readonly-on', { name: spaceName })
                        : t('spaces.settings.readonly-off', { name: spaceName }), 'success');
-        // A frozen space cannot be merged into or away, so the merge section follows.
+        // A frozen space cannot be merged into or away, so the merge section follows —
+        // and neither metadata editing nor remembering does anything while it is frozen,
+        // which the other two panes say for themselves. All of them are in the DOM
+        // whichever tab is open, so this reaches them without switching tabs.
         refreshMerge();
+        refreshFrozen();
         onReadOnly?.(spaceName, want);
     });
 
@@ -143,7 +183,7 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onRead
     fmSel.value = self.fm_edit || 'off';
     fmRow.appendChild(fmSel);
     fmSec.appendChild(fmRow);
-    body.appendChild(fmSec);
+    panes.content.appendChild(fmSec);
 
     fmSel.addEventListener('change', async () => {
         const want = fmSel.value;
@@ -181,7 +221,7 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onRead
     // The consequence spelled out, because it is the one surprise in the feature: those
     // four fields stop being the author's, and a hand-edited value is overwritten.
     stampSec.appendChild(el('p', 'pref-hint', t('spaces.settings.stamp-warn')));
-    body.appendChild(stampSec);
+    panes.content.appendChild(stampSec);
 
     stampSel.addEventListener('change', async () => {
         const want = stampSel.value;
@@ -199,6 +239,73 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onRead
         onFmStamp?.(spaceName, want);
     });
 
+    // ── AI memory ─────────────────────────────────────────────────────────────
+    //
+    // Per space because the *store* is per space: memories are pages in `memory/` inside
+    // this space, which is what keeps them inside the isolation every other read already
+    // obeys. One shared memory space would be a channel between Spaces.
+    //
+    // This is half the switch — an AI User also has to have learning on. The hint says
+    // so, because "memory is off" with two places to look is otherwise a support call.
+    const memSec = section(t('spaces.settings.memory-title'), t('spaces.settings.memory-hint'));
+    const memRow = el('label', 'space-settings-switch-row');
+    const memBox = el('input', 'space-settings-switch');
+    memBox.type = 'checkbox';
+    memBox.checked = !!self.memory;
+    memRow.appendChild(memBox);
+    memRow.appendChild(el('span', '', t('spaces.settings.memory-label')));
+    memSec.appendChild(memRow);
+    // What is actually in there, so turning it off is an informed decision rather than a
+    // guess about whether anything would be stranded.
+    const memCount = el('p', 'pref-hint', self.memories
+        ? t('spaces.settings.memory-count', { n: self.memories })
+        : t('spaces.settings.memory-empty'));
+    memSec.appendChild(memCount);
+    panes.ai.appendChild(memSec);
+
+    memBox.addEventListener('change', async () => {
+        const want = memBox.checked;
+        memBox.disabled = true;
+        const res = await api.call('admin_set_space_memory',
+            { space_name: spaceName, memory: want ? '1' : '0' }, 'POST');
+        memBox.disabled = false;
+        if (!res.success) {
+            memBox.checked = !want;                      // the server is the truth
+            showToast(res.message || t('spaces.settings.memory-failed'), 'error');
+            return;
+        }
+        self.memory = want;
+        showToast(t('spaces.settings.fm-saved'), 'success');
+    });
+
+    // Freezing a space already stops both of these at the server — metadata editing
+    // through `set_frontmatter` being an `$edit_action`, and remembering through
+    // WIKI_AI_WRITE_TOOLS. What it does not do is *say so*: the settings stay on, so the
+    // dialog reads as though they still apply. The Advanced tab has always told the truth
+    // here ("This space is read-only. Turn that off before merging it away."), and these
+    // two now do the same — and sit *below* the settings they are about, where the
+    // merge status already sits, rather than above them where a pane opens with a
+    // caveat before it has said what the caveat is about.
+    //
+    // A note rather than a disabled control. These are policy, not content, and setting
+    // the policy of a space you intend to unfreeze later is a real thing to want —
+    // `create_space` / `rename_space` are exempt from the freeze for the same reason.
+    // Disabling them would take away a capability in order to restate a rule the server
+    // already enforces.
+    const frozenNotes = [];
+    const frozenNote = (paneName, key) => {
+        const el_ = el('p', 'space-settings-status is-blocked', t(key));
+        panes[paneName].appendChild(el_);
+        frozenNotes.push(el_);
+        return el_;
+    };
+    const refreshFrozen = () => {
+        frozenNotes.forEach(n => n.classList.toggle('hidden', !self.readonly));
+    };
+    frozenNote('content', 'spaces.settings.frozen-fm');
+    frozenNote('ai',      'spaces.settings.frozen-memory');
+    refreshFrozen();   // they are built shown, so a space that is not frozen hides them now
+
     // ── Merge ─────────────────────────────────────────────────────────────────
     const mergeSec = section(t('spaces.settings.merge-title'), t('spaces.settings.merge-hint'));
     const mergeRow = el('div', 'space-settings-row');
@@ -209,7 +316,7 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onRead
     mergeSec.appendChild(mergeRow);
     const mergeStatus = el('div', 'space-settings-status');
     mergeSec.appendChild(mergeStatus);
-    body.appendChild(mergeSec);
+    panes.advanced.appendChild(mergeSec);
 
     const candidates = spaces.filter(s => s.name !== spaceName);
     if (!candidates.length) {

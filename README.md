@@ -13,10 +13,12 @@ Astucia Wiki combines several content types in one place:
 - **AI assistants** — per-space AI users (Claude, GPT, or any OpenAI-compatible model) that respond to #mentions in chat and can read and write wiki pages
 - **AI agent jobs** — scheduled or on-demand jobs that run an AI user against a prompt and optionally write the result to a wiki page, plus one-off `/aiJob` requests queued from the chat prompt for long, reasoning-heavy work that answers back in the thread when it finishes
 - **MCP server** — exposes the wiki's tools over the Model Context Protocol so external AI agents and MCP clients can list, search, read, write, tag, and traverse related pages
+- **MCP client** — the same protocol in the other direction: register an external MCP server once and your AI users can call its tools alongside the built-in `wiki_*` ones, so an AI user can search vendor documentation, query a ticket tracker, or read another Astucia Wiki while answering
 - **Knowledge graph** — interactive graph of how pages connect, combining explicit `pageid` links, folder hierarchy (parent/child/sibling pages), and shared tags; view the whole space or focus on one page's neighbourhood, with backlinks and related-page discovery
 - **File attachments** — drag-and-drop upload stored per-page, plus dedicated file-library folders
 - **Full-text search** — keyword search and tag cloud across all content; optional SQLite FTS5 engine adds relevance ranking, highlighted snippets, prefix matching, and cross-space search; an advanced search builder saves reusable queries as pages
 - **Page chat** — each Markdown page can have its own chat thread alongside the content
+- **AI memory** — AI users can remember what they learn, as ordinary Markdown pages in the space's `memory/` folder: one fact per page, listed back to them on every run, and readable, correctable and deletable by anyone who can read the space
 - **Navigation & discovery** — file tree and folder-browse panes, per-page table of contents, backlinks, and "my mentions" / "my comments" views
 - **Page sharing** — email a link to any page (when email is configured)
 - **Daily updates** — opt-in daily digest email summarising pages created or updated in the last 24 hours across the spaces you can access
@@ -141,6 +143,42 @@ Create a system user in the admin panel, copy the generated token, and use it in
 
 The wiki also speaks the [Model Context Protocol](https://modelcontextprotocol.io). Point any MCP client (Claude Desktop, IDE agents, custom tooling) at `mcp.php` and it can call the same `wiki_*` tools listed above over JSON-RPC 2.0 (Streamable HTTP transport). Authentication uses the same service tokens as the REST API — an AI user's `wk_ai_…` token or a system user's `wk_sys_…` token as `Authorization: Bearer <token>`. Add `?space=SpaceName` to target a specific Space (omit for the default). Role and per-Space access control apply exactly as they do everywhere else. An in-app **MCP Tool Explorer** (admin/editor sidebar) lets you try the tools interactively.
 
+### MCP client
+
+The wiki is also an MCP **client**, so the tools an AI user can reach are not limited to the
+wiki's own. Register a server once in **Admin → MCP Servers** (stored in
+`WIKI_SYSTEM_DATA/mcp_servers.json`) and tick it on each AI user that should be allowed to
+call it; its tools then appear beside the `wiki_*` tools in the same agent loop. This works
+on all three AI paths — an inline chat reply, a one-off `/aiJob`, and a scheduled agent job.
+
+- **Transport** — JSON-RPC 2.0 over HTTP (the Streamable HTTP handshake: `initialize`, any
+  `Mcp-Session-Id` the server assigns, `notifications/initialized`, then `tools/list` and
+  `tools/call`). Stateless servers that return no session id work unchanged.
+- **Authentication** — an optional token, sent as `Authorization: Bearer <token>` by
+  default. Both parts are configurable, so a server wanting `X-API-Key: <raw token>` is a
+  matter of setting the header name and clearing the scheme. Arbitrary **extra headers** can
+  be sent alongside it, for a gateway such as a Cloudflare Access tunnel that needs
+  `CF-Access-Client-Id` / `CF-Access-Client-Secret`. **Test Connection** on the server form
+  lists the tools it advertises.
+- **Remote tool names are namespaced** as `servername__toolname`, so a remote tool can never
+  collide with a built-in `wiki_*` tool or with another server's tool of the same name —
+  which matters immediately if you point one Astucia Wiki at another's `mcp.php`.
+- **Instructions live with the server, not with each AI user.** A server carries *Shared
+  instructions* describing itself ("dates are ISO-8601", "call `list_projects` before
+  `get_project`") that are sent to every AI user that enables it; an AI user can add a note
+  covering only what is true of that AI ("you are read-only here"). Both are sent when both
+  are filled in, server first — so ten AI users sharing a server need one copy of the text,
+  edited in one place.
+- **`src:<slug>` forces a server.** Putting `src:jira` in a chat message or an agent-job
+  prompt restricts that reply to that server's tools — a deterministic alternative to the
+  free-text instructions, which only hint.
+- **Saved searches can query an MCP server.** A `.search` page can run against a remote
+  server instead of the local index; the search tool and its query argument are auto-detected
+  (a tool named like search/find/query, an argument named `query`) or named explicitly.
+  Marking a server as **"This server is an Astucia Wiki"** additionally enables `tag:` and
+  `updated:` filters and renders native page results, which is federated search across two
+  wikis.
+
 ### AI agent jobs
 
 An agent job runs an AI user against a prompt in the background, with the wiki tools available, so it can read and write pages on its own. There are two kinds:
@@ -162,6 +200,28 @@ Keep `AGENT_JOB_RUNNER_INTERVAL_MINUTES` in `config.php` equal to the cron inter
 
 Which model an AI user runs matters here: reasoning-capable models (Claude Opus/Sonnet 4.6 and newer, OpenAI o-series and GPT-5) are asked to think at length for one-off jobs, while older models simply run the prompt normally. Per-model request rules live in `llm_providers.json` under `model_rules` and can be adjusted without code changes.
 
+### AI memory
+
+An AI user can keep what it learns. Switch it on in two places — **Space settings → AI** decides whether that space keeps memories at all, and **Admin → AI Users → Learning** decides whether a given AI keeps any (with a wiki-wide default for "use the house setting"). Nothing else to configure: no separate memory store, no vector database, no service token.
+
+A memory is a page. They live in a `memory/` folder inside the space, one fact per page, created the first time something is remembered:
+
+```
+Team/
+  memory/
+    Deploys go out on Thursday afternoons.md
+    Rita owns the billing integration.md
+```
+
+Each one carries who formed it and when, and is tagged rather than filed into subfolders — a wrong tag still turns up in search, while a wrong folder is a fact that is never found again. The AI sees the list of titles in every run, so it knows what it knows, and reads the full text of one only when it matters.
+
+Because memories are pages, you can open the folder and read exactly what an AI believes, correct it, or delete it; the changes are in git like any other edit. They are deliberately kept out of ordinary search results, the knowledge graph and mention notifications, so a few hundred remembered facts do not drown everything else.
+
+Two properties worth knowing:
+
+- **Memories never leave the space they were learned in.** There is no shared pool — an AI working in one space cannot read what was learned in another, which keeps the push to remember things from quietly becoming a way around Space permissions.
+- **Nothing is remembered silently.** The AI is told it may record decisions, preferences and conventions, and every write is an audited page write. Switching Learning off for one AI overrides the wiki-wide default, so an AI you exempt stays exempt.
+
 ## Realtime updates
 
 Turned on with `ENABLE_REALTIME`, the wiki pushes changes over a single SSE connection instead of leaving the UI to poll: a chat message, a page edit or a finished agent job reaches an open browser in a fraction of a second rather than after the next tick. Every poller keeps its timer as a slower safety net, so `ENABLE_REALTIME=false` behaves exactly like every release before the feature existed.
@@ -169,10 +229,12 @@ Turned on with `ENABLE_REALTIME`, the wiki pushes changes over a single SSE conn
 Push is served by a [Mercure](https://mercure.rocks) hub. The Docker image ships one and starts it automatically. On a bare install, `tools/install-mercure.sh` does the whole job — it downloads the release and verifies its checksum, creates a locked-down service account, generates the shared key, writes the hub config and a hardened systemd unit, starts it and checks that it answers:
 
 ```bash
-sudo ./tools/install-mercure.sh 0.24.2
+sudo ./tools/install-mercure.sh 1.0.2
 ```
 
-It prints every path it writes, and leaves the `config.php` constants (key included) in `/etc/mercure/wiki-config-snippet.php` along with the nginx block you still need. Re-run it with a newer version to upgrade in place; the key is never regenerated, since `config.php` holds a copy. Because an SSE stream occupies one of the browser's ~6 connections per origin, realtime wants **HTTP/2** — that is, TLS at your reverse proxy. It works over HTTP/1.1, but a few open tabs will exhaust the connection budget.
+It prints every path it writes, and leaves the `config.php` constants (key included) in `/etc/mercure/wiki-config-snippet.php` along with the nginx block you still need. Re-run it with a newer version to upgrade in place; the key is never regenerated, since `config.php` holds a copy.
+
+**The hub must be Mercure 1.0.0 or newer, and you want 1.0.2.** 1.0 replaced the protocol's bespoke JWT claim with an ordinary OAuth 2.0 access token, and the wiki signs those — a 0.x hub answers 401 to every publish. The installer refuses a 0.x version rather than leaving you with a hub that looks healthy and delivers nothing, and warns if you ask for an older 1.0.x: **1.0.2 is a security release** fixing ten vulnerabilities, four of them high, so it is the version the image pins and the one to install. (1.0.1 was tagged but never built.) Upgrading an existing install means re-running the script *and* adding the three constants it now writes into the snippet (`MERCURE_ISSUER`, `MERCURE_RESOURCE_ID`, `MERCURE_COOKIE_NAME`); the hub and the wiki have to agree on all three. Docker installs need nothing: the image ships the hub and configures both sides. Because an SSE stream occupies one of the browser's ~6 connections per origin, realtime wants **HTTP/2** — that is, TLS at your reverse proxy. It works over HTTP/1.1, but a few open tabs will exhaust the connection budget.
 
 **Events are hints, not payloads.** An event says *"this thread changed, re-read it"*; it never carries the message. Reading still goes through the API and its guards, so nothing bypasses Space or role permissions, and a subscriber that missed events while disconnected is correct again as soon as it re-reads.
 
@@ -185,9 +247,9 @@ An integration subscribes with the same `wk_sys_…` service token it already us
 TICKET=$(curl -s -H "Authorization: Bearer $WIKI_TOKEN" \
   "https://wiki.example.com/api.php?action=realtime_ticket" | jq -r .token)
 
-# 2. Stream events. 'wiki/{+rest}' means "everything the ticket allows".
+# 2. Stream events. 'wiki/*' is a URL Pattern meaning "everything the ticket allows".
 curl -N -H "Authorization: Bearer $TICKET" \
-  --data-urlencode 'topic=wiki/{+rest}' -G \
+  --data-urlencode 'match_urlpattern=wiki/*' -G \
   "https://wiki.example.com/.well-known/mercure"
 ```
 
@@ -220,7 +282,8 @@ There are five topics, and that set is the contract:
 
 Notes for integrators:
 
-- **The ticket is the permission.** It is minted from the token's Space allowlist and the hub enforces it, so a token restricted to one Space receives only that Space's events — asking for `wiki/{+rest}` cannot widen it.
+- **The ticket is the permission.** It is minted from the token's Space allowlist and the hub enforces it, so a token restricted to one Space receives only that Space's events — asking for `wiki/*` cannot widen it.
+- **Send the ticket as a bearer header.** Mercure 1.0 removed the `authorization` query parameter outright, so a token in the URL is no longer accepted anywhere.
 - **Tickets expire** (`REALTIME_TICKET_TTL`, one hour by default). Mint a fresh one when the stream drops; that is also what makes revoking a Space take effect.
 - **Re-read on reconnect.** There is no replay buffer, by design — refetch whatever you are tracking when you reconnect and you cannot have missed anything.
 - The hub is normally reverse-proxied under the wiki's own origin, which is why the ticket response reports a relative `url`.

@@ -67,6 +67,12 @@ define('MERCURE_JWT_KEY', $env('MERCURE_JWT_KEY', ''));
 define('MERCURE_INTERNAL_URL', $env('MERCURE_INTERNAL_URL', 'http://127.0.0.1:3000'));
 define('MERCURE_PUBLIC_URL', $env('MERCURE_PUBLIC_URL', '/.well-known/mercure'));
 define('REALTIME_TICKET_TTL', (int)$env('REALTIME_TICKET_TTL', '3600'));
+// The three values the wiki and the hub must agree on byte for byte. entrypoint.sh
+// defaults them and writes the same values into the hub's Caddyfile, so overriding one
+// here without overriding it there is the one way to break realtime silently.
+define('MERCURE_ISSUER', $env('MERCURE_ISSUER', 'https://astucia.invalid/wiki'));
+define('MERCURE_RESOURCE_ID', $env('MERCURE_RESOURCE_ID', 'https://astucia.invalid/.well-known/mercure'));
+define('MERCURE_COOKIE_NAME', $env('MERCURE_COOKIE_NAME', 'mercure_access_token'));
 
 // --- External change detection ------------------------------------------------
 // Minimum seconds between filesystem scans for content changed outside the wiki.

@@ -121,6 +121,14 @@ export const init = () => {
             if (isCrossSpace) forgetTab(state.sourcePathToMove);
             else retargetTab(state.sourcePathToMove, newPath);
 
+            // A page's chat thread moves with the page (page_chat.php). Same-space only:
+            // focus is remembered per path with no space in the key, so retargeting a
+            // cross-space move would hand it to a same-named page in the other space.
+            // loadPage() below closes the panel anyway; this is what carries the focus.
+            if (!isCrossSpace) {
+                (await import('../page_chat/index.js')).retargetPanel(movedFrom, newPath);
+            }
+
             if (!isCrossSpace && wasCurrentPage) {
                 // Update state immediately so any active chat poll stops at its next tick
                 // rather than requesting the old (now-moved) path and showing an error toast

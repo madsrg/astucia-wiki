@@ -7,6 +7,125 @@ const getEditor = () => state.editMode === 'inline'
     ? (document.querySelector('.wiki-block.inline-block-editing textarea') ?? document.getElementById('editor-container'))
     : document.getElementById('editor-container');
 
+/**
+ * Is this element one of the two Markdown textareas the editor drives?
+ *
+ * Both of them, because Tab meaning one thing in the full-page editor and another in an
+ * inline block would make the key change meaning as you switch modes. It has to be the
+ * element rather than "a textarea while state.isEditing": a page chat composer is also a
+ * textarea and can be focused while a page is open, and Tab there is focus movement.
+ */
+export const isMarkdownEditor = (el) =>
+    !!el && el.tagName === 'TEXTAREA'
+    && (el.id === 'editor-container' || el.classList.contains('inline-block-textarea'));
+
+/**
+ * What one press of Tab inserts.
+ *
+ * A real tab, not spaces. One press is one nesting level whatever the list marker is, it
+ * survives a round trip through an Obsidian vault, and Shift+Tab can take it back off
+ * without guessing how many characters to eat. Both renderers agree on it: marked (the
+ * browser) and Parsedown (the static export) each treat a leading tab as one level of list
+ * nesting, exactly like two or four spaces.
+ *
+ * The consequence to know: a tab is four columns to CommonMark, so Tab on a line that is
+ * *not* inside a list — a plain paragraph after a blank line — makes it an indented code
+ * block. That is both renderers behaving correctly, and it is what the preview is for.
+ */
+export const INDENT = '\t';
+/** One tab, or up to a tab's worth of spaces, from the front of a line. */
+const OUTDENT_RE = /^(\t| {1,4})/;
+
+/**
+ * Write into the textarea **without destroying the browser's undo stack**.
+ *
+ * `setRangeText()` — what every other helper in this file uses — is a scripted mutation,
+ * and browsers drop the native undo history when one lands. That is tolerable for a
+ * toolbar button pressed now and then; Tab is pressed *while typing*, and an editor where
+ * Ctrl+Z stops working after every indent is worse than no Tab key at all.
+ * `execCommand('insertText')` is deprecated but is still the only way to insert text as if
+ * it had been typed, so it is the first choice and setRangeText is the fallback.
+ *
+ * @returns {boolean} true when the native path was used — in which case the browser has
+ *          already fired `input` and the caller must not fire a second one.
+ */
+const replaceRange = (ed, start, end, text) => {
+    ed.focus();
+    ed.setSelectionRange(start, end);
+    // Not for a pure deletion: insertText('') is not reliably a delete across engines,
+    // and the fallback handles that case correctly.
+    if (text !== '') {
+        try { if (document.execCommand('insertText', false, text)) return true; } catch { /* below */ }
+    }
+    ed.setRangeText(text, start, end, 'end');
+    return false;
+};
+
+/**
+ * Indent (Tab) or outdent (Shift+Tab) whatever the selection touches.
+ *
+ * A caret, or a selection inside a single line, indents like typing a character. Anything
+ * spanning a line break moves every line it touches as a block, which is the case the key
+ * exists for — nesting three bullets at once. Outdent always works on lines, since
+ * removing indentation at the caret is not a thing you can ask for.
+ *
+ * @param {HTMLTextAreaElement} [el] The textarea the key was pressed in. Passed rather
+ *        than resolved, because `getEditor()` answers from `state.editMode` — which is
+ *        the right answer for a toolbar button and a guess here. The event already knows.
+ */
+export const indentLines = (outdent = false, el = null) => {
+    const ed = el || getEditor();
+    if (!ed) return;
+    const value = ed.value;
+    const start = ed.selectionStart;
+    const end   = ed.selectionEnd;
+
+    if (!outdent && !value.slice(start, end).includes('\n')) {
+        const native = replaceRange(ed, start, end, INDENT);
+        const caret = start + INDENT.length;
+        ed.setSelectionRange(caret, caret);
+        if (!native) ed.dispatchEvent(new Event('input', { bubbles: true }));
+        return;
+    }
+
+    const blockStart = value.lastIndexOf('\n', start - 1) + 1;
+    // A selection that ends exactly on a line break ends on the line *before* it; without
+    // this, shift-selecting three whole lines would indent a fourth.
+    const scanFrom = (end > start && value[end - 1] === '\n') ? end - 1 : end;
+    let blockEnd = value.indexOf('\n', scanFrom);
+    if (blockEnd === -1) blockEnd = value.length;
+
+    let firstDelta = 0;
+    let totalDelta = 0;
+    const block = value.slice(blockStart, blockEnd).split('\n').map((line, i) => {
+        let delta = 0;
+        let out = line;
+        if (outdent) {
+            const m = line.match(OUTDENT_RE);
+            if (m) { out = line.slice(m[0].length); delta = -m[0].length; }
+        } else if (line !== '') {
+            // An empty line is left empty. Indenting it would write trailing whitespace
+            // into the file — noise in the diff, and nothing at all in the rendering.
+            out = INDENT + line;
+            delta = INDENT.length;
+        }
+        if (i === 0) firstDelta = delta;
+        totalDelta += delta;
+        return out;
+    }).join('\n');
+
+    // Nothing was indented far enough to give anything back. The key still belongs to the
+    // editor — Shift+Tab at column zero must not fling the focus into the toolbar.
+    if (totalDelta === 0) return;
+
+    const native = replaceRange(ed, blockStart, blockEnd, block);
+    // Keep the same *text* selected rather than snapping out to whole lines, so pressing
+    // Tab twice indents the same thing twice.
+    const from = Math.max(blockStart, start + firstDelta);
+    ed.setSelectionRange(from, start === end ? from : Math.max(from, end + totalDelta));
+    if (!native) ed.dispatchEvent(new Event('input', { bubbles: true }));
+};
+
 // Sets heading level at the start of the current line, replacing any existing heading marker.
 export const insertHeading = (level) => {
     const prefix = '#'.repeat(level) + ' ';

@@ -128,6 +128,40 @@ if [ "$ENABLE_REALTIME" = "true" ]; then
     export MERCURE_JWT_KEY
     export MERCURE_PUBLISHER_JWT_KEY="$MERCURE_JWT_KEY"
     export MERCURE_SUBSCRIBER_JWT_KEY="$MERCURE_JWT_KEY"
+
+    # The three identities the wiki and the hub must agree on, byte for byte: the `iss`
+    # the wiki signs with, the `aud` it targets, and the cookie the browser's ticket
+    # travels in. They are written into both config.php (via the environment) and the
+    # hub's Caddyfile (by substitution, below), so there is one source for the pair.
+    export MERCURE_ISSUER="${MERCURE_ISSUER:-https://astucia.invalid/wiki}"
+    export MERCURE_RESOURCE_ID="${MERCURE_RESOURCE_ID:-https://astucia.invalid/.well-known/mercure}"
+    export MERCURE_COOKIE_NAME="${MERCURE_COOKIE_NAME:-mercure_access_token}"
+
+    # Substituted rather than left as `{env.…}` placeholders: Caddy expands those for
+    # `jwt` but *not* for these three directives, and it does it silently — the hub starts
+    # and trusts an issuer literally called "{env.MERCURE_ISSUER}", so every publish the
+    # wiki makes comes back 401 while the hub looks perfectly healthy.
+    HUB_CFG=/etc/caddy/mercure.Caddyfile
+    sed -i \
+        -e "s|^\(\s*\)issuer .* {|\1issuer $MERCURE_ISSUER {|" \
+        -e "s|^\(\s*\)resource_identifier .*|\1resource_identifier $MERCURE_RESOURCE_ID|" \
+        -e "s|^\(\s*\)cookie_name .*|\1cookie_name $MERCURE_COOKIE_NAME|" \
+        "$HUB_CFG"
+
+    # An unrecognised directive is a hard error since Mercure 1.0, and a hub that will not
+    # start is invisible from the product: every module simply falls back to its slow poll.
+    # Better to say so here than to leave it to Admin -> Monitoring -> Mercure.
+    if ! mercure validate --config "$HUB_CFG" > /tmp/hub-validate.log 2>&1; then
+        log "FATAL: the hub configuration at $HUB_CFG is not valid"
+        sed 's/^/    /' /tmp/hub-validate.log
+        exit 1
+    fi
+    # The build stamped the hub's version; copy it where Admin → Wiki Info looks first,
+    # so an install that mounts its data elsewhere still reports the hub it is running.
+    if [ -f /usr/local/share/astucia/mercure.version ]; then
+        cp /usr/local/share/astucia/mercure.version "${WIKI_SYSTEM_DATA%/}/mercure.version" 2>/dev/null || true
+    fi
+    log "realtime hub configured (issuer $MERCURE_ISSUER)"
 else
     log "realtime disabled (ENABLE_REALTIME=$ENABLE_REALTIME) — the wiki falls back to polling"
     # supervisord reads this to decide whether to start the hub at all.

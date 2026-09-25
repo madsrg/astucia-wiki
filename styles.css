@@ -21,6 +21,12 @@
     --accent-purple: #805ad5;
     --accent-purple-hover: #6b46c1;
     --drag-over-bg: #4299e140;
+    /* How wide a literal tab renders. CSS defaults it to 8, which is a terminal
+       convention rather than a Markdown one and makes one level of list nesting look
+       like three. Set once here because the editor and the rendered page have to agree:
+       a code block that looks different after saving than it did while typing reads as
+       the wiki having changed the text. */
+    --tab-size: 4;
 }
 
 /* ── Font family ────────────────────────────────────────────────────────── */
@@ -171,7 +177,13 @@ body {
 /* Space settings (admin only) */
 .space-settings-btn { background: none; border: none; padding: 2px; margin: -2px -2px -2px 0; cursor: pointer; color: rgba(255,255,255,0.7); border-radius: 4px; display: flex; align-items: center; flex-shrink: 0; }
 .space-settings-btn:hover { background: rgba(255,255,255,0.15); color: white; }
-/* 600 wide x 800 high.
+/* 600 wide x 600 high.
+
+   It was 800 while one scrolling column had to hold every setting. Tabs mean no pane
+   holds more than two, so the box came down 200px: measured at 600, the body's scrollable
+   viewport is 330px and the tallest pane (Content, two settings and the stamping warning)
+   is 275px — every pane fits without scrolling, and a longer translation simply scrolls
+   as it always could.
 
    Two traps, both measured rather than read off the sheet:
 
@@ -183,20 +195,29 @@ body {
    - **This sheet is content-box**, so `width: 600px` plus `.lightbox-content`'s 1.5rem
      padding rendered as 644. `border-box` here makes 600 mean 600.
 
-   The viewport caps stay deliberately: a hard 800px puts the Close button off-screen on
-   anything shorter than a ~940px viewport (a 700px-tall window gives 613px), which is the
-   bug this dialog just had. So it is 800 where there is room and shrinks where there is
-   not — the body scrolls either way. `min-height: 0` on the body is what lets a flex child
-   shrink below its content and therefore scroll at all. */
+   The viewport cap stays deliberately, and matters less at 600 than it did at 800 — a
+   fixed height taller than the window puts the Close button off-screen, which is the bug
+   this dialog once had (800px needed a ~940px viewport; a 700px window gave 613px). So it
+   is 600 where there is room and shrinks where there is not — the body scrolls either
+   way. `min-height: 0` on the body is what lets a flex child shrink below its content and
+   therefore scroll at all. */
 .lightbox-content.space-settings-content {
     box-sizing: border-box;
     width: 600px; max-width: 95vw;
-    height: 800px; max-height: 85vh;
+    height: 600px; max-height: 85vh;
 }
 .space-settings-body {
     display: flex; flex-direction: column; gap: 1.1rem; margin: 0.75rem 0 0.25rem;
     overflow-y: auto; min-height: 0; padding-right: 0.25rem;
 }
+/* The gap above separates the tab bar from the panes; the one here separates the settings
+   *within* a pane. They were the same rule until the dialog gained tabs, at which point
+   the sections stopped being children of the body and lost their spacing entirely —
+   Rename and Read-only ended up stacked with only their own 0.35rem internal gap between
+   them. Wider than the old 1.1rem now that there is room for it: each of these is a
+   separate decision with its own explanatory text, and they read as one block when they
+   are close enough to be mistaken for a single form. */
+.space-settings-pane { display: flex; flex-direction: column; gap: 1.9rem; }
 .space-settings-section { display: flex; flex-direction: column; gap: 0.35rem; }
 .space-settings-title { margin: 0; font-size: 0.85rem; font-weight: 600; }
 .space-settings-hint { margin: 0; font-size: 0.78rem; color: var(--accent-gray); line-height: 1.45; }
@@ -572,6 +593,7 @@ body {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.95rem;
     line-height: 1.6;
+    tab-size: var(--tab-size);
     resize: none;
     box-sizing: border-box;
     border-top-left-radius: 0;
@@ -714,7 +736,7 @@ body {
    scrollbar, and the rest of the block scrolls with it. pre-wrap keeps the block's own
    indentation; only lines too long for the column are broken, and break-word lets that
    happen inside an unbroken token, which is what a long string literal is. */
-#viewer-content pre { background-color: #f6f8fa; border-radius: 3px; padding: 16px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+#viewer-content pre { background-color: #f6f8fa; border-radius: 3px; padding: 16px; overflow: auto; white-space: pre-wrap; word-break: break-word; tab-size: var(--tab-size); }
 #viewer-content pre code { background-color: transparent; padding: 0; }
 #viewer-content table { border-collapse: collapse; }
 #viewer-content th, #viewer-content td { border: 1px solid var(--border-color); padding: 6px 13px; }
@@ -1121,6 +1143,7 @@ body {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.95rem;
     line-height: 1.6;
+    tab-size: var(--tab-size);
     resize: none;
     background: transparent;
     box-sizing: border-box;
@@ -1601,7 +1624,7 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 .chat-bubble-md ul, .chat-bubble-md ol { margin: .25em 0 .4em 1.25em; padding: 0; }
 .chat-bubble-md li { margin-bottom: .15em; }
 .chat-bubble-md h1,.chat-bubble-md h2,.chat-bubble-md h3 { font-size: 1em; font-weight: 700; margin: .4em 0 .2em; }
-.chat-bubble-md pre { background: rgba(0,0,0,.06); border-radius: 4px; padding: .35em .6em; overflow-x: auto; white-space: pre; font-size: .85em; margin: .3em 0; }
+.chat-bubble-md pre { background: rgba(0,0,0,.06); border-radius: 4px; padding: .35em .6em; overflow-x: auto; white-space: pre; font-size: .85em; margin: .3em 0; tab-size: var(--tab-size); }
 .chat-bubble-md code { background: rgba(0,0,0,.06); border-radius: 3px; padding: .1em .3em; font-size: .85em; }
 .chat-bubble-md pre code { background: none; padding: 0; }
 .chat-mention { color: #2b6cb0; font-weight: 600; }
@@ -2019,8 +2042,12 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
     flex-shrink: 0;
 }
 .pc-panel-title { font-size: 0.82rem; font-weight: 600; color: var(--text-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pc-close-btn { background: none; border: none; color: var(--accent-gray); cursor: pointer; font-size: 1.1rem; padding: 0 4px; line-height: 1; }
-.pc-close-btn:hover { color: var(--text-color); }
+/* The header's two buttons — open as a page, and close — share one look; only the
+   glyph differs (an icon vs. a ×, hence the font-size on the close one alone). */
+.pc-panel-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.pc-close-btn, .pc-panel-btn { background: none; border: none; color: var(--accent-gray); cursor: pointer; padding: 0 4px; line-height: 1; display: flex; align-items: center; }
+.pc-close-btn { font-size: 1.1rem; }
+.pc-close-btn:hover, .pc-panel-btn:hover { color: var(--text-color); }
 #pc-messages {
     flex: 1;
     overflow-y: auto;
@@ -2308,6 +2335,17 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 }
 .wiki-tab-menu button:hover { background: #f0f4f8; }
 @media print { .wiki-tabs { display: none; } }
+
+/* Admin -> Monitoring -> Wiki Info. Plain two-column tables, one per area, because the
+   whole pane is "name: value" and anything more structured would be decoration. The note
+   column carries the pin a CDN library was asked for, next to what it resolved to —
+   which is the only reason this pane exists, so it is not tucked into a tooltip. */
+.admin-si-section { margin-bottom: 1.25rem; }
+.admin-si-section h4 { margin: 0 0 0.4rem; font-size: 0.85rem; font-weight: 600; }
+.admin-si-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.admin-si-table td { padding: 3px 8px 3px 0; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+.admin-si-table td:first-child { width: 34%; color: var(--accent-gray); }
+.admin-si-note { color: var(--accent-gray); font-size: 0.72rem; }
 
 /* Admin -> Monitoring -> Mercure. Three separate verdicts rather than one, because the
    halves fail independently; colour carries the state but never alone — each row spells

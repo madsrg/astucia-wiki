@@ -22,6 +22,8 @@ import { state } from '../core/state.js';
 import { t } from '../i18n/index.js';
 import { showToast } from '../core/utils.js';
 
+import { noteLoaded } from '../core/versions.js';
+
 const CYTOSCAPE_SRC = 'https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js';
 let _cyLoader = null;
 let _onNavigate = null;
@@ -54,7 +56,10 @@ const loadCytoscape = () => {
     _cyLoader = new Promise((resolve, reject) => {
         const s = document.createElement('script');
         s.src = CYTOSCAPE_SRC;
-        s.onload = () => resolve(window.cytoscape);
+        s.onload = () => {
+            noteLoaded('cytoscape', window.cytoscape?.version || '');
+            resolve(window.cytoscape);
+        };
         s.onerror = () => reject(new Error('Failed to load cytoscape'));
         document.head.appendChild(s);
     });

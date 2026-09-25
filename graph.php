@@ -64,9 +64,12 @@ class WikiGraph {
     }
 
     // Pages under a Space's top-level templates/ folder are page templates, not
-    // content — excluded from the graph (mirrors wiki_is_template_path()).
+    // content — excluded from the graph (mirrors wiki_is_template_path()). A memory/
+    // page is excluded for the same reason and one more: a few hundred one-line facts
+    // would swamp the graph they are not really part of.
     private function isTemplate(string $path): bool {
-        return str_starts_with(ltrim($path, '/'), 'templates/');
+        $rel = ltrim($path, '/');
+        return str_starts_with($rel, 'templates/') || str_starts_with($rel, 'memory/');
     }
 
     // ---------------------------------------------------------------
