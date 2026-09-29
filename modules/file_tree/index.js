@@ -4,6 +4,7 @@
 import { api } from '../core/api.js';
 import { icons } from '../core/icons.js';
 import { state } from '../core/state.js';
+import { hidePageControls } from '../core/page_chrome.js';
 import { watch, rtTopic } from '../realtime/index.js';
 import { loadFilesFolder, loadFolderView, isFolderViewActive } from '../files_folder/index.js';
 import { showToast, canUpload } from '../core/utils.js';
@@ -188,10 +189,7 @@ export const showFolderPlaceholder = (path) => {
     document.getElementById('files-folder-container').classList.add('hidden');
     document.getElementById('viewer-content').innerHTML = '';
     document.getElementById('diagram-viewer').innerHTML = '';
-    ['tags-container', 'attachments-section', 'page-id-display', 'frontmatter-badge', 'edit-btn',
-     'diagram-edit-btn', 'page-chat-btn', 'chat-dock-btn', 'editor-mode-group', 'toc-btn', 'copy-btn',
-     'backlinks-btn', 'print-btn'].forEach(id =>
-        document.getElementById(id)?.classList.add('hidden'));
+    hidePageControls();
     document.getElementById('page-actions-group').classList.remove('hidden');
     document.getElementById('move-btn').classList.remove('hidden');
 };

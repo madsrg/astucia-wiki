@@ -1,5 +1,8 @@
 <?php
 require_once __DIR__ . '/frontmatter.php';
+// Outright, not behind function_exists: that guard is what made frontmatter_expose_ai
+// answer "off" in mcp.php and the cron runner while reading "on" in a web request.
+require_once __DIR__ . '/settings.php';
 // Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
@@ -19,6 +22,27 @@ require_once __DIR__ . '/frontmatter.php';
 
 // Pages and chats carry mentions. A .list or .drawio cannot.
 const MENTION_EXTS = ['md', 'chat'];
+
+// How far back the list and the badge look. There is no stored mention record — a
+// mention is found by reading content — so "expire" can only mean a cutoff on the scan,
+// and that is what this is: a mention older than the cutoff stops being listed, while
+// the text that contains it is untouched and still turns up in search.
+//
+// It bounds two things at once. The obvious one is noise: on an established wiki
+// `get_mentions` returned every mention that had ever been written, newest first, for
+// ever. The other is cost — the list reads every page and chat in every space the user
+// can read, and the cutoff is applied to the *index entry* before a file is opened, so
+// it is the same pre-filter `$only_new` already uses and it skips the same work.
+//
+// 0 means no limit, which is what every wiki did before this existed.
+const WIKI_MENTION_DAYS_DEFAULT = 90;
+
+/** The cutoff as a unix timestamp, or 0 for "no limit". */
+function wiki_mention_cutoff(): int {
+    $days = (int)wiki_setting('mention_retention_days', WIKI_MENTION_DAYS_DEFAULT);
+    if ($days <= 0) return 0;
+    return time() - ($days * 86400);
+}
 
 // Same rule as wiki_is_template_path(), spelled out here rather than depended on: this
 // file is also loaded by the digest cron, which has no reason to pull in the whole AI
@@ -92,9 +116,15 @@ function wiki_match_ai_mention(string $text, array $users): ?array {
  *                        The cheap path, for the badge.
  * @return array Rows shaped like search results, newest first.
  */
+/**
+ * @param int $cutoff Unix time before which a mention is not reported; 0 for no limit,
+ *                    -1 (the default) to use the wiki's own setting. The daily digest
+ *                    passes its own 24-hour line and wants nothing else applied on top.
+ */
 function wiki_scan_mentions(string $name, int $uid, ?array $allowed_spaces,
-                            int $since = 0, bool $only_new = false): array {
+                            int $since = 0, bool $only_new = false, int $cutoff = -1): array {
     if ($name === '' && $uid <= 0) return [];
+    if ($cutoff < 0) $cutoff = wiki_mention_cutoff();
     $rows = [];
     $name_re = $name !== '' ? '/[@#]' . preg_quote($name, '/') . WIKI_MENTION_END . '/i' : null;
 
@@ -114,6 +144,10 @@ function wiki_scan_mentions(string $name, int $uid, ?array $allowed_spaces,
             // The whole point of the index pre-filter: an untouched file cannot hold a
             // mention the user has not already seen, so it is never opened.
             if ($only_new && $since > 0 && $updated <= $since) continue;
+            // The same pre-filter for the age cutoff, and it is valid for a chat as well
+            // as a page: a thread's index stamp is its last write, so a file untouched
+            // since the cutoff cannot contain a *message* newer than it either.
+            if ($cutoff > 0 && $updated < $cutoff) continue;
 
             $abs = $dir . '/' . ltrim($path, '/');
             if (!is_file($abs)) continue;
@@ -126,6 +160,10 @@ function wiki_scan_mentions(string $name, int $uid, ?array $allowed_spaces,
                 : _mention_hit_page($raw, $name_re, $uid, $name, $since, $updated);
             if ($hit === null) continue;
             if ($only_new && !$hit['is_new']) continue;
+            // And again per row, because a chat is judged per message: a thread written
+            // to yesterday can have named you two years ago, and the pre-filter above
+            // cannot see that. A page has one stamp, so for it this is the same test.
+            if ($cutoff > 0 && (int)($hit['at'] ?: $updated) < $cutoff) continue;
 
             $rows[] = [
                 'id'        => (string)$id,
@@ -210,6 +248,73 @@ function _mention_hit_chat(string $raw, ?string $name_re, int $since): ?array {
         'is_new'  => $is_new,
         'at'      => $latest['at'],
     ];
+}
+
+// --- Announcing a mention as it is written ------------------------------------
+//
+// The badge finds a mention by *scanning* — which is why it is polled, and why a tab
+// with no timer running (a backgrounded one) learns nothing. The scan is unavoidable
+// for finding an old mention, but it is not how the wiki should find out about one it
+// is in the middle of writing: at that moment the text is in hand and the answer costs
+// one regex per user.
+//
+// So the two paths a person can mention somebody through — posting a chat message and
+// saving a page — publish `wiki/user/<uid>/mention` themselves, and the badge's timer
+// becomes the safety net it is everywhere else rather than the only mechanism.
+// `wiki_mention_users` (an AI naming somebody) has published this topic since the topic
+// existed; this is the same event from the two human paths.
+
+/**
+ * Which people a piece of text addresses.
+ *
+ * Both sigils, and the shared `WIKI_MENTION_END` boundary — the same pattern
+ * wiki_scan_mentions() builds per user, so "who does this mention" has one answer
+ * rather than a second one that agrees until it doesn't. AI users are skipped: `#Ai`
+ * routes a request to a model, and there is nobody to notify.
+ *
+ * Reads users.json directly rather than through wiki_all_users(), which lives in
+ * wiki_ai_tools.php — this file is also loaded by the digest cron and by api.php's
+ * bootstrap, neither of which has any reason to pull in the AI tool set.
+ *
+ * @return int[] uids, deduplicated.
+ */
+function wiki_mention_uids_in(string $text): array {
+    if (trim($text) === '') return [];
+    $f = wiki_users_file();
+    if (!$f) return [];
+    $uids = [];
+    foreach ((json_decode((string)file_get_contents($f), true)['users'] ?? []) as $u) {
+        if (!empty($u['is_ai'])) continue;
+        $n = (string)($u['name'] ?? '');
+        $uid = (int)($u['uid'] ?? 0);
+        if ($n === '' || $uid <= 0) continue;
+        if (preg_match('/[@#]' . preg_quote($n, '/') . WIKI_MENTION_END . '/i', $text)) {
+            $uids[$uid] = true;
+        }
+    }
+    return array_keys($uids);
+}
+
+/**
+ * Tell the people this write newly mentions.
+ *
+ * `$before` is what the text said a moment ago, so re-saving a page that has named
+ * Alice since March does not notify her again on every subsequent edit. A chat message
+ * passes '' — a new message is new in its entirety.
+ *
+ * `$exclude_uid` is the author: writing your own name is not a notification, and an AI
+ * user quoting a mention back into the thread is not either.
+ *
+ * Fire-and-forget like every other publish (see wiki_realtime_publish): a save must not
+ * fail because a hint could not be delivered, and the badge's poll still finds it.
+ */
+function wiki_mention_announce(string $after, string $before = '', int $exclude_uid = 0): void {
+    if (!function_exists('wiki_realtime_publish')) return;
+    $fresh = array_diff(wiki_mention_uids_in($after), wiki_mention_uids_in($before));
+    foreach ($fresh as $uid) {
+        if ($uid === $exclude_uid) continue;
+        wiki_realtime_publish(wiki_rt_topic_mention($uid), ['type' => 'mention']);
+    }
 }
 
 // --- Per-user state -----------------------------------------------------------

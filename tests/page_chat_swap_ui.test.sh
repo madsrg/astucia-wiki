@@ -17,6 +17,14 @@
 # direction leaves the state the other one starts from: a dock button that works only
 # the first time would pass two separate one-way tests.
 #
+# It also covers **creating** a thread, which is where the two meet: a page chat is an
+# indexed page like any other and has to reach the sidebar at once. It did not — every
+# other creator in the wiki calls refreshFileTree() and this one never did — so a new
+# thread was invisible until the tree's own poll came round, and `treeEntry()` reads the
+# *rendered* tree for a page's id, so until then the expand button opened the thread
+# with no id at all. Both are asserted, because the visible half is the one that gets
+# reported and the id is the half that quietly breaks `?pageid=` links to it.
+#
 # Chrome is not a test dependency — no chrome means skip, not fail.
 
 set -uo pipefail
@@ -43,6 +51,8 @@ printf '{"topic":"Report","nextMessageId":2,"messages":[{"id":1,"uid":1,"name":"
     > "$WIKI_PAGES/Main/Report.chat"
 printf '{"topic":"Team","nextMessageId":2,"messages":[{"id":1,"uid":1,"name":"Ann","text":"free standing","timestamp":"2026-01-01 10:00:00"}]}' \
     > "$WIKI_PAGES/Main/Team.chat"
+# A page with no thread beside it, so opening its panel has to create one.
+fixture_page 'Main/Fresh.md' '# Fresh'
 
 curl -s "$WIKI_URL/api.php?action=list_spaces" > /dev/null
 curl -s "$WIKI_URL/api.php?action=indexfiles&space=Main" > /dev/null
@@ -120,6 +130,29 @@ setTimeout(async () => {
     stamp();
     out += ' docked=' + title() + '/' + view() + '/' + panel() + '/dock:' + hidden('chat-dock-btn');
 
+    // Creating a thread from a page that has none. Only reached in the `create` run;
+    // the round trip above uses a page whose thread already exists.
+    if (new URLSearchParams(location.search).get('probe') === 'create') {
+      // Space-relative, like every data-path in the tree — `Fresh.chat`, not
+      // `Main/Fresh.chat`. The same trap tabs_ui.test.sh documents for tab paths.
+      const treeHas = (p) => document.querySelector('[data-path="' + p + '"]') ? 'yes' : 'no';
+      out = ' before=' + treeHas('Fresh.chat');
+      await click('page-chat-btn', 600);
+      out += ' asked=' + hidden('page-chat-confirm-lightbox');
+      await click('pcl-confirm-btn', 2000);
+      out += ' panel=' + panel() + ' tree=' + treeHas('Fresh.chat');
+      // The consequence of the tree being stale: treeEntry() had no id to give, so the
+      // thread opened as a page without one.
+      await click('pc-expand-btn', 1600);
+      const idEl = document.getElementById('page-id-display');
+      const idTxt = (idEl?.textContent || '').trim();
+      out += ' opened=' + view() + '/id:' +
+             (idEl?.classList.contains('hidden') ? 'hidden'
+              : (/^ID: \\d+$/.test(idTxt) ? 'real' : idTxt || 'empty'));
+      document.title = 'PROBE' + out;
+      return;
+    }
+
     // The journey as one string. The per-step fields above read well in a failure,
     // but each is satisfiable by standing still: with the expand button dead you never
     // leave the page, so "on the page with the panel open" is *already* true when the
@@ -150,7 +183,7 @@ done
 load() {
     "$CHROME" --headless=new --disable-gpu --no-sandbox --window-size=1280,900 \
         --virtual-time-budget=30000 \
-        --dump-dom "$WIKI_URL/index.php?pageid=$(page_id "$1")&space=Main&probe=swap" \
+        --dump-dom "$WIKI_URL/index.php?pageid=$(page_id "$1")&space=Main&probe=${2:-swap}" \
         > "$WIKI_ROOT/dom.html" 2>/dev/null
     PROBE=$(grep -o '<title>PROBE[^<]*</title>' "$WIKI_ROOT/dom.html" \
             | python3 -c 'import html,sys; sys.stdout.write(html.unescape(sys.stdin.read()))' || true)
@@ -191,6 +224,20 @@ load Team.chat
 assert_not_contains "the probe ran without throwing" 'fatal' "$PROBE"
 assert_contains "the standalone thread is open"      'start=Team/thread/closed' "$PROBE"
 assert_contains "  with no button to dock it"        'dock:hidden'        "$PROBE"
+
+section 'a thread created from a page reaches the sidebar at once'
+load Fresh.md create
+assert_not_contains "the probe ran without throwing" 'fatal' "$PROBE"
+# The positive control: the page really had no thread, so what the tree gains below is
+# the one this run created.
+assert_contains "the page starts without one"   'before=no'       "$PROBE"
+assert_contains "  and is asked before creating" 'asked=shown'    "$PROBE"
+assert_contains "the panel opened"              'panel=open'      "$PROBE"
+assert_contains "the tree has it immediately"   'tree=yes'        "$PROBE"
+# Not cosmetic: the id comes from the rendered tree, so a stale sidebar means the thread
+# opens as a page with nothing in its ID badge.
+assert_contains "and it opens as a page"        'opened=thread'   "$PROBE"
+assert_contains "  carrying its real page id"   'id:real'         "$PROBE"
 
 printf '\n'
 exit $(( ASSERT_FAIL > 0 ))

@@ -3,6 +3,7 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
+import { hidePageControls } from '../core/page_chrome.js';
 import { loadPage } from '../page_view/index.js';
 import { revealAndSelectFile, refreshFileTree } from '../file_tree/index.js';
 import { t } from '../i18n/index.js';
@@ -46,7 +47,12 @@ const fmtDate = (ts) => {
 
 const escHtml = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-const buildResultCard = (page, showSpace) => {
+/**
+ * One result row. Exported because the My Mentions / My Comments dialog renders the
+ * same rows in a lightbox — the same list of pages deserves the same card, and a second
+ * copy would drift the first time one of them gained a badge (`is_new` already is one).
+ */
+export const buildResultCard = (page, showSpace) => {
     const segments   = page.path.replace(/\.(md|drawio|list|chat)$/, '').split('/');
     const name       = segments.pop();
     const folderPath = segments.join(' / ');
@@ -133,19 +139,13 @@ export const displaySearchResults = (title, results, showSpace = false) => {
     document.getElementById('files-folder-container')?.classList.add('hidden');
     document.getElementById('viewer-content').classList.remove('hidden');
 
-    // Clear edit state
-    document.getElementById('tags-container').classList.add('hidden');
-    document.getElementById('attachments-section').classList.add('hidden');
+    // Everything that belongs to the page you were on. One shared list rather than the
+    // subset this function happened to know about — which was missing the chat settings
+    // gear and the knowledge-graph button, so a results list opened carrying both.
+    hidePageControls();
     document.getElementById('page-actions-group').classList.add('hidden');
-    document.getElementById('save-btn').classList.add('hidden');
-    document.getElementById('cancel-btn').classList.add('hidden');
     document.querySelector('.editor-container-wrapper').classList.add('hidden');
     document.getElementById('viewer-container').classList.remove('hidden');
-    document.getElementById('edit-btn').classList.add('hidden');
-    document.getElementById('editor-mode-group')?.classList.add('hidden');
-    document.getElementById('page-chat-btn')?.classList.add('hidden');
-    document.getElementById('chat-dock-btn')?.classList.add('hidden');
-    document.getElementById('toc-btn')?.classList.add('hidden');
     // A results list is not a page, so there is nothing to star. Left alone the button
     // stays visible from whatever page was open before, still lit for *that* page, and
     // clicking it does nothing — currentPageId is null by the line above. Goes through
@@ -202,34 +202,43 @@ export const init = () => {
         const link = e.target.closest('.search-result-link');
         if (!link) return;
         e.preventDefault();
-        const pageId    = link.dataset.id;
-        const linkSpace = link.dataset.space || null;
-
-        // Pass the result's space so get_path_from_id uses the right indexer.
-        const getParams = { pageid: pageId };
-        if (linkSpace && linkSpace !== state.currentSpace) getParams.space = linkSpace;
-        const result = await api.call('get_path_from_id', getParams);
-
-        if (result.success && result.path) {
-            const targetSpace = result.space || (linkSpace !== state.currentSpace ? linkSpace : null);
-            if (targetSpace && targetSpace !== state.currentSpace) {
-                const { switchSpaceSilently } = await import('../spaces/index.js');
-                switchSpaceSilently(targetSpace);
-                await refreshFileTree();
-            }
-
-            const findItem = (items, path) => {
-                for (const item of items) {
-                    if (item.path === path) return item;
-                    if (item.children) { const found = findItem(item.children, path); if (found) return found; }
-                }
-                return null;
-            };
-            const item = findItem(state.fullFileTree, result.path);
-            document.querySelector('.pane-tab[data-pane="pages"]').click();
-            await loadPage(result.path, pageId, item?.tags || []);
-            revealAndSelectFile(result.path);
-            history.pushState({ pageId }, '', `?pageid=${pageId}`);
-        }
+        await openResult(link.dataset.id, link.dataset.space || null);
     });
+};
+
+/**
+ * Open a result by page id, from wherever it was listed.
+ *
+ * Exported for the mentions dialog, which lists the same cards in a lightbox. It is more
+ * than a loadPage() call — the target can be in another Space, which has to be switched
+ * to and its tree loaded before the page's tags can be found — so a second copy in the
+ * dialog would be the interesting half of this module written twice.
+ */
+export const openResult = async (pageId, linkSpace = null) => {
+    if (!pageId) return;
+    // Pass the result's space so get_path_from_id uses the right indexer.
+    const getParams = { pageid: pageId };
+    if (linkSpace && linkSpace !== state.currentSpace) getParams.space = linkSpace;
+    const result = await api.call('get_path_from_id', getParams);
+    if (!result.success || !result.path) return;
+
+    const targetSpace = result.space || (linkSpace !== state.currentSpace ? linkSpace : null);
+    if (targetSpace && targetSpace !== state.currentSpace) {
+        const { switchSpaceSilently } = await import('../spaces/index.js');
+        switchSpaceSilently(targetSpace);
+        await refreshFileTree();
+    }
+
+    const findItem = (items, path) => {
+        for (const item of items) {
+            if (item.path === path) return item;
+            if (item.children) { const found = findItem(item.children, path); if (found) return found; }
+        }
+        return null;
+    };
+    const item = findItem(state.fullFileTree, result.path);
+    document.querySelector('.pane-tab[data-pane="pages"]').click();
+    await loadPage(result.path, pageId, item?.tags || []);
+    revealAndSelectFile(result.path);
+    history.pushState({ pageId }, '', `?pageid=${pageId}`);
 };

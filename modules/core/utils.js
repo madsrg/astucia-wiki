@@ -5,6 +5,41 @@ import { state } from './state.js';
 // i18n imports only its locale files, so this is a leaf dependency, not a cycle.
 import { t } from '../i18n/index.js';
 
+/**
+ * Send links that leave this wiki to a new tab.
+ *
+ * Applied to rendered Markdown wherever it lands — a page, a transclusion, the inline
+ * editor's preview, an AI's chat bubble. An internal link is navigation within a
+ * document you are reading and belongs in the same tab; an external one is a departure,
+ * and following it in place loses the page, the scroll position and, in an editor, the
+ * draft.
+ *
+ * What counts as external is **a different origin**, not "starts with http". A wiki's
+ * own absolute links, `?pageid=` links, `getfile.php` attachments and wikilink hrefs are
+ * all same-origin and are left exactly alone. So are `mailto:`, `tel:` and in-page `#`
+ * anchors, which do not navigate anywhere a tab could hold — `new URL()` resolves the
+ * href against the document, so a relative path simply comes back same-origin.
+ *
+ * `rel="noopener noreferrer"` goes on with it. Browsers imply `noopener` for
+ * `target="_blank"` now, but page content here is author-written and a wiki can be
+ * mirroring somebody else's Markdown, so the guarantee is stated rather than inherited.
+ *
+ * Idempotent, and it has to be: the page-view renderers run off a MutationObserver that
+ * sees its own output. An anchor that already carries a target is not touched, so an
+ * author who wrote `<a target="_self">` keeps it.
+ */
+export const externalizeLinks = (root) => {
+    if (!root) return;
+    root.querySelectorAll('a[href]:not([target])').forEach(a => {
+        let url;
+        try { url = new URL(a.getAttribute('href'), document.baseURI); } catch { return; }
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+        if (url.origin === location.origin) return;
+        a.target = '_blank';
+        a.rel = a.rel ? `${a.rel} noopener noreferrer` : 'noopener noreferrer';
+    });
+};
+
 let toastTimeout;
 
 export const showToast = (message, type = 'info') => {

@@ -13,7 +13,10 @@
 
 import { state } from '../core/state.js';
 import { t } from '../i18n/index.js';
-import { icons } from '../core/icons.js';
+// One table for "what is this file" — these two panes had their own, three extensions
+// short, so a data page or a saved search was listed under a plain-page icon with its
+// extension still on the name.
+import { pathIcon, stripExt } from '../core/page_types.js';
 
 const RECENTS_KEY   = 'wiki_recents';
 const FAVORITES_KEY = 'wiki_favorites';
@@ -23,22 +26,11 @@ let _availableSpaces = null; // null = not yet loaded; array = known valid space
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const iconForPath = (path) => {
-    if (!path) return icons.file;
-    if (path.endsWith('.drawio')) return icons.diagram;
-    if (path.endsWith('.list'))   return icons.list;
-    if (path.endsWith('.chat'))   return icons.chat;
-    return icons.file;
-};
-
 /**
  * Given a page path like "SpaceName/Folder/Subfolder/PageName.md",
  * strips the folder prefix and extension to return just "PageName".
  */
-const pageTitle = (path) => {
-    const basename = path.split('/').pop() || path;
-    return basename.replace(/\.(md|drawio|list|chat)$/, '');
-};
+const pageTitle = (path) => stripExt(path.split('/').pop() || path);
 
 const loadRecents = () => {
     try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]'); } catch { return []; }
@@ -217,12 +209,16 @@ const renderRecentPane = () => {
 
         const iconEl = document.createElement('span');
         iconEl.className = 'nav-pane-item-icon';
-        iconEl.innerHTML = iconForPath(entry.path);
+        iconEl.innerHTML = pathIcon(entry.path);
         li.appendChild(iconEl);
 
         const nameEl = document.createElement('span');
         nameEl.className = 'nav-pane-item-name';
-        nameEl.textContent = entry.title;
+        // From the path, not the stored `title`: that is a snapshot taken when the row
+        // was written, so a row already in localStorage would keep showing "Data.json"
+        // for as long as it survived. `title` is still written, for a reader of the
+        // stored shape.
+        nameEl.textContent = pageTitle(entry.path || '');
         li.appendChild(nameEl);
 
         // Show space badge when in a different space that is known to be valid
@@ -311,12 +307,16 @@ const renderSavedPane = () => {
 
         const iconEl = document.createElement('span');
         iconEl.className = 'nav-pane-item-icon';
-        iconEl.innerHTML = iconForPath(entry.path);
+        iconEl.innerHTML = pathIcon(entry.path);
         li.appendChild(iconEl);
 
         const nameEl = document.createElement('span');
         nameEl.className = 'nav-pane-item-name';
-        nameEl.textContent = entry.title;
+        // From the path, not the stored `title`: that is a snapshot taken when the row
+        // was written, so a row already in localStorage would keep showing "Data.json"
+        // for as long as it survived. `title` is still written, for a reader of the
+        // stored shape.
+        nameEl.textContent = pageTitle(entry.path || '');
         li.appendChild(nameEl);
 
         // Show space badge when in a different space that is known to be valid

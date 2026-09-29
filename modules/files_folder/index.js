@@ -3,6 +3,7 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
+import { hidePageControls } from '../core/page_chrome.js';
 import { icons } from '../core/icons.js';
 import { showToast, confirmModal, canUpload } from '../core/utils.js';
 import { t } from '../i18n/index.js';
@@ -83,11 +84,7 @@ const showListingPane = (mode) => {
     document.querySelector('.editor-container-wrapper')?.classList.add('hidden');
     document.getElementById('files-folder-container').classList.remove('hidden');
 
-    ['page-id-display', 'frontmatter-badge', 'diagram-edit-btn', 'editor-mode-group', 'save-btn', 'cancel-btn',
-     'search-btn', 'page-meta-row', 'copy-btn', 'backlinks-btn', 'print-btn', 'toc-btn',
-     'page-chat-btn', 'share-btn', 'chat-topic-btn', 'chat-dock-btn', 'graph-focus-btn', 'git-history-btn',
-     'git-commit-toggle-btn', 'git-snapshot-btn'].forEach(id =>
-        document.getElementById(id)?.classList.add('hidden'));
+    hidePageControls();
 
     const editBtn = document.getElementById('edit-btn');
     editBtn.classList.add('hidden');

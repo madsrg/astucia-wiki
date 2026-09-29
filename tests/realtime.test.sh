@@ -456,6 +456,74 @@ else
     _fail "page events are capped" "got ${page_pubs} of them"
 fi
 
+# ── a mention, the moment it is written ─────────────────────────────────────
+# Until this existed, `wiki/user/<uid>/mention` fired for exactly one thing: an AI
+# calling wiki_mention_users. A *person* typing "@Ed" was found only by the badge's
+# scan on its next poll — and a backgrounded tab runs no poll, which is precisely the
+# case the tab-title counter is for. So the two human paths publish it themselves.
+#
+# The assertions are about which uid is told, not merely that something was published:
+# telling the wrong person is worse than telling nobody.
+section 'posting a chat message tells the person it names'
+printf '{"topic":"Talk","nextMessageId":1,"messages":[]}' > "$WIKI_PAGES/Main/Talk.chat"
+get_as "$ADMIN" 'api.php?action=indexfiles&space=Main' > /dev/null
+clear_pubs
+r=$(post_as "$ADMIN" 'api.php?action=post_chat_message&space=Main' 'file=Talk.chat&text=can you look, @Ed')
+assert_contains "the message posted"        '"success":true'                  "$r"
+assert_contains "Ed is told"                'topic=wiki%2Fuser%2F2%2Fmention' "$(posts)"
+assert_not_contains "and nobody else is"    'wiki%2Fuser%2F3%2Fmention'       "$(posts)"
+
+section 'saving a page tells the person it names'
+clear_pubs
+post_as "$ADMIN" 'api.php?action=create_file&space=Main' 'path=Plan.md' > /dev/null
+clear_pubs
+r=$(curl -s -b "$ADMIN" -c "$ADMIN" --max-time 15 -X POST \
+      "$WIKI_URL/api.php?action=save&file=Plan.md&space=Main" --data-binary '# Plan
+
+@Ed please review')
+assert_contains "the save succeeded"        '"success":true'                  "$r"
+assert_contains "Ed is told"                'topic=wiki%2Fuser%2F2%2Fmention' "$(posts)"
+
+section 'and does not tell them again on every later edit'
+# A page keeps the names it contains. Re-announcing on each save would make one mention
+# arrive as a notification every time anybody touched the page for the rest of its life.
+clear_pubs
+r=$(curl -s -b "$ADMIN" -c "$ADMIN" --max-time 15 -X POST \
+      "$WIKI_URL/api.php?action=save&file=Plan.md&space=Main" --data-binary '# Plan
+
+@Ed please review
+
+Added a line.')
+assert_contains     "the save succeeded"    '"success":true'            "$r"
+assert_not_contains "and Ed is not told twice" 'user%2F2%2Fmention'     "$(posts)"
+assert_contains     "though the page event still fires" 'page%2FPlan.md' "$(posts)"
+
+section 'a name added by a later edit is announced then'
+clear_pubs
+r=$(curl -s -b "$ADMIN" -c "$ADMIN" --max-time 15 -X POST \
+      "$WIKI_URL/api.php?action=save&file=Plan.md&space=Main" --data-binary '# Plan
+
+@Ed please review, and @Reader too')
+assert_contains     "the save succeeded"  '"success":true'            "$r"
+assert_contains     "the new name is told" 'user%2F3%2Fmention'       "$(posts)"
+assert_not_contains "the old one is not"   'user%2F2%2Fmention'       "$(posts)"
+
+section 'what must not raise a notification'
+# Writing your own name is not somebody telling you something.
+clear_pubs
+post_as "$ADMIN" 'api.php?action=post_chat_message&space=Main' 'file=Talk.chat&text=@Admin note to self' > /dev/null
+assert_not_contains "mentioning yourself"   'mention'                         "$(posts)"
+# The boundary WIKI_MENTION_END draws, shared with the scanner and the AI router: a name
+# that is a prefix of a longer word is not that name.
+clear_pubs
+post_as "$ADMIN" 'api.php?action=post_chat_message&space=Main' 'file=Talk.chat&text=ask @Edward about it' > /dev/null
+assert_not_contains "a longer name starting the same way" 'user%2F2%2Fmention' "$(posts)"
+# And the positive control for that pair: the same two paths do fire when they should,
+# or a wiki_mention_announce that had simply stopped working would pass both.
+clear_pubs
+post_as "$ADMIN" 'api.php?action=post_chat_message&space=Main' 'file=Talk.chat&text=@Ed one more' > /dev/null
+assert_contains "but the plain name does"   'topic=wiki%2Fuser%2F2%2Fmention' "$(posts)"
+
 section 'a publish failure never breaks the write'
 kill "$HUB_PID" 2>/dev/null; wait "$HUB_PID" 2>/dev/null; HUB_PID=
 r=$(post_as "$ADMIN" 'api.php?action=create_file&space=Main' 'path=HubDown.md')

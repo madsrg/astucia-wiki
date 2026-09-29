@@ -3,7 +3,7 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
-import { showToast, promptModal, confirmModal } from '../core/utils.js';
+import { showToast, confirmModal } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { t } from '../i18n/index.js';
 import { renameSpaceInStorage, setAvailableSpaces } from '../nav/index.js';
@@ -214,38 +214,11 @@ const _render = (spaces, active) => {
 
         // Switch on a click anywhere in the row, not just on the label text — the
         // row's vertical padding isn't covered by the label, so a label-only
-        // handler silently ignored clicks near a row's top/bottom edge. The
-        // rename button stops propagation, so it won't trigger a switch.
+        // handler silently ignored clicks near a row's top/bottom edge.
         item.addEventListener('click', () => {
             dropdown.classList.add('hidden');
             switchSpace(name, spaces);
         });
-
-        if (canCreate) {
-            const renameBtn = document.createElement('button');
-            renameBtn.className = 'space-item-rename-btn';
-            renameBtn.title = t('spaces.rename-btn');
-            renameBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
-            renameBtn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                dropdown.classList.add('hidden');
-                const ok = await confirmModal(t('spaces.rename-warn'), {
-                    confirmLabel: t('spaces.rename-confirm-btn'),
-                    icon: icons.space,
-                });
-                if (!ok) return;
-                const newName = await promptModal(t('spaces.rename-prompt'), name, '', icons.space);
-                if (!newName || newName === name) return;
-                const res = await api.call('rename_space', { old_name: name, new_name: newName }, 'POST');
-                if (res.success) {
-                    showToast(t('spaces.renamed', { name: newName }), 'success');
-                    await _afterRename(name, newName);
-                } else {
-                    showToast(res.message || t('spaces.rename-failed'), 'error');
-                }
-            });
-            item.appendChild(renameBtn);
-        }
 
         dropdown.appendChild(item);
     });

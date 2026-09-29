@@ -5,7 +5,7 @@ import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { watch, rtTopic } from '../realtime/index.js';
 import { icons } from '../core/icons.js';
-import { showToast, confirmModal, highlightMentions } from '../core/utils.js';
+import { showToast, confirmModal, highlightMentions, externalizeLinks } from '../core/utils.js';
 import { getUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
@@ -357,6 +357,9 @@ const buildRow = (msg, grouped) => {
     }
 
     bubble.innerHTML = renderText(msg.text, _aiUids.has(msg.uid));
+    // A bubble is not under #viewer-content, so the page renderers' observer never
+    // sees it — an AI's answer is full of links and needs the same rule as a page.
+    externalizeLinks(bubble);
 
     if (isMe || currentRole === 'admin') {
         const del = document.createElement('button');
@@ -622,10 +625,18 @@ const setupMentionAutocomplete = (textarea, popup) => {
      * complete itself before you had typed anything. Names and commands have to match
      * exactly to do anything at all, so once only one candidate survives there is nothing
      * else the keystroke could have meant.
+     *
+     * `$typed` is the other half of that, and without it the completion could not be
+     * undone. Backspacing over an inserted "@Alice " leaves "@Alice", which still has
+     * exactly one match — so the next input event completed it straight back to
+     * "@Alice ", and the name could not be deleted at all: every keystroke that shortened
+     * it put it back. Completing is something a *keystroke* means, never something a
+     * deletion means, so this only fires while text is being entered. The popup still
+     * opens on the way back, which is the help that is wanted there.
      */
-    const autoPick = (query) => {
+    const autoPick = (query, typed) => {
         const items = getItems();
-        if (query === '' || items.length !== 1) return false;
+        if (!typed || query === '' || items.length !== 1) return false;
         // The pools are fetched asynchronously; if a later keystroke has already changed
         // the query, this list is stale and inserting from it would clobber live input.
         const now = textarea.value.slice(triggerStart + triggerChar.length, textarea.selectionStart).toLowerCase();
@@ -649,7 +660,11 @@ const setupMentionAutocomplete = (textarea, popup) => {
         triggerChar  = '';
     };
 
-    textarea.addEventListener('input', async () => {
+    textarea.addEventListener('input', async (e) => {
+        // An insertion, rather than a deletion, an undo or a reformat. Absent on a
+        // programmatic or legacy event, which keeps the old behaviour rather than
+        // silently switching completion off.
+        const typed = !e.inputType || e.inputType.startsWith('insert');
         const val = textarea.value;
         const pos = textarea.selectionStart;
 
@@ -690,7 +705,7 @@ const setupMentionAutocomplete = (textarea, popup) => {
                 });
                 popup.appendChild(item);
             });
-            if (autoPick(query)) return;
+            if (autoPick(query, typed)) return;
             setSelected(0);
             popup.classList.remove('hidden');
             return;
@@ -755,7 +770,7 @@ const setupMentionAutocomplete = (textarea, popup) => {
                 popup.appendChild(item);
             });
         }
-        if (autoPick(query)) return;
+        if (autoPick(query, typed)) return;
         setSelected(0);
         popup.classList.remove('hidden');
     });

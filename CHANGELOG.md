@@ -6,6 +6,62 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.9.12] — 2026-09-29
+
+Notifications that reach you when you are not looking at the wiki, mentions that stop
+piling up, and a run of fixes to things that looked like the wiki had eaten your input.
+
+### Added
+- **The tab title and favicon say when you have been mentioned.** A count appears in the
+  browser tab while the window is not focused (`(3) Astucia Wiki`) and a dot on the
+  favicon while anything is unread — so a mention arriving while you are in another
+  application is visible without the window being brought forward. Deliberately the two
+  mechanisms that need no permission and work over plain HTTP; a real OS notification is
+  a separate decision, not built.
+  - The mention badge **keeps checking while the tab is in the background**, at a slower
+    rate. It used to stop entirely, which is exactly the case the tab title is for.
+- **A mention now reaches you the moment it is written.** Posting a chat message or
+  saving a page that names someone publishes a realtime event for that person, so the
+  badge and the tab update at once instead of waiting for the next scan. Only the names
+  a save *adds* are announced, so editing a page that has mentioned you since March does
+  not notify you again every time anybody touches it.
+- **My Mentions and My Comments open in a lightbox** instead of replacing the page you
+  are reading. Close it and you are exactly where you were.
+- **Mentions have an age limit** — Admin → Content → Mentions, 90 days by default, `0`
+  for no limit. Nothing is deleted: a mention is found by reading pages and chats, so
+  this only limits how far back the search looks, and raising it brings the older ones
+  straight back. A shorter window also makes the list faster.
+- **External links open in a new tab**, in pages and in chat. Links that stay inside the
+  wiki — page-id links, wikilinks, attachments, in-page anchors — stay in the tab, as do
+  `mailto:` links.
+
+### Changed
+- **AI users are told that a thread may have moved on.** Every message in the transcript
+  now carries how long ago it was written (`Alice (3 days ago): …`), and the prompt says
+  that earlier messages may be about unrelated topics, that the most recent one is the
+  request, and that a long gap is strong evidence the subject has changed. This is for
+  the common case of forgetting `/newTopic` before asking something unrelated.
+- **The Space switcher lost its per-row rename pencil.** Renaming lives in Space settings
+  → General, where the rest of a space's settings are.
+- **Recent and Saved show the correct type icon**, and the name without its extension, for
+  data pages and saved searches.
+
+### Fixed
+- **Renaming a page no longer breaks its header.** The page title showed the full path
+  and lost its type icon until the next navigation.
+- **Renaming or copying a `.json` or `.search` page no longer loses its extension.**
+  Renaming wrote the typed name back with no extension at all, and copying produced a
+  `.md` file holding JSON — in both cases silently changing what the page *is*.
+- **A backspace can undo a mention completion.** Typing `@A` where only one person
+  matches completes to `@Alice `, and backspacing over it used to put the name straight
+  back on every keystroke, so it could not be deleted at all.
+- **A page chat appears in the sidebar as soon as it is created.** It was absent until
+  the file tree's own refresh came round — up to five minutes with the realtime hub
+  running — and until then, opening the thread as a page gave it no page id.
+- **A search run from a chat page no longer keeps that page's buttons.** The results view
+  left the chat settings gear, the knowledge-graph button, share, search-and-replace and
+  version history on screen, still wired to the page you had left.
+
 ## [2026.9.11] — 2026-09-25
 
 A security upgrade of the realtime hub, AI users that can remember what they learn, and

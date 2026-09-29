@@ -1288,6 +1288,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab hidden" data-tab="deleted" data-group="content" data-i18n="admin.tab.deleted">Deleted Pages</button>
                 <button class="admin-tab hidden" data-tab="chatpolicy" data-group="content" data-i18n="admin.tab.chatpolicy">Chat Retention</button>
                 <button class="admin-tab hidden" data-tab="metadata" data-group="content" data-i18n="admin.tab.metadata">Page Metadata</button>
+                <button class="admin-tab hidden" data-tab="mentions" data-group="content" data-i18n="admin.tab.mentions">Mentions</button>
             </div>
 
             <!-- Users pane -->
@@ -1377,6 +1378,21 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <button id="admin-chat-retention-save" class="btn btn-blue" data-i18n="btn.save">Save</button>
                         </div>
                         <p class="pref-hint" data-i18n="admin.chatpolicy.hint"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mentions pane -->
+            <div id="admin-pane-mentions" class="admin-pane hidden">
+                <div class="admin-scroll-area">
+                    <div class="admin-reindex-body">
+                        <p class="admin-reindex-desc" data-i18n="admin.mentions.desc"></p>
+                        <div class="admin-reindex-controls">
+                            <label class="admin-reindex-label" for="admin-mention-days" data-i18n="admin.mentions.label"></label>
+                            <input type="number" id="admin-mention-days" class="form-control admin-reindex-select" min="0" step="1">
+                            <button id="admin-mention-save" class="btn btn-blue" data-i18n="btn.save">Save</button>
+                        </div>
+                        <p class="pref-hint" data-i18n="admin.mentions.hint"></p>
                     </div>
                 </div>
             </div>

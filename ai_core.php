@@ -272,6 +272,75 @@ function wiki_mentions_prompt(): string {
 }
 
 /**
+ * That the thread it is given may have moved on without anyone saying so.
+ *
+ * `/newTopic` exists and people forget it, so an AI is routinely handed nine messages
+ * about last week's release followed by an unrelated question. Nothing told it that was
+ * possible, and nothing distinguished the request from the background — every message
+ * arrived as a peer turn of equal standing.
+ *
+ * Two things fix that together, and the instruction is the weaker half. The stronger one
+ * is the age label wiki_chat_context_line() puts on each message: a gap of days before
+ * the latest message is *evidence* of a topic change rather than something to infer, and
+ * a model weighs evidence far better than it follows a rule about what might be true.
+ * This paragraph is what makes the labels mean something.
+ *
+ * Shared by the chat-reply and agent-job prompts, like wiki_mentions_prompt() and for the
+ * same reason: one behaviour, one place, or the two paths drift.
+ */
+function wiki_chat_recency_prompt(): string {
+    return "You may be given earlier messages from this thread as context. They can be "
+         . "about unrelated topics — people do not always reset the topic before changing "
+         . "subject — so each message is labelled with how long ago it was written. The "
+         . "most recent message is the request you are answering. Treat everything older "
+         . "as background: use it only where it genuinely bears on that request, and "
+         . "disregard it where the subject has clearly moved on. A long gap in time "
+         . "before the latest message is strong evidence that it has. ";
+}
+
+/**
+ * How long ago a message was written, in words, for a transcript line.
+ *
+ * Deliberately coarse. The question it answers is "is this still the same conversation",
+ * not "when exactly" — and a precise timestamp would invite the model to do date
+ * arithmetic, which it is bad at, in place of the comparison that is already made for it.
+ *
+ * Returns '' for a message with no usable timestamp, which is what an unparseable one is
+ * too: guessing an age is worse than not offering one, because the label is trusted.
+ */
+function wiki_chat_age_label($ts, int $now = 0): string {
+    if (!is_string($ts) || trim($ts) === '') return '';
+    $at = strtotime($ts);
+    if ($at === false) return '';
+    $now = $now ?: time();
+    $d = $now - $at;
+    // A clock skew between the writer and this process can make a message look like the
+    // future; "just now" is the honest reading of that, not "-2 minutes ago".
+    if ($d < 60) return 'just now';
+    $plural = fn(int $n, string $unit) => $n . ' ' . $unit . ($n === 1 ? '' : 's') . ' ago';
+    if ($d < 3600)       return $plural((int)floor($d / 60), 'minute');
+    if ($d < 86400)      return $plural((int)floor($d / 3600), 'hour');
+    if ($d < 7 * 86400)  return $plural((int)floor($d / 86400), 'day');
+    if ($d < 60 * 86400) return $plural((int)floor($d / (7 * 86400)), 'week');
+    return $plural((int)floor($d / (30 * 86400)), 'month');
+}
+
+/**
+ * One line of thread transcript: who said it, how long ago, and what they said.
+ *
+ * There were five copies of this — three wire families inline plus the two job paths —
+ * and they had already drifted: the inline three stripped the `src:` marker the composer
+ * adds and the two job paths did not, so a queued answer saw tokens an inline one never
+ * did. One function now, which is also the only reason adding the age label is a small
+ * change rather than five.
+ */
+function wiki_chat_context_line(array $msg, int $now = 0): string {
+    $text = preg_replace('/\bsrc:[a-zA-Z0-9_]+\s*/i', '', (string)($msg['text'] ?? ''));
+    $age  = wiki_chat_age_label($msg['timestamp'] ?? null, $now);
+    return (string)($msg['name'] ?? '?') . ($age !== '' ? " ({$age})" : '') . ': ' . $text;
+}
+
+/**
  * Where the AI is, in words. Shared by both context builders below.
  *
  * Without an explicit current folder, models invent a plausible-looking path ("Notes/…")
@@ -330,6 +399,7 @@ function wiki_chat_context_prompt(string $space_name, string $chat_name, string 
     return wiki_memory_prompt($space_dir, $indexer, $ai_config)
         . "You are operating in the \"{$space_name}\" wiki space (current chat: \"{$chat_name}\"). "
         . "Each message below is prefixed with its author's name, so \"me\" is whoever wrote the message you are answering. "
+        . wiki_chat_recency_prompt()
         . wiki_location_prompt($chat_dir_rel, 'request')
         . "Use wiki_list_pages to discover available pages, wiki_read_page to read content, "
         . "and wiki_write_page to create or update .md pages. "
@@ -354,6 +424,7 @@ function wiki_job_context_prompt(string $space_name, string $dir_rel, string $re
     return wiki_memory_prompt($space_dir, $indexer, $ai_config)
         . "You are an AI agent operating in the \"{$space_name}\" wiki space. "
         . $who_ctx
+        . wiki_chat_recency_prompt()
         . wiki_location_prompt($dir_rel, 'task')
         . "Use wiki_list_pages to discover pages, wiki_read_page to read content, "
         . "and wiki_write_page to create or update .md pages. "
@@ -832,9 +903,12 @@ function wiki_chat_context_slice(array $messages, int $limit): array {
     if ($sentinel !== null) {
         $tail = trim(preg_replace('/^\/newTopic\s*/i', '', (string)($sentinel['text'] ?? '')));
         if ($tail !== '') {
+            // Its own timestamp travels with it, or the one message that states the
+            // topic would be the only line in the transcript with no age on it.
             array_unshift($recent, ['uid'  => $sentinel['uid'] ?? 0,
                                     'name' => $sentinel['name'] ?? 'User',
-                                    'text' => $tail]);
+                                    'text' => $tail,
+                                    'timestamp' => $sentinel['timestamp'] ?? null]);
         }
     }
     return $recent;

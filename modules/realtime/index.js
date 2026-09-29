@@ -200,22 +200,36 @@ export function subscribe(topic, fn) {
  * being re-implemented five times, and stops the next module from quietly clearing its
  * timer on subscribe and losing the safety net.
  */
-export function watch(topics, fn, { fast, slow }) {
+export function watch(topics, fn, { fast, slow, hidden = 0 }) {
     const list = (Array.isArray(topics) ? topics : [topics]).filter(Boolean);
     let timer = null;
+    // `hidden` is a floor applied while the tab is in the background, for a watcher that
+    // must keep working there rather than stop. It is a floor and not a rate, so a hub
+    // that has already slowed the timer past it is left alone. Most watchers pass
+    // nothing: a page nobody is looking at does not need its content re-read, and they
+    // keep exactly the two rates they had.
+    const rate = () => {
+        const base = pollInterval(fast, slow);
+        return (hidden && document.hidden) ? Math.max(hidden, base) : base;
+    };
     const arm = () => {
         if (timer) clearInterval(timer);
-        timer = setInterval(fn, pollInterval(fast, slow));
+        timer = setInterval(fn, rate());
     };
     const offs   = list.map((t) => subscribe(t, fn));
     const onMode = () => arm();     // going live (or losing the hub) changes the right rate
     document.addEventListener('wiki:realtime', onMode);
+    // Only where a floor was asked for, so the five watchers that did not ask gain no
+    // listener and no re-arm they never had. A push event is never throttled by any of
+    // this — it goes straight to `fn`; the floor is the timer's alone.
+    if (hidden) document.addEventListener('visibilitychange', onMode);
     arm();
     return () => {
         if (timer) clearInterval(timer);
         timer = null;
         offs.forEach((off) => off());
         document.removeEventListener('wiki:realtime', onMode);
+        if (hidden) document.removeEventListener('visibilitychange', onMode);
     };
 }
 

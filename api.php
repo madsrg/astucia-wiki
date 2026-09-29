@@ -467,13 +467,16 @@ if (isset($_REQUEST['action'])) {
         // wiki_chat_context_slice(), which the two job paths use as well so a queued
         // answer and an inline one see the same thread.
         $recent = wiki_chat_context_slice($chat_data['messages'], $context_msgs);
+        // One "now" for the whole transcript: read per line, two messages written in the
+        // same minute could be labelled differently because the loop crossed a second.
+        $_ctx_now = time();
 
         // Build initial message list (provider-specific format)
         if ($family === 'anthropic') {
             $messages = [];
             foreach ($recent as $msg) {
                 $role = ((int)($msg['uid'] ?? -1) === $ai_uid) ? 'assistant' : 'user';
-                $messages[] = ['role' => $role, 'content' => ($msg['name'] ?? '') . ': ' . preg_replace('/\bsrc:[a-zA-Z0-9_]+\s*/i', '', $msg['text'] ?? '')];
+                $messages[] = ['role' => $role, 'content' => wiki_chat_context_line($msg, $_ctx_now)];
             }
             // Anthropic requires strictly alternating roles — merge consecutive same-role messages
             $merged = [];
@@ -492,13 +495,13 @@ if (isset($_REQUEST['action'])) {
             $messages = [];
             foreach ($recent as $msg) {
                 $role = ((int)($msg['uid'] ?? -1) === $ai_uid) ? 'assistant' : 'user';
-                $messages[] = ['role' => $role, 'content' => ($msg['name'] ?? '') . ': ' . preg_replace('/\bsrc:[a-zA-Z0-9_]+\s*/i', '', $msg['text'] ?? '')];
+                $messages[] = ['role' => $role, 'content' => wiki_chat_context_line($msg, $_ctx_now)];
             }
         } else {
             $messages = [['role' => 'system', 'content' => $full_system]];
             foreach ($recent as $msg) {
                 $role = ((int)($msg['uid'] ?? -1) === $ai_uid) ? 'assistant' : 'user';
-                $messages[] = ['role' => $role, 'content' => ($msg['name'] ?? '') . ': ' . preg_replace('/\bsrc:[a-zA-Z0-9_]+\s*/i', '', $msg['text'] ?? '')];
+                $messages[] = ['role' => $role, 'content' => wiki_chat_context_line($msg, $_ctx_now)];
             }
         }
 
@@ -910,7 +913,7 @@ if (isset($_REQUEST['action'])) {
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags',
                       'save_diagram_svg', 'upload_page', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
                       'retarget_wikilinks', 'set_frontmatter'];
-    $admin_actions = ['admin_chat_retention', 'admin_frontmatter_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
+    $admin_actions = ['admin_chat_retention', 'admin_frontmatter_settings', 'admin_mention_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
                       'admin_set_space_fm_edit', 'admin_set_space_fm_autostamp', 'admin_set_space_memory',
                       'admin_get_users', 'admin_save_users', 'admin_get_user_requests',
                       'admin_approve_request', 'admin_deny_request',
@@ -1691,8 +1694,9 @@ if (isset($_REQUEST['action'])) {
                         (int)($_pending_ai_user['ai_config']['context_messages'] ?? 10));
                     // The message just posted is quoted on its own below.
                     array_pop($_bg_ctx);
+                    $_bg_now = time();
                     foreach ($_bg_ctx as $_bm) {
-                        $_bg_history[] = ($_bm['name'] ?? '?') . ': ' . (string)($_bm['text'] ?? '');
+                        $_bg_history[] = wiki_chat_context_line($_bm, $_bg_now);
                     }
                     $_bg_prompt = ($_bg_history
                             ? "Earlier in this chat thread:\n" . implode("\n", $_bg_history) . "\n\n"
@@ -1767,6 +1771,11 @@ if (isset($_REQUEST['action'])) {
                 if ($_purged > 0) wiki_audit_chat_purge($file_path, $_purged, 'auto');
 
                 wiki_chat_write($file_path, $chat_data);
+                // Tell whoever this message names, now, rather than leaving it to the
+                // badge's scan — a backgrounded tab runs no timer, so the scan is exactly
+                // what does not happen while somebody is away from the wiki. '' as the
+                // "before" text: a new message is new in its entirety.
+                wiki_mention_announce($stored_text, '', (int)($actor['uid'] ?? 0));
                 echo json_encode(['success' => true, 'data' => $chat_data,
                                   'async_ai' => $_pending_ai_user !== null, 'queued_job' => $_bg_job]);
 
@@ -2057,6 +2066,25 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true, 'enabled' => (bool)wiki_setting('ai_memory_default', false)]);
                 break;
 
+            case 'admin_mention_settings':
+                // How far back My Mentions looks. A mention is not a record the wiki
+                // stores — it is found by reading content — so this is a cutoff on the
+                // scan rather than a deletion, and nothing is destroyed by shortening
+                // it. 0 means no limit, which is what every wiki did before the setting
+                // existed; the default for a wiki that has never set it is 90.
+                if (isset($_POST['days'])) {
+                    $mn_days = max(0, (int)$_POST['days']);
+                    if (!wiki_setting_set('mention_retention_days', $mn_days)) {
+                        throw new Exception('Could not save the setting — is WIKI_SYSTEM_DATA writable?');
+                    }
+                    wiki_audit_log('update', 'success', ['object' => 'settings.json',
+                        'object_type' => 'setting', 'change_type' => 'mention_retention_days',
+                        'value' => (string)$mn_days]);
+                }
+                echo json_encode(['success' => true,
+                    'days' => (int)wiki_setting('mention_retention_days', WIKI_MENTION_DAYS_DEFAULT)]);
+                break;
+
             case 'admin_frontmatter_settings':
                 // How the wiki treats a page's own `---` metadata block. Reading and
                 // preserving it is unconditional — these are the choices that are not.
@@ -2152,9 +2180,10 @@ if (isset($_REQUEST['action'])) {
                 // for. The typed prompt still comes last, so it remains the instruction.
                 $qj_page_ctx = wiki_page_context_prompt($qj_path, $space_dir);
                 $qj_history  = [];
+                $qj_now      = time();
                 foreach (wiki_chat_context_slice($qj_chat['messages'] ?? [],
                              (int)($qj_ai['ai_config']['context_messages'] ?? 10)) as $_qm) {
-                    $qj_history[] = ($_qm['name'] ?? '?') . ': ' . (string)($_qm['text'] ?? '');
+                    $qj_history[] = wiki_chat_context_line($_qm, $qj_now);
                 }
                 if ($qj_history) {
                     $qj_prompt = "Earlier in this chat thread:\n" . implode("\n", $qj_history)
@@ -3006,6 +3035,7 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode([
                     'success' => true,
                     'data'    => wiki_scan_mentions($mention_name, $mention_uid, $mn_allowed, $mn_since),
+                    'cutoff_days' => (int)wiki_setting('mention_retention_days', WIKI_MENTION_DAYS_DEFAULT),
                     'since'   => $mn_since,
                 ]);
                 break;
@@ -3187,6 +3217,15 @@ if (isset($_REQUEST['action'])) {
                 if (file_put_contents($file_path, $content) !== false) {
                     $actor = get_current_actor();
                     $indexer->updateModified($_GET['file'], $actor['uid'], $actor['name']);
+                    // Only the names this save *added*: a page that has mentioned Alice
+                    // since March must not notify her again on every later edit. Bodies,
+                    // not raw files — an @name inside front matter is metadata, the same
+                    // line wiki_scan_mentions() draws. Markdown only; a mention cannot
+                    // live in the other things `save` writes.
+                    if ($ext_save === 'md') {
+                        wiki_mention_announce(wiki_fm_body($content), wiki_fm_body($fm_prev_raw),
+                                              (int)($actor['uid'] ?? 0));
+                    }
                     // Report the bytes just written, so the client that wrote them can
                     // re-baseline the open-page watcher. Without this the watcher still
                     // holds the stamp from page load, sees its own save as an external

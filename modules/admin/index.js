@@ -49,7 +49,7 @@ const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
     ai:         ['ai', 'jobs', 'mcp'],
     monitoring: ['logs', 'errorlog', 'audit', 'diagnostics', 'realtime', 'sysinfo'],
-    content:    ['reindex', 'deleted', 'chatpolicy', 'metadata'],
+    content:    ['reindex', 'deleted', 'chatpolicy', 'metadata', 'mentions'],
 };
 const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 'reindex' };
 
@@ -93,6 +93,7 @@ const switchTab = (name) => {
     if (name === 'reindex')     loadReindexPane();
     if (name === 'chatpolicy')  loadChatPolicyPane();
     if (name === 'metadata')    loadMetadataPane();
+    if (name === 'mentions')    loadMentionsPane();
     if (name === 'mcp')         loadMcpServers();
 };
 
@@ -212,6 +213,37 @@ const loadMetadataPane = async () => {
     }
     const res = await api.call('admin_frontmatter_settings');
     if (res.success) box.checked = !!res.expose_ai;
+};
+
+// ── Mentions tab ──────────────────────────────────────────────────────────────
+//
+// How far back My Mentions looks. Unlike chat retention this deletes nothing and cannot:
+// a mention is not a record the wiki stores, it is found by reading pages and chats, so
+// the only thing a retention setting can do here is stop the scan looking further back.
+// Shortening it is therefore always reversible, and the hint says so — the alternative
+// reading, that old mentions are about to be destroyed, is the one somebody would fear.
+
+const loadMentionsPane = async () => {
+    const box  = document.getElementById('admin-mention-days');
+    const save = document.getElementById('admin-mention-save');
+    if (!box || !save) return;
+
+    if (!save.dataset.bound) {
+        save.dataset.bound = '1';
+        save.addEventListener('click', async () => {
+            save.disabled = true;
+            const res = await api.call('admin_mention_settings',
+                                       { days: String(Math.max(0, parseInt(box.value, 10) || 0)) }, 'POST');
+            save.disabled = false;
+            // From the response, not from the box: the server clamps, and the field
+            // should show what was actually stored.
+            if (res.success) box.value = res.days;
+            showToast(res.success ? t('admin.mentions.saved') : (res.message || t('admin.mentions.failed')),
+                      res.success ? 'success' : 'error');
+        });
+    }
+    const res = await api.call('admin_mention_settings');
+    if (res.success) box.value = res.days;
 };
 
 // ── Audit Log tab ─────────────────────────────────────────────────────────────

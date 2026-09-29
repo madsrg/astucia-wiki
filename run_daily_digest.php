@@ -119,7 +119,10 @@ foreach ($users as $u) {
     // mention every morning until they did.
     $mentions = [];
     if ($uid > 0) {
-        foreach (wiki_scan_mentions($u['name'] ?? '', $uid, $allowed, $cutoff, true) as $m) {
+        // 0 rather than the wiki's own mention cutoff: this scan already has a line of
+        // its own — the last 24 hours — and a second, longer one on top of it can only
+        // ever be a no-op or a surprise.
+        foreach (wiki_scan_mentions($u['name'] ?? '', $uid, $allowed, $cutoff, true, 0) as $m) {
             // Same rule the change list uses: a page you edited yourself is not news.
             // Only pages — a chat is judged per message, so its own timestamps already
             // decide this correctly and the file's last writer is the wrong question.

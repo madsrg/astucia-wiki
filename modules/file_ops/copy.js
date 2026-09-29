@@ -8,6 +8,7 @@ import { showToast } from '../core/utils.js';
 import { refreshFileTree, revealAndSelectFile } from '../file_tree/index.js';
 import { loadPage } from '../page_view/index.js';
 import { t } from '../i18n/index.js';
+import { pageExt } from '../core/page_types.js';
 
 const renderFolderTree = (items, parent) => {
     items.forEach(item => {
@@ -96,7 +97,10 @@ export const init = () => {
         if (!newName) { showToast(t('copy.no-name'), 'error'); return; }
         const activeDest = copyFileTree.querySelector('.file-item-content.active');
         const destFolder = activeDest?.dataset.path || '';
-        const ext = state.sourcePathToCopy.match(/\.(md|drawio|list|chat)$/)?.[0] || '.md';
+        // The source's own extension, never a guess: the old `|| '.md'` fallback fired
+        // for `.json` and `.search`, which the pattern did not list, so copying a data
+        // page produced a `.md` file holding JSON.
+        const ext = pageExt(state.sourcePathToCopy);
         const newPath = (destFolder ? destFolder + '/' : '') + newName + ext;
         const targetSpace = spaceSelect.value || state.currentSpace;
         const isCrossSpace = targetSpace !== state.currentSpace;

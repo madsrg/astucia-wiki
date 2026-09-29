@@ -6,25 +6,26 @@ import { state } from '../core/state.js';
 import { showToast, promptModal, confirmModal } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { refreshFileTree, revealAndSelectFile } from '../file_tree/index.js';
-import { loadPage, showBlankPage, updateFrontmatterBadge, rebaselineFileWatch } from '../page_view/index.js';
+import { loadPage, showBlankPage, updateFrontmatterBadge, rebaselineFileWatch, setPageTitle } from '../page_view/index.js';
 import { retarget as retargetTab, forget as forgetTab } from '../tabs/index.js';
 import { offerRetarget } from '../wikilinks/index.js';
 import { openCopyLightbox, init as initCopy } from './copy.js';
 import { openMoveLightbox, init as initMove } from './move.js';
 import { t } from '../i18n/index.js';
+import { pageExt, stripExt, typeIcon } from '../core/page_types.js';
 
 export const handleRename = async () => {
     if (!state.currentPagePath) return;
     const oldName = state.currentPagePath.split('/').pop();
-    const oldDisplayName = oldName.replace(/\.(md|drawio|list|chat)$/, '');
-    const typeIcon = { file: icons.file, diagram: icons.diagram, list: icons.list, chat: icons.chat }[state.currentPageType] || icons.file;
-    let newName = await promptModal(t('fileops.rename-title', { name: oldDisplayName }), oldDisplayName, '', typeIcon);
+    // The extension this file actually carries is what goes back on, so a rename cannot
+    // change it — the same rule `wiki_rename_page` enforces server-side.
+    const ext = pageExt(oldName);
+    const oldDisplayName = stripExt(oldName);
+    let newName = await promptModal(t('fileops.rename-title', { name: oldDisplayName }),
+                                    oldDisplayName, '', typeIcon(state.currentPageType));
     if (!newName || newName === oldDisplayName) return;
 
-    if (state.currentPageType === 'md') newName += '.md';
-    else if (state.currentPageType === 'diagram') newName += '.drawio';
-    else if (state.currentPageType === 'list') newName += '.list';
-    else if (state.currentPageType === 'chat') newName += '.chat';
+    newName += ext;
 
     const pathParts = state.currentPagePath.split('/');
     pathParts.pop();
@@ -50,7 +51,9 @@ export const handleRename = async () => {
             // Reload the chat at the new path to restart polling correctly
             await loadPage(newPath, savedId, savedTags);
         } else {
-            document.getElementById('current-page-title').textContent = newPath.replace(/\.(md|drawio|list|chat)$/, '');
+            // Through page_view's own title writer: the header is a type icon plus the
+            // file's own name, and the folders above it belong to the breadcrumb.
+            setPageTitle(newPath, state.currentPageType);
         }
         revealAndSelectFile(newPath);
         // Wikilinks name their target, so a rename leaves them pointing at nothing. Ask before
@@ -61,7 +64,7 @@ export const handleRename = async () => {
 
 export const handleDelete = async () => {
     if (!state.currentPagePath) return;
-    const displayName = state.currentPagePath.replace(/\.(md|drawio|json)$/, '');
+    const displayName = stripExt(state.currentPagePath);
     if (!await confirmModal(t('fileops.delete-confirm', { name: displayName }), { confirmLabel: t('btn.delete'), dangerous: true, icon: icons.trash })) return;
 
     api.call('delete', { path: state.currentPagePath }, 'POST').then(async res => {
@@ -85,7 +88,7 @@ export const handleDelete = async () => {
 const handleCopy = () => {
     if (!state.currentPagePath) return;
     state.sourcePathToCopy = state.currentPagePath;
-    const currentName = state.currentPagePath.split('/').pop().replace(/\.(md|drawio|list|chat)$/, '');
+    const currentName = stripExt(state.currentPagePath.split('/').pop());
     document.getElementById('copy-new-name').value = `${currentName} ${t('fileops.copy-suffix')}`;
     openCopyLightbox();
 };

@@ -5,7 +5,8 @@ import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { watch, rtTopic } from '../realtime/index.js';
 import { icons } from '../core/icons.js';
-import { showToast, confirmModal, highlightMentions } from '../core/utils.js';
+import { stripExt, typeIcon } from '../core/page_types.js';
+import { showToast, confirmModal, highlightMentions, externalizeLinks } from '../core/utils.js';
 import { setEditingMode } from '../page_edit/index.js';
 import { renderBrowsePane, findItemsByPath, treeEntry } from '../file_tree/index.js';
 import { renderTags } from '../tags/index.js';
@@ -78,12 +79,14 @@ let diagramObserverSetup = false;
 // only from that module's own pass: wrapping a <pre> is a mutation of the viewer, so the
 // wrapper itself lands back here, and matching it would schedule a pass per pass.
 const CODE_SEL = 'pre:not([data-copy-ready]) > code';
+// Anchors this pass has not already judged; see externalizeLinks.
+const LINK_SEL = 'a[href]:not([target])';
 const setupDiagramObserver = () => {
     if (diagramObserverSetup) return;
     diagramObserverSetup = true;
     const viewer = document.getElementById('viewer-content');
     new MutationObserver(mutations => {
-        let sawMermaid = false, sawQuote = false, sawCode = false;
+        let sawMermaid = false, sawQuote = false, sawCode = false, sawLink = false;
         for (const m of mutations) {
             for (const node of m.addedNodes) {
                 if (node.nodeType !== 1) continue;
@@ -98,6 +101,11 @@ const setupDiagramObserver = () => {
                                   || node.matches?.('blockquote'))) sawQuote = true;
                 if (!sawCode && (node.querySelector?.(CODE_SEL)
                                  || node.matches?.(CODE_SEL))) sawCode = true;
+                // Only anchors that have not been decided about yet, so the pass this
+                // observer will see for its own attribute writes matches nothing and
+                // cannot feed itself.
+                if (!sawLink && (node.querySelector?.(LINK_SEL)
+                                 || node.matches?.(LINK_SEL))) sawLink = true;
             }
         }
         if (sawMermaid) {
@@ -109,6 +117,9 @@ const setupDiagramObserver = () => {
         if (sawCode) {
             import('../code_copy/index.js').then(m => m.scheduleCodeCopyRender(viewer)).catch(() => {});
         }
+        // Synchronous, unlike the three above: this is an attribute write on nodes that
+        // are already here, with nothing to fetch and no layout to schedule around.
+        if (sawLink) externalizeLinks(viewer);
     }).observe(viewer, { childList: true, subtree: true });
 };
 
@@ -553,6 +564,21 @@ export const showBlankPage = async () => {
 let _tabHooks = {};
 export const setTabHooks = (hooks) => { _tabHooks = hooks || {}; };
 
+/**
+ * The page header: the file's own name and its type icon. The folders above it are the
+ * breadcrumb's job, which is why the path is reduced to its basename here.
+ *
+ * Exported because `loadPage` is not the only writer — renaming a page updates the header
+ * without reloading it (modules/file_ops), and that second copy had drifted into writing
+ * `textContent` with the whole path: the icon was erased and the title became
+ * `Folder/Sub/Page` until the next navigation. One implementation, so it cannot drift again.
+ */
+export const setPageTitle = (path, type) => {
+    const titleText = stripExt(path.split('/').pop());
+    document.getElementById('current-page-title').innerHTML =
+        `${typeIcon(type)} <span>${titleText}</span>`;
+};
+
 export const loadPage = async (path, id, tags, opts = {}) => {
     setupDiagramObserver();
 
@@ -617,15 +643,7 @@ export const loadPage = async (path, id, tags, opts = {}) => {
     trackPageVisit(id, path, state.currentSpace);
     updateFavoriteBtn(id);
 
-    const titleText = path.split('/').pop().replace(/\.(md|drawio|list|chat|search|json)$/, '');
-    let titleIcon = icons.file;
-    if (state.currentPageType === 'diagram') titleIcon = icons.diagram;
-    else if (state.currentPageType === 'list') titleIcon = icons.list;
-    else if (state.currentPageType === 'chat') titleIcon = icons.chat;
-    else if (state.currentPageType === 'search') titleIcon = icons.search;
-    else if (state.currentPageType === 'json') titleIcon = icons.json;
-
-    document.getElementById('current-page-title').innerHTML = `${titleIcon} <span>${titleText}</span>`;
+    setPageTitle(path, state.currentPageType);
     const pageIdDisplay = document.getElementById('page-id-display');
     pageIdDisplay.textContent = `ID: ${id}`;
     pageIdDisplay.classList.remove('hidden');
