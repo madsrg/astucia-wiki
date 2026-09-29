@@ -3,9 +3,6 @@
 If you like Astucia Wiki, please consider giving it a star on
 [github](https://github.com/madsrg/astucia-wiki)!
 
-Also to support my work I hope you will subscribe to the Astucia Wiki
-[YouTube channel](https://www.youtube.com/channel/UCysy17UwEsxOmrGYZ0_5zkA).
-
 **What each version contains** is in the
 [release notes](https://github.com/madsrg/astucia-wiki/releases) — one entry per release,
 newest first. This page describes the current image.
