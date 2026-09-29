@@ -42,8 +42,9 @@ chats, pages, the file tree, mentions and job results arrive by push instead of 
 never broken. **Admin → Monitoring → Mercure** tells you whether it is working, and
 **Wiki Info** lists every version this install is running.
 
-> **2026.9.11 bundles Mercure 1.0.2, a security release** fixing ten vulnerabilities (four
-> high) in the hub. The hub runs inside this image, so updating the image is the fix.
+> **This image bundles Mercure 1.0.2, a security release** fixing ten vulnerabilities (four
+> high) in the hub. The hub runs inside the image, so updating the image is the fix — any
+> image from 2026.9.11 on carries it.
 
 ## Quick start
 
@@ -53,7 +54,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.9.11
+    madsrotwitt/astucia-wiki:2026.9.12
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -79,7 +80,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.9.11
+    madsrotwitt/astucia-wiki:2026.9.12
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -91,7 +92,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.9.11` | moves only if that release is rebuilt |
+| `2026.9.12` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
