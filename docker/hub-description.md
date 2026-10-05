@@ -26,7 +26,8 @@ that mirrors somebody's vault, the wiki does not touch the block at all.
 
 **AI** — AI users that read and write wiki pages · one-off and scheduled agent jobs · team
 and per-page chat · **AI memory**, so an AI keeps what it learns as ordinary pages you can
-read and correct · an **MCP server** so other tools can use your wiki, and an **MCP client**
+read and correct · **LLM providers** set up once and shared by every AI user, so a key lives
+in one place · avatars for AI users and people · an **MCP server** so other tools can use your wiki, and an **MCP client**
 so your AI users can use theirs.
 
 **Teams** — Spaces with per-user access control, including read-only Spaces · OTP or OIDC
@@ -39,9 +40,10 @@ chats, pages, the file tree, mentions and job results arrive by push instead of 
 never broken. **Admin → Monitoring → Mercure** tells you whether it is working, and
 **Wiki Info** lists every version this install is running.
 
-> **This image bundles Mercure 1.0.2, a security release** fixing ten vulnerabilities (four
+> **This image bundles Mercure 1.0.3, a security release** — upstream's Caddy hardening
+> against slow-connection attacks, on top of 1.0.2's fixes for ten vulnerabilities (four
 > high) in the hub. The hub runs inside the image, so updating the image is the fix — any
-> image from 2026.9.11 on carries it.
+> image from 2026.10.1 on carries 1.0.3.
 
 ## Quick start
 
@@ -51,7 +53,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.9.12
+    madsrotwitt/astucia-wiki:2026.10.1
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -77,7 +79,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.9.12
+    madsrotwitt/astucia-wiki:2026.10.1
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -89,7 +91,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.9.12` | moves only if that release is rebuilt |
+| `2026.10.1` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
