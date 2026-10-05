@@ -9,7 +9,7 @@
 #     for the hub, which records every POST. That covers the topics, the payload and — most
 #     importantly — `private=on`.
 #   - **Whether the hub honours a token's matchers** is upstream's contract, verified by
-#     hand against a real Mercure 1.0.2 hub rather than by downloading 34 MB in CI. What
+#     hand against a real Mercure 1.0.3 hub rather than by downloading 34 MB in CI. What
 #     that check covers, and what nothing here can: a Main-only ticket minted by this
 #     wiki's own code, against the Caddyfile tools/install-mercure.sh generates, receives
 #     Main, root-level and its own user topics and is refused Bravo, Main2 and another
@@ -225,7 +225,7 @@ assert_contains "the Space name is encoded" 'wiki/Two%20Words/*' "$(claim "$WIKI
 assert_not_contains "not raw in the pattern" '"wiki/Two Words/' "$(claim "$WIKI_ROOT/jar-2w")"
 # rawurlencode() leaves only A-Za-z0-9-_.~ alone, so every character URL Pattern treats as
 # syntax is already a %XX literal by the time the hub compiles the matcher. Verified against
-# a real 1.0.2 hub: a Space called 'A (draft)' grants exactly itself, not a capture group.
+# real 1.0.2 and 1.0.3 hubs: a Space called 'A (draft)' grants exactly itself, not a capture group.
 fixture_space 'A (draft)'
 fixture_users '{"users":[
   {"uid":1,"sub":"s1","name":"Admin","role":"admin","auth":"oidc"},
@@ -257,6 +257,29 @@ post_as "$ADMIN" 'api.php?action=create_file&space=Bravo' 'path=Other.md' > /dev
 assert_contains     "Bravo"      'topic=wiki%2FBravo%2Fpage%2FOther.md' "$(posts)"
 assert_not_contains "not Main"   'wiki%2FMain%2Fpage%2FOther.md'        "$(posts)"
 
+section 'a tag change announces the tree, where tags are read from'
+# Tags live in index.json, not in the page file, and reach a browser through the tree
+# (`list` carries them per node). A page event alone therefore told nobody: the other
+# browser's tree, tag cloud and open page waited for the 5-minute safety poll.
+tag_id=$(get_as "$ADMIN" 'api.php?action=list&space=Main' | python3 -c '
+import json,sys
+def walk(items):
+    for i in items:
+        if i.get("path") == "Note.md": print(i["id"]); return True
+        if walk(i.get("children") or []): return True
+walk(json.load(sys.stdin)["data"])')
+stamp_before=$(get_as "$ADMIN" 'api.php?action=tree_mtime&space=Main')
+clear_pubs
+r=$(post_as "$ADMIN" 'api.php?action=update_tags&space=Main' "id=${tag_id}&tags=%5B%22alpha%22%5D")
+assert_contains "the tag write succeeded" '"success":true'           "$r"
+assert_contains "tree topic"  'topic=wiki%2FMain%2Ftree'             "$(posts)"
+assert_contains "page topic"  'topic=wiki%2FMain%2Fpage%2FNote.md'   "$(posts)"
+# The stamp the tree watcher compares. Written within the same second as the read above,
+# so mtime alone would very likely not move; size is what does.
+stamp_after=$(get_as "$ADMIN" 'api.php?action=tree_mtime&space=Main')
+assert_contains "tree_mtime reports the index size" '"size":' "$stamp_after"
+if [ "$stamp_before" != "$stamp_after" ]; then _pass "and the stamp moved"; else _fail "and the stamp moved" "$stamp_before"; fi
+
 section 'a delete publishes too, so an open tab does not keep a dead page'
 clear_pubs
 post_as "$ADMIN" 'api.php?action=delete&space=Main' 'path=Note.md' > /dev/null
@@ -267,7 +290,7 @@ assert_contains "and tree"   'topic=wiki%2FMain%2Ftree'           "$(posts)"
 section 'the ticket is the ACL, in the token'
 # `*` is a URL Pattern wildcard and matches across `/`, which is what `{+rest}` did before
 # Mercure 1.0 retired URI Templates. The trailing separator is what carries the isolation:
-# confirmed against a real 1.0.2 hub, `wiki/Main/*` matches wiki/Main/page/Note.md and does
+# confirmed against real 1.0.2 and 1.0.3 hubs, `wiki/Main/*` matches wiki/Main/page/Note.md and does
 # not match wiki/Main2/page/Leak.md — the same containment rule as service_auth.php's paths.
 assert_eq 'an unrestricted user gets the whole tree' \
   '{"subscribe": [{"match": "wiki/*", "match_type": "urlpattern"}]}' "$(claim "$ADMIN")"
@@ -523,6 +546,37 @@ assert_not_contains "a longer name starting the same way" 'user%2F2%2Fmention' "
 clear_pubs
 post_as "$ADMIN" 'api.php?action=post_chat_message&space=Main' 'file=Talk.chat&text=@Ed one more' > /dev/null
 assert_contains "but the plain name does"   'topic=wiki%2Fuser%2F2%2Fmention' "$(posts)"
+
+# The users event: decided once at the router's exit by comparing what browsers are shown
+# before and after the request, rather than at each of the dozen users.json writers.
+section 'a change to the user list is announced to everyone'
+clear_pubs
+r=$(post_as "$ED" 'api.php?action=user_save_preferences' 'email=&fontFamily=sans&fontSize=11pt&dailyDigest=0&notifyAgentJobs=0&avatar=owl')
+assert_contains "the preference saved"        '"success":true'       "$r"
+assert_contains "the users topic is published" 'topic=wiki%2F%2Fusers' "$(posts)"
+assert_contains "privately, like every other" 'private=on'            "$(posts)"
+r=$(get_as "$ED" 'api.php?action=get_user_list')
+assert_contains "and the list shows it"       '"avatar":"owl"'       "$r"
+# A restricted reader's token holds wiki//* (root content) — the topic sits under it, so
+# Ed, limited to Main, still hears it. Asserted on the token, since that is the ACL.
+assert_contains "a Main-only token matches it" '"match": "wiki//*"' "$(claim "$ED")"
+
+section 'what browsers are not shown does not announce'
+# Positive control first, then the negatives: an unchanged save and a write of a field no
+# browser displays must both stay quiet, or every login would page every open tab.
+clear_pubs
+post_as "$ED" 'api.php?action=user_save_preferences' 'email=&fontFamily=serif&fontSize=11pt&dailyDigest=0&notifyAgentJobs=0' > /dev/null
+assert_not_contains "a font change is not a users event" 'users' "$(posts)"
+clear_pubs
+r=$(post_as "$ED" 'api.php?action=mark_mentions_seen' 'uid=2')
+assert_contains     "mentionsSeenAt was written" '"success":true' "$r"
+assert_not_contains "and is not a users event" 'users' "$(posts)"
+clear_pubs
+get_as "$ED" 'api.php?action=get_user_list' > /dev/null
+assert_not_contains "nor a read"              'users' "$(posts)"
+clear_pubs
+post_as "$ED" 'api.php?action=user_save_preferences' 'email=&fontFamily=serif&fontSize=11pt&dailyDigest=0&notifyAgentJobs=0&avatar=' > /dev/null
+assert_contains "clearing the avatar is one"  'topic=wiki%2F%2Fusers' "$(posts)"
 
 section 'a publish failure never breaks the write'
 kill "$HUB_PID" 2>/dev/null; wait "$HUB_PID" 2>/dev/null; HUB_PID=

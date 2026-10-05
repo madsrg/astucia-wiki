@@ -160,7 +160,7 @@ function wiki_realtime_publish_token(): string {
  *
  * **`*` is a URL Pattern wildcard, not a glob, and it matches across `/`** — so one matcher
  * per Space still covers every resource inside it, which is what `{+rest}` did before 1.0
- * retired URI Templates. Three things about it, all confirmed against a real 1.0.2 hub
+ * retired URI Templates. Three things about it, all confirmed against real 1.0.2 and 1.0.3 hubs
  * because none of them is obvious:
  *
  *  - **The trailing separator carries the isolation.** `wiki/Main/*` matches
@@ -266,6 +266,16 @@ function wiki_rt_topic_page(?string $space, string $rel_path): string {
 }
 function wiki_rt_topic_tree(?string $space): string {
     return 'wiki/' . wiki_rt_seg((string)$space) . '/tree';
+}
+/**
+ * "The user list changed" — an avatar, a name, an AI user added or removed. Under the
+ * root-content segment (`wiki//`), which every subscribe token already matches: a
+ * restricted actor holds `wiki//*`, an unrestricted one `wiki/*`. So it needs no new
+ * selector, and it carries nothing but the hint — the re-read goes through
+ * get_user_list, which shows a restricted reader exactly what it always did.
+ */
+function wiki_rt_topic_users(): string {
+    return 'wiki//users';
 }
 function wiki_rt_topic_job(int $uid): string {
     return 'wiki/user/' . $uid . '/job';

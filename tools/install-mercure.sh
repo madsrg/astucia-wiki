@@ -5,7 +5,7 @@
 # =============================================================================
 # Install, configure and run the Mercure hub as a systemd service.
 #
-#   sudo ./tools/install-mercure.sh 1.0.2
+#   sudo ./tools/install-mercure.sh 1.0.3
 #
 # The wiki's realtime push needs a Mercure hub. The Docker image bundles one; this is
 # the equivalent for a bare-metal install. It downloads the release, verifies its
@@ -63,12 +63,13 @@ usage() {
 Usage: sudo $0 <version>
 
   <version>   Mercure release to install, without the leading 'v'. For example:
-                sudo $0 1.0.2
+                sudo $0 1.0.3
               Releases: https://github.com/dunglas/mercure/releases
 
               The wiki mints Mercure 1.0 access tokens (OAuth 2.0), which a 0.x hub
-              rejects, so 1.0.0 is the minimum — and 1.0.2 is the first release without
-              the ten vulnerabilities an audit found in 1.0.0, so it is what to install.
+              rejects, so 1.0.0 is the minimum. 1.0.2 fixed ten vulnerabilities an
+              audit found in 1.0.0, and 1.0.3 adds Caddy's security hardening on top, so
+              1.0.3 is what to install.
 
 Re-run with a newer version to upgrade. The shared key is never regenerated.
 EOF
@@ -80,24 +81,26 @@ case "$VERSION" in
     -h|--help) usage ;;
     v*) VERSION="${VERSION#v}" ;;   # tolerate 'v1.0.2'
 esac
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || die "'$VERSION' is not a version like 1.0.2"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || die "'$VERSION' is not a version like 1.0.3"
 # Refused rather than installed and left to fail at the first publish: the wiki signs
 # OAuth 2.0 access tokens (typ at+jwt, iss, aud, authorization_details), and a 0.x hub
 # answers 401 to every one of them while looking perfectly healthy from the outside.
 case "$VERSION" in
     0.*) die "Mercure $VERSION is too old for this wiki — it needs 1.0.0 or newer, whose
-      access-token format the wiki signs. Install 1.0.2 or later." ;;
+      access-token format the wiki signs. Install 1.0.3 or later." ;;
     1.0.1) die "Mercure 1.0.1 was tagged but never released — its build failed on 32-bit
-      platforms, so there are no binaries to download. Install 1.0.2." ;;
+      platforms, so there are no binaries to download. Install 1.0.3." ;;
 esac
 
-# 1.0.2 is a security release: an audit found ten vulnerabilities, four of them high,
-# including one hub receiving another's private updates. Older 1.0.x still speaks the
-# protocol this wiki signs for, so this is a warning rather than a refusal — the line
-# being: refuse what cannot work, warn about what works but should not be run.
-MIN_SECURE=1.0.2
+# Both are security releases. 1.0.2: an audit found ten vulnerabilities, four of them
+# high, including one hub receiving another's private updates. 1.0.3: Caddy 2.11.7's
+# hardening — idle read/write timeouts against slowloris and a 16 KiB request-header cap.
+# Older 1.0.x still speaks the protocol this wiki signs for, so this is a warning rather
+# than a refusal — the line being: refuse what cannot work, warn about what works but
+# should not be run.
+MIN_SECURE=1.0.3
 if [ "$(printf '%s\n%s\n' "$MIN_SECURE" "$VERSION" | sort -V | head -1)" != "$MIN_SECURE" ]; then
-    warn "Mercure $VERSION is older than $MIN_SECURE, which fixes ten security issues (four high)."
+    warn "Mercure $VERSION is older than $MIN_SECURE, the current security release."
     dim  "https://github.com/dunglas/mercure/releases/tag/v$MIN_SECURE"
 fi
 

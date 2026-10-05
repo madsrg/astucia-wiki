@@ -91,7 +91,9 @@ if (isset($_REQUEST['action'])) {
         }
     }
 
-    wiki_migrate_user_emails();   // one-shot, marked by `schema` in users.json
+    // One-shot migrations, marked by `schema` in users.json. The connections one runs the
+    // email one first: each is a step, and they only make sense in order.
+    wiki_migrate_llm_connections();
 
     $indexer = new PageIndexer($space_dir);
 
@@ -268,6 +270,55 @@ if (isset($_REQUEST['action'])) {
         return 'wk_sys_' . bin2hex(random_bytes(24));
     }
 
+    // The avatar ids an AI user may carry: exactly the vendored set in avatars/avatars.json.
+    // A whitelist, because the id becomes part of an <img> URL in every chat bubble.
+    function wiki_ai_avatar_ids(): array {
+        static $ids = null;
+        if ($ids !== null) return $ids;
+        $j = json_decode((string)@file_get_contents(__DIR__ . '/avatars/avatars.json'), true);
+        $ids = [];
+        foreach ((is_array($j) ? $j : []) as $a) {
+            $id = (string)($a['id'] ?? '');
+            if (preg_match('/^[a-z0-9-]+$/', $id) && is_file(__DIR__ . "/avatars/$id.svg")) $ids[] = $id;
+        }
+        return $ids;
+    }
+
+    // What every browser is told about every user — get_user_list's payload, and nothing
+    // else: no email, no role, no token. One function, because the change stamp below is
+    // computed from it and must move exactly when this does.
+    function wiki_public_user_list(?array $users = null): array {
+        if ($users === null) {
+            $f = WIKI_SYSTEM_DATA . 'users.json';
+            $users = is_file($f) ? (json_decode((string)file_get_contents($f), true)['users'] ?? []) : [];
+        }
+        return array_values(array_map(fn($u) => [
+            'uid'       => $u['uid']  ?? 0,
+            'name'      => $u['name'] ?? '',
+            'is_ai'     => !empty($u['is_ai']),
+            'is_system' => !empty($u['is_system']),
+            // The composer needs this before it sends: a background AI gets an
+            // ETA toast, not the waiting modal.
+            'always_background' => !empty($u['ai_config']['always_background']),
+            // Drawn in every chat bubble and comment (modules/core/avatars.js). An AI
+            // user's is set by an admin, a person's in My Preferences.
+            'avatar'    => (string)(!empty($u['is_ai']) ? ($u['ai_config']['avatar'] ?? '') : ($u['avatar'] ?? '')),
+        ], $users));
+    }
+
+    // "Has the user list changed": a hash of the list browsers are actually shown, not of
+    // users.json. The file is rewritten for things no browser displays — a login stamps
+    // lastLogin, opening My Mentions stamps mentionsSeenAt — and hashing the bytes would
+    // send every open browser to refetch the list after each of them. A hash rather than
+    // mtime+size because an avatar swap is often the same length ("owl" → "cat") and two
+    // saves inside one second would then share both.
+    // The chat polls carry it (`users_rev`), so a browser refetches get_user_list once when
+    // it moves and never otherwise; it is also what decides whether a request publishes
+    // the realtime users event.
+    function wiki_users_rev(?array $public = null): string {
+        return hash('crc32b', json_encode($public ?? wiki_public_user_list()));
+    }
+
     function _load_mcp_servers(): array {
         if (!defined('WIKI_SYSTEM_DATA')) return [];
         $file = WIKI_SYSTEM_DATA . 'mcp_servers.json';
@@ -350,7 +401,7 @@ if (isset($_REQUEST['action'])) {
     }
 
     function trigger_ai_response($ai_user, $chat_file, $chat_data, $indexer, $space_dir, $placeholder_id = null) {
-        $config        = $ai_user['ai_config']      ?? [];
+        $config        = wiki_ai_effective_config($ai_user);   // connection fields laid over ai_config
         $provider      = $config['provider']         ?? 'openai';
         $family        = llm_family($provider);
         $api_url       = $config['api_url']          ?? '';
@@ -920,7 +971,8 @@ if (isset($_REQUEST['action'])) {
                       'admin_get_logs', 'admin_get_log_content',
                       'admin_get_error_logs', 'admin_get_error_log_content',
                       'admin_send_test_email', 'admin_get_diag_log',
-                      'admin_get_ai_users', 'admin_save_ai_user', 'admin_test_ai_user',
+                      'admin_get_ai_users', 'admin_save_ai_user',
+                      'admin_get_llm_connections', 'admin_save_llm_connection', 'admin_delete_llm_connection', 'admin_test_llm_connection',
                       'admin_delete_ai_user', 'admin_regenerate_ai_token',
                       'admin_get_api_accounts', 'admin_save_api_account',
                       'admin_delete_api_account', 'admin_regenerate_api_token',
@@ -949,6 +1001,10 @@ if (isset($_REQUEST['action'])) {
         ]);
     }
     $_audit = wiki_audit_begin($requested_action, $indexer);
+    // The users realtime event is decided here rather than at each users.json writer —
+    // there are a dozen of them and the next one would forget. Only POSTs can write, so
+    // only they pay for the comparison; see the publish after the switch.
+    $_users_rev_before = (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') ? wiki_users_rev() : null;
 
     if (in_array($requested_action, $edit_actions) && $current_role === 'reader') {
         wiki_audit_finish($_audit, 'failure', 'readers cannot modify content', null, $_audit_space);
@@ -1468,7 +1524,8 @@ if (isset($_REQUEST['action'])) {
                 if (isset($_GET['since_id'])) {
                     $cm_since = (int)$_GET['since_id'];
                     $cm_new   = array_values(array_filter($cm_all, fn($m) => ($m['id'] ?? 0) > $cm_since));
-                    echo json_encode(['success' => true, 'messages' => $cm_new, 'total' => $cm_total, 'mtime' => $cm_mtime]);
+                    echo json_encode(['success' => true, 'messages' => $cm_new, 'total' => $cm_total, 'mtime' => $cm_mtime,
+                                      'users_rev' => wiki_users_rev()]);
                     break;
                 }
                 if (isset($_GET['before_id'])) {
@@ -1490,6 +1547,7 @@ if (isset($_REQUEST['action'])) {
                     'git_commit'    => isset($cm_data['git_commit']) ? (bool)$cm_data['git_commit'] : false,
                     'nextMessageId' => $cm_data['nextMessageId'] ?? 1,
                     'mtime'         => $cm_mtime,
+                    'users_rev'     => wiki_users_rev(),
                     // null means the thread has never chosen and follows the wiki default.
                     // '' means the thread chose *off*, which outranks the default — the
                     // dialog cannot offer that distinction unless it can see it.
@@ -2463,17 +2521,8 @@ if (isset($_REQUEST['action'])) {
                     echo json_encode(['success' => true, 'data' => []]);
                     break;
                 }
-                $all_users = json_decode(file_get_contents($users_file), true)['users'] ?? [];
-                $user_list = array_values(array_map(fn($u) => [
-                    'uid'       => $u['uid']  ?? 0,
-                    'name'      => $u['name'] ?? '',
-                    'is_ai'     => !empty($u['is_ai']),
-                    'is_system' => !empty($u['is_system']),
-                    // The composer needs this before it sends: a background AI gets an
-                    // ETA toast, not the waiting modal.
-                    'always_background' => !empty($u['ai_config']['always_background']),
-                ], $all_users));
-                echo json_encode(['success' => true, 'data' => $user_list]);
+                $user_list = wiki_public_user_list();
+                echo json_encode(['success' => true, 'data' => $user_list, 'rev' => wiki_users_rev($user_list)]);
                 break;
 
             case 'get_ai_users_overview':
@@ -2491,7 +2540,7 @@ if (isset($_REQUEST['action'])) {
                 $aio_out = [];
                 foreach ($aio_all as $u) {
                     if (empty($u['is_ai'])) continue;
-                    $cfg = $u['ai_config'] ?? [];
+                    $cfg = wiki_ai_effective_config($u);
                     $ids = $cfg['mcp_server_ids'] ?? [];
                     $servers = [];
                     foreach ((is_array($ids) ? $ids : []) as $id) {
@@ -3399,6 +3448,16 @@ if (isset($_REQUEST['action'])) {
                     $page_title = pathinfo($file_path_raw, PATHINFO_FILENAME);
                     $tpl_name   = isset($_POST['template']) ? basename($_POST['template']) : '';
                     $content    = "# {$page_title}\n\n";
+                    // A data page starts as a one-field object rather than empty: an empty
+                    // file is not JSON, so json_view would open it as an error, and `{}`
+                    // opens as a blank editor that does not show what a field looks like.
+                    // Encoded the way `save` re-encodes, so the first save is not a diff of
+                    // whitespace. Templates are Markdown and do not apply.
+                    $cf_is_json = strtolower(pathinfo($file_path_raw, PATHINFO_EXTENSION)) === 'json';
+                    if ($cf_is_json) {
+                        $content  = json_encode(['field' => 'value'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                        $tpl_name = '';
+                    }
                     if ($tpl_name !== '') {
                         $tpl_file = rtrim($space_dir, '/') . '/templates/' . $tpl_name . '.md';
                         if (is_file($tpl_file)) {
@@ -4089,6 +4148,10 @@ if (isset($_REQUEST['action'])) {
                             'fontSize'    => $pu['fontSize']   ?? '11pt',
                             'dailyDigest' => !empty($pu['dailyDigest']),
                             'notifyAgentJobs' => !empty($pu['notifyAgentJobs']),
+                            'avatar'      => (string)($pu['avatar'] ?? ''),
+                            // The picker's options, so it can never offer an id the save
+                            // refuses — the same arrangement as the AI user form.
+                            'avatars'     => wiki_ai_avatar_ids(),
                         ]]);
                         break 2;
                     }
@@ -4103,6 +4166,11 @@ if (isset($_REQUEST['action'])) {
                 $new_font_size  = trim($_POST['fontSize']   ?? 'normal');
                 $new_digest     = (($_POST['dailyDigest'] ?? '') === '1');
                 $new_job_notify = (($_POST['notifyAgentJobs'] ?? '') === '1');
+                // null = not sent (keep), '' = none (the initial), else one of the vendored set.
+                $new_avatar     = array_key_exists('avatar', $_POST) ? trim((string)$_POST['avatar']) : null;
+                if ($new_avatar !== null && $new_avatar !== '' && !in_array($new_avatar, wiki_ai_avatar_ids(), true)) {
+                    throw new Exception('Unknown avatar.');
+                }
                 if (!in_array($new_font,      ['sans','serif','mono']))                          $new_font      = 'sans';
                 if (!in_array($new_font_size, ['10pt','11pt','12pt','14pt','16pt']))          $new_font_size = '11pt';
                 if ($new_email && !filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
@@ -4121,6 +4189,8 @@ if (isset($_REQUEST['action'])) {
                         $pu2['fontSize']    = $new_font_size;
                         $pu2['dailyDigest'] = $new_digest;
                         $pu2['notifyAgentJobs'] = $new_job_notify;
+                        if ($new_avatar === '')       unset($pu2['avatar']);
+                        elseif ($new_avatar !== null) $pu2['avatar'] = $new_avatar;
                         $found_pref = true;
                         break;
                     }
@@ -4458,7 +4528,13 @@ if (isset($_REQUEST['action'])) {
 
             case 'tree_mtime':
                 $idx_file = $space_dir . '/index.json';
-                echo json_encode(['success' => true, 'mtime' => file_exists($idx_file) ? filemtime($idx_file) : 0]);
+                // Size as well as mtime: filemtime has 1-second resolution, so a second index
+                // write in the same second as the client's last poll — two tag edits in
+                // quick succession — is invisible to mtime alone. Same pairing as file_mtime.
+                $idx_exists = file_exists($idx_file);
+                echo json_encode(['success' => true,
+                                  'mtime' => $idx_exists ? filemtime($idx_file) : 0,
+                                  'size'  => $idx_exists ? filesize($idx_file) : 0]);
                 break;
 
             case 'indexfiles':
@@ -4879,9 +4955,11 @@ if (isset($_REQUEST['action'])) {
                 $ai_users_out = [];
                 foreach ($uf_ai['users'] ?? [] as $u) {
                     if (empty($u['is_ai'])) continue;
-                    $cfg = $u['ai_config'] ?? [];
+                    // The connection's own fields are shown read-only for the list (which
+                    // provider, which endpoint); the key never leaves the server.
+                    $cfg = wiki_ai_effective_config($u);
                     $has_key = !empty($cfg['api_key']);
-                    unset($cfg['api_key']);
+                    unset($cfg['api_key'], $cfg['extra_headers']);
                     $ai_users_out[] = [
                         'uid'           => $u['uid']           ?? null,
                         'name'          => $u['name']          ?? '',
@@ -4891,18 +4969,30 @@ if (isset($_REQUEST['action'])) {
                         'ai_config'     => array_merge($cfg, ['api_key_set' => $has_key]),
                     ];
                 }
-                echo json_encode(['success' => true, 'data' => $ai_users_out]);
+                // The picker's options travel with the list, so the form needs no second
+                // request and can never offer an id the save would then refuse.
+                echo json_encode(['success' => true, 'data' => $ai_users_out, 'avatars' => wiki_ai_avatar_ids()]);
                 break;
 
             case 'admin_save_ai_user':
                 $ai_name      = trim($_POST['name'] ?? '');
                 $ai_role      = in_array($_POST['role'] ?? '', ['editor', 'reader']) ? $_POST['role'] : 'editor';
                 $ai_uid       = isset($_POST['uid']) && $_POST['uid'] !== '' ? (int)$_POST['uid'] : null;
-                $ai_source_uid = isset($_POST['source_uid']) && $_POST['source_uid'] !== '' ? (int)$_POST['source_uid'] : null;
                 $ai_cfg_in    = json_decode($_POST['ai_config'] ?? '{}', true) ?? [];
                 $ai_spaces_raw = json_decode($_POST['spaces'] ?? 'null', true);
                 $ai_spaces_in  = is_array($ai_spaces_raw) ? array_values(array_filter(array_map('strval', $ai_spaces_raw))) : null;
                 if (!$ai_name) throw new Exception('AI user name is required.');
+                // Every AI user reaches its model through a connection. Refused rather
+                // than stored dangling: a record naming nothing fails on its first call.
+                $ai_conn_id = trim((string)($ai_cfg_in['connection_id'] ?? ''));
+                if ($ai_conn_id === '' || wiki_llm_connection($ai_conn_id) === null) {
+                    throw new Exception('Choose an LLM provider for this AI user.');
+                }
+                // null = not sent (keep what is stored), '' = the default glyph.
+                $ai_avatar = array_key_exists('avatar', $ai_cfg_in) ? (string)$ai_cfg_in['avatar'] : null;
+                if ($ai_avatar !== null && $ai_avatar !== '' && !in_array($ai_avatar, wiki_ai_avatar_ids(), true)) {
+                    throw new Exception('Unknown avatar.');
+                }
                 $uf_sai = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? ['users' => []]) : ['users' => []];
                 if ($ai_uid !== null) {
                     $found_ai = false;
@@ -4912,9 +5002,11 @@ if (isset($_REQUEST['action'])) {
                         $u['role']   = $ai_role;
                         $u['spaces'] = $ai_spaces_in;
                         $ec = $u['ai_config'] ?? [];
+                        // Built fresh rather than merged into $ec, so the inline provider /
+                        // URL / key / headers of a pre-connection record are dropped on the
+                        // first save — they live on the connection now.
                         $nc = [
-                            'provider'         =>        $ai_cfg_in['provider']         ?? $ec['provider']         ?? 'openai',
-                            'api_url'          => trim($ai_cfg_in['api_url']            ?? $ec['api_url']          ?? ''),
+                            'connection_id'    => $ai_conn_id,
                             'model'            => trim($ai_cfg_in['model']              ?? $ec['model']            ?? ''),
                             'system_prompt'    =>        $ai_cfg_in['system_prompt']    ?? $ec['system_prompt']    ?? '',
                             'system_prompt_space' => trim($ai_cfg_in['system_prompt_space'] ?? $ec['system_prompt_space'] ?? ''),
@@ -4937,10 +5029,8 @@ if (isset($_REQUEST['action'])) {
                                 ? (string)($ai_cfg_in['memory'] ?? $ec['memory'] ?? '') : '',
                             'mcp_server_ids'    => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? $ec['mcp_server_ids'] ?? []))),
                             'mcp_instructions'  => (array)($ai_cfg_in['mcp_instructions'] ?? $ec['mcp_instructions'] ?? []),
-                            'extra_headers'     => _sanitize_extra_headers($ai_cfg_in['extra_headers'] ?? $ec['extra_headers'] ?? []),
+                            'avatar'            => $ai_avatar ?? (string)($ec['avatar'] ?? ''),
                         ];
-                        if (!empty($ai_cfg_in['api_key'])) $nc['api_key'] = $ai_cfg_in['api_key'];
-                        elseif (!empty($ec['api_key']))     $nc['api_key'] = $ec['api_key'];
                         $u['ai_config'] = $nc;
                         $found_ai = true;
                         break;
@@ -4950,16 +5040,6 @@ if (isset($_REQUEST['action'])) {
                 } else {
                     $max_uid_ai = 0;
                     foreach ($uf_sai['users'] as $eu) { if (isset($eu['uid']) && $eu['uid'] > $max_uid_ai) $max_uid_ai = $eu['uid']; }
-                    // If cloning and no key entered, inherit the key from the source user
-                    $new_api_key = $ai_cfg_in['api_key'] ?? '';
-                    if ($new_api_key === '' && $ai_source_uid !== null) {
-                        foreach ($uf_sai['users'] as $src) {
-                            if (!empty($src['is_ai']) && (int)($src['uid'] ?? -1) === $ai_source_uid) {
-                                $new_api_key = $src['ai_config']['api_key'] ?? '';
-                                break;
-                            }
-                        }
-                    }
                     $uf_sai['users'][] = [
                         'uid'           => $max_uid_ai + 1,
                         'name'          => $ai_name,
@@ -4968,9 +5048,7 @@ if (isset($_REQUEST['action'])) {
                         'spaces'        => $ai_spaces_in,
                         'service_token' => generate_ai_service_token(),
                         'ai_config'     => [
-                            'provider'         =>        $ai_cfg_in['provider']         ?? 'openai',
-                            'api_url'          => trim($ai_cfg_in['api_url']            ?? ''),
-                            'api_key'          => $new_api_key,
+                            'connection_id'    => $ai_conn_id,
                             'model'            => trim($ai_cfg_in['model']              ?? ''),
                             'system_prompt'    =>        $ai_cfg_in['system_prompt']    ?? '',
                             'system_prompt_space' => trim($ai_cfg_in['system_prompt_space'] ?? ''),
@@ -4985,7 +5063,7 @@ if (isset($_REQUEST['action'])) {
                                 ? (string)($ai_cfg_in['memory'] ?? '') : '',
                             'mcp_server_ids'   => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? []))),
                             'mcp_instructions' => (array)($ai_cfg_in['mcp_instructions'] ?? []),
-                            'extra_headers'    => _sanitize_extra_headers($ai_cfg_in['extra_headers'] ?? []),
+                            'avatar'           => $ai_avatar ?? '',
                         ],
                     ];
                 }
@@ -5633,39 +5711,117 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true, 'tool_count' => count($tools_out), 'tools' => $tools_out]);
                 break;
 
-            case 'admin_test_ai_user':
-                $test_ai_provider = trim($_POST['provider'] ?? 'openai');
-                $test_ai_url      = trim($_POST['api_url']  ?? '');
-                $test_ai_key      = $_POST['api_key'] ?? '';
-                $test_ai_model    = trim($_POST['model'] ?? '');
-                $test_ai_uid      = isset($_POST['uid']) && $_POST['uid'] !== '' ? (int)$_POST['uid'] : null;
-                if (!$test_ai_url)   throw new Exception('API URL is required.');
-                if (!$test_ai_model) throw new Exception('Model is required.');
-                if (!$test_ai_key && $test_ai_uid !== null) {
-                    // Key field left blank ("keep existing") — resolve the stored key
-                    // server-side; it is never sent back to the browser.
-                    $uf_test_ai = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? []) : [];
-                    foreach ($uf_test_ai['users'] ?? [] as $_tu) {
-                        if (!empty($_tu['is_ai']) && (int)($_tu['uid'] ?? -1) === $test_ai_uid) {
-                            $test_ai_key = $_tu['ai_config']['api_key'] ?? '';
-                            break;
-                        }
-                    }
-                }
-                if (!$test_ai_key) throw new Exception('API key is required.');
-                $test_ai_extra = _extra_header_lines(json_decode($_POST['extra_headers'] ?? '[]', true));
-                $test_ai_res = _test_ai_connection($test_ai_provider, $test_ai_url, $test_ai_key, $test_ai_model, $test_ai_extra);
-                if (!$test_ai_res['ok']) {
-                    echo json_encode(['success' => false, 'message' => $test_ai_res['error']]);
+            case 'admin_test_llm_connection':
+                // One test for both forms. The provider form posts its fields (a key typed
+                // but not yet saved is what is being tested); the AI user form posts only
+                // the connection id and its model. A blank key means "the stored one",
+                // resolved here — it is never sent to the browser.
+                $tc_id   = trim($_POST['id'] ?? '');
+                $tc_base = $tc_id !== '' ? wiki_llm_connection($tc_id) : null;
+                if ($tc_id !== '' && $tc_base === null) throw new Exception('LLM provider not found.');
+                $tc_provider = trim($_POST['provider'] ?? '') ?: ($tc_base['provider'] ?? 'openai');
+                $tc_url      = array_key_exists('api_url', $_POST) ? trim($_POST['api_url']) : (string)($tc_base['api_url'] ?? '');
+                if ($tc_url === '') $tc_url = llm_default_url($tc_provider);
+                $tc_key      = (string)($_POST['api_key'] ?? '') ?: (string)($tc_base['api_key'] ?? '');
+                $tc_headers  = array_key_exists('extra_headers', $_POST)
+                    ? json_decode($_POST['extra_headers'], true) : ($tc_base['extra_headers'] ?? []);
+                $tc_model    = trim($_POST['model'] ?? '');
+                if (!$tc_model) throw new Exception('Model is required.');
+                if (!$tc_key)   throw new Exception('API key is required.');
+                $tc_res = _test_ai_connection($tc_provider, $tc_url, $tc_key, $tc_model, _extra_header_lines($tc_headers));
+                if (!$tc_res['ok']) {
+                    echo json_encode(['success' => false, 'message' => $tc_res['error']]);
                     break;
                 }
-                echo json_encode(['success' => true, 'reply' => $test_ai_res['reply']]);
+                echo json_encode(['success' => true, 'reply' => $tc_res['reply']]);
+                break;
+
+            case 'admin_get_llm_connections':
+                $lc_users = json_decode(@file_get_contents(WIKI_SYSTEM_DATA . 'users.json') ?: '{}', true)['users'] ?? [];
+                $lc_out = [];
+                foreach (wiki_llm_connections() as $c) {
+                    $pub = wiki_llm_connection_public($c);
+                    $pub['provider_label'] = llm_provider((string)($c['provider'] ?? 'openai'))['label'] ?? '';
+                    // Which models are in use on it: the provider form's Test needs one,
+                    // and offering the one an AI user already runs saves typing it.
+                    $pub['used_by'] = [];
+                    $pub['models']  = [];
+                    foreach ($lc_users as $u) {
+                        if (empty($u['is_ai']) || ($u['ai_config']['connection_id'] ?? '') !== ($c['id'] ?? '')) continue;
+                        $pub['used_by'][] = (string)($u['name'] ?? '');
+                        $m = trim((string)($u['ai_config']['model'] ?? ''));
+                        if ($m !== '' && !in_array($m, $pub['models'], true)) $pub['models'][] = $m;
+                    }
+                    $lc_out[] = $pub;
+                }
+                echo json_encode(['success' => true, 'data' => $lc_out]);
+                break;
+
+            case 'admin_save_llm_connection':
+                $lc_id       = trim($_POST['id'] ?? '');
+                $lc_name     = mb_substr(trim($_POST['name'] ?? ''), 0, 100);
+                $lc_provider = trim($_POST['provider'] ?? 'openai');
+                $lc_url      = trim($_POST['api_url'] ?? '');
+                $lc_key      = (string)($_POST['api_key'] ?? '');
+                $lc_headers  = _sanitize_extra_headers(json_decode($_POST['extra_headers'] ?? '[]', true));
+                if ($lc_name === '') throw new Exception('Name is required.');
+                if (!in_array($lc_provider, array_column(llm_providers(), 'id'), true)) throw new Exception('Unknown provider type.');
+                $lc_all = wiki_llm_connections();
+                foreach ($lc_all as $c) {
+                    if (($c['id'] ?? '') !== $lc_id && mb_strtolower((string)($c['name'] ?? '')) === mb_strtolower($lc_name)) {
+                        throw new Exception('Another LLM provider already has that name.');
+                    }
+                }
+                if ($lc_id !== '') {
+                    $lc_found = false;
+                    foreach ($lc_all as $i => $c) {
+                        if (($c['id'] ?? '') !== $lc_id) continue;
+                        $lc_all[$i]['name']          = $lc_name;
+                        $lc_all[$i]['provider']      = $lc_provider;
+                        $lc_all[$i]['api_url']       = $lc_url;
+                        $lc_all[$i]['extra_headers'] = $lc_headers;
+                        if ($lc_key !== '') $lc_all[$i]['api_key'] = $lc_key;   // blank = keep
+                        unset($lc_all[$i]['migrated']);
+                        $lc_found = true;
+                        break;
+                    }
+                    if (!$lc_found) throw new Exception('LLM provider not found.');
+                } else {
+                    $lc_id = wiki_llm_connection_new_id();
+                    $lc_all[] = [
+                        'id' => $lc_id, 'name' => $lc_name, 'provider' => $lc_provider, 'api_url' => $lc_url,
+                        'api_key' => $lc_key, 'extra_headers' => $lc_headers, 'created_at' => date('c'),
+                    ];
+                }
+                if (!wiki_llm_connections_save($lc_all)) throw new Exception('Could not write llm_connections.json.');
+                echo json_encode(['success' => true, 'id' => $lc_id]);
+                break;
+
+            case 'admin_delete_llm_connection':
+                $lc_del = trim($_POST['id'] ?? '');
+                if ($lc_del === '') throw new Exception('Missing id.');
+                // Refused while in use, naming who: deleting it would leave those AI users
+                // with no way to reach a model, and the first anyone would hear of it is a
+                // failed reply in a chat thread.
+                $lc_in_use = wiki_llm_connection_users($lc_del);
+                if ($lc_in_use) {
+                    echo json_encode(['success' => false, 'in_use' => array_values($lc_in_use),
+                                      'message' => 'Still used by: ' . implode(', ', $lc_in_use)]);
+                    break;
+                }
+                wiki_llm_connections_save(array_values(array_filter(wiki_llm_connections(), fn($c) => ($c['id'] ?? '') !== $lc_del)));
+                echo json_encode(['success' => true]);
                 break;
 
             default:
                 throw new Exception('Invalid action.');
         }
         wiki_audit_finish($_audit, 'success', '', $indexer, $_audit_space);
+        // A hint, never a payload: "the user list moved, re-read get_user_list". Fired only
+        // when what browsers are shown changed — not for a lastLogin or mentionsSeenAt write.
+        if ($_users_rev_before !== null && wiki_users_rev() !== $_users_rev_before) {
+            wiki_realtime_publish(wiki_rt_topic_users());
+        }
     } catch (Exception $e) {
         wiki_audit_finish($_audit, 'failure', $e->getMessage(), null, $_audit_space);
         header("HTTP/1.1 500 Internal Server Error");

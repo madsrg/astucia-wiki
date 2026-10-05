@@ -94,6 +94,11 @@ const LLM_MODEL_NAMESPACES = [
 // Reduce a configured model id to the bare model name that model_rules match
 // against: "anthropic/claude-opus-5", "us.anthropic.claude-opus-5" and
 // "claude-opus-5@20260101" all become "claude-opus-5".
+//
+// Note the patterns are prefixes: "claude-sonnet-5-5" matches "^claude-sonnet-5",
+// so a point release inherits its predecessor's rules and usually needs no edit.
+// A point release that needs *different* rules must get its own entry above the
+// shorter pattern — see the _comment_model_rules note in llm_providers.json.
 function llm_model_basename(string $model): string {
     $m = strtolower(trim($model));
     // A "/" prefix is unambiguous — no model id contains a slash.
@@ -125,7 +130,7 @@ function llm_model_rules(string $model): array {
 
     $defaults = ['sampling' => true, 'thinking' => null, 'effort' => false, 'reasoning_effort' => false];
     $builtin  = [
-        ['match' => '^claude-(fable-5|mythos-5|opus-5|opus-4-7|opus-4-8|sonnet-5)', 'sampling' => false, 'thinking' => 'adaptive', 'effort' => true],
+        ['match' => '^claude-(fable-5|mythos-5|opus-5-5|opus-5|sonnet-5-5|sonnet-5|opus-4-7|opus-4-8)', 'sampling' => false, 'thinking' => 'adaptive', 'effort' => true],
         ['match' => '^claude-(opus-4-6|sonnet-4-6)',                                'sampling' => true,  'thinking' => 'adaptive', 'effort' => true],
         ['match' => '^claude-',                                                     'sampling' => true,  'thinking' => 'budget_tokens'],
         ['match' => '^(o[1-9]($|[-.])|gpt-5)',                                      'sampling' => false, 'reasoning_effort' => true],

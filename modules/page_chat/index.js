@@ -4,7 +4,7 @@
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { watch, rtTopic } from '../realtime/index.js';
-import { icons } from '../core/icons.js';
+import { paintAvatar, repaintAvatars } from '../core/avatars.js';
 import { showToast, confirmModal, highlightMentions, externalizeLinks } from '../core/utils.js';
 import { getUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
@@ -114,10 +114,9 @@ const buildRow = (msg, grouped) => {
     if (!grouped) {
         // Same rule as the team chat: an AI is shown as an android, not an initial.
         const isAi = _aiUids.has(msg.uid);
-        avatarEl.className = 'chat-avatar pc-avatar' + (isAi ? ' chat-avatar-ai' : '');
-        if (isAi) avatarEl.innerHTML = icons.robot;
-        else      avatarEl.textContent = (msg.name || '?')[0].toUpperCase();
-        avatarEl.style.background = avatarColor(msg.uid);
+        // A chosen avatar replaces the glyph or the initial; see modules/core/avatars.js.
+        avatarEl.className = 'chat-avatar pc-avatar';
+        paintAvatar(avatarEl, msg.uid, { isAi, colour: avatarColor(msg.uid), initial: (msg.name || '?')[0].toUpperCase() });
         attachFocusClick(avatarEl, msg);
     } else {
         avatarEl.className = 'chat-avatar-gap';
@@ -948,6 +947,11 @@ const _showBesidePage = async () => {
 };
 
 export const init = () => {
+    // Same as modules/chat: a changed user list repaints the avatars already drawn.
+    window.addEventListener('wiki:users', (e) => {
+        _aiUids = new Set((e.detail || []).filter(u => u.is_ai).map(u => u.uid));
+        repaintAvatars(document.getElementById('pc-messages'), uid => _aiUids.has(uid), avatarColor);
+    });
     document.getElementById('pc-close-btn')?.addEventListener('click', closePanel);
     document.getElementById('pc-expand-btn')?.addEventListener('click', _openAsPage);
     document.getElementById('chat-dock-btn')?.addEventListener('click', _showBesidePage);

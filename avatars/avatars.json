@@ -1,0 +1,402 @@
+[
+ {
+  "id": "robot",
+  "codepoint": "1f916"
+ },
+ {
+  "id": "alien",
+  "codepoint": "1f47d"
+ },
+ {
+  "id": "space-invader",
+  "codepoint": "1f47e"
+ },
+ {
+  "id": "ghost",
+  "codepoint": "1f47b"
+ },
+ {
+  "id": "mage",
+  "codepoint": "1f9d9"
+ },
+ {
+  "id": "fairy",
+  "codepoint": "1f9da"
+ },
+ {
+  "id": "genie",
+  "codepoint": "1f9de"
+ },
+ {
+  "id": "elf",
+  "codepoint": "1f9dd"
+ },
+ {
+  "id": "merperson",
+  "codepoint": "1f9dc"
+ },
+ {
+  "id": "superhero",
+  "codepoint": "1f9b8"
+ },
+ {
+  "id": "ninja",
+  "codepoint": "1f977"
+ },
+ {
+  "id": "detective",
+  "codepoint": "1f575"
+ },
+ {
+  "id": "astronaut",
+  "codepoint": "1f9d1_200d_1f680"
+ },
+ {
+  "id": "scientist",
+  "codepoint": "1f9d1_200d_1f52c"
+ },
+ {
+  "id": "technologist",
+  "codepoint": "1f9d1_200d_1f4bb"
+ },
+ {
+  "id": "teacher",
+  "codepoint": "1f9d1_200d_1f3eb"
+ },
+ {
+  "id": "health-worker",
+  "codepoint": "1f9d1_200d_2695"
+ },
+ {
+  "id": "cook",
+  "codepoint": "1f9d1_200d_1f373"
+ },
+ {
+  "id": "artist",
+  "codepoint": "1f9d1_200d_1f3a8"
+ },
+ {
+  "id": "judge",
+  "codepoint": "1f9d1_200d_2696"
+ },
+ {
+  "id": "firefighter",
+  "codepoint": "1f9d1_200d_1f692"
+ },
+ {
+  "id": "mechanic",
+  "codepoint": "1f9d1_200d_1f527"
+ },
+ {
+  "id": "office-worker",
+  "codepoint": "1f9d1_200d_1f4bc"
+ },
+ {
+  "id": "farmer",
+  "codepoint": "1f9d1_200d_1f33e"
+ },
+ {
+  "id": "singer",
+  "codepoint": "1f9d1_200d_1f3a4"
+ },
+ {
+  "id": "pilot",
+  "codepoint": "1f9d1_200d_2708"
+ },
+ {
+  "id": "guard",
+  "codepoint": "1f482"
+ },
+ {
+  "id": "construction-worker",
+  "codepoint": "1f477"
+ },
+ {
+  "id": "monocle",
+  "codepoint": "1f9d0"
+ },
+ {
+  "id": "nerd",
+  "codepoint": "1f913"
+ },
+ {
+  "id": "sunglasses",
+  "codepoint": "1f60e"
+ },
+ {
+  "id": "thinking",
+  "codepoint": "1f914"
+ },
+ {
+  "id": "star-struck",
+  "codepoint": "1f929"
+ },
+ {
+  "id": "smiling",
+  "codepoint": "1f60a"
+ },
+ {
+  "id": "halo",
+  "codepoint": "1f607"
+ },
+ {
+  "id": "cowboy",
+  "codepoint": "1f920"
+ },
+ {
+  "id": "party",
+  "codepoint": "1f973"
+ },
+ {
+  "id": "disguised",
+  "codepoint": "1f978"
+ },
+ {
+  "id": "fox",
+  "codepoint": "1f98a"
+ },
+ {
+  "id": "owl",
+  "codepoint": "1f989"
+ },
+ {
+  "id": "cat",
+  "codepoint": "1f431"
+ },
+ {
+  "id": "dog",
+  "codepoint": "1f436"
+ },
+ {
+  "id": "panda",
+  "codepoint": "1f43c"
+ },
+ {
+  "id": "tiger",
+  "codepoint": "1f42f"
+ },
+ {
+  "id": "lion",
+  "codepoint": "1f981"
+ },
+ {
+  "id": "bear",
+  "codepoint": "1f43b"
+ },
+ {
+  "id": "rabbit",
+  "codepoint": "1f430"
+ },
+ {
+  "id": "frog",
+  "codepoint": "1f438"
+ },
+ {
+  "id": "monkey",
+  "codepoint": "1f435"
+ },
+ {
+  "id": "penguin",
+  "codepoint": "1f427"
+ },
+ {
+  "id": "eagle",
+  "codepoint": "1f985"
+ },
+ {
+  "id": "parrot",
+  "codepoint": "1f99c"
+ },
+ {
+  "id": "octopus",
+  "codepoint": "1f419"
+ },
+ {
+  "id": "dolphin",
+  "codepoint": "1f42c"
+ },
+ {
+  "id": "whale",
+  "codepoint": "1f433"
+ },
+ {
+  "id": "turtle",
+  "codepoint": "1f422"
+ },
+ {
+  "id": "butterfly",
+  "codepoint": "1f98b"
+ },
+ {
+  "id": "bee",
+  "codepoint": "1f41d"
+ },
+ {
+  "id": "unicorn",
+  "codepoint": "1f984"
+ },
+ {
+  "id": "dragon",
+  "codepoint": "1f432"
+ },
+ {
+  "id": "t-rex",
+  "codepoint": "1f996"
+ },
+ {
+  "id": "sauropod",
+  "codepoint": "1f995"
+ },
+ {
+  "id": "raccoon",
+  "codepoint": "1f99d"
+ },
+ {
+  "id": "hedgehog",
+  "codepoint": "1f994"
+ },
+ {
+  "id": "sloth",
+  "codepoint": "1f9a5"
+ },
+ {
+  "id": "otter",
+  "codepoint": "1f9a6"
+ },
+ {
+  "id": "mouse",
+  "codepoint": "1f42d"
+ },
+ {
+  "id": "wolf",
+  "codepoint": "1f43a"
+ },
+ {
+  "id": "peacock",
+  "codepoint": "1f99a"
+ },
+ {
+  "id": "flamingo",
+  "codepoint": "1f9a9"
+ },
+ {
+  "id": "shark",
+  "codepoint": "1f988"
+ },
+ {
+  "id": "brain",
+  "codepoint": "1f9e0"
+ },
+ {
+  "id": "light-bulb",
+  "codepoint": "1f4a1"
+ },
+ {
+  "id": "telescope",
+  "codepoint": "1f52d"
+ },
+ {
+  "id": "microscope",
+  "codepoint": "1f52c"
+ },
+ {
+  "id": "test-tube",
+  "codepoint": "1f9ea"
+ },
+ {
+  "id": "books",
+  "codepoint": "1f4da"
+ },
+ {
+  "id": "memo",
+  "codepoint": "1f4dd"
+ },
+ {
+  "id": "bar-chart",
+  "codepoint": "1f4ca"
+ },
+ {
+  "id": "laptop",
+  "codepoint": "1f4bb"
+ },
+ {
+  "id": "satellite",
+  "codepoint": "1f6f0"
+ },
+ {
+  "id": "globe",
+  "codepoint": "1f30d"
+ },
+ {
+  "id": "crescent-moon",
+  "codepoint": "1f319"
+ },
+ {
+  "id": "glowing-star",
+  "codepoint": "1f31f"
+ },
+ {
+  "id": "lightning",
+  "codepoint": "26a1"
+ },
+ {
+  "id": "fire",
+  "codepoint": "1f525"
+ },
+ {
+  "id": "rainbow",
+  "codepoint": "1f308"
+ },
+ {
+  "id": "four-leaf-clover",
+  "codepoint": "1f340"
+ },
+ {
+  "id": "cactus",
+  "codepoint": "1f335"
+ },
+ {
+  "id": "mushroom",
+  "codepoint": "1f344"
+ },
+ {
+  "id": "sunflower",
+  "codepoint": "1f33b"
+ },
+ {
+  "id": "gem",
+  "codepoint": "1f48e"
+ },
+ {
+  "id": "target",
+  "codepoint": "1f3af"
+ },
+ {
+  "id": "compass",
+  "codepoint": "1f9ed"
+ },
+ {
+  "id": "puzzle",
+  "codepoint": "1f9e9"
+ },
+ {
+  "id": "gear",
+  "codepoint": "2699"
+ },
+ {
+  "id": "magnifier",
+  "codepoint": "1f50d"
+ },
+ {
+  "id": "palette",
+  "codepoint": "1f3a8"
+ },
+ {
+  "id": "crystal-ball",
+  "codepoint": "1f52e"
+ },
+ {
+  "id": "crown",
+  "codepoint": "1f451"
+ }
+]

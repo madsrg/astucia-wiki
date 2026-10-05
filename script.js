@@ -125,6 +125,7 @@ const populateDropdownIcons = () => {
     document.getElementById('dropdown-new-filesfolder').innerHTML = icons.filesFolder + ' ' + t('nav.new-files-lib');
     document.getElementById('dropdown-new-diagram').innerHTML = icons.diagram + ' ' + t('nav.new-diagram');
     document.getElementById('dropdown-new-list').innerHTML = icons.list + ' ' + t('nav.new-list');
+    document.getElementById('dropdown-new-json').innerHTML = icons.json + ' ' + t('nav.new-json');
     document.getElementById('dropdown-new-chat').innerHTML = icons.chat + ' ' + t('nav.new-chat');
     document.getElementById('dropdown-new-search').innerHTML = icons.search + ' ' + t('nav.new-search');
 };

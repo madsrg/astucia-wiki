@@ -4,7 +4,7 @@
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { watch, rtTopic } from '../realtime/index.js';
-import { icons } from '../core/icons.js';
+import { paintAvatar, repaintAvatars } from '../core/avatars.js';
 import { showToast, confirmModal, highlightMentions, externalizeLinks } from '../core/utils.js';
 import { getUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
@@ -286,10 +286,9 @@ const buildRow = (msg, grouped) => {
         // question is which replies a person did not write, and a letter does not answer
         // it. The colour still distinguishes one AI user from another.
         const isAi = _aiUids.has(msg.uid);
-        avatarEl.className = 'chat-avatar' + (isAi ? ' chat-avatar-ai' : '');
-        if (isAi) avatarEl.innerHTML = icons.robot;
-        else      avatarEl.textContent = (msg.name || '?').charAt(0).toUpperCase();
-        avatarEl.style.background = avatarColor(msg.uid);
+        // A chosen avatar replaces the glyph or the initial; see modules/core/avatars.js.
+        avatarEl.className = 'chat-avatar';
+        paintAvatar(avatarEl, msg.uid, { isAi, colour: avatarColor(msg.uid), initial: (msg.name || '?').charAt(0).toUpperCase() });
         attachFocusClick(avatarEl, msg);
     } else {
         avatarEl.className = 'chat-avatar-gap';
@@ -1013,6 +1012,12 @@ export const init = () => {
     // Warm the cache and build the AI UID set for Markdown rendering
     getUsers().then(users => {
         _aiUids = new Set(users.filter(u => u.is_ai).map(u => u.uid));
+    });
+    // The user list changed (an avatar was set here, or a poll saw users.json move):
+    // follow it, and repaint the avatars already on screen.
+    window.addEventListener('wiki:users', (e) => {
+        _aiUids = new Set((e.detail || []).filter(u => u.is_ai).map(u => u.uid));
+        repaintAvatars(document.getElementById('chat-messages'), uid => _aiUids.has(uid), avatarColor);
     });
 
     // ── Topic lightbox ─────────────────────────────────────────────────────────

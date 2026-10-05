@@ -458,7 +458,7 @@ export const loadFilesFolder = async (path) => {
 
 // ── "New …" in the folder listing ─────────────────────────────────────────────
 //
-// The same seven options as the sidebar, and deliberately the *same* handlers: each row
+// The same eight options as the sidebar, and deliberately the *same* handlers: each row
 // clicks the sidebar's own hidden <a>, so creation, naming prompts, templates and the
 // post-create navigation all live in modules/new_items and cannot drift into a second
 // copy. The rows are cloned from that dropdown when the menu opens, which also means the
@@ -466,7 +466,7 @@ export const loadFilesFolder = async (path) => {
 
 const NEW_ITEM_IDS = [
     'dropdown-new-page', 'dropdown-new-folder', 'dropdown-new-filesfolder',
-    'dropdown-new-diagram', 'dropdown-new-list', 'dropdown-new-chat', 'dropdown-new-search',
+    'dropdown-new-diagram', 'dropdown-new-list', 'dropdown-new-json', 'dropdown-new-chat', 'dropdown-new-search',
 ];
 
 const buildNewMenu = (menu) => {

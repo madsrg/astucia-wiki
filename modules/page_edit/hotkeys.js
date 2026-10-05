@@ -2,7 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { state } from '../core/state.js';
-import { insertMarkdown, insertHeading, insertSmart, indentLines, isMarkdownEditor } from './editor.js';
+import { insertMarkdown, insertHeading, insertSmart, indentLines, newlineKeepIndent, isMarkdownEditor } from './editor.js';
 import { savePage } from './index.js';
 import { openSearchReplace } from './search.js';
 import { openLinkLightbox } from './link_lightbox.js';
@@ -122,6 +122,14 @@ export const init = () => {
                 if (tabMovesFocus) { tabMovesFocus = false; return; }
                 e.preventDefault();
                 indentLines(e.shiftKey, e.target);
+                return;
+            }
+            // Enter continues at the current line's indentation. Plain Enter only:
+            // Shift+Enter stays a bare line break (the way out of an indented run), and an
+            // IME composition's Enter confirms the composition, not a new line.
+            if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing) {
+                tabMovesFocus = false;
+                if (newlineKeepIndent(e.target)) e.preventDefault();
                 return;
             }
             // Any other key cancels the hatch — but not the modifiers themselves, or

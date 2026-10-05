@@ -8,6 +8,7 @@
 // =================================================================
 
 require_once __DIR__ . '/llm_providers.php';
+require_once __DIR__ . '/llm_connections.php';   // wiki_ai_effective_config()
 require_once __DIR__ . '/frontmatter.php';
 require_once __DIR__ . '/memory.php';
 require_once __DIR__ . '/wiki_ai_tools.php';
@@ -1147,7 +1148,7 @@ function _test_ai_connection(string $provider, string $api_url, string $api_key,
 // (extra headers, gzip, token-param/temperature swap-and-retry).
 function _ai_quick_reply(array $ai_user, string $system, string $user_msg, int $max_tokens = 500): array {
     if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'curl is not available on this server.'];
-    $config      = $ai_user['ai_config'] ?? [];
+    $config      = wiki_ai_effective_config($ai_user);   // connection fields laid over ai_config
     $provider    = $config['provider'] ?? 'openai';
     $family      = llm_family($provider);
     $api_url     = trim($config['api_url'] ?? '') ?: llm_default_url($provider);
@@ -1155,6 +1156,7 @@ function _ai_quick_reply(array $ai_user, string $system, string $user_msg, int $
     $model       = $config['model'] ?? 'gpt-4o';
     $temperature = (float)($config['temperature'] ?? 0.7);
     $extra       = _extra_header_lines($config['extra_headers'] ?? []);
+    if (!empty($config['connection_missing'])) return ['ok' => false, 'error' => 'The LLM provider this AI user names no longer exists.'];
     if (!$api_key) return ['ok' => false, 'error' => 'The AI user has no API key configured.'];
     if (!$api_url) return ['ok' => false, 'error' => 'The AI user has no API URL configured.'];
 
@@ -1234,7 +1236,7 @@ function _ai_quick_reply(array $ai_user, string $system, string $user_msg, int $
 function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string $space_dir,
                        ?callable $on_progress = null): array {
     // --- Extract LLM config ---
-    $config        = $ai_user['ai_config']   ?? [];
+    $config        = wiki_ai_effective_config($ai_user);   // connection fields laid over ai_config
     $provider      = $config['provider']      ?? 'openai';
     $family        = llm_family($provider);
     $api_url       = $config['api_url']       ?? '';
@@ -1254,6 +1256,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     $call_timeout  = $is_thinking ? 900 : 120;
     if ($is_thinking) $max_tokens = max($max_tokens, 16000);
 
+    if (!empty($config['connection_missing'])) return ['reply' => null, 'error' => 'The LLM provider this AI user names no longer exists.'];
     if (!$api_key)              return ['reply' => null, 'error' => 'AI user has no api_key configured.'];
     if (!$api_url)              return ['reply' => null, 'error' => 'AI user has no api_url configured.'];
     if (!function_exists('curl_init')) return ['reply' => null, 'error' => 'curl is not available on this server.'];

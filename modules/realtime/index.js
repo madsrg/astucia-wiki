@@ -37,6 +37,7 @@ export const rtTopic = {
     chat:    (space, path) => `wiki/${rtSeg(space || '')}/chat/${rtPath(path)}`,
     page:    (space, path) => `wiki/${rtSeg(space || '')}/page/${rtPath(path)}`,
     tree:    (space)       => `wiki/${rtSeg(space || '')}/tree`,
+    users:   ()            => 'wiki//users',   // see wiki_rt_topic_users()
     job:     (uid)         => `wiki/user/${uid}/job`,
     mention: (uid)         => `wiki/user/${uid}/mention`,
     // The admin monitor's round-trip test. Under wiki/user/<uid>/ so it needs no new

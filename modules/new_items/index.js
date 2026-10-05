@@ -238,6 +238,9 @@ export const init = () => {
 
     document.getElementById('dropdown-new-diagram').addEventListener('click', (e) => { e.preventDefault(); newItemDropdown.classList.add('hidden'); createDiagram(); });
     document.getElementById('dropdown-new-list').addEventListener('click', (e) => { e.preventDefault(); newItemDropdown.classList.add('hidden'); createAndOpen('.list', 'create_list', 'new.list-prompt', 'new.untitled-list', 'new.list-created', icons.list); });
+    // A data page goes through create_file like a Markdown page — same index, search and git
+    // steps — and the server writes the starter object, since an empty file is not JSON.
+    document.getElementById('dropdown-new-json').addEventListener('click', (e) => { e.preventDefault(); newItemDropdown.classList.add('hidden'); createAndOpen('.json', 'create_file', 'new.json-prompt', 'new.untitled-json', 'new.json-created', icons.json); });
     const newChatLightbox   = document.getElementById('new-chat-lightbox');
     const newChatNameInput  = document.getElementById('new-chat-name');
     const newChatTopicInput = document.getElementById('new-chat-topic');

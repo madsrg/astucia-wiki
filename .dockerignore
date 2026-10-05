@@ -19,6 +19,7 @@ agent_jobs.json
 agent_jobs_queue.json
 agent_jobs_heartbeat.json
 mcp_servers.json
+llm_connections.json
 spaces.json
 settings.json
 

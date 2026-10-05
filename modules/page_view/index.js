@@ -2,6 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
+import { avatarSrc } from '../core/avatars.js';
 import { state } from '../core/state.js';
 import { watch, rtTopic } from '../realtime/index.js';
 import { icons } from '../core/icons.js';
@@ -42,7 +43,9 @@ export const processUserCommentTags = async (content) => {
         const body    = highlightMentions(esc(text));
         result = result.replace(m[0],
             `<div class="page-comment"><div class="page-comment-header">` +
-            `<span class="page-comment-avatar" style="background:${color}">${initial}</span>` +
+            (user?.avatar
+                ? `<span class="page-comment-avatar page-comment-avatar-img"><img src="${avatarSrc(user.avatar)}" alt=""></span>`
+                : `<span class="page-comment-avatar" style="background:${color}">${initial}</span>`) +
             `<span class="page-comment-author">${esc(name)}</span></div>` +
             `<div class="page-comment-body">${body}</div></div>`
         );
@@ -628,7 +631,11 @@ export const loadPage = async (path, id, tags, opts = {}) => {
 
     state.currentPagePath = path;
     state.currentPageId = id;
-    state.currentPageTags = tags || [];
+    // The tree is the freshest copy of a page's tags: it is re-read whenever the index
+    // changes, while a caller's `tags` can be a snapshot — a tab restored from localStorage,
+    // or a link followed long after the tags were edited in another browser. The caller's
+    // copy is only the fallback for a page the rendered tree does not hold.
+    state.currentPageTags = treeEntry(path)?.tags ?? tags ?? [];
     state.currentPageType = isDiagram ? 'diagram' : (isList ? 'list' : (isChat ? 'chat' : (isSearch ? 'search' : (isJson ? 'json' : 'md'))));
     // A page's own front matter, for the Metadata panel. Captured here because this is the
     // one read an ordinary page open performs — refreshPageContent() and
@@ -886,7 +893,7 @@ export const loadPage = async (path, id, tags, opts = {}) => {
     // distinguishes a peek (a plain click, which reuses the preview slot) from a page
     // that should get a tab of its own — e.g. one the user just created.
     _tabHooks.afterLoad?.({
-        path, id, tags: tags || [], type: state.currentPageType,
+        path, id, tags: state.currentPageTags, type: state.currentPageType,
         intent: opts.intent || 'preview',
     });
 };

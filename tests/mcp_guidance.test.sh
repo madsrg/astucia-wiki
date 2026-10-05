@@ -68,11 +68,15 @@ assert_eq "api.php builds none itself"   "0" \
     "$(command grep -c 'MCP tool guidance:' "$WIKI_APP/api.php")"
 
 section 'one server, many AI users: the text is stored once'
+# An AI user reaches its model through an LLM provider, so there has to be one.
+CONN_ID=$(post_as "$JAR" 'api.php?action=admin_save_llm_connection' \
+    'name=Stub&provider=openai&api_url=&api_key=k&extra_headers=[]' \
+    | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))')
 ai() { post_as "$JAR" 'api.php?action=admin_save_ai_user' \
     "name=$1&role=editor&ai_config=$(python3 -c "
 import json,urllib.parse,sys
-print(urllib.parse.quote(json.dumps({'provider':'openai','model':'m','api_key':'k',
-      'mcp_server_ids':[sys.argv[1]],'mcp_instructions':{}})))" "$SRV_ID")" > /dev/null; }
+print(urllib.parse.quote(json.dumps({'connection_id':sys.argv[2],'model':'m',
+      'mcp_server_ids':[sys.argv[1]],'mcp_instructions':{}})))" "$SRV_ID" "$CONN_ID")" > /dev/null; }
 ai Bot1; ai Bot2; ai Bot3
 users=$(cat "$WIKI_SYS/users.json")
 assert_eq "three AI users enabled it" "3" "$(printf '%s' "$users" | grep -c '"is_ai": true')"

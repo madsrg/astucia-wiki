@@ -90,6 +90,11 @@ agent_job_touch_heartbeat();
 
 // -- Load data ----------------------------------------------------------------
 
+// Before users.json is read: a tick that beats the first web request after an upgrade
+// must not be the one place still holding AI users in the old shape. (The resolver
+// copes with that shape too; this keeps the two from having to.)
+wiki_migrate_llm_connections();
+
 $jobs_file  = WIKI_SYSTEM_DATA . 'agent_jobs.json';
 $users_file = WIKI_SYSTEM_DATA . 'users.json';
 

@@ -3,7 +3,7 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
-import { refreshFileTree, revealAndSelectFile } from '../file_tree/index.js';
+import { refreshFileTree, revealAndSelectFile, treeEntry } from '../file_tree/index.js';
 
 // Session-level cache of all tags across all accessible spaces.
 let _allTags = null;
@@ -150,8 +150,27 @@ const onInput = async (e) => {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Follow a tree refresh. The tree is how a tag change made in another browser arrives
+ * here, and without this the open page kept showing the tags it was opened with until
+ * the reader navigated away and back. The autocomplete list is dropped for the same
+ * reason — it is a session cache and would never learn a tag somebody else invented.
+ */
+const syncFromTree = () => {
+    _allTags = null;
+    const entry = treeEntry(state.currentPagePath);
+    // Same page by id as well as path, so a tree that has not yet caught up with a rename
+    // cannot paint another page's tags here.
+    if (!entry || String(entry.id) !== String(state.currentPageId)) return;
+    if (JSON.stringify(entry.tags) === JSON.stringify(state.currentPageTags)) return;
+    state.currentPageTags = entry.tags;
+    renderTags();
+};
+
 export const init = () => {
     const input = document.getElementById('tag-input');
+
+    document.addEventListener('wiki:treerefresh', syncFromTree);
 
     input.addEventListener('input', onInput);
 

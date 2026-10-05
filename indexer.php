@@ -304,6 +304,11 @@ class PageIndexer {
             $this->indexData[$id]['tags'] = array_values($cleanedTags); // Re-index array
             $this->saveIndex();
             $this->announce($this->indexData[$id]['path'] ?? '', 'update');
+            // Tags live in the tree data (`list` returns them per node), not in the page
+            // file — so the page event alone reaches nobody who shows them. Without the
+            // tree event another browser waits for its slow safety poll (5 minutes while
+            // push is live) before its tree, tag cloud or open page hear of the change.
+            $this->announceTree();
             return true;
         }
         return false;

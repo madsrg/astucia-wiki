@@ -98,6 +98,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <a href="#" id="dropdown-new-filesfolder"></a>
                             <a href="#" id="dropdown-new-diagram"></a>
                             <a href="#" id="dropdown-new-list"></a>
+                            <a href="#" id="dropdown-new-json"></a>
                             <a href="#" id="dropdown-new-chat"></a>
                             <a href="#" id="dropdown-new-search"></a>
                         </div>
@@ -1194,12 +1195,21 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
 
     <?php if (AUTHENTICATION_ENABLED && isset($_SESSION['user'])): ?>
     <div id="preferences-lightbox" class="lightbox-overlay hidden">
-        <div class="lightbox-content input-modal-content" style="max-width:440px">
+        <div class="lightbox-content prefs-content">
             <button id="preferences-lightbox-close-btn" class="lightbox-close">&times;</button>
             <h3 data-i18n="prefs.title">My Preferences</h3>
+            <!-- The body scrolls and the header and footer do not: the settings have
+                 outgrown a fixed box once already, and Save must stay reachable. -->
+            <div class="prefs-body">
             <div class="form-group">
                 <label data-i18n="prefs.name-label">Name</label>
                 <input type="text" class="form-control" value="<?php echo htmlspecialchars($_SESSION['user']['name'] ?? ''); ?>" readonly>
+            </div>
+            <div class="form-group">
+                <label data-i18n="prefs.avatar-label">Avatar</label>
+                <!-- Filled by modules/preferences once the options have loaded. -->
+                <div id="pref-avatar-slot"></div>
+                <p class="pref-hint pref-hint-flush" data-i18n="prefs.avatar-hint">Shown beside your chat messages and comments. Without one it is your initial.</p>
             </div>
             <div class="form-group">
                 <label for="pref-email" data-i18n="prefs.email-label">Email</label>
@@ -1250,6 +1260,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             </div>
             <?php endif; ?>
             <?php endif; ?>
+            </div>
             <div class="lightbox-footer">
                 <button id="preferences-save-btn" class="btn btn-blue" data-i18n="prefs.save-btn">Save</button>
             </div>
@@ -1265,30 +1276,31 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <div class="admin-header">
                 <h3 data-i18n="admin.title">Admin</h3>
                 <div class="admin-group-bar">
-                    <button class="admin-group active" data-group="users" data-i18n="admin.group.users">Users</button>
-                    <button class="admin-group" data-group="ai" data-i18n="admin.group.ai">AI</button>
-                    <button class="admin-group" data-group="monitoring" data-i18n="admin.group.monitoring">Monitoring</button>
-                    <button class="admin-group" data-group="content" data-i18n="admin.group.content">Content</button>
+                    <button class="admin-group active" data-group="users"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span data-i18n="admin.group.users">Users</span></button>
+                    <button class="admin-group" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg><span data-i18n="admin.group.ai">AI</span></button>
+                    <button class="admin-group" data-group="monitoring"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span data-i18n="admin.group.monitoring">Monitoring</span></button>
+                    <button class="admin-group" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span data-i18n="admin.group.content">Content</span></button>
                 </div>
             </div>
             <div class="admin-tab-bar">
-                <button class="admin-tab active" data-tab="users" data-group="users" data-i18n="admin.tab.users">Users</button>
-                <button class="admin-tab" data-tab="requests" data-group="users"><span data-i18n="admin.tab.requests">Requests</span> <span id="admin-requests-badge" class="admin-badge hidden"></span></button>
-                <button class="admin-tab" data-tab="api" data-group="users" data-i18n="admin.tab.api">API Accounts</button>
-                <button class="admin-tab hidden" data-tab="ai" data-group="ai" data-i18n="admin.tab.ai">AI Users</button>
-                <button class="admin-tab hidden" data-tab="jobs" data-group="ai" data-i18n="admin.tab.jobs">Agent Jobs</button>
-                <button class="admin-tab hidden" data-tab="mcp" data-group="ai" data-i18n="admin.tab.mcp">MCP Servers</button>
-                <button class="admin-tab hidden" data-tab="logs" data-group="monitoring" data-i18n="admin.tab.logs">Access Log</button>
-                <button class="admin-tab hidden" data-tab="errorlog" data-group="monitoring" data-i18n="admin.tab.errorlog">Error Log</button>
-                <button class="admin-tab hidden" data-tab="audit" data-group="monitoring" data-i18n="admin.tab.audit">Audit Log</button>
-                <button class="admin-tab hidden" data-tab="diagnostics" data-group="monitoring" data-i18n="admin.tab.diag">Diagnostics</button>
-                <button class="admin-tab hidden" data-tab="realtime" data-group="monitoring" data-i18n="admin.tab.realtime">Mercure</button>
-                <button class="admin-tab hidden" data-tab="sysinfo" data-group="monitoring" data-i18n="admin.tab.sysinfo">Wiki Info</button>
-                <button class="admin-tab hidden" data-tab="reindex" data-group="content" data-i18n="admin.tab.reindex">Index Pages</button>
-                <button class="admin-tab hidden" data-tab="deleted" data-group="content" data-i18n="admin.tab.deleted">Deleted Pages</button>
-                <button class="admin-tab hidden" data-tab="chatpolicy" data-group="content" data-i18n="admin.tab.chatpolicy">Chat Retention</button>
-                <button class="admin-tab hidden" data-tab="metadata" data-group="content" data-i18n="admin.tab.metadata">Page Metadata</button>
-                <button class="admin-tab hidden" data-tab="mentions" data-group="content" data-i18n="admin.tab.mentions">Mentions</button>
+                <button class="admin-tab active" data-tab="users" data-group="users"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span data-i18n="admin.tab.users">Users</span></button>
+                <button class="admin-tab" data-tab="requests" data-group="users"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg><span data-i18n="admin.tab.requests">Requests</span> <span id="admin-requests-badge" class="admin-badge hidden"></span></button>
+                <button class="admin-tab" data-tab="api" data-group="users"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><span data-i18n="admin.tab.api">API Accounts</span></button>
+                <button class="admin-tab hidden" data-tab="ai" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></svg><span data-i18n="admin.tab.ai">AI Users</span></button>
+                <button class="admin-tab hidden" data-tab="llm" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg><span data-i18n="admin.tab.llm">LLM Providers</span></button>
+                <button class="admin-tab hidden" data-tab="jobs" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span data-i18n="admin.tab.jobs">Agent Jobs</span></button>
+                <button class="admin-tab hidden" data-tab="mcp" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/></svg><span data-i18n="admin.tab.mcp">MCP Servers</span></button>
+                <button class="admin-tab hidden" data-tab="logs" data-group="monitoring"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span data-i18n="admin.tab.logs">Access Log</span></button>
+                <button class="admin-tab hidden" data-tab="errorlog" data-group="monitoring"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span data-i18n="admin.tab.errorlog">Error Log</span></button>
+                <button class="admin-tab hidden" data-tab="audit" data-group="monitoring"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg><span data-i18n="admin.tab.audit">Audit Log</span></button>
+                <button class="admin-tab hidden" data-tab="diagnostics" data-group="monitoring"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span data-i18n="admin.tab.diag">Diagnostics</span></button>
+                <button class="admin-tab hidden" data-tab="realtime" data-group="monitoring"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span data-i18n="admin.tab.realtime">Mercure</span></button>
+                <button class="admin-tab hidden" data-tab="sysinfo" data-group="monitoring"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span data-i18n="admin.tab.sysinfo">Wiki Info</span></button>
+                <button class="admin-tab hidden" data-tab="reindex" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span data-i18n="admin.tab.reindex">Index Pages</span></button>
+                <button class="admin-tab hidden" data-tab="deleted" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg><span data-i18n="admin.tab.deleted">Deleted Pages</span></button>
+                <button class="admin-tab hidden" data-tab="chatpolicy" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><polyline points="12 7 12 10 14 11"/></svg><span data-i18n="admin.tab.chatpolicy">Chat Retention</span></button>
+                <button class="admin-tab hidden" data-tab="metadata" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg><span data-i18n="admin.tab.metadata">Page Metadata</span></button>
+                <button class="admin-tab hidden" data-tab="mentions" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg><span data-i18n="admin.tab.mentions">Mentions</span></button>
             </div>
 
             <!-- Users pane -->
@@ -1354,6 +1366,11 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <!-- Agent Jobs pane -->
             <div id="admin-pane-jobs" class="admin-pane hidden">
                 <div id="admin-jobs-list" class="admin-scroll-area"></div>
+            </div>
+
+            <!-- LLM Providers pane -->
+            <div id="admin-pane-llm" class="admin-pane hidden">
+                <div id="admin-llm-list" class="admin-scroll-area"></div>
             </div>
 
             <!-- MCP Servers pane -->
@@ -1498,6 +1515,9 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 </div>
                 <div id="admin-footer-jobs" class="admin-footer-pane hidden">
                     <button id="admin-jobs-add-btn" class="btn btn-blue btn-sm" data-i18n="admin.jobs.add-btn">+ New Agent Job</button>
+                </div>
+                <div id="admin-footer-llm" class="admin-footer-pane hidden">
+                    <button id="admin-llm-add-btn" class="btn btn-blue btn-sm" data-i18n="admin.llm.new-btn">+ New LLM Provider</button>
                 </div>
                 <div id="admin-footer-mcp" class="admin-footer-pane hidden">
                     <button id="admin-mcp-add-btn" class="btn btn-blue btn-sm" data-i18n="admin.mcp.new-btn">+ New MCP Server</button>

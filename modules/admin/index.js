@@ -6,6 +6,7 @@ import { state } from '../core/state.js';
 import { icons } from '../core/icons.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { invalidateUsers } from '../core/users.js';
+import { avatarCircleHtml, avatarPickerHtml, wireAvatarPicker } from '../core/avatars.js';
 import { invalidateMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
 import { isLive, subscribe, rtTopic } from '../realtime/index.js';
@@ -47,7 +48,7 @@ const updateRequestsBadge = () => {
 
 const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
-    ai:         ['ai', 'jobs', 'mcp'],
+    ai:         ['ai', 'llm', 'jobs', 'mcp'],
     monitoring: ['logs', 'errorlog', 'audit', 'diagnostics', 'realtime', 'sysinfo'],
     content:    ['reindex', 'deleted', 'chatpolicy', 'metadata', 'mentions'],
 };
@@ -75,6 +76,7 @@ const switchTab = (name) => {
     document.getElementById('admin-footer-api')?.classList.toggle('hidden',           name !== 'api');
     document.getElementById('admin-footer-jobs')?.classList.toggle('hidden',         name !== 'jobs');
     document.getElementById('admin-footer-mcp')?.classList.toggle('hidden',          name !== 'mcp');
+    document.getElementById('admin-footer-llm')?.classList.toggle('hidden',          name !== 'llm');
     document.getElementById('admin-footer-deleted')?.classList.toggle('hidden',      name !== 'deleted');
     document.getElementById('admin-footer-reindex')?.classList.toggle('hidden',      name !== 'reindex');
     const activeTab = document.querySelector(`.admin-tab[data-tab="${name}"]`);
@@ -95,6 +97,7 @@ const switchTab = (name) => {
     if (name === 'metadata')    loadMetadataPane();
     if (name === 'mentions')    loadMentionsPane();
     if (name === 'mcp')         loadMcpServers();
+    if (name === 'llm')         loadLlmConnections();
 };
 
 
@@ -1344,6 +1347,10 @@ const showBuiltinInstructions = async () => {
 
 // ── AI Users tab ──────────────────────────────────────────────────────────────
 
+// The vendored avatar ids (avatars/avatars.json), delivered with the AI user list.
+let aiAvatarIds = [];
+
+
 const renderAiUserList = () => {
     const container = document.getElementById('admin-ai-list');
     if (!container) return;
@@ -1360,7 +1367,7 @@ const renderAiUserList = () => {
 
     const table = document.createElement('table');
     table.className = 'admin-table';
-    table.innerHTML = `<thead><tr><th>${t('admin.ai.name')}</th><th>${t('admin.ai.role')}</th><th>${t('admin.col.spaces')}</th><th>${t('admin.ai.model')}</th><th>${t('admin.ai.url')}</th><th></th></tr></thead>`;
+    table.innerHTML = `<thead><tr><th>${t('admin.ai.name')}</th><th>${t('admin.ai.role')}</th><th>${t('admin.col.spaces')}</th><th>${t('admin.ai.model')}</th><th>${t('admin.ai.connection')}</th><th></th></tr></thead>`;
     const tbody = document.createElement('tbody');
 
     aiUsers.forEach(u => {
@@ -1369,7 +1376,8 @@ const renderAiUserList = () => {
 
         const tdName = document.createElement('td');
         tdName.className = 'admin-td-name';
-        tdName.innerHTML = escHtml(u.name) + ' <span class="admin-ai-badge">AI</span>';
+        tdName.innerHTML = avatarCircleHtml(cfg.avatar || '', icons.robot)
+            + escHtml(u.name) + ' <span class="admin-ai-badge">AI</span>';
 
         const tdRole = document.createElement('td');
         tdRole.textContent = u.role || 'editor';
@@ -1380,15 +1388,15 @@ const renderAiUserList = () => {
 
         const tdModel = document.createElement('td');
         tdModel.className = 'admin-log-source';
-        const providerLabel = cfg.provider === 'anthropic' ? t('admin.ai.anthropic').split(' ')[0]
-            : (cfg.provider === 'openai-responses' ? 'OpenAI Responses' : 'OpenAI');
-        tdModel.textContent = cfg.model ? `${cfg.model} (${providerLabel})` : `— (${providerLabel})`;
+        tdModel.textContent = cfg.model || '—';
 
+        // The connection's name, not its URL: the name is what the LLM Providers tab
+        // lists, so it is what an admin looks for there. A missing one says so.
         const tdUrl = document.createElement('td');
         tdUrl.className = 'admin-td-email';
-        const urlText = cfg.api_url || '—';
-        tdUrl.textContent = urlText.length > 40 ? urlText.slice(0, 40) + '…' : urlText;
-        tdUrl.title = urlText;
+        tdUrl.textContent = cfg.connection_missing ? t('admin.ai.connection-missing')
+            : (cfg.connection_name || t('admin.ai.connection-none'));
+        tdUrl.title = cfg.api_url || '';
 
         const tdActions = document.createElement('td');
         tdActions.style.cssText = 'white-space:nowrap;display:flex;gap:4px;align-items:center;';
@@ -1420,6 +1428,7 @@ const loadAiUsers = async () => {
     const result = await api.call('admin_get_ai_users');
     if (result.success) {
         aiUsers = result.data || [];
+        aiAvatarIds = result.avatars || [];
         renderAiUserList();
     } else {
         if (container) container.innerHTML = `<p class="admin-empty">${t('admin.users.failed')}</p>`;
@@ -1439,15 +1448,15 @@ const openAiUserForm = async (u) => {
     const container = document.getElementById('admin-ai-list');
     if (!container) return;
     const isNew = !u;
-    const isClone = !!u?._cloneSourceUid;
     const cfg = u?.ai_config || {};
-    const providers = await getLlmProviders();
-    const curProvider = cfg.provider || 'openai';
-    const providerOpts = providers.map(p =>
-        `<option value="${escHtml(p.id)}" ${curProvider === p.id ? 'selected' : ''}>${escHtml(p.label)}</option>`
-    ).join('');
-    const urlByProvider = {};
-    providers.forEach(p => { if (p.default_url) urlByProvider[p.id] = p.default_url; });
+    // The connection list is fetched fresh each time the form opens: it is edited on the
+    // neighbouring tab, and a stale copy would offer a provider that was just deleted.
+    const connRes = await api.call('admin_get_llm_connections');
+    const conns = connRes.success ? (connRes.data || []) : [];
+    const curConn = cfg.connection_id || (isNew && conns.length ? conns[0].id : '');
+    const connOpts = (curConn && !conns.some(c => c.id === curConn)
+            ? `<option value="" selected>${escHtml(t('admin.ai.connection-missing'))}</option>` : '')
+        + conns.map(c => `<option value="${escHtml(c.id)}" ${curConn === c.id ? 'selected' : ''}>${escHtml(c.name)}</option>`).join('');
 
     container.innerHTML = `
         <div class="admin-ai-form">
@@ -1476,6 +1485,11 @@ const openAiUserForm = async (u) => {
                     </div>
                 </div>
                 <div class="form-group">
+                    <label>${t('admin.ai.avatar')}</label>
+                    ${avatarPickerHtml('ai-f', cfg.avatar || '', aiAvatarIds, { fallback: icons.robot, noneLabel: t('avatar.none-ai') })}
+                    <p class="form-hint">${t('admin.ai.avatar-hint')}</p>
+                </div>
+                <div class="form-group">
                     <label>${t('admin.spaces-label')}</label>
                     ${spacesFieldHtml('ai-f', u?.spaces ?? null)}
                     <p class="form-hint">${t('admin.ai.spaces-hint')}</p>
@@ -1485,23 +1499,16 @@ const openAiUserForm = async (u) => {
             <div class="admin-ai-form-section">
                 <div class="admin-ai-form-row">
                     <div class="form-group">
-                        <label>${t('admin.ai.provider')}</label>
-                        <select id="ai-f-provider" class="form-control">${providerOpts}</select>
-                    </div>
-                    <div class="form-group">
-                        <label>${t('admin.ai.url')}</label>
-                        <input type="url" id="ai-f-url" class="form-control" value="${escHtml(cfg.api_url || '')}" placeholder="https://api.openai.com/v1/chat/completions">
-                    </div>
-                </div>
-                <div class="admin-ai-form-row">
-                    <div class="form-group">
-                        <label>${t('admin.ai.key')} ${cfg.api_key_set && !isClone ? `<span class="admin-ai-key-set">${t('admin.ai.key-set')}</span>` : ''}</label>
-                        <input type="password" id="ai-f-key" class="form-control" placeholder="${isClone ? t('admin.ai.key-ph-clone') : cfg.api_key_set ? t('admin.ai.key-ph-keep') : 'sk-…'}">
-                        ${isClone ? `<input type="hidden" id="ai-f-source-uid" value="${escHtml(String(u._cloneSourceUid))}">` : '<input type="hidden" id="ai-f-source-uid" value="">'}
+                        <label>${t('admin.ai.connection')}</label>
+                        ${conns.length
+                            ? `<select id="ai-f-connection" class="form-control">${connOpts}</select>`
+                            : `<select id="ai-f-connection" class="form-control" disabled><option value="">${escHtml(t('admin.ai.connection-none'))}</option></select>`}
+                        <p class="form-hint">${conns.length ? t('admin.ai.connection-hint') : t('admin.ai.connection-empty')}
+                            <a href="#" id="ai-f-connection-manage">${t('admin.ai.connection-manage')}</a></p>
                     </div>
                     <div class="form-group">
                         <label>${t('admin.ai.model')}</label>
-                        <input type="text" id="ai-f-model" class="form-control" value="${escHtml(cfg.model || '')}" placeholder="gpt-4o">
+                        <input type="text" id="ai-f-model" class="form-control" value="${escHtml(cfg.model || '')}" placeholder="claude-sonnet-5-5">
                     </div>
                 </div>
                 <div class="admin-ai-form-row" style="align-items:center;gap:0.75rem">
@@ -1554,11 +1561,6 @@ const openAiUserForm = async (u) => {
                     </select>
                     <p class="form-hint">${t('admin.ai.memory-hint')}</p>
                 </div>
-                <div class="form-group">
-                    <label>${t('admin.xhdr.label')} <span style="font-weight:400;color:var(--text-muted)">${t('admin.optional')}</span></label>
-                    ${extraHeadersFieldHtml('ai-f', cfg.extra_headers ?? [])}
-                    <p class="form-hint">${t('admin.ai.xhdr-hint')}</p>
-                </div>
             </div>
             <div class="admin-ai-form-section-header">${t('admin.ai.behaviour')}</div>
             <div class="admin-ai-form-section">
@@ -1604,38 +1606,25 @@ const openAiUserForm = async (u) => {
     document.getElementById('ai-f-temperature').addEventListener('input', (e) => {
         document.getElementById('ai-f-temperature-display').textContent = parseFloat(e.target.value).toFixed(2).replace(/\.?0+$/, '') || '0';
     });
-    // Auto-fill the endpoint from the registry when the provider changes, as long
-    // as the field is empty or still holds another provider's default.
-    const _provSel = document.getElementById('ai-f-provider');
-    const _urlField = document.getElementById('ai-f-url');
-    if (_provSel && _urlField) {
-        const _allDefaults = Object.values(urlByProvider);
-        _provSel.addEventListener('change', () => {
-            const cur = _urlField.value.trim();
-            if ((cur === '' || _allDefaults.includes(cur)) && urlByProvider[_provSel.value]) {
-                _urlField.value = urlByProvider[_provSel.value];
-            }
-        });
-    }
     wireSpacesField('ai-f');
-    wireExtraHeadersField('ai-f');
+
+    wireAvatarPicker('ai-f', icons.robot);
+
+    document.getElementById('ai-f-connection-manage')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        switchTab('llm');
+    });
 
     document.getElementById('ai-f-test-btn').addEventListener('click', async () => {
-        const provider = document.getElementById('ai-f-provider')?.value || 'openai';
-        const api_url  = document.getElementById('ai-f-url')?.value.trim() || '';
-        const api_key  = document.getElementById('ai-f-key')?.value || '';
-        const model    = document.getElementById('ai-f-model')?.value.trim() || '';
+        const id    = document.getElementById('ai-f-connection')?.value || '';
+        const model = document.getElementById('ai-f-model')?.value.trim() || '';
         const btn = document.getElementById('ai-f-test-btn');
         const out = document.getElementById('ai-f-test-result');
-        if (!api_url) { showToast(t('admin.ai.test-url-req'), 'error'); return; }
-        if (!model)   { showToast(t('admin.ai.test-model-req'), 'error'); return; }
-        if (!api_key && !cfg.api_key_set) { showToast(t('admin.ai.test-key-req'), 'error'); return; }
+        if (!id)    { showToast(t('admin.ai.connection-req'), 'error'); return; }
+        if (!model) { showToast(t('admin.ai.test-model-req'), 'error'); return; }
         btn.disabled = true;
         btn.textContent = t('admin.btn.testing');
-        const params = { provider, api_url, model, extra_headers: JSON.stringify(readExtraHeadersField('ai-f')) };
-        if (api_key) params.api_key = api_key;
-        else if (u?.uid) params.uid = String(u.uid);
-        const res = await api.call('admin_test_ai_user', params, 'POST');
+        const res = await api.call('admin_test_llm_connection', { id, model }, 'POST');
         btn.disabled = false;
         btn.textContent = t('admin.ai.test-btn');
         out.innerHTML = res.success
@@ -1851,9 +1840,8 @@ const openPromptPagePicker = async (initSpace, initPath, onSelect) => {
 const saveAiUser = async (uid) => {
     const name     = document.getElementById('ai-f-name')?.value.trim() || '';
     const role     = document.getElementById('ai-f-role')?.value || 'editor';
-    const provider = document.getElementById('ai-f-provider')?.value || 'openai';
-    const api_url  = document.getElementById('ai-f-url')?.value.trim() || '';
-    const api_key  = document.getElementById('ai-f-key')?.value || '';
+    const connection_id = document.getElementById('ai-f-connection')?.value || '';
+    const avatar   = document.getElementById('ai-f-avatar')?.value || '';
     const model    = document.getElementById('ai-f-model')?.value.trim() || '';
     const system_prompt    = document.getElementById('ai-f-prompt')?.value || '';
     const _promptDisp         = document.getElementById('ai-f-prompt-page-display');
@@ -1871,23 +1859,20 @@ const saveAiUser = async (uid) => {
         const v = ta.value.trim();
         if (v) mcp_instructions[ta.dataset.mcpId] = v;
     });
-    const extra_headers = readExtraHeadersField('ai-f');
     const spaces = readSpacesField('ai-f');
 
-    if (!name)    { showToast(t('admin.ai.name-req'), 'error'); return; }
-    if (!api_url) { showToast(t('admin.ai.url-req'), 'error'); return; }
+    if (!name)          { showToast(t('admin.ai.name-req'), 'error'); return; }
+    if (!connection_id) { showToast(t('admin.ai.connection-req'), 'error'); return; }
 
     const saveBtn = document.getElementById('ai-f-save-btn');
     saveBtn.disabled = true;
     saveBtn.textContent = t('btn.saving');
 
-    const source_uid = document.getElementById('ai-f-source-uid')?.value || '';
     const result = await api.call('admin_save_ai_user', {
         uid: uid !== null ? String(uid) : '',
-        source_uid,
         name, role,
         spaces: JSON.stringify(spaces),
-        ai_config: JSON.stringify({ provider, api_url, api_key, model, system_prompt, system_prompt_space, system_prompt_page, context_messages, temperature, max_tokens, always_background, reasoning_effort, memory, mcp_server_ids, mcp_instructions, extra_headers }),
+        ai_config: JSON.stringify({ connection_id, avatar, model, system_prompt, system_prompt_space, system_prompt_page, context_messages, temperature, max_tokens, always_background, reasoning_effort, memory, mcp_server_ids, mcp_instructions }),
     }, 'POST');
 
     saveBtn.disabled = false;
@@ -1927,7 +1912,8 @@ const cloneAiUser = (source) => {
         const newName = nameInput.value.trim();
         if (!newName) { nameInput.focus(); return; }
         close();
-        openAiUserForm({ ...source, uid: null, name: newName, service_token: '', _cloneSourceUid: source.uid });
+        // The clone names the same connection, so there is no key to carry over.
+        openAiUserForm({ ...source, uid: null, name: newName, service_token: '' });
     };
 
     const onOverlay = (e) => { if (e.target === lb) close(); };
@@ -2634,6 +2620,231 @@ const deleteJob = async (job) => {
     }
 };
 
+// ── LLM Providers tab ─────────────────────────────────────────────────────────
+//
+// A provider here is a *connection*: wire family, endpoint, key, gateway headers. AI
+// users name one and pick their own model, so one key serves every AI user on it and
+// rotating it is one edit. The server calls these "connections" because
+// llm_providers.json already uses "provider" for the wire-family registry.
+
+let llmConnections = [];
+
+const loadLlmConnections = async () => {
+    const container = document.getElementById('admin-llm-list');
+    if (container) container.innerHTML = `<p class="admin-loading">${t('admin.users.loading')}</p>`;
+    const result = await api.call('admin_get_llm_connections');
+    if (result.success) {
+        llmConnections = result.data || [];
+        renderLlmConnectionList();
+    } else if (container) {
+        container.innerHTML = `<p class="admin-empty">${t('admin.users.failed')}</p>`;
+    }
+};
+
+const renderLlmConnectionList = () => {
+    const container = document.getElementById('admin-llm-list');
+    if (!container) return;
+    document.getElementById('admin-llm-add-btn')?.classList.remove('hidden'); // see renderAiUserList
+
+    if (!llmConnections.length) {
+        container.innerHTML = `<p class="admin-empty">${t('admin.llm.none')}</p>`;
+        return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'admin-table';
+    table.innerHTML = `<thead><tr><th>${t('admin.col.name')}</th><th>${t('admin.llm.type')}</th><th>${t('admin.col.url')}</th><th>${t('admin.llm.used-by')}</th><th></th></tr></thead>`;
+    const tbody = document.createElement('tbody');
+
+    llmConnections.forEach(c => {
+        const tr = document.createElement('tr');
+
+        const tdName = document.createElement('td');
+        tdName.className = 'admin-td-name';
+        tdName.textContent = c.name;
+        if (!c.api_key_set) {
+            const warn = document.createElement('span');
+            warn.className = 'admin-auth-badge';
+            warn.style.cssText = 'background:#ed8936;color:#fff;margin-left:0.4rem';
+            warn.textContent = t('admin.llm.no-key');
+            tdName.appendChild(warn);
+        }
+
+        const tdType = document.createElement('td');
+        tdType.className = 'admin-log-source';
+        tdType.textContent = (c.provider_label || c.provider || '').split(/\s+[—(\/]\s*/)[0];
+        tdType.title = c.provider_label || '';
+
+        const tdUrl = document.createElement('td');
+        tdUrl.className = 'admin-td-email';
+        const urlText = c.api_url || t('admin.llm.url-default');
+        tdUrl.textContent = urlText.length > 40 ? urlText.slice(0, 40) + '…' : urlText;
+        tdUrl.title = urlText;
+
+        const tdUsed = document.createElement('td');
+        tdUsed.textContent = c.used_by?.length ? c.used_by.join(', ') : '—';
+
+        const tdActions = document.createElement('td');
+        tdActions.style.cssText = 'white-space:nowrap;display:flex;gap:4px;align-items:center;';
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-sm btn-secondary';
+        editBtn.textContent = t('admin.btn.edit');
+        editBtn.addEventListener('click', () => openLlmConnectionForm(c));
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-sm btn-danger admin-del-btn';
+        delBtn.title = t('admin.llm.delete-title');
+        delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+        delBtn.addEventListener('click', () => deleteLlmConnection(c));
+        tdActions.append(editBtn, delBtn);
+
+        tr.append(tdName, tdType, tdUrl, tdUsed, tdActions);
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.innerHTML = '';
+    container.appendChild(table);
+};
+
+const openLlmConnectionForm = async (c) => {
+    const container = document.getElementById('admin-llm-list');
+    if (!container) return;
+    const isNew = !c;
+    const providers = await getLlmProviders();
+    const curProvider = c?.provider || 'openai';
+    const providerOpts = providers.map(p =>
+        `<option value="${escHtml(p.id)}" ${curProvider === p.id ? 'selected' : ''}>${escHtml(p.label)}</option>`
+    ).join('');
+    const urlByProvider = {};
+    providers.forEach(p => { if (p.default_url) urlByProvider[p.id] = p.default_url; });
+
+    container.innerHTML = `
+        <div class="admin-ai-form">
+            <div class="admin-ai-form-section">
+                <div class="admin-ai-form-row">
+                    <div class="form-group">
+                        <label>${t('admin.col.name')}</label>
+                        <input type="text" id="llm-f-name" class="form-control" value="${escHtml(c?.name || '')}" placeholder="${t('admin.llm.name-ph')}">
+                    </div>
+                    <div class="form-group">
+                        <label>${t('admin.llm.type')}</label>
+                        <select id="llm-f-provider" class="form-control">${providerOpts}</select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>${t('admin.ai.url')}</label>
+                    <input type="url" id="llm-f-url" class="form-control" value="${escHtml(c?.api_url || '')}" placeholder="${escHtml(urlByProvider[curProvider] || 'https://api.openai.com/v1/chat/completions')}">
+                    <p class="form-hint">${t('admin.llm.url-hint')}</p>
+                </div>
+                <div class="form-group">
+                    <label>${t('admin.ai.key')} ${c?.api_key_set ? `<span class="admin-ai-key-set">${t('admin.ai.key-set')}</span>` : ''}</label>
+                    <input type="password" id="llm-f-key" class="form-control" autocomplete="new-password" placeholder="${c?.api_key_set ? t('admin.ai.key-ph-keep') : 'sk-…'}">
+                    <p class="form-hint">${t('admin.llm.key-hint')}</p>
+                </div>
+                <div class="form-group">
+                    <label>${t('admin.xhdr.label')} <span style="font-weight:400;color:var(--text-muted)">${t('admin.optional')}</span></label>
+                    ${extraHeadersFieldHtml('llm-f', c?.extra_headers ?? [])}
+                    <p class="form-hint">${t('admin.ai.xhdr-hint')}</p>
+                </div>
+                ${c?.used_by?.length ? `<p class="form-hint">${escHtml(t('admin.llm.used-by-hint', { names: c.used_by.join(', ') }))}</p>` : ''}
+            </div>
+            <div class="admin-ai-form-section-header">${t('admin.llm.test-section')}</div>
+            <div class="admin-ai-form-section">
+                <div class="admin-ai-form-row" style="align-items:flex-end;gap:0.75rem">
+                    <div class="form-group" style="flex:1">
+                        <label>${t('admin.ai.model')}</label>
+                        <input type="text" id="llm-f-test-model" class="form-control" list="llm-f-models" value="${escHtml(c?.models?.[0] || '')}" placeholder="claude-sonnet-5-5">
+                        <datalist id="llm-f-models">${(c?.models || []).map(m => `<option value="${escHtml(m)}">`).join('')}</datalist>
+                    </div>
+                    <button type="button" id="llm-f-test-btn" class="btn btn-secondary" style="margin-bottom:1rem">${t('admin.ai.test-btn')}</button>
+                </div>
+                <p class="form-hint">${t('admin.llm.test-hint')}</p>
+                <div id="llm-f-test-result"></div>
+            </div>
+            <div class="admin-ai-form-actions">
+                <button type="button" id="llm-f-cancel-btn" class="btn btn-secondary">${t('btn.cancel')}</button>
+                <button type="button" id="llm-f-save-btn" class="btn btn-green">${t('btn.save')}</button>
+            </div>
+        </div>`;
+
+    wireExtraHeadersField('llm-f');
+    // The URL box is left empty for "the registry default", so changing the type only has
+    // to move the placeholder. A typed URL is kept: it is a gateway, and the type says
+    // which wire format that gateway speaks.
+    const provSel = document.getElementById('llm-f-provider');
+    const urlField = document.getElementById('llm-f-url');
+    provSel.addEventListener('change', () => {
+        urlField.placeholder = urlByProvider[provSel.value] || '';
+        if (Object.values(urlByProvider).includes(urlField.value.trim())) urlField.value = '';
+    });
+
+    const readForm = () => ({
+        name:          document.getElementById('llm-f-name')?.value.trim() || '',
+        provider:      provSel.value || 'openai',
+        api_url:       urlField.value.trim(),
+        api_key:       document.getElementById('llm-f-key')?.value || '',
+        extra_headers: JSON.stringify(readExtraHeadersField('llm-f')),
+    });
+
+    document.getElementById('llm-f-test-btn').addEventListener('click', async () => {
+        const f = readForm();
+        const model = document.getElementById('llm-f-test-model')?.value.trim() || '';
+        const btn = document.getElementById('llm-f-test-btn');
+        const out = document.getElementById('llm-f-test-result');
+        if (!model) { showToast(t('admin.ai.test-model-req'), 'error'); return; }
+        if (!f.api_key && !c?.api_key_set) { showToast(t('admin.ai.test-key-req'), 'error'); return; }
+        btn.disabled = true;
+        btn.textContent = t('admin.btn.testing');
+        const params = { provider: f.provider, api_url: f.api_url, extra_headers: f.extra_headers, model };
+        if (f.api_key) params.api_key = f.api_key;
+        if (c?.id) params.id = c.id;
+        const res = await api.call('admin_test_llm_connection', params, 'POST');
+        btn.disabled = false;
+        btn.textContent = t('admin.ai.test-btn');
+        out.innerHTML = res.success
+            ? `<p style="color:#48bb78;font-size:0.85rem">✓ ${escHtml(t('admin.ai.test-ok', { reply: res.reply }))}</p>`
+            : `<p style="color:#fc8181;font-size:0.85rem">✗ ${escHtml(res.message || t('admin.ai.test-failed'))}</p>`;
+    });
+
+    document.getElementById('llm-f-cancel-btn').addEventListener('click', () => renderLlmConnectionList());
+    document.getElementById('llm-f-save-btn').addEventListener('click', async () => {
+        const f = readForm();
+        if (!f.name) { showToast(t('admin.llm.name-req'), 'error'); return; }
+        const saveBtn = document.getElementById('llm-f-save-btn');
+        saveBtn.disabled = true;
+        saveBtn.textContent = t('btn.saving');
+        const result = await api.call('admin_save_llm_connection', { id: c?.id || '', ...f }, 'POST');
+        saveBtn.disabled = false;
+        saveBtn.textContent = t('btn.save');
+        if (result.success) {
+            showToast(t('admin.llm.saved'), 'success');
+            await loadLlmConnections();
+        } else {
+            showToast(result.message || t('admin.err.save'), 'error');
+        }
+    });
+
+    document.getElementById('admin-llm-add-btn')?.classList.add('hidden');
+};
+
+const deleteLlmConnection = async (c) => {
+    if (c.used_by?.length) {
+        showToast(t('admin.llm.in-use', { names: c.used_by.join(', ') }), 'error');
+        return;
+    }
+    const ok = await confirmModal(t('admin.llm.del-confirm', { name: c.name }), { confirmLabel: t('btn.delete'), dangerous: true });
+    if (!ok) return;
+    const result = await api.call('admin_delete_llm_connection', { id: c.id }, 'POST');
+    if (result.success) {
+        showToast(t('admin.llm.deleted', { name: c.name }), 'success');
+        await loadLlmConnections();
+    } else if (result.in_use) {
+        showToast(t('admin.llm.in-use', { names: result.in_use.join(', ') }), 'error');
+    } else {
+        showToast(result.message || t('admin.err.delete'), 'error');
+    }
+};
+
 // ── MCP Servers tab ───────────────────────────────────────────────────────────
 
 let mcpServers = [];
@@ -3121,6 +3332,7 @@ export const init = () => {
     document.getElementById('admin-api-add-btn')?.addEventListener('click', () => openApiAccountForm(null));
     document.getElementById('admin-jobs-add-btn')?.addEventListener('click', () => openJobForm(null));
     document.getElementById('admin-mcp-add-btn')?.addEventListener('click', () => openMcpServerForm(null));
+    document.getElementById('admin-llm-add-btn')?.addEventListener('click', () => openLlmConnectionForm(null));
 
     // OTP-specific UI
     if (window.WIKI_AUTH_MODE === 'otp') {

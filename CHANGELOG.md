@@ -6,6 +6,56 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.10.1] — 2026-10-05
+
+LLM providers set up once and shared by every AI user, avatars for people and AI users,
+and two dependency security upgrades.
+
+### Security
+- **The bundled Mercure hub is 1.0.3**, upstream's release of Caddy 2.11.7's security
+  hardening: idle read/write timeouts against slowloris, a 16 KiB cap on request headers,
+  and request headers containing `.` dropped. Everyone running the Docker image should
+  update, since the hub ships inside it.
+  - The protocol is unchanged, and Space isolation on the push channel was re-verified end
+    to end against a real 1.0.3 hub. An idle subscription is not cut by the new stall
+    timeout, because the hub's heartbeats count as activity.
+  - **Bare-metal installs should re-run `sudo ./tools/install-mercure.sh 1.0.3`**, which
+    now warns for anything older. Docker installs need nothing beyond the new image.
+- **phpseclib is 3.0.57** (from 3.0.55), pulled in by the OpenID Connect client to verify
+  login tokens. `composer audit` reports no remaining advisories.
+
+### Added
+- **LLM Providers — set up an endpoint and key once.** Admin → AI → LLM Providers holds
+  the shared connection records (provider, URL, API key, extra headers); an AI user names
+  one and keeps its own model, tuning and behaviour. Ten AI users on one account no longer
+  mean ten copies of the key, and rotating it is one edit. The key never leaves the server,
+  and a provider still in use cannot be deleted — the refusal names the AI users.
+  - **Existing AI users are migrated automatically** on the first request (or cron tick)
+    after the upgrade: AI users whose provider, URL, key and headers agree share one new
+    provider; anything differing stays separate. `users.json` is backed up once to
+    `users.json.pre-connections.bak` before the keys leave it.
+- **Avatars.** An admin can give an AI user one of 100 icons (Admin → AI Users → Avatar),
+  and anyone can choose their own in My Preferences. They appear in chat, page chat and
+  rendered comments; "none" looks as it always did. The icons are Noto Emoji, vendored so
+  that drawing a chat bubble never contacts anybody. A change shows at once in the browser
+  that made it and on the next poll everywhere else.
+- **New → JSON Data** creates a data page with a starter object, from the sidebar and from
+  a folder listing's New menu.
+- **Enter keeps the indentation** of the line you are on, so a nested list item continues
+  at its level. Shift+Enter is still a plain line break.
+- **Icons on every tab and group in the Admin panel.**
+
+### Changed
+- **Claude Opus 5.5 and Sonnet 5.5 are listed in the model rules** they already inherited
+  from Opus 5 and Sonnet 5, so the table says which models it has been checked against.
+
+### Fixed
+- **A tag change reaches other browsers straight away.** Tags travel with the file tree,
+  but changing one announced only the page — so another browser's tree, tag cloud and open
+  page waited out the five-minute safety poll. The open page also no longer shows the tags
+  it was opened with when the tree has newer ones, and two index writes within one second
+  are no longer mistaken for one.
+
 ## [2026.9.12] — 2026-09-29
 
 Notifications that reach you when you are not looking at the wiki, mentions that stop

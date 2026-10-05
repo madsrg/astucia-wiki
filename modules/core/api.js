@@ -44,6 +44,12 @@ export const api = {
                 return data;
             }
             state.lastApiCallTime = Date.now();
+            // The user-list stamp rides on the chat polls (see wiki_users_rev()). Announced
+            // as an event rather than handled here, because modules/core/users.js imports
+            // this module and the reverse import would be a cycle.
+            if (typeof data?.users_rev === 'string') {
+                window.dispatchEvent(new CustomEvent('wiki:usersrev', { detail: data.users_rev }));
+            }
             return data;
         } catch (error) {
             if (error.name === 'AbortError') return { success: false, aborted: true };

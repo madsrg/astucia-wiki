@@ -226,6 +226,10 @@ export const refreshFileTree = async () => {
         renderTree(state.fullFileTree, fileNavigator);
         renderBrowsePane(state.fullFileTree, '');
         if (_onGenerateTagCloud) _onGenerateTagCloud();
+        // Tags travel in the tree, so a refresh is how this browser learns of a tag change
+        // made in another one. Announced rather than imported: modules/tags already imports
+        // this module, and it owns the open page's tag strip.
+        document.dispatchEvent(new CustomEvent('wiki:treerefresh'));
         // The folder listing is drawn from this tree, so it has to be repainted with it —
         // otherwise a folder created from the listing's own New menu, or one that appeared
         // from an external change, shows up only after navigating away and back.
@@ -238,7 +242,7 @@ export const refreshFileTree = async () => {
 const TREE_POLL_MS = 15000;
 const TREE_POLL_SLOW_MS = 300000;   // safety net while push is live; see modules/realtime
 let _stopTreeWatch    = null;
-let _lastTreeMtime = 0;
+let _lastTreeStamp = '';
 
 const getExpandedFolders = () => {
     const paths = new Set();
@@ -261,7 +265,7 @@ const restoreExpandedFolders = (paths) => {
 
 export const stopTreePolling = () => {
     if (_stopTreeWatch) { _stopTreeWatch(); _stopTreeWatch = null; }
-    _lastTreeMtime = 0;
+    _lastTreeStamp = '';
 };
 
 export const startTreePolling = (space) => {
@@ -269,16 +273,18 @@ export const startTreePolling = (space) => {
     const pollOnce = async () => {
         const res = await api.call('tree_mtime', { space: space || '' });
         if (!res.success) return;
-        const mtime = res.mtime || 0;
-        if (_lastTreeMtime && mtime !== _lastTreeMtime) {
+        // mtime *and* size: two index writes in one second share an mtime, and the second
+        // would otherwise be missed until some later, unrelated change.
+        const stamp = `${res.mtime || 0}:${res.size ?? ''}`;
+        if (_lastTreeStamp && stamp !== _lastTreeStamp) {
             const expanded = getExpandedFolders();
             await refreshFileTree();
             restoreExpandedFolders(expanded);
             revealAndSelectFile(state.currentPagePath);
         }
-        _lastTreeMtime = mtime;
+        _lastTreeStamp = stamp;
     };
-    // The tree event fires for a create, delete, rename or an external reconcile — the same
+    // The tree event fires for a create, delete, rename, tag change or external reconcile — the same
     // set that moves tree_mtime, which this still reads to decide whether anything changed.
     _stopTreeWatch = watch(rtTopic.tree(space), pollOnce,
                        { fast: TREE_POLL_MS, slow: TREE_POLL_SLOW_MS });

@@ -190,6 +190,21 @@ setTimeout(async () => {
           document.execCommand('undo');
           out += ' undo=' + JSON.stringify(indented) + '>' + JSON.stringify(ta.value);
 
+          // Enter continues at the line's indentation. The unindented line is the
+          // positive control's mirror: a plain Enter must stay the browser's.
+          set(TAB + '- a', 4);
+          out += ' enterIndent=' + shot(press(ta, 'Enter', {}, LF));
+          set(TAB + TAB + '- a', 5);
+          out += ' enterTwo=' + shot(press(ta, 'Enter', {}, LF));
+          set('- a', 3);
+          out += ' enterPlain=' + shot(press(ta, 'Enter', {}, LF));
+          // Shift+Enter is the way out: a bare line break.
+          set(TAB + '- a', 4);
+          out += ' shiftEnter=' + shot(press(ta, 'Enter', { shiftKey: true }, LF));
+          // A line that is only indentation is emptied as the indent moves down.
+          set('- a' + LF + TAB, 5);
+          out += ' enterBlank=' + shot(press(ta, 'Enter', {}, LF));
+
           // The window manager's combinations are never ours.
           set('x', 1);
           out += ' ctrlTab=' + press(ta, 'Tab', { ctrlKey: true }, null);
@@ -276,6 +291,14 @@ assert_not_contains "and the blank line stays blank" 'block=true|"\t- a\n\t\n' "
 assert_contains "Shift+Tab gives the level back"     'blockOut=true|"- a\n\n- b"' "$PROBE"
 assert_contains "Shift+Tab at column zero is a no-op, not a focus jump" \
                 'outdentNoop=true|"a"' "$PROBE"
+
+section 'Enter keeps the indentation'
+assert_contains "Enter on an indented line continues at its level" 'enterIndent=true|"\t- a\n\t"' "$PROBE"
+assert_contains "two levels carry as two"            'enterTwo=true|"\t\t- a\n\t\t"' "$PROBE"
+assert_contains "an unindented line is the browser's plain Enter" 'enterPlain=false|"- a\n"' "$PROBE"
+assert_contains "Shift+Enter is a bare line break"   'shiftEnter=false|"\t- a\n"' "$PROBE"
+# Carrying the indent off a whitespace-only line would leave that whitespace behind.
+assert_contains "an indent-only line is emptied as it moves down" 'enterBlank=true|"- a\n\n\t"' "$PROBE"
 
 section 'Esc is the way out of the keyboard trap'
 # Swallowing Tab leaves a textarea with no keyboard exit, which is what WCAG 2.1.2 is

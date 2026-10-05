@@ -892,6 +892,16 @@ body {
 .pref-check { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem; color: var(--text-color); }
 .pref-check input { cursor: pointer; }
 .pref-hint { margin: 0.3rem 0 0 1.6rem; font-size: 0.78rem; color: var(--accent-gray); }
+/* My Preferences. Qualified with both classes so it wins over .lightbox-content by
+   specificity rather than by where it sits in this sheet (the Space settings trap), and
+   border-box so 600px means 600. Height follows the content up to the viewport cap; the
+   body scrolls under that, and min-height: 0 is what lets a flex child shrink to scroll. */
+.lightbox-content.prefs-content { max-width: 600px; height: auto; max-height: 85vh; box-sizing: border-box; }
+.prefs-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.25rem; }
+.pref-hint.pref-hint-flush { margin-left: 0; }
+/* "None" in the person's picker is their initial, as chat draws it. */
+.avatar-initial { font-weight: 700; font-size: 0.9rem; color: var(--accent-gray); }
+.avatar-circle-lg .avatar-initial { font-size: 1.2rem; }
 .input-modal-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
 .input-modal-header h3 { margin: 0; font-size: 0.95rem; }
 .input-modal-icon { display: flex; align-items: center; line-height: 0; }
@@ -1508,10 +1518,15 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 .admin-group { background: none; border: none; padding: 6px 18px; border-radius: 5px; font-size: 0.85rem; font-weight: 600; cursor: pointer; color: var(--accent-gray); letter-spacing: 0.02em; transition: background 0.15s, color 0.15s; }
 .admin-group.active { background: var(--accent-blue); color: #fff; }
 .admin-group:not(.active):hover { background: rgba(0,0,0,0.05); color: var(--text-color); }
+.admin-group { display: inline-flex; align-items: center; gap: 6px; }
+.admin-group svg { flex-shrink: 0; }
 .admin-tab-bar { display: flex; gap: 2px; background: #f0f4f8; border-radius: 6px; padding: 3px; margin-bottom: 0.65rem; flex-shrink: 0; }
 .admin-tab { background: none; border: none; padding: 5px 14px; border-radius: 4px; font-size: 0.82rem; font-weight: 500; cursor: pointer; color: var(--accent-gray); transition: background 0.15s, color 0.15s; }
 .admin-tab.active { background: white; color: var(--text-color); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 .admin-tab:not(.active):hover { color: var(--text-color); }
+.admin-tab:has(svg) { display: inline-flex; align-items: center; gap: 6px; }
+.admin-tab svg { flex-shrink: 0; opacity: 0.75; }
+.admin-tab.active svg { opacity: 1; }
 
 /* Panes */
 .admin-pane { display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 0; }
@@ -1622,6 +1637,10 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
    stay: the colour is what tells two AI users apart, and keeping the box identical means
    the message rows do not shift depending on who wrote them. */
 .chat-avatar-ai svg { width: 18px; height: 18px; display: block; }
+/* A chosen avatar is a full-colour icon: it gets a neutral disc, since a saturated one
+   fights the icon's own colours. Same box, so rows still line up whoever wrote them. */
+.chat-avatar.chat-avatar-img { background: var(--border-color); }
+.chat-avatar-img img { width: 78%; height: 78%; display: block; }
 .chat-col { display: flex; flex-direction: column; max-width: 70%; position: relative; }
 .chat-row-mine .chat-col { align-items: flex-end; }
 .chat-meta { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 2px; padding: 0 4px; }
@@ -1820,6 +1839,8 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 .page-comment { background: #f0f7ff; border-left: 3px solid #4299e1; border-radius: 0 6px 6px 0; padding: 0.6rem 0.85rem; margin: 0.75rem 0; }
 .page-comment-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
 .page-comment-avatar { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; color: white; flex-shrink: 0; }
+.page-comment-avatar-img { background: var(--border-color); }
+.page-comment-avatar-img img { width: 80%; height: 80%; display: block; }
 .page-comment-author { font-size: 0.8rem; font-weight: 600; color: #2d3748; }
 .page-comment-body { font-size: 0.9rem; color: #2d3748; line-height: 1.5; white-space: pre-wrap; }
 
@@ -1851,6 +1872,23 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 
 /* ── AI Users admin tab ─────────────────────────────────────────────────────── */
 .admin-ai-badge  { display: inline-block; font-size: 0.65rem; font-weight: 700; background: #dbeafe; color: #1d4ed8; border-radius: 99px; padding: 1px 6px; margin-left: 4px; vertical-align: middle; letter-spacing: 0.03em; }
+/* Avatars outside chat: the admin AI user list, and the picker shared by the AI user form
+   and My Preferences (modules/core/avatars.js). One circle class for the list, the preview
+   and the picker's options, so the three cannot drift apart. */
+.avatar-circle { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+    border-radius: 50%; background: var(--border-color); color: var(--accent-gray); border: 2px solid transparent;
+    padding: 0; margin-right: 6px; vertical-align: middle; flex-shrink: 0; box-sizing: border-box; }
+.avatar-circle img { width: 80%; height: 80%; display: block; }
+.avatar-circle svg { width: 60%; height: 60%; display: block; }
+button.avatar-circle { cursor: pointer; }
+button.avatar-circle:hover, button.avatar-circle:focus-visible { border-color: var(--accent-blue); outline: none; }
+.avatar-circle.selected { border-color: var(--accent-blue); background: #dbeafe; }
+.avatar-circle-lg { width: 48px; height: 48px; }
+.avatar-field { display: flex; align-items: center; gap: 0.5rem; }
+/* All 100 at once: a short scroll beats paging through a list you are choosing by eye. */
+.avatar-grid { display: grid; grid-template-columns: repeat(auto-fill, 40px); gap: 6px; margin-top: 0.5rem;
+    max-height: 220px; overflow-y: auto; padding: 6px; border: 1px solid var(--border-color); border-radius: 6px; }
+.avatar-grid .avatar-circle { width: 40px; height: 40px; margin: 0; }
 .admin-api-badge { display: inline-block; font-size: 0.65rem; font-weight: 700; background: #d1fae5; color: #065f46; border-radius: 99px; padding: 1px 6px; margin-left: 4px; vertical-align: middle; letter-spacing: 0.03em; }
 .admin-ai-form { display: flex; flex-direction: column; gap: 0; padding: 0 15px 1rem 0; }
 .admin-ai-form-section { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.75rem 0; }

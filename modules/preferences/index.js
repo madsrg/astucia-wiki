@@ -4,6 +4,8 @@
 import { api } from '../core/api.js';
 import { showToast } from '../core/utils.js';
 import { t } from '../i18n/index.js';
+import { avatarPickerHtml, wireAvatarPicker } from '../core/avatars.js';
+import { invalidateUsers } from '../core/users.js';
 
 const FONTS      = ['sans', 'serif', 'mono'];
 const FONT_SIZES = ['10pt', '11pt', '12pt', '14pt', '16pt'];
@@ -46,6 +48,18 @@ export const init = () => {
         applyFontSize(selectedFontSize);
     }));
 
+    // Rebuilt on each open from the server's options, so it can never offer an id the save
+    // refuses and always starts from what is stored rather than from the last unsaved pick.
+    const avatarSlot = document.getElementById('pref-avatar-slot');
+    const renderAvatarPicker = (data) => {
+        if (!avatarSlot) return;
+        const initial = `<span class="avatar-initial">${((data.name || '?').charAt(0).toUpperCase())
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')}</span>`;
+        avatarSlot.innerHTML = avatarPickerHtml('pref', data.avatar || '', data.avatars || [],
+            { fallback: initial, noneLabel: t('avatar.none-person') });
+        wireAvatarPicker('pref', initial);
+    };
+
     const open = async () => {
         lightbox.classList.remove('hidden');
         emailInput.value = '';
@@ -65,6 +79,7 @@ export const init = () => {
             if (jobNotifyCb) jobNotifyCb.checked = !!result.data.notifyAgentJobs;
             updateFontBtns(selectedFont);
             updateSizeBtns(selectedFontSize);
+            renderAvatarPicker(result.data);
         }
         saveBtn.disabled = false;
         emailInput.focus();
@@ -81,11 +96,15 @@ export const init = () => {
         const result = await api.call('user_save_preferences',
             { email: emailInput.value.trim(), fontFamily: selectedFont, fontSize: selectedFontSize,
               dailyDigest: digestCb && digestCb.checked ? '1' : '0',
-              notifyAgentJobs: jobNotifyCb && jobNotifyCb.checked ? '1' : '0' }, 'POST');
+              notifyAgentJobs: jobNotifyCb && jobNotifyCb.checked ? '1' : '0',
+              // Absent until the options have loaded — and absent means "keep" server-side.
+              ...(document.getElementById('pref-avatar') ? { avatar: document.getElementById('pref-avatar').value } : {}) }, 'POST');
         saveBtn.disabled = false;
         if (result.success) {
             window.WIKI_USER_FONT      = selectedFont;
             window.WIKI_USER_FONT_SIZE = selectedFontSize;
+            // Your own bubbles repaint at once; other browsers hear it from the users event.
+            invalidateUsers();
             showToast(t('prefs.saved'), 'success');
             close();
         } else {

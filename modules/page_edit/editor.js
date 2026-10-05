@@ -126,6 +126,37 @@ export const indentLines = (outdent = false, el = null) => {
     if (!native) ed.dispatchEvent(new Event('input', { bubbles: true }));
 };
 
+/**
+ * Enter that keeps the current line's indentation, so a nested item continues at its level.
+ *
+ * Only the indentation *before the caret* is carried — Enter pressed inside the leading
+ * whitespace splits it rather than doubling it. A line that is nothing but indentation is
+ * emptied as the break moves it down, or every Enter on an indented blank line would leave
+ * trailing whitespace behind in the file.
+ *
+ * @returns {boolean} false when there is no indentation to carry, so the caller leaves
+ *          the key to the browser and a plain Enter stays exactly what it was.
+ */
+export const newlineKeepIndent = (el) => {
+    const ed = el || getEditor();
+    if (!ed) return false;
+    const value = ed.value;
+    const start = ed.selectionStart;
+    const end   = ed.selectionEnd;
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+    const before = value.slice(lineStart, start);
+    const indent = before.match(/^[\t ]*/)[0];
+    if (indent === '') return false;
+
+    const blankLine = indent === before;
+    const from = blankLine ? lineStart : start;
+    const native = replaceRange(ed, from, end, '\n' + indent);
+    const caret = from + 1 + indent.length;
+    ed.setSelectionRange(caret, caret);
+    if (!native) ed.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+};
+
 // Sets heading level at the start of the current line, replacing any existing heading marker.
 export const insertHeading = (level) => {
     const prefix = '#'.repeat(level) + ' ';
