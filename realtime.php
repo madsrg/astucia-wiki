@@ -160,7 +160,7 @@ function wiki_realtime_publish_token(): string {
  *
  * **`*` is a URL Pattern wildcard, not a glob, and it matches across `/`** — so one matcher
  * per Space still covers every resource inside it, which is what `{+rest}` did before 1.0
- * retired URI Templates. Three things about it, all confirmed against real 1.0.2 and 1.0.3 hubs
+ * retired URI Templates. Three things about it, all confirmed against real 1.0.2 to 1.0.4 hubs
  * because none of them is obvious:
  *
  *  - **The trailing separator carries the isolation.** `wiki/Main/*` matches

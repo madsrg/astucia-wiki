@@ -6,6 +6,30 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.10.3] — 2026-10-06
+
+The bundled realtime hub moves to Mercure 1.0.4, with upstream's advice for custom hub
+configurations applied to ours.
+
+### Security
+- **The bundled Mercure hub is 1.0.4.** Upstream's release fixes its *default*
+  configuration: since 1.0.3, compressing the live update stream cost several MiB of memory
+  per connected browser, and compressing private updates alongside data an attacker can
+  influence allows BREACH-style attacks. **This wiki was not affected** — its hub
+  configuration never compressed anything, and the Docker image's nginx did not compress
+  the stream — but the protection is now explicit rather than incidental:
+  - nginx says `gzip off` for `/.well-known/mercure`, in the Docker image and in the nginx
+    snippet `tools/install-mercure.sh` prints, so adding the stream's content type to the
+    gzip list can no longer switch compression on.
+  - Both hub configurations set upstream's `write_idle 5s` workaround, so a browser that
+    stops reading cannot hold up delivery for a minute. Quiet connections are not affected:
+    verified on 1.0.4 that a stream idle for 70 seconds still receives its next event.
+  - Space isolation on the push channel was re-verified end to end against the real 1.0.4
+    hub, and through the Docker image's nginx.
+  - **Docker installs:** update the image. **Bare-metal installs:** re-run
+    `sudo ./tools/install-mercure.sh 1.0.4`, and add `gzip off;` to the hub's nginx
+    location if you copied the earlier snippet.
+
 ## [2026.10.2] — 2026-10-06
 
 Workflows: the wiki can now act on its own when a page changes.

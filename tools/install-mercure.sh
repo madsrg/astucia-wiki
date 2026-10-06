@@ -5,7 +5,7 @@
 # =============================================================================
 # Install, configure and run the Mercure hub as a systemd service.
 #
-#   sudo ./tools/install-mercure.sh 1.0.3
+#   sudo ./tools/install-mercure.sh 1.0.4
 #
 # The wiki's realtime push needs a Mercure hub. The Docker image bundles one; this is
 # the equivalent for a bare-metal install. It downloads the release, verifies its
@@ -63,13 +63,13 @@ usage() {
 Usage: sudo $0 <version>
 
   <version>   Mercure release to install, without the leading 'v'. For example:
-                sudo $0 1.0.3
+                sudo $0 1.0.4
               Releases: https://github.com/dunglas/mercure/releases
 
               The wiki mints Mercure 1.0 access tokens (OAuth 2.0), which a 0.x hub
               rejects, so 1.0.0 is the minimum. 1.0.2 fixed ten vulnerabilities an
-              audit found in 1.0.0, and 1.0.3 adds Caddy's security hardening on top, so
-              1.0.3 is what to install.
+              audit found in 1.0.0, 1.0.3 adds Caddy's security hardening, and 1.0.4
+              fixes a memory regression in 1.0.3 — so 1.0.4 is what to install.
 
 Re-run with a newer version to upgrade. The shared key is never regenerated.
 EOF
@@ -81,15 +81,15 @@ case "$VERSION" in
     -h|--help) usage ;;
     v*) VERSION="${VERSION#v}" ;;   # tolerate 'v1.0.2'
 esac
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || die "'$VERSION' is not a version like 1.0.3"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || die "'$VERSION' is not a version like 1.0.4"
 # Refused rather than installed and left to fail at the first publish: the wiki signs
 # OAuth 2.0 access tokens (typ at+jwt, iss, aud, authorization_details), and a 0.x hub
 # answers 401 to every one of them while looking perfectly healthy from the outside.
 case "$VERSION" in
     0.*) die "Mercure $VERSION is too old for this wiki — it needs 1.0.0 or newer, whose
-      access-token format the wiki signs. Install 1.0.3 or later." ;;
+      access-token format the wiki signs. Install 1.0.4 or later." ;;
     1.0.1) die "Mercure 1.0.1 was tagged but never released — its build failed on 32-bit
-      platforms, so there are no binaries to download. Install 1.0.3." ;;
+      platforms, so there are no binaries to download. Install 1.0.4." ;;
 esac
 
 # Both are security releases. 1.0.2: an audit found ten vulnerabilities, four of them
@@ -270,6 +270,17 @@ cat > "$CADDYFILE" <<EOF
 	auto_https off
 	persist_config off
 	admin off
+	# Mercure 1.0.4's advice for any Caddyfile on Caddy 2.11.7: the new write_idle timeout
+	# (1 minute by default) overrides the hub's dispatch_timeout, so one subscriber that
+	# stops reading can hold a dispatch for a minute instead of a few seconds. It bounds a
+	# write that is *stuck*, not quiet time between writes — an idle stream with a pause of
+	# 70 s still received its next event, verified against 1.0.4 — so it costs nothing.
+	# Drop it once caddyserver/caddy#8145 ships.
+	servers {
+		timeouts {
+			write_idle 5s
+		}
+	}
 }
 
 # Browsers reach the hub through the wiki's reverse proxy, so the port itself is never
@@ -485,6 +496,7 @@ cat <<EOF
                proxy_buffering     off;        # or events queue in a buffer
                proxy_cache         off;
                proxy_read_timeout  24h;        # the stream is meant to stay open
+               gzip                off;        # never compress private updates (BREACH)
                chunked_transfer_encoding off;
            }
 
