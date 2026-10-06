@@ -1944,6 +1944,42 @@ button.avatar-circle:hover, button.avatar-circle:focus-visible { border-color: v
 .admin-job-status { font-size: 0.72rem; padding: 1px 7px; border-radius: 10px; font-weight: 600; }
 .admin-job-status-ok  { background: #c6f6d5; color: #22543d; }
 .admin-job-status-err { background: #fed7d7; color: #742a2a; }
+/* Admin → Content → Workflows (modules/admin/workflows.js) */
+.admin-job-status-skip { background: #edf2f7; color: #4a5568; }
+.wf-table td { vertical-align: top; }
+.wf-row-off td:not(:first-child) { opacity: 0.55; }
+.wf-row-btns { white-space: nowrap; display: flex; gap: 4px; }
+.wf-sub { font-size: 0.75rem; color: var(--accent-gray); margin-top: 2px; font-weight: 400; }
+.wf-err { font-size: 0.78rem; color: #c53030; margin-top: 2px; }
+.wf-chip { display: inline-block; font-size: 0.75rem; padding: 1px 7px; border-radius: 10px; background: #edf2f7; color: var(--text-color); margin: 1px 0; white-space: nowrap; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.wf-chip-email { background: #ebf8ff; } .wf-chip-ai { background: #faf5ff; } .wf-chip-chat { background: #f0fff4; }
+.wf-chip-tag { background: #fffaf0; } .wf-chip-frontmatter { background: #fff5f7; }
+.wf-note { font-size: 0.82rem; color: var(--accent-gray); background: #f7fafc; border-radius: 5px; padding: 0.45rem 0.7rem; margin: 0 0 0.6rem; }
+.wf-note-warn { background: #fffbeb; color: #92400e; }
+.job-form-grid > .wf-note { grid-column: 1 / -1; margin: 0; }
+.wf-checks { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; align-items: center; }
+.wf-check { display: inline-flex; gap: 0.35rem; align-items: center; font-size: 0.85rem; font-weight: 400 !important; }
+.wf-action-card { border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.75rem; margin: 0.6rem 0; }
+.wf-action-card .job-form-grid { padding: 0.5rem 0 0.25rem; }
+.wf-action-head { display: flex; gap: 0.5rem; align-items: center; }
+.wf-action-head select { max-width: 16rem; }
+.wf-action-n { display: inline-flex; align-items: center; justify-content: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: var(--accent-blue); color: #fff; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; }
+.wf-vars { margin: 0.5rem 0; line-height: 1.9; }
+.wf-vars code { font-size: 0.72rem; background: #edf2f7; padding: 1px 4px; border-radius: 3px; }
+.wf-test-row { display: flex; gap: 0.5rem; align-items: center; }
+.wf-test-row .wf-path { flex: 1; }
+/* A path box: input, an × that appears once it holds something, and Browse. */
+.wf-path { display: flex; gap: 0.4rem; align-items: center; }
+.wf-path-box { position: relative; flex: 1; display: flex; }
+.wf-path-box .wf-path-input { flex: 1; padding-right: 1.9rem; }
+.wf-path-clear { position: absolute; right: 0.35rem; top: 50%; transform: translateY(-50%); border: none; background: none; color: var(--accent-gray); font-size: 1.15rem; line-height: 1; cursor: pointer; padding: 0 0.3rem; border-radius: 3px; }
+.wf-path-clear:hover { color: var(--text-color); background: #edf2f7; }
+.wf-path-browse { display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; flex-shrink: 0; }
+.wf-path-browse svg { width: 14px; height: 14px; }
+.pp-folder-actions { display: flex; justify-content: flex-end; padding-top: 0.5rem; border-top: 1px solid var(--border-color); }
+.wf-pre { white-space: pre-wrap; font-size: 0.8rem; background: #f7fafc; padding: 0.4rem 0.6rem; border-radius: 4px; margin: 0.3rem 0 0; max-height: 14rem; overflow: auto; }
+.wf-result { font-size: 0.8rem; margin: 2px 0; }
+.wf-history-head { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.6rem; }
 .admin-job-run-result { border-radius: 6px; padding: 0.6rem 0.8rem; margin-top: 0.25rem; }
 .admin-job-run-ok  { background: #f0fff4; border: 1px solid #9ae6b4; }
 .admin-job-run-err { background: #fff5f5; border: 1px solid #feb2b2; }

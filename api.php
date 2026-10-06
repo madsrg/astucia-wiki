@@ -981,6 +981,8 @@ if (isset($_REQUEST['action'])) {
                       'git_deleted_files', 'git_restore_deleted',
                       'admin_reindex',
                       'admin_get_mcp_servers', 'admin_save_mcp_server', 'admin_delete_mcp_server', 'admin_test_mcp_server',
+                      'admin_get_workflows', 'admin_save_workflow', 'admin_delete_workflow', 'admin_toggle_workflow',
+                      'admin_get_workflow_runs', 'admin_test_workflow', 'admin_run_workflow',
                       'admin_realtime_status', 'admin_realtime_test',
                       'admin_audit_config', 'admin_set_audit_enabled', 'admin_get_audit_entries',
                       'admin_ai_builtin_instructions', 'admin_space_settings', 'admin_set_space_readonly', 'admin_merge_space_preflight', 'admin_merge_space'];
@@ -1350,7 +1352,7 @@ if (isset($_REQUEST['action'])) {
                     break;
                 }
                 $start_id = $indexer->getId($start_rel);
-                if (!$start_id) $start_id = $indexer->addPage($start_rel);
+                if (!$start_id) $start_id = $indexer->addPage($start_rel, null, null, true);   // adopt: no workflow
                 echo json_encode(['success' => true, 'exists' => true, 'path' => $start_rel, 'id' => $start_id]);
                 break;
 
@@ -1381,7 +1383,7 @@ if (isset($_REQUEST['action'])) {
 
                         $id = $is_dir ? null : $indexer->getId($relativePath);
                         if (!$is_dir && $id === null) {
-                            $id = $indexer->addPage($relativePath);
+                            $id = $indexer->addPage($relativePath, null, null, true);   // adopt: no workflow
                         }
 
                         $item = [
@@ -4517,8 +4519,21 @@ if (isset($_REQUEST['action'])) {
                 $grd_dir = dirname($grd_dest);
                 if (!is_dir($grd_dir)) mkdir($grd_dir, 0777, true);
                 if (file_put_contents($grd_dest, $grd_show['output']) === false) throw new Exception('Could not write file.');
-                $indexer->addPage($grd_dest);
                 $grd_actor = get_current_actor();
+                // The index is keyed by the path *relative to the space*. This used to pass
+                // the absolute path, which left a junk entry in index.json and the restored
+                // page with no id — until the next listing adopted it under a second one.
+                if ($indexer->getId($grd_rel) === null) {
+                    $indexer->addPage($grd_rel, $grd_actor['uid'] ?? null, $grd_actor['name'] ?? null);
+                } else {
+                    $indexer->updateModified($grd_rel, $grd_actor['uid'] ?? null, $grd_actor['name'] ?? null);
+                }
+                // Searchable again straight away, like any other page that appears.
+                if ($search_idx) {
+                    $grd_body = strtolower(pathinfo($grd_rel, PATHINFO_EXTENSION)) === 'md'
+                        ? wiki_fm_body($grd_show['output']) : $grd_show['output'];
+                    try { $search_idx->upsertPage(_sidx_space(), $grd_rel, $grd_body); } catch (\Throwable $_e) {}
+                }
                 $grd_name  = $grd_actor['name'] ?? 'Wiki';
                 $grd_email = (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost';
                 echo json_encode(['success' => true]);
@@ -4740,6 +4755,7 @@ if (isset($_REQUEST['action'])) {
                 }
                 // Per-space settings are keyed by name, so they have to follow it.
                 wiki_space_settings_rename($rs_safe_old, $rs_safe_new);
+                wiki_workflows_space_renamed($rs_safe_old, $rs_safe_new);
                 // So is the external-change stamp: without this the renamed space
                 // starts with no stamp (one needless full scan) and the old one is
                 // left behind forever, one more with every rename.
@@ -5596,6 +5612,181 @@ if (isset($_REQUEST['action'])) {
                 ]]);
                 break;
             }
+
+            // ── Workflows (see workflows.php / workflow_runner.php) ─────────────────
+            case 'admin_get_workflows':
+                $wf_runs = wiki_wf_queue_read();
+                $wf_week = time() - 7 * 86400;
+                $wf_out = [];
+                foreach (wiki_workflows_all() as $_wf) {
+                    $_n = 0; $_q = 0;
+                    foreach ($wf_runs as $_r) {
+                        if (($_r['workflow_id'] ?? '') !== $_wf['id']) continue;
+                        if (($_r['state'] ?? '') === 'queued') $_q++;
+                        elseif (in_array($_r['state'] ?? '', ['ok', 'error'], true)
+                                && (strtotime((string)($_r['finished_at'] ?? '')) ?: 0) >= $wf_week) $_n++;
+                    }
+                    $wf_out[] = $_wf + ['runs_7d' => $_n, 'queued' => $_q];
+                }
+                $wf_users = $wf_ai = [];
+                foreach ((json_decode((string)@file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? []) as $_u) {
+                    if (!empty($_u['is_ai'])) $wf_ai[] = ['uid' => (int)$_u['uid'], 'name' => (string)($_u['name'] ?? '')];
+                    else $wf_users[] = ['uid' => (int)$_u['uid'], 'name' => (string)($_u['name'] ?? ''),
+                                        'has_email' => wiki_user_notify_email($_u) !== ''];
+                }
+                echo json_encode(['success' => true, 'workflows' => $wf_out,
+                    'spaces' => wiki_wf_list_spaces(), 'ai_users' => $wf_ai, 'users' => $wf_users,
+                    'mail_configured' => is_mail_configured(),
+                    'runner_stalled' => agent_job_runner_stalled(),
+                    'runner_interval' => agent_job_runner_interval()]);
+                break;
+
+            case 'admin_save_workflow':
+                $wf_in = json_decode((string)($_POST['workflow'] ?? ''), true);
+                if (!is_array($wf_in)) throw new Exception('Malformed request.');
+                $wf_ai_uids = $wf_user_uids = [];
+                foreach ((json_decode((string)@file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? []) as $_u) {
+                    if (!empty($_u['is_ai'])) $wf_ai_uids[] = (int)$_u['uid']; else $wf_user_uids[] = (int)$_u['uid'];
+                }
+                $wf_clean = wiki_workflow_normalize($wf_in, $wf_ai_uids, $wf_user_uids);
+                $wf_id    = trim((string)($wf_in['id'] ?? ''));
+                $wf_actor = get_current_actor();
+                $wf_saved = wiki_workflows_mutate(function (array &$list) use ($wf_id, $wf_clean, $wf_actor) {
+                    if ($wf_id !== '') {
+                        foreach ($list as &$w) {
+                            if (($w['id'] ?? '') !== $wf_id) continue;
+                            // Saving is a fresh start: switching it back on after an
+                            // automatic switch-off clears the count that caused it.
+                            $w = array_merge($w, $wf_clean, ['updated_at' => date('c')]);
+                            if (!empty($wf_clean['enabled'])) {
+                                unset($w['disabled_reason']);
+                                $w['stats']['failures'] = 0;
+                            }
+                            return $w;
+                        }
+                        unset($w);
+                        throw new Exception('Workflow not found.');
+                    }
+                    $new = ['id' => 'wf_' . bin2hex(random_bytes(6))] + $wf_clean + [
+                        'created_by' => ['uid' => $wf_actor['uid'] ?? null, 'name' => $wf_actor['name'] ?? null],
+                        'created_at' => date('c'), 'updated_at' => date('c'), 'stats' => [],
+                    ];
+                    $list[] = $new;
+                    return $new;
+                });
+                // The previous value of a watched field cannot be read after a write, so it
+                // is remembered; record it now for every page, or the first change is missed.
+                if (($wf_saved['trigger']['type'] ?? '') === 'fm_changed') wiki_workflow_seed_fm($wf_saved);
+                else wiki_wf_forget_state($wf_saved['id']);
+                wiki_audit_log($wf_id === '' ? 'create' : 'update', 'success',
+                    ['object_category' => 'workflow', 'object' => $wf_saved['name'], 'object_id' => $wf_saved['id']]);
+                echo json_encode(['success' => true, 'workflow' => $wf_saved]);
+                break;
+
+            case 'admin_toggle_workflow':
+                $wf_id = trim((string)($_POST['id'] ?? ''));
+                $wf_on = !empty($_POST['enabled']) && $_POST['enabled'] !== '0' && $_POST['enabled'] !== 'false';
+                $wf_saved = wiki_workflows_mutate(function (array &$list) use ($wf_id, $wf_on) {
+                    foreach ($list as &$w) {
+                        if (($w['id'] ?? '') !== $wf_id) continue;
+                        $w['enabled'] = $wf_on;
+                        if ($wf_on) { unset($w['disabled_reason']); $w['stats']['failures'] = 0; }
+                        return $w;
+                    }
+                    unset($w);
+                    return null;
+                });
+                if (!$wf_saved) throw new Exception('Workflow not found.');
+                if ($wf_on && ($wf_saved['trigger']['type'] ?? '') === 'fm_changed') wiki_workflow_seed_fm($wf_saved);
+                wiki_audit_log('update', 'success', ['object_category' => 'workflow', 'object' => $wf_saved['name'],
+                    'object_id' => $wf_id, 'enabled' => $wf_on ? 'on' : 'off']);
+                echo json_encode(['success' => true, 'workflow' => $wf_saved]);
+                break;
+
+            case 'admin_delete_workflow':
+                $wf_id = trim((string)($_POST['id'] ?? ''));
+                $wf_gone = wiki_workflows_mutate(function (array &$list) use ($wf_id) {
+                    foreach ($list as $i => $w) {
+                        if (($w['id'] ?? '') !== $wf_id) continue;
+                        array_splice($list, $i, 1);
+                        return $w;
+                    }
+                    return null;
+                });
+                if (!$wf_gone) throw new Exception('Workflow not found.');
+                wiki_wf_forget_state($wf_id);
+                // Waiting runs would only be skipped by the runner; drop them now.
+                wiki_wf_queue_mutate(function (array &$runs) use ($wf_id) {
+                    $runs = array_values(array_filter($runs, fn($r) =>
+                        !(($r['workflow_id'] ?? '') === $wf_id && ($r['state'] ?? '') === 'queued')));
+                });
+                wiki_audit_log('delete', 'success', ['object_category' => 'workflow', 'object' => $wf_gone['name'], 'object_id' => $wf_id]);
+                echo json_encode(['success' => true]);
+                break;
+
+            case 'admin_get_workflow_runs':
+                $wf_id = trim((string)($_GET['id'] ?? ''));
+                $wf_list = array_values(array_filter(wiki_wf_queue_read(), fn($r) => ($r['workflow_id'] ?? '') === $wf_id));
+                usort($wf_list, fn($a, $b) => strcmp((string)($b['finished_at'] ?? $b['created_at'] ?? ''),
+                                                      (string)($a['finished_at'] ?? $a['created_at'] ?? '')));
+                // Queued and running first: they are what an admin is waiting on.
+                usort($wf_list, fn($a, $b) => (int)in_array($b['state'] ?? '', ['queued', 'running'], true)
+                                            - (int)in_array($a['state'] ?? '', ['queued', 'running'], true));
+                $wf_list = array_map(function ($r) {
+                    unset($r['base_url'], $r['chain']);
+                    $r['has_log'] = !empty($r['log_file']) && is_file($r['log_file']);
+                    unset($r['log_file']);
+                    return $r;
+                }, array_slice($wf_list, 0, 200));
+                if (($_GET['log'] ?? '') !== '') {
+                    $wf_log = '';
+                    foreach (wiki_wf_queue_read() as $_r) {
+                        if (($_r['id'] ?? '') === $_GET['log'] && ($_r['workflow_id'] ?? '') === $wf_id
+                            && !empty($_r['log_file']) && is_file($_r['log_file'])) $wf_log = (string)file_get_contents($_r['log_file']);
+                    }
+                    echo json_encode(['success' => true, 'log' => $wf_log]);
+                    break;
+                }
+                echo json_encode(['success' => true, 'runs' => $wf_list]);
+                break;
+
+            case 'admin_test_workflow':
+                require_once __DIR__ . '/workflow_runner.php';
+                $wf_in = json_decode((string)($_POST['workflow'] ?? ''), true);
+                if (!is_array($wf_in)) throw new Exception('Malformed request.');
+                $wf_ai_uids = $wf_user_uids = [];
+                foreach ((json_decode((string)@file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? []) as $_u) {
+                    if (!empty($_u['is_ai'])) $wf_ai_uids[] = (int)$_u['uid']; else $wf_user_uids[] = (int)$_u['uid'];
+                }
+                // Validated exactly as a save would, so a test cannot pass what saving refuses.
+                $wf_clean = ['id' => (string)($wf_in['id'] ?? '')] + wiki_workflow_normalize($wf_in, $wf_ai_uids, $wf_user_uids);
+                $wf_space = (string)($_POST['test_space'] ?? '');
+                if ($wf_space !== '' && !in_array($wf_space, wiki_wf_list_spaces(), true)) throw new Exception('Unknown space.');
+                $wf_actor = get_current_actor();
+                echo json_encode(['success' => true, 'preview' => wiki_workflow_preview($wf_clean, $wf_space,
+                    (string)($_POST['test_path'] ?? ''), ['uid' => $wf_actor['uid'] ?? null, 'name' => $wf_actor['name'] ?? null, 'is_ai' => false])]);
+                break;
+
+            case 'admin_run_workflow':
+                // The *saved* definition, never the form: what runs for real is what will
+                // run when the trigger fires.
+                require_once __DIR__ . '/workflow_runner.php';
+                $wf_run_def = wiki_workflow_get(trim((string)($_POST['id'] ?? '')));
+                if (!$wf_run_def) throw new Exception('Save the workflow before running it.');
+                $wf_space = (string)($_POST['test_space'] ?? '');
+                if ($wf_space !== '' && !in_array($wf_space, wiki_wf_list_spaces(), true)) throw new Exception('Unknown space.');
+                $wf_path = _wiki_wf_rel((string)($_POST['test_path'] ?? ''));
+                if ($wf_path === '') throw new Exception('Choose the page to run it for.');
+                if (!is_file(wiki_wf_space_dir($wf_space) . '/' . $wf_path)) throw new Exception('That page does not exist.');
+                $wf_actor = get_current_actor();
+                @set_time_limit(120);
+                $wf_done = wiki_workflow_run_now($wf_run_def, $wf_space, $wf_path,
+                    ['uid' => $wf_actor['uid'] ?? null, 'name' => $wf_actor['name'] ?? null, 'is_ai' => false]);
+                wiki_audit_log('update', 'success', ['object_category' => 'workflow', 'object' => $wf_run_def['name'],
+                    'object_id' => $wf_run_def['id'], 'run' => 'manual', 'page' => $wf_path]);
+                unset($wf_done['base_url'], $wf_done['chain'], $wf_done['log_file']);
+                echo json_encode(['success' => true, 'run' => $wf_done]);
+                break;
 
             case 'admin_get_mcp_servers':
                 $mcp_out = array_map(fn($s) => [

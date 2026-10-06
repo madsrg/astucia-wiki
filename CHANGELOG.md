@@ -6,6 +6,42 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.10.2] — 2026-10-06
+
+Workflows: the wiki can now act on its own when a page changes.
+
+### Added
+- **Workflows** — Admin → Content → Workflows. "When this happens to a page, do that",
+  set up by administrators.
+  - **Triggers:** a page created, saved, deleted, renamed or moved, a tag added or
+    removed, or a front-matter field changing (optionally *to* a value, such as
+    `status` → `approved`). Narrowed by space, folder, page type, a tag the page must
+    have, and "ignore AI edits".
+  - **Actions,** run in order: send an email, give an AI user an instruction (it gets the
+    page's content, and its reply can be posted to a chat), post in a chat, add or remove
+    tags, set a front-matter field. Text can use placeholders such as `{{page}}`,
+    `{{url}}` and `{{actor}}`.
+  - **An overview** with an on/off switch per workflow, its last result and a run history,
+    and full logs for AI runs.
+  - **Test** shows what a workflow would do for a page without doing it, including which
+    filter would exclude the page. **Run now** performs the saved workflow for real on one
+    page, so you can see it work before switching it on.
+  - **Browse buttons** on every folder and page field, and an × to clear one.
+  - Workflows run in the background, a couple of minutes after the change, through the
+    existing `run_ai_agent_jobs.php` cron job; saving a page never waits for one. Changes
+    made outside the wiki (git pull, file sync) do not trigger them.
+  - **Safeguards:** a workflow never triggers itself and chains stop after three steps;
+    repeated saves of a page within the quiet period become one run; each workflow has a
+    runs-per-hour limit and switches itself off, emailing the administrator, after five
+    failures in a row; read-only spaces skip every action that writes.
+
+### Fixed
+- **Restoring a deleted page from git history now indexes it correctly.** It was recorded
+  under its absolute file path, so the restored page had no id until the next folder
+  listing gave it a second one, the broken entry stayed in the index, and it was missing
+  from SQLite search. It is now indexed under its own path, credited to whoever restored
+  it, and searchable straight away.
+
 ## [2026.10.1] — 2026-10-05
 
 LLM providers set up once and shared by every AI user, avatars for people and AI users,

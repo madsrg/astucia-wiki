@@ -10,6 +10,9 @@
 // The announce() hooks below degrade to no-ops when this is absent, but the cron runner and
 // the CLI reindex both write content and both have subscribers waiting on the result.
 if (is_file(__DIR__ . '/realtime.php')) require_once __DIR__ . '/realtime.php';
+// Workflows hook the same funnel, for the same reason: every content write already comes
+// through here, so a trigger cannot miss a write path. See workflows.php.
+if (is_file(__DIR__ . '/workflows.php')) require_once __DIR__ . '/workflows.php';
 
 class PageIndexer {
     // Content types that get a stable page id. Defined once because two paths walk the
@@ -110,6 +113,16 @@ class PageIndexer {
         wiki_realtime_publish_path($this->space, (string)$path, $change, $with_tree);
     }
 
+    /**
+     * Tell the workflows what happened to one page. Only the per-page methods call this —
+     * not applyReconcile() (a `git pull` is not somebody editing a page) and not the bulk
+     * moves, which do not announce individual pages either. See workflows.php.
+     */
+    private function workflowEvent($event, $path, array $info = []) {
+        if (!function_exists('wiki_workflow_event')) return;
+        wiki_workflow_event($this->space, $event, (string)$path, $info);
+    }
+
     private function announceTree() {
         if (!function_exists('wiki_realtime_publish_tree')) return;
         wiki_realtime_publish_tree($this->space);
@@ -135,7 +148,13 @@ class PageIndexer {
         return $id;
     }
 
-    public function addPage($path, $uid = null, $userName = null) {
+    /**
+     * @param bool $adopt  The file already existed and is only being given an id (the
+     *                     `list` and `get_start_page` bookkeeping). Still announced to
+     *                     realtime — a new id is news to the tree — but it is not a page
+     *                     being *created*, so no workflow fires on it.
+     */
+    public function addPage($path, $uid = null, $userName = null, $adopt = false) {
         if ($this->getId($path) === null) {
             $id  = $this->generateUniqueId();
             $now = time();
@@ -147,6 +166,7 @@ class PageIndexer {
             $this->indexData[$id] = $entry;
             $this->saveIndex();
             $this->announce($path, 'create');
+            if (!$adopt) $this->workflowEvent('create', $path, ['id' => $id, 'tags' => []]);
             return $id;
         }
         return null;
@@ -161,6 +181,7 @@ class PageIndexer {
             }
             $this->saveIndex();
             $this->announce($path, 'update');
+            $this->workflowEvent('update', $path, ['id' => $id, 'tags' => $this->indexData[$id]['tags'] ?? []]);
         }
     }
 
@@ -262,9 +283,11 @@ class PageIndexer {
     public function removePage($path) {
         $id = $this->getId($path);
         if ($id !== null) {
+            $tags = $this->indexData[$id]['tags'] ?? [];
             unset($this->indexData[$id]);
             $this->saveIndex();
             $this->announce($path, 'delete');
+            $this->workflowEvent('delete', $path, ['id' => $id, 'tags' => $tags]);
         }
     }
 
@@ -277,6 +300,10 @@ class PageIndexer {
             // and it is not subscribed to the new topic.
             $this->announce($oldPath, 'delete');
             $this->announce($newPath, 'create');
+            // One rename, not a delete and a create: a "page deleted" workflow must not
+            // fire every time somebody moves a page.
+            $this->workflowEvent('rename', $newPath, ['id' => $id, 'old_path' => (string)$oldPath,
+                                                       'tags' => $this->indexData[$id]['tags'] ?? []]);
         }
         // The 'else' block that called addPage() was removed.
         // This prevents creating a new page with a new ID and empty tags
@@ -299,6 +326,7 @@ class PageIndexer {
 
     public function updateTags($id, $tags) {
         if (isset($this->indexData[$id])) {
+            $oldTags = $this->indexData[$id]['tags'] ?? [];
             // Ensure tags are unique and clean
             $cleanedTags = array_unique(array_filter(array_map('trim', $tags)));
             $this->indexData[$id]['tags'] = array_values($cleanedTags); // Re-index array
@@ -309,6 +337,14 @@ class PageIndexer {
             // tree event another browser waits for its slow safety poll (5 minutes while
             // push is live) before its tree, tag cloud or open page hear of the change.
             $this->announceTree();
+            // Its own event, not an 'update': a tag is index data, and "page updated" must
+            // not fire because somebody tagged a page.
+            $added   = array_values(array_diff($this->indexData[$id]['tags'], $oldTags));
+            $removed = array_values(array_diff($oldTags, $this->indexData[$id]['tags']));
+            if ($added || $removed) {
+                $this->workflowEvent('tags', $this->indexData[$id]['path'] ?? '',
+                    ['id' => $id, 'tags' => $this->indexData[$id]['tags'], 'added' => $added, 'removed' => $removed]);
+            }
             return true;
         }
         return false;

@@ -13,6 +13,7 @@ require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/ai_core.php';
 require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/agent_jobs.php';
+require_once __DIR__ . '/workflow_runner.php';
 
 // -- Schedule check -----------------------------------------------------------
 
@@ -351,6 +352,13 @@ foreach ($oneoff_batch as $oj) {
             . ($oj_log_file ? '<p><strong>Log file:</strong> <code>' . $oj_h($oj_log_file) . '</code></p>' : ''));
     }
 }
+
+// =============================================================================
+// Workflows — see workflow_runner.php. Any slot may take them: claiming is one locked
+// read-modify-write, exactly as for the one-off queue above.
+// =============================================================================
+agent_job_touch_heartbeat();
+foreach (wiki_workflow_run_due() as $_wf_line) echo $_wf_line . "\n";
 
 flock($lock_fh, LOCK_UN);
 fclose($lock_fh);

@@ -451,6 +451,14 @@ function _wiki_memory_commit(string $space_dir, string $rel, array $ai_user, str
 }
 
 function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir) {
+    // Whatever this tool writes, the AI user wrote it — for the workflows' "not AI edits"
+    // filter. Set here because this is where api.php (inline chat replies, which would
+    // otherwise be credited to the person whose message started them), mcp.php and the
+    // cron runner converge. Not restored: every later write in the process is the AI's,
+    // and the workflow runner takes the actor back after each action.
+    if (function_exists('wiki_workflow_set_actor')) {
+        wiki_workflow_set_actor(['uid' => $ai_user['uid'] ?? null, 'name' => $ai_user['name'] ?? null, 'is_ai' => true]);
+    }
     // Space isolation, for the same reason the read-only guard is here: this is the one
     // point api.php, mcp.php and run_ai_agent_jobs.php share.
     //

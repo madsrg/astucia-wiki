@@ -10,6 +10,8 @@ import { avatarCircleHtml, avatarPickerHtml, wireAvatarPicker } from '../core/av
 import { invalidateMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
 import { isLive, subscribe, rtTopic } from '../realtime/index.js';
+import { loadWorkflows, initWorkflows } from './workflows.js';
+import { openPagePicker } from './page_picker.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -50,7 +52,7 @@ const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
     ai:         ['ai', 'llm', 'jobs', 'mcp'],
     monitoring: ['logs', 'errorlog', 'audit', 'diagnostics', 'realtime', 'sysinfo'],
-    content:    ['reindex', 'deleted', 'chatpolicy', 'metadata', 'mentions'],
+    content:    ['reindex', 'deleted', 'chatpolicy', 'metadata', 'mentions', 'workflows'],
 };
 const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 'reindex' };
 
@@ -79,6 +81,7 @@ const switchTab = (name) => {
     document.getElementById('admin-footer-llm')?.classList.toggle('hidden',          name !== 'llm');
     document.getElementById('admin-footer-deleted')?.classList.toggle('hidden',      name !== 'deleted');
     document.getElementById('admin-footer-reindex')?.classList.toggle('hidden',      name !== 'reindex');
+    document.getElementById('admin-footer-workflows')?.classList.toggle('hidden',    name !== 'workflows');
     const activeTab = document.querySelector(`.admin-tab[data-tab="${name}"]`);
     if (activeTab?.dataset.group) lastTabInGroup[activeTab.dataset.group] = name;
     if (name === 'logs')        loadLogFiles();
@@ -98,6 +101,7 @@ const switchTab = (name) => {
     if (name === 'mentions')    loadMentionsPane();
     if (name === 'mcp')         loadMcpServers();
     if (name === 'llm')         loadLlmConnections();
+    if (name === 'workflows')   loadWorkflows();
 };
 
 
@@ -1742,100 +1746,9 @@ const openAiUserForm = async (u) => {
 
 // Space -> Folder -> Markdown page picker lightbox (move/copy style). Calls
 // onSelect(space, path) when a .md page is chosen. Built lazily, appended to body.
-const openPromptPagePicker = async (initSpace, initPath, onSelect) => {
-    let lb = document.getElementById('pp-lightbox');
-    if (!lb) {
-        lb = document.createElement('div');
-        lb.id = 'pp-lightbox';
-        lb.className = 'lightbox-overlay hidden';
-        lb.innerHTML = `
-            <div class="lightbox-content">
-                <button type="button" id="pp-close-btn" class="lightbox-close">&times;</button>
-                <h3>${t('admin.ai.prompt-page-choose')}</h3>
-                <div class="form-group">
-                    <label>${t('admin.ai.picker-space')}</label>
-                    <select id="pp-space-select" class="form-control"></select>
-                </div>
-                <div class="form-group">
-                    <div id="pp-breadcrumb" style="font-size:0.82rem;margin-bottom:0.4rem;color:var(--accent-gray)"></div>
-                    <div id="pp-file-list" class="link-file-tree"></div>
-                </div>
-            </div>`;
-        document.body.appendChild(lb);
-        lb.addEventListener('click', (e) => { if (e.target === lb) lb.classList.add('hidden'); });
-        lb.querySelector('#pp-close-btn').addEventListener('click', () => lb.classList.add('hidden'));
-    }
-    const spaceSel = lb.querySelector('#pp-space-select');
-    const listEl   = lb.querySelector('#pp-file-list');
-    const crumbEl  = lb.querySelector('#pp-breadcrumb');
-
-    let tree = [];
-    let cwd  = []; // folder-name segments of the current directory
-
-    const childrenAt = (segs) => {
-        let nodes = tree;
-        for (const seg of segs) {
-            const f = nodes.find(n => n.type === 'folder' && n.name === seg);
-            if (!f) return [];
-            nodes = f.children || [];
-        }
-        return nodes;
-    };
-    const renderCrumb = () => {
-        const parts = [`<a href="#" data-i="-1">${t('fileops.root')}</a>`];
-        cwd.forEach((seg, i) => parts.push(`<a href="#" data-i="${i}">${escHtml(seg)}</a>`));
-        crumbEl.innerHTML = parts.join(' / ');
-    };
-    const renderList = () => {
-        renderCrumb();
-        const kids = childrenAt(cwd);
-        const folders = kids.filter(n => n.type === 'folder');
-        const files   = kids.filter(n => n.type === 'file' && /\.md$/i.test(n.path || ''));
-        let html = '';
-        folders.forEach(f => {
-            html += `<div class="file-item-content pp-folder" data-name="${escHtml(f.name)}" style="cursor:pointer"><span class="file-item-name"><span class="folder-icon">${icons.folder}</span><span>${escHtml(f.name)}</span></span></div>`;
-        });
-        files.forEach(f => {
-            html += `<div class="file-item-content pp-file" data-path="${escHtml(f.path)}" style="cursor:pointer"><span class="file-item-name">${icons.file}<span>${escHtml(f.name.replace(/\.md$/i, ''))}</span></span></div>`;
-        });
-        listEl.innerHTML = html || `<p class="admin-empty" style="padding:0.5rem">${t('admin.ai.prompt-page-empty')}</p>`;
-    };
-    const loadSpace = async (space) => {
-        listEl.innerHTML = `<p class="admin-loading" style="padding:0.5rem">${t('admin.diag.loading')}</p>`;
-        const res = await api.call('list', space ? { space } : {});
-        tree = (res && res.success) ? (res.data || []) : [];
-        cwd = [];
-        renderList();
-    };
-
-    const spacesRes = await api.call('list_spaces');
-    spaceSel.innerHTML = '';
-    (spacesRes.data || []).forEach(sp => {
-        const opt = document.createElement('option');
-        opt.value = sp; opt.textContent = sp;
-        if (sp === (initSpace || state.currentSpace)) opt.selected = true;
-        spaceSel.appendChild(opt);
-    });
-
-    spaceSel.onchange = () => loadSpace(spaceSel.value);
-    crumbEl.onclick = (e) => {
-        const a = e.target.closest('a[data-i]'); if (!a) return;
-        e.preventDefault();
-        const i = parseInt(a.dataset.i, 10);
-        cwd = i < 0 ? [] : cwd.slice(0, i + 1);
-        renderList();
-    };
-    listEl.onclick = (e) => {
-        const folder = e.target.closest('.pp-folder');
-        if (folder) { cwd.push(folder.dataset.name); renderList(); return; }
-        const file = e.target.closest('.pp-file');
-        if (file) { onSelect(spaceSel.value, file.dataset.path); lb.classList.add('hidden'); }
-    };
-
-    await loadSpace(spaceSel.value);
-    if (initPath && initPath.includes('/')) { cwd = initPath.split('/').slice(0, -1); renderList(); }
-    lb.classList.remove('hidden');
-};
+// The prompt page is a Markdown page in any space; see modules/admin/page_picker.js.
+const openPromptPagePicker = (initSpace, initPath, onSelect) =>
+    openPagePicker({ space: initSpace, path: initPath, mode: 'file', onSelect });
 
 const saveAiUser = async (uid) => {
     const name     = document.getElementById('ai-f-name')?.value.trim() || '';
@@ -3312,6 +3225,7 @@ export const init = () => {
         grp.addEventListener('click', () => switchGroup(grp.dataset.group)));
     document.querySelectorAll('.admin-tab').forEach(tab =>
         tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
+    initWorkflows();
 
     document.getElementById('admin-audit-refresh-btn')?.addEventListener('click', loadAuditPane);
     document.getElementById('admin-audit-date')?.addEventListener('change', loadAuditEntries);

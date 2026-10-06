@@ -1301,6 +1301,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab hidden" data-tab="chatpolicy" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><polyline points="12 7 12 10 14 11"/></svg><span data-i18n="admin.tab.chatpolicy">Chat Retention</span></button>
                 <button class="admin-tab hidden" data-tab="metadata" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg><span data-i18n="admin.tab.metadata">Page Metadata</span></button>
                 <button class="admin-tab hidden" data-tab="mentions" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg><span data-i18n="admin.tab.mentions">Mentions</span></button>
+                <button class="admin-tab hidden" data-tab="workflows" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M9 6h5a3 3 0 0 1 3 3v6"/><polyline points="14 12 17 15 20 12"/></svg><span data-i18n="admin.tab.workflows">Workflows</span></button>
             </div>
 
             <!-- Users pane -->
@@ -1400,6 +1401,10 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             </div>
 
             <!-- Mentions pane -->
+            <div id="admin-pane-workflows" class="admin-pane hidden">
+                <div id="admin-workflows-list" class="admin-scroll-area"></div>
+            </div>
+
             <div id="admin-pane-mentions" class="admin-pane hidden">
                 <div class="admin-scroll-area">
                     <div class="admin-reindex-body">
@@ -1526,6 +1531,9 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     <span id="admin-deleted-count" class="admin-log-count"></span>
                 </div>
                 <div id="admin-footer-reindex" class="admin-footer-pane hidden"></div>
+                <div id="admin-footer-workflows" class="admin-footer-pane hidden">
+                    <button id="admin-workflows-add-btn" class="btn btn-blue btn-sm" data-i18n="admin.wf.add-btn">+ New Workflow</button>
+                </div>
             </div>
         </div>
     </div>
