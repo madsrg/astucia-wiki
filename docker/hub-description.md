@@ -30,6 +30,11 @@ read and correct · **LLM providers** set up once and shared by every AI user, s
 in one place · avatars for AI users and people · an **MCP server** so other tools can use your wiki, and an **MCP client**
 so your AI users can use theirs.
 
+**Workflows** — "when this happens to a page, do that", set up by administrators: when a
+page is created, saved, renamed, deleted or tagged, or a front-matter field such as
+`status` changes, send an email, give an AI user an instruction, post in a chat, or update
+tags and fields. Test one without acting, or run it for real on a chosen page first.
+
 **Teams** — Spaces with per-user access control, including read-only Spaces · OTP or OIDC
 login · mentions, page comments and a daily digest email · an optional audit log · a REST API
 with service tokens · UI in nine languages.
@@ -40,10 +45,11 @@ chats, pages, the file tree, mentions and job results arrive by push instead of 
 never broken. **Admin → Monitoring → Mercure** tells you whether it is working, and
 **Wiki Info** lists every version this install is running.
 
-> **This image bundles Mercure 1.0.3, a security release** — upstream's Caddy hardening
-> against slow-connection attacks, on top of 1.0.2's fixes for ten vulnerabilities (four
-> high) in the hub. The hub runs inside the image, so updating the image is the fix — any
-> image from 2026.10.1 on carries 1.0.3.
+> **This image bundles Mercure 1.0.4**, the current release: Caddy's hardening against
+> slow-connection attacks (1.0.3) on top of 1.0.2's fixes for ten vulnerabilities (four
+> high) in the hub. The hub runs inside the image, so updating the image is the fix. The
+> live update stream is never compressed — the concern upstream's 1.0.4 addresses — and
+> from 2026.10.3 on the image's nginx says so explicitly.
 
 ## Quick start
 
@@ -53,7 +59,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.10.1
+    madsrotwitt/astucia-wiki:2026.10.3
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -79,7 +85,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.10.1
+    madsrotwitt/astucia-wiki:2026.10.3
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -91,7 +97,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.10.1` | moves only if that release is rebuilt |
+| `2026.10.3` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
