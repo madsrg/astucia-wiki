@@ -33,10 +33,11 @@ so your AI users can use theirs.
 **Workflows** — "when this happens to a page, do that", set up by administrators: when a
 page is created, updated, renamed, deleted or tagged, or a front-matter field such as
 `status` changes, send an email, give an AI user an instruction, post in a chat, or update
-tags and fields. Test one without acting, or run it for real on a chosen page first.
+tags and fields. One workflow can listen for several of these at once. Test one without
+acting, or run it for real on a chosen page first.
 
-**Teams** — Spaces with per-user access control, including read-only Spaces · OTP or OIDC
-login · mentions, page comments and a daily digest email · an optional audit log · a REST API
+**Teams** — Spaces with per-user access control, including read-only Spaces · OIDC login,
+or email codes with **Keep me signed in** · mentions, page comments and a daily digest email · an optional audit log · a REST API
 with service tokens · UI in nine languages.
 
 **Live updates** — a **Mercure** hub ships inside the image and is **on by default**, so
@@ -45,11 +46,11 @@ chats, pages, the file tree, mentions and job results arrive by push instead of 
 never broken. **Admin → Monitoring → Mercure** tells you whether it is working, and
 **Wiki Info** lists every version this install is running.
 
-> **This image bundles Mercure 1.0.4**, the current release: Caddy's hardening against
-> slow-connection attacks (1.0.3) on top of 1.0.2's fixes for ten vulnerabilities (four
-> high) in the hub. The hub runs inside the image, so updating the image is the fix. The
-> live update stream is never compressed — the concern upstream's 1.0.4 addresses — and
-> from 2026.10.3 on the image's nginx says so explicitly.
+> **This image bundles Mercure 1.1.2**, the current release. 1.1.0 fixed a request any
+> signed-in user could send to make the hub allocate about 1 GiB of memory, on top of the
+> earlier fixes in 1.0.2 (ten vulnerabilities, four high) and 1.0.3 (hardening against
+> slow-connection attacks). The hub runs inside the image, so updating the image is the
+> fix. The live update stream is never compressed.
 
 ## Quick start
 
@@ -59,7 +60,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.10.3
+    madsrotwitt/astucia-wiki:2026.10.4
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -85,7 +86,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.10.3
+    madsrotwitt/astucia-wiki:2026.10.4
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -97,7 +98,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.10.3` | moves only if that release is rebuilt |
+| `2026.10.4` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
@@ -116,6 +117,7 @@ Everything is an environment variable; the container writes its own config on fi
 | `TZ` | `UTC` | **Set this.** Drives the clock, PHP *and* cron — otherwise scheduled AI jobs fire at the wrong hour |
 | `AUTHENTICATION` | `off` | `off` / `otp` / `oidc` / `both` |
 | `ANONYMOUS_ACCESS_ENABLED` | `false` | Read-only browsing when auth is on |
+| `OTP_REMEMBER_DAYS` | `30` | How long "Keep me signed in" lasts for email-code logins; `0` turns it off |
 | `APP_BASE_URL` | — | Public URL, so login redirects and share links are right behind a proxy |
 | `SEARCH_ENGINE` | `sqlite` | FTS5 full-text index |
 | `INDEX_SYNC_INTERVAL_SECONDS` | `30` | How quickly content changed on the host is noticed |
@@ -126,8 +128,8 @@ Everything is an environment variable; the container writes its own config on fi
 | `ENABLE_REALTIME` | `true` | The built-in Mercure hub. `false` falls back to polling — slower, never broken |
 | `REALTIME_TICKET_TTL` | `3600` | Seconds a subscriber ticket lives; revoking a Space takes effect within one TTL |
 
-AI provider API keys are **not** set here — they are entered per AI user in
-**Admin → AI** and stored in the data volume.
+AI provider API keys are **not** set here — they are entered once in
+**Admin → LLM Providers**, shared by every AI user, and stored in the data volume.
 
 ## Data
 
