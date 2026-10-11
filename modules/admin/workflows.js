@@ -19,6 +19,18 @@ const TRIGGERS = ['page_created', 'page_updated', 'page_deleted', 'page_renamed'
 const ACTIONS  = ['email', 'ai', 'chat', 'tag', 'frontmatter'];
 const TYPES    = ['md', 'list', 'chat', 'json', 'drawio', 'search'];
 const VARS     = ['page', 'path', 'space', 'url', 'actor', 'event', 'workflow', 'old_path', 'tags', 'field', 'old_value', 'new_value', 'date'];
+// Variables only some triggers fill. Every other one has a value whatever started the run.
+const VAR_TRIGGERS = {
+    old_path:  ['page_renamed'],
+    tags:      ['tag_added', 'tag_removed'],
+    field:     ['fm_changed'],
+    old_value: ['fm_changed'],
+    new_value: ['fm_changed'],
+};
+const TAG_TRIGGERS = ['tag_added', 'tag_removed'];
+
+// A trigger holds a list of types; definitions saved before that hold one `type`.
+const triggerTypes = (tr) => (Array.isArray(tr?.types) ? tr.types : (tr?.type ? [tr.type] : []));
 
 let data = { workflows: [], spaces: [], ai_users: [], users: [], mail_configured: false };
 
@@ -30,9 +42,10 @@ const spaceLabel = (s) => s === '*' ? t('admin.wf.all-spaces') : (s === '' ? t('
 // "When a page is updated in Main, in Docs/, tagged policy"
 const triggerSummary = (wf) => {
     const tr = wf.trigger || {};
-    let s = t(`admin.wf.trigger.${tr.type}`);
-    if ((tr.type === 'tag_added' || tr.type === 'tag_removed') && tr.tag) s += ` #${tr.tag}`;
-    if (tr.type === 'fm_changed') s += ` — ${tr.field}${tr.value ? ` → ${tr.value}` : ''}`;
+    const types = triggerTypes(tr);
+    let s = types.map(x => t(`admin.wf.trigger.${x}`)).join(' / ');
+    if (types.some(x => TAG_TRIGGERS.includes(x)) && tr.tag) s += ` #${tr.tag}`;
+    if (types.includes('fm_changed')) s += ` — ${tr.field}${tr.value ? ` → ${tr.value}` : ''}`;
     const f = wf.filters || {};
     const bits = [spaceLabel(wf.space ?? '')];
     if (f.folder)  bits.push(`${f.folder}/`);
@@ -334,30 +347,44 @@ const renderActions = () => {
 // Read what is typed back into formActions before a re-render throws the inputs away.
 const captureActions = () => { formActions = formActions.map((a, i) => readAction(a.type, i)); };
 
-const triggerExtra = (tr) => {
-    switch (tr.type) {
-        case 'tag_added': case 'tag_removed':
-            return `<label>${t('admin.wf.trigger-tag')}</label>
-                <input type="text" id="wf-f-tag" class="form-control" value="${esc(tr.tag || '')}" placeholder="${t('admin.wf.any-tag')}">`;
-        case 'fm_changed':
-            return `<label>${t('admin.wf.trigger-field')}</label>
-                <input type="text" id="wf-f-field" class="form-control" value="${esc(tr.field || '')}" placeholder="status">
-                <label>${t('admin.wf.trigger-value')}</label>
-                <input type="text" id="wf-f-value" class="form-control" value="${esc(tr.value || '')}" placeholder="${t('admin.wf.any-value')}">`;
-        default: return '';
+// The inputs a chosen trigger needs: the tag for the tag triggers, the field for the
+// front-matter one. Both can be showing at once.
+const triggerExtra = (types, tr) => {
+    let html = '';
+    if (types.some(x => TAG_TRIGGERS.includes(x))) {
+        html += `<label>${t('admin.wf.trigger-tag')}</label>
+            <input type="text" id="wf-f-tag" class="form-control" value="${esc(tr.tag || '')}" placeholder="${t('admin.wf.any-tag')}">`;
     }
+    if (types.includes('fm_changed')) {
+        html += `<label>${t('admin.wf.trigger-field')}</label>
+            <input type="text" id="wf-f-field" class="form-control" value="${esc(tr.field || '')}" placeholder="status">
+            <label>${t('admin.wf.trigger-value')}</label>
+            <input type="text" id="wf-f-value" class="form-control" value="${esc(tr.value || '')}" placeholder="${t('admin.wf.any-value')}">`;
+    }
+    return html;
 };
+
+// The variables the chosen triggers can fill, each with a tooltip saying what it holds.
+// With several triggers a trigger-specific variable is empty when another one started
+// the run, which the note under the list says.
+const varsHint = (types) => {
+    const shown = VARS.filter(v => !VAR_TRIGGERS[v] || VAR_TRIGGERS[v].some(x => types.includes(x)));
+    const partial = shown.some(v => VAR_TRIGGERS[v] && !types.every(x => VAR_TRIGGERS[v].includes(x)));
+    return `${t('admin.wf.vars-hint')} ${shown.map(v => `<code title="${esc(t(`admin.wf.var.${v}`))}">{{${v}}}</code>`).join(' ')}`
+        + (partial ? `<div>${t('admin.wf.vars-partial')}</div>` : '');
+};
+
+const checkedTriggers = () => [...document.querySelectorAll('.wf-f-trig:checked')].map(c => c.value);
 
 const readForm = (wf) => {
     captureActions();
-    const tt = document.getElementById('wf-f-trigger').value;
     return {
         id: wf?.id || '',
         name: document.getElementById('wf-f-name').value,
         description: document.getElementById('wf-f-desc').value,
         enabled: document.getElementById('wf-f-enabled').checked,
         space: document.getElementById('wf-f-space').value,
-        trigger: { type: tt, tag: document.getElementById('wf-f-tag')?.value || '',
+        trigger: { types: checkedTriggers(), tag: document.getElementById('wf-f-tag')?.value || '',
                    field: document.getElementById('wf-f-field')?.value || '', value: document.getElementById('wf-f-value')?.value || '' },
         filters: {
             folder: document.getElementById('wf-f-folder').value,
@@ -376,7 +403,8 @@ const openForm = (wf) => {
     if (!box) return;
     addBtn()?.classList.add('hidden');
     const isNew = !wf;
-    const tr = wf?.trigger || { type: 'page_updated' };
+    const tr = wf?.trigger || { types: ['page_updated'] };
+    const trTypes = triggerTypes(tr);
     const f  = wf?.filters || {};
     formActions = (wf?.actions || [{ type: 'email' }]).map(a => ({ ...a }));
     const spaces = ['*', ...data.spaces];
@@ -397,8 +425,9 @@ const openForm = (wf) => {
             <div class="admin-ai-form-section-header">${t('admin.wf.when')}</div>
             <div class="job-form-grid">
                 <label>${t('admin.wf.trigger')}</label>
-                <select id="wf-f-trigger" class="form-control">${TRIGGERS.map(x => opt(x, t(`admin.wf.trigger.${x}`), x === tr.type)).join('')}</select>
-                <div id="wf-f-trigger-extra" style="display:contents">${triggerExtra(tr)}</div>
+                <div id="wf-f-trigger" class="wf-checks">${TRIGGERS.map(x => `<label class="wf-check"><input type="checkbox" class="wf-f-trig" value="${x}" ${trTypes.includes(x) ? 'checked' : ''}> ${t(`admin.wf.trigger.${x}`)}</label>`).join('')}
+                    <span class="wf-sub">${t('admin.wf.trigger-hint')}</span></div>
+                <div id="wf-f-trigger-extra" style="display:contents">${triggerExtra(trTypes, tr)}</div>
                 <label>${t('admin.wf.space')}</label>
                 <select id="wf-f-space" class="form-control">${spaces.map(s => opt(s, spaceLabel(s), s === defaultSpace)).join('')}</select>
             </div>
@@ -419,7 +448,7 @@ const openForm = (wf) => {
             <div class="admin-ai-form-section-header">${t('admin.wf.then')}</div>
             <div id="wf-actions"></div>
             <div><button type="button" id="wf-add-action" class="btn btn-sm btn-secondary">${t('admin.wf.add-action')}</button></div>
-            <div class="wf-sub wf-vars">${t('admin.wf.vars-hint')} ${VARS.map(v => `<code>{{${v}}}</code>`).join(' ')}</div>
+            <div class="wf-sub wf-vars" id="wf-f-vars">${varsHint(trTypes)}</div>
 
             <div class="admin-ai-form-section-header">${t('admin.wf.limits')}</div>
             <div class="job-form-grid">
@@ -451,8 +480,14 @@ const openForm = (wf) => {
 
     renderActions();
     wirePathFields(box.querySelector('.admin-ai-form'));
-    document.getElementById('wf-f-trigger').addEventListener('change', (e) => {
-        document.getElementById('wf-f-trigger-extra').innerHTML = triggerExtra({ type: e.target.value });
+    document.getElementById('wf-f-trigger').addEventListener('change', () => {
+        const types = checkedTriggers();
+        // Keep what was typed: the tag and field inputs are rebuilt, not just shown.
+        const typed = { tag: document.getElementById('wf-f-tag')?.value ?? tr.tag,
+                        field: document.getElementById('wf-f-field')?.value ?? tr.field,
+                        value: document.getElementById('wf-f-value')?.value ?? tr.value };
+        document.getElementById('wf-f-trigger-extra').innerHTML = triggerExtra(types, typed);
+        document.getElementById('wf-f-vars').innerHTML = varsHint(types);
     });
     document.getElementById('wf-add-action').addEventListener('click', () => {
         captureActions();

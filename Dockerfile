@@ -48,7 +48,7 @@ RUN apk add --no-cache nginx supervisor git tzdata shadow sqlite-libs \
 # oblige everyone who runs this image to publish those changes to their own users. The
 # wiki itself is unaffected either way: upstream states the licence "applies only to the
 # hub server itself, not to software using this hub", and it runs as a separate process.
-ARG MERCURE_VERSION=1.0.4
+ARG MERCURE_VERSION=1.1.2
 ARG TARGETARCH
 RUN set -eux; \
     case "$TARGETARCH" in \
@@ -125,6 +125,7 @@ ENV PAGES_DIR=/data/pages/ \
     ANONYMOUS_ACCESS_ENABLED=false \
     SEARCH_ENGINE=sqlite \
     SESSION_TIMEOUT=3600 \
+    OTP_REMEMBER_DAYS=30 \
     INDEX_SYNC_INTERVAL_SECONDS=30 \
     AGENT_JOB_RUNNER_INTERVAL_MINUTES=2 \
     AGENT_JOB_RUNNER_SLOTS=2 \

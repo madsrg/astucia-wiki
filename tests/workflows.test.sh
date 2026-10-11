@@ -63,6 +63,7 @@ mine = [r for r in runs if r.get('workflow_id') == wf]
 if what == 'queued':  print(sum(1 for r in mine if r['state'] == 'queued'))
 elif what == 'events': print(','.join(str(r.get('events')) for r in mine if r['state'] == 'queued'))
 elif what == 'states': print(','.join(sorted(r['state'] for r in mine)))
+elif what == 'qevent': print(','.join(r.get('event', '') for r in mine if r['state'] == 'queued'))
 elif what == 'last':
     done = sorted([r for r in mine if r.get('finished_at')], key=lambda r: r['finished_at'])
     print(json.dumps(done[-1] if done else {}))
@@ -167,6 +168,52 @@ assert_contains "it saw where it came from"   'policy: review -> approved (Eddie
 save_page "$EDIT" Main Docs/policy.md 'Policy v3' > /dev/null
 assert_eq "staying approved does not fire again" "0" "$(queue "$APPR" queued)"
 toggle "$APPR" 0
+
+section 'several triggers on one workflow'
+BOTH=$(new_wf '{"name":"New or saved","enabled":true,"space":"Main","debounce":0,
+  "trigger":{"types":["page_created","page_updated"]},"actions":[{"type":"tag","add":["touched"]}]}' | wf_id)
+assert_contains "it is stored as a list" '"types":["page_created","page_updated"]' \
+    "$(python3 -c 'import json,sys;print(json.dumps([w["trigger"] for w in json.load(open(sys.argv[1]))["workflows"] if w["id"]==sys.argv[2]][0],separators=(",",":")))' "$WIKI_SYS/workflows.json" "$BOTH")"
+assert_contains "a single type is still accepted, and becomes a list" '"types":["page_updated"]' \
+    "$(python3 -c 'import json,sys;print(json.dumps([w["trigger"] for w in json.load(open(sys.argv[1]))["workflows"]],separators=(",",":")))' "$WIKI_SYS/workflows.json")"
+post_as "$EDIT" 'api.php?action=create_file&space=Main' 'path=Docs/multi.md' > /dev/null
+assert_eq "creating fires it"                  "page_created" "$(queue "$BOTH" qevent)"
+runner > /dev/null
+save_page "$EDIT" Main Docs/multi.md 'changed' > /dev/null
+assert_eq "so does saving"                     "page_updated" "$(queue "$BOTH" qevent)"
+post_as "$EDIT" 'api.php?action=move&space=Main' 'old_path=Docs/multi.md&new_path=Docs/multi2.md' > /dev/null
+runner > /dev/null
+assert_eq "a trigger it was not given does not" "0" "$(queue "$BOTH" queued)"
+toggle "$BOTH" 0
+
+# A save that moves the watched field satisfies both triggers: one run, named after the
+# field change. A save that does not is only an update — and must still move the
+# remembered value along, or the next real change compares against a stale one.
+fixture_page 'Main/Docs/mixed.md' $'---\nstatus: draft\n---\nMixed'
+get_as "$ADMIN" 'api.php?action=indexfiles&space=Main' > /dev/null
+MIX=$(new_wf '{"name":"Saved or status","enabled":true,"space":"Main","debounce":0,"filters":{"folder":"Docs"},
+  "trigger":{"types":["page_updated","fm_changed"],"field":"status"},
+  "actions":[{"type":"chat","chat":"Team.chat","text":"MIX {{page}} [{{field}}] {{old_value}}>{{new_value}}"}]}' | wf_id)
+save_page "$EDIT" Main Docs/mixed.md $'---\nstatus: draft\n---\nMixed v2' > /dev/null
+assert_eq "a plain save is an update"          "page_updated" "$(queue "$MIX" qevent)"
+runner > /dev/null
+assert_contains "  …with the field variables empty" 'MIX mixed [] >' "$(chat_text)"
+save_page "$EDIT" Main Docs/mixed.md $'---\nstatus: live\n---\nMixed v3' > /dev/null
+assert_eq "a save that moves the field is one run, the field change" "fm_changed" "$(queue "$MIX" qevent)"
+runner > /dev/null
+assert_contains "  …from the value it really had"  'MIX mixed [status] draft>live' "$(chat_text)"
+toggle "$MIX" 0
+
+# Created then deleted while the run waits: one run, and it is about the delete.
+CD=$(new_wf '{"name":"Created or deleted","enabled":true,"space":"Main","debounce":600,
+  "trigger":{"types":["page_created","page_deleted"]},"actions":[{"type":"tag","add":["x"]}]}' | wf_id)
+post_as "$EDIT" 'api.php?action=create_file&space=Main' 'path=Docs/brief.md' > /dev/null
+post_as "$EDIT" 'api.php?action=delete&space=Main' 'path=Docs/brief.md' > /dev/null
+assert_eq "a waiting run absorbs the other event" "1" "$(queue "$CD" queued)"
+assert_eq "  …and a delete wins"               "page_deleted" "$(queue "$CD" qevent)"
+toggle "$CD" 0
+assert_contains "none ticked is refused"       'Choose what starts' \
+    "$(new_wf '{"name":"x","space":"Main","trigger":{"types":[]},"actions":[{"type":"tag","add":["a"]}]}')"
 
 section 'an AI instruction gets the page, and its reply can go to a thread'
 AIWF=$(new_wf '{"name":"Summarise","enabled":true,"space":"Main","debounce":0,"trigger":{"type":"page_updated"},

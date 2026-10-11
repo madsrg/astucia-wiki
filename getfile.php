@@ -8,8 +8,10 @@
 
 require_once 'config.php';
 require_once 'service_auth.php';   // actor_spaces_filter(), wiki_path_space()
+require_once 'remember_me.php';
 
 session_start();
+wiki_remember_restore();
 
 // If authentication is enabled and no user is in the session, deny access.
 if (AUTHENTICATION_ENABLED && !isset($_SESSION['user'])) {

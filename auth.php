@@ -9,6 +9,7 @@ require_once __DIR__ . '/config.php';
 require_once 'logger.php';
 require_once 'mailer.php';
 require_once __DIR__ . '/service_auth.php';   // wiki_migrate_user_emails(), wiki_user_notify_email()
+require_once __DIR__ . '/remember_me.php';    // OTP "keep me signed in"
 
 session_start();
 
@@ -82,6 +83,7 @@ if ($_action === 'logout') {
     $logout_id  = $_SESSION['user']['sub'] ?? $_SESSION['user']['email'] ?? '-';
     $logout_name = $_SESSION['user']['name'] ?? '-';
     write_access_log('LOGOUT', $logout_id, $logout_name);
+    wiki_remember_forget();   // or the next page load signs them straight back in
     session_destroy();
     $scheme   = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $loginUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . rtrim(dirname($_SERVER['SCRIPT_NAME']), '/') . '/login.php?logged_out=1';
@@ -168,16 +170,10 @@ if ($_action === 'otp_verify' && in_array(AUTHENTICATION, ['otp', 'both'])) {
         header('Location: login.php');
         exit;
     }
-    $_SESSION['user'] = [
-        'uid'        => $user['uid']        ?? 0,
-        'name'       => $user['name']       ?? '',
-        'email'      => $user['email']      ?? $email,
-        'role'       => $user['role']       ?? 'editor',
-        'spaces'     => $user['spaces']     ?? null,
-        'fontFamily' => $user['fontFamily'] ?? 'sans',
-        'fontSize'   => $user['fontSize']   ?? 'normal',
-        'auth'       => 'otp',
-    ];
+    session_regenerate_id(true);
+    $_SESSION['user']          = wiki_otp_session_user($user, $email);
+    $_SESSION['last_activity'] = time();
+    if (!empty($_POST['remember'])) wiki_remember_issue((int)($user['uid'] ?? 0));
     record_login((int)($user['uid'] ?? 0));
     write_access_log('LOGIN_OK', $email, $user['name'] ?? '', $user['role'] ?? 'editor');
     $redirect = $_SESSION['login_redirect'] ?? 'index.php';

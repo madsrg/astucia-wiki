@@ -5,7 +5,7 @@ import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { showToast, promptModal, confirmModal } from '../core/utils.js';
 import { icons } from '../core/icons.js';
-import { refreshFileTree, revealAndSelectFile } from '../file_tree/index.js';
+import { refreshFileTree, revealAndSelectFile, findItemsByPath, showFolderPlaceholder, syncFolderPane } from '../file_tree/index.js';
 import { loadPage, showBlankPage, updateFrontmatterBadge, rebaselineFileWatch, setPageTitle } from '../page_view/index.js';
 import { retarget as retargetTab, forget as forgetTab } from '../tabs/index.js';
 import { offerRetarget } from '../wikilinks/index.js';
@@ -67,11 +67,16 @@ export const handleDelete = async () => {
     const displayName = stripExt(state.currentPagePath);
     if (!await confirmModal(t('fileops.delete-confirm', { name: displayName }), { confirmLabel: t('btn.delete'), dangerous: true, icon: icons.trash })) return;
 
-    api.call('delete', { path: state.currentPagePath }, 'POST').then(async res => {
+    const deletedPath = state.currentPagePath;
+    api.call('delete', { path: deletedPath }, 'POST').then(async res => {
         if (res.success) {
             showToast(t('fileops.deleted'), 'success');
-            forgetTab(state.currentPagePath);   // no tab may outlive the file it opens
+            forgetTab(deletedPath);   // no tab may outlive the file it opens
             await refreshFileTree();
+            // Stay where the reader was: the next page in the same folder, or the folder
+            // itself once it holds no pages. Only a page deleted at the space root with
+            // nothing left beside it falls through to the start page.
+            if (await stayInFolder(deletedPath)) return;
             // Falls back to an empty view when the space has no Main.md — including
             // when Main.md is the page that was just deleted.
             const startResult = await api.call('get_start_page');
@@ -83,6 +88,41 @@ export const handleDelete = async () => {
             }
         }
     });
+};
+
+/**
+ * After a delete, open what is left in the deleted page's folder.
+ *
+ * "First" is the tree's own order (state.fullFileTree is what the tree renders), so it is
+ * the page the reader sees at the top of that folder. Files libraries and subfolders are
+ * not pages and are passed over. An emptied folder is selected exactly as a click in the
+ * tree selects it — including the collapsed-sidebar listing, via syncFolderPane().
+ *
+ * @returns {Promise<boolean>} false when there is nothing to stay in (a root page with no
+ *          siblings, or a folder that no longer exists), so the caller falls back.
+ */
+const stayInFolder = async (deletedPath) => {
+    const folder = deletedPath.includes('/') ? deletedPath.slice(0, deletedPath.lastIndexOf('/')) : '';
+    // findItemsByPath() answers [] both for an empty folder and for one that is gone, so
+    // ask the tree whether the folder still exists before treating [] as "empty".
+    const exists = folder === '' || folder.split('/').reduce((items, part) => {
+        const f = items && items.find(i => i.type === 'folder' && i.name === part);
+        return f ? (f.children || []) : null;
+    }, state.fullFileTree) !== null;
+    if (!exists) return false;
+
+    const next = findItemsByPath(folder).find(i => i.type === 'file' && i.path !== deletedPath);
+    if (next) {
+        await loadPage(next.path, next.id, next.tags || []);
+        revealAndSelectFile(next.path);
+        return true;
+    }
+    if (folder === '') return false;   // an empty root is the start page's job
+    showFolderPlaceholder(folder);
+    revealAndSelectFile(folder);
+    // With the sidebar collapsed the placeholder is off-screen; the listing replaces it.
+    await syncFolderPane(!!document.querySelector('.app-container')?.classList.contains('sidebar-collapsed'));
+    return true;
 };
 
 const handleCopy = () => {

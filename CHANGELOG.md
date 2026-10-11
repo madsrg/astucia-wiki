@@ -6,6 +6,74 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.10.4] — 2026-10-11
+
+The bundled realtime hub moves to Mercure 1.1.2, and the installer can now give each wiki
+on a machine its own hub. Email-code users can stay signed in, a workflow can listen for
+several events, and new Spaces get a new start page.
+
+### Added
+- **"Keep me signed in" for email-code (OTP) logins.** Ticked by default on the login
+  page, it keeps you signed in on that device across idle timeouts and browser restarts.
+  Before, every lost session meant asking for a new code. It lasts `OTP_REMEMBER_DAYS`
+  (default 30; `0` removes the option). Signing out ends it. Removing an account, or
+  changing its login address, ends every sign-in it had, and a role change applies at
+  once. Only a hash of the token is stored, in `WIKI_SYSTEM_DATA/remember_tokens.json`.
+- **A workflow can be started by several triggers**, for example "created or updated",
+  instead of needing one workflow per event. A save that is both an update and a
+  watched field change makes one run, named after the field change. Existing workflows
+  keep working unchanged.
+- **AI memory can be switched on when a Space is created.** The New Space dialog now asks
+  about it alongside the two front-matter settings, unticked by default. Before, it could
+  only be turned on afterwards in the Space settings. As there, AI users also need
+  Learning switched on.
+- **Several wikis on one machine can each have their own realtime hub.**
+  `sudo MERCURE_INSTANCE=<name> ./tools/install-mercure.sh 1.1.2` installs a separate hub
+  with its own service, key, port and identities, and prints the `config.php` lines for
+  that wiki. Previously the installer supported one hub per machine, and two wikis sharing
+  it received each other's live-update events, including page and Space names. Without
+  `MERCURE_INSTANCE` nothing changes for a single-wiki install.
+
+### Changed
+- **Deleting a page keeps you where you were.** The next page in the same folder opens.
+  When that empties the folder, the folder is selected instead. Before, every delete went
+  back to the Space's start page.
+- **A new start page for new installs and new Spaces.** The tour on `Main.md` is
+  rewritten. Among other changes, it covers the Inline and Classic editors, custom
+  instructions for AI users and MCP servers. Existing start pages are not touched.
+- **`tools/install-mercure.sh` shows its plan and waits for a key press** before changing
+  anything, and notes that one hub serves one wiki. Set `MERCURE_ASSUME_YES=1` to run it
+  unattended.
+- **Re-running the installer upgrades every hub on the machine**, since they share one
+  binary. Each keeps its port, key and identities, and only the hubs that were running are
+  restarted. A hub installed with a custom `MERCURE_PORT` no longer moves back to port
+  3000 when it is upgraded without the variable.
+
+### Fixed
+- **A Space created with automatic front-matter stamping on now gets a stamped start
+  page.** Its `Main.md` was the one page in the Space without `created`, `createdBy`,
+  `updated` and `updatedBy`, because the Space's settings were saved only after the page
+  was written. Existing start pages get the fields on their next save, as before.
+- **Creating a Space with an invalid setting no longer leaves an empty Space behind.**
+- **Admin → Wiki Info shows the hub version on bare-metal installs.** The installer wrote
+  the version where the web server could not read it, so it showed as unknown. Re-run
+  the installer to write it where the wiki looks.
+
+### Security
+- **The bundled Mercure hub is 1.1.2.** 1.1.0 closes gaps a second audit of the hub found.
+  One of them affected this wiki: a signed-in user could send a live-update request that
+  made the hub allocate about 1 GiB of memory. 1.1.1 updates the hub's HTTP/2 server. That
+  part is not reachable in this wiki's setup, because the hub listens only on loopback
+  behind nginx. 1.1.2 changes how a hub behind a reverse proxy works out its own address.
+  That does not apply here either, because this wiki's hub configuration names its address
+  explicitly. No configuration changes: the wiki's tokens and hub configuration work
+  unchanged.
+  - Space isolation on the push channel was re-verified end to end against the real 1.1.2
+    hub, including between two hubs on one machine.
+  - `tools/install-mercure.sh` now warns when installing anything older than 1.1.0.
+  - **Docker installs:** update the image. **Bare-metal installs:** re-run
+    `sudo ./tools/install-mercure.sh 1.1.2`.
+
 ## [2026.10.3] — 2026-10-06
 
 The bundled realtime hub moves to Mercure 1.0.4, with upstream's advice for custom hub

@@ -453,15 +453,18 @@ setTimeout(() => {
       const name = document.getElementById('new-space-name');
       const sel  = document.getElementById('new-space-fm');
       const st   = document.getElementById('new-space-stamp');
+      const mem  = document.getElementById('new-space-memory');
       document.title = 'PROBE name=' + (name ? 'yes' : 'no')
         + ' select=' + (sel ? 'yes' : 'no')
         + ' default=' + (sel ? sel.value : '-')
         + ' options=' + (sel ? [...sel.options].map(o => o.value).join(',') : '-')
         + ' stampSelect=' + (st ? 'yes' : 'no')
         + ' stampDefault=' + (st ? st.value : '-')
-        + ' stampOptions=' + (st ? [...st.options].map(o => o.value).join(',') : '-');
+        + ' stampOptions=' + (st ? [...st.options].map(o => o.value).join(',') : '-')
+        + ' memoryBox=' + (mem ? (mem.type + ':' + (mem.checked ? 'ticked' : 'unticked')) : 'no');
       if (name && sel) { name.value = 'FromDialog'; sel.value = 'manual'; }
       if (st) st.value = 'on';
+      if (mem) mem.checked = true;
       document.getElementById('confirm-modal-ok').click();
     }, 1500);
     return;
@@ -650,11 +653,18 @@ assert_contains "  offering both modes"          'options=off,manual' "$PROBE"
 assert_contains "  and asks about stamping too"  'stampSelect=yes'   "$PROBE"
 assert_contains "  also defaulting to off"       'stampDefault=off'  "$PROBE"
 assert_contains "  with both modes"              'stampOptions=off,on' "$PROBE"
+assert_contains "  and offers AI memory"         'memoryBox=checkbox:' "$PROBE"
+assert_contains "  unticked by default"          'memoryBox=checkbox:unticked' "$PROBE"
 sleep 1
 created=$(curl -s "$WIKI_URL/api.php?action=list_spaces")
 assert_contains "the Space was created"          'FromDialog'        "$created"
 assert_contains "  with the chosen policy"       '"fm_edit":["Editable","FromDialog"]' "$created"
 assert_contains "  and the chosen stamping"      '"fm_autostamp":["Editable","FromDialog"]' "$created"
+assert_eq "  and AI memory, as ticked" 'True' "$(python3 -c "import json
+print(json.load(open('$WIKI_SYS/spaces.json')).get('FromDialog', {}).get('memory'))")"
+assert_file_missing "  with no memory/ folder yet"  "$WIKI_PAGES/FromDialog/memory"
+assert_contains "its start page is stamped, since stamping was chosen" 'created: 20' \
+    "$(cat "$WIKI_PAGES/FromDialog/Main.md")"
 
 section 'the fields the wiki maintains are shown, but never as text boxes'
 load Stamped.md open-item Editable

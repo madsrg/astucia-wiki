@@ -31,7 +31,7 @@ in one place · avatars for AI users and people · an **MCP server** so other to
 so your AI users can use theirs.
 
 **Workflows** — "when this happens to a page, do that", set up by administrators: when a
-page is created, saved, renamed, deleted or tagged, or a front-matter field such as
+page is created, updated, renamed, deleted or tagged, or a front-matter field such as
 `status` changes, send an email, give an AI user an instruction, post in a chat, or update
 tags and fields. Test one without acting, or run it for real on a chosen page first.
 

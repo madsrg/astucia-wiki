@@ -3,7 +3,9 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 require_once 'config.php';
+require_once 'remember_me.php';
 session_start();
+wiki_remember_restore();
 
 if (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) {
     header('Location: index.php');
@@ -128,6 +130,7 @@ function mask_email(string $email): string {
         .login-back { font-size: 0.82rem; color: var(--accent-blue); text-decoration: none; display: inline-block; margin-top: 0.75rem; }
         .login-back:hover { text-decoration: underline; }
         .login-otp-target { font-size: 0.85rem; color: #4a5568; margin-bottom: 1rem; }
+        .login-remember { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: #4a5568; margin: 0 0 1rem; cursor: pointer; }
         .login-otp-code-input { text-align: center; letter-spacing: 0.4em; font-size: 1.4rem; font-family: monospace; }
     </style>
 </head>
@@ -199,6 +202,9 @@ function mask_email(string $email): string {
                     <label class="login-label" for="otp-code" data-i18n="login.code-label">Login code</label>
                     <input class="login-input login-otp-code-input" type="text" id="otp-code" name="code" required autofocus maxlength="6" pattern="[0-9]{6}" inputmode="numeric" placeholder="000000" autocomplete="one-time-code">
                 </div>
+                <?php if (wiki_remember_enabled()): ?>
+                <label class="login-remember"><input type="checkbox" name="remember" value="1" checked> <span data-i18n="login.remember">Keep me signed in on this device</span></label>
+                <?php endif; ?>
                 <button type="submit" class="btn-login" data-i18n="login.signin">Sign in</button>
             </form>
             <?php if ($showOidc): ?>

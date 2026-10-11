@@ -42,6 +42,7 @@ define('AUTHENTICATION', $auth);
 define('AUTHENTICATION_ENABLED', AUTHENTICATION !== 'off');
 define('ANONYMOUS_ACCESS_ENABLED', $bool('ANONYMOUS_ACCESS_ENABLED', false));
 define('SESSION_TIMEOUT', (int)$env('SESSION_TIMEOUT', '3600'));
+define('OTP_REMEMBER_DAYS', (int)$env('OTP_REMEMBER_DAYS', '30'));
 
 // OIDC constants are read without a defined() guard, so they are always declared —
 // empty when OIDC is not in use. Leaving them out crashes the login flow instead of

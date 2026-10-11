@@ -160,7 +160,7 @@ function wiki_realtime_publish_token(): string {
  *
  * **`*` is a URL Pattern wildcard, not a glob, and it matches across `/`** — so one matcher
  * per Space still covers every resource inside it, which is what `{+rest}` did before 1.0
- * retired URI Templates. Three things about it, all confirmed against real 1.0.2 to 1.0.4 hubs
+ * retired URI Templates. Three things about it, all confirmed against real 1.0.2 to 1.1.2 hubs
  * because none of them is obvious:
  *
  *  - **The trailing separator carries the isolation.** `wiki/Main/*` matches
@@ -212,8 +212,11 @@ function wiki_realtime_subscribe_token(?array $allowed_spaces, int $uid): string
 function wiki_mercure_version(): string {
     // WIKI_SYSTEM_DATA first: it is the one location that belongs to *this* install
     // rather than to the machine, so a container that mounts its data elsewhere, and a
-    // test fixture, can both say what hub they are paired with. The two absolute paths
-    // after it are where the image and tools/install-mercure.sh write their stamp.
+    // test fixture, can both say what hub they are paired with. The absolute path after
+    // it is where both the image and tools/install-mercure.sh write their stamp — one per
+    // machine, as the binary is; the installer's instances all run it. /etc/mercure/version
+    // is where the installer used to write it, kept for a hub nobody has re-installed since,
+    // though only a web server in the hub's group could ever traverse that directory.
     $paths = [];
     if (defined('WIKI_SYSTEM_DATA') && WIKI_SYSTEM_DATA) {
         $paths[] = rtrim(WIKI_SYSTEM_DATA, '/') . '/mercure.version';

@@ -19,6 +19,10 @@ define('APP_TITLE', 'Astucia Wiki');
 // Idle timeout in seconds before the user is redirected to the login page.
 define('SESSION_TIMEOUT', 3600); // 1 hour
 
+// Days an email-code (OTP) login survives when "Keep me signed in" is ticked —
+// across idle timeouts and browser restarts. 0 turns the option off.
+define('OTP_REMEMBER_DAYS', 30);
+
 // --- Environment ---
 // Options: 'production', 'staging', 'development'
 // A banner is shown at the top of the page for non-production environments.

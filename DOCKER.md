@@ -296,6 +296,7 @@ The ones worth setting on any real deployment:
 | `TZ` | `UTC` | **Set this.** Drives the clock, PHP *and* cron — leave it and scheduled jobs fire at the wrong hour |
 | `AUTHENTICATION` | `off` | `off` means anyone reaching the port is an admin. Use `otp` or `oidc` for anything exposed |
 | `ANONYMOUS_ACCESS_ENABLED` | `false` | Read-only browsing when auth is on |
+| `OTP_REMEMBER_DAYS` | `30` | How long "Keep me signed in" lasts for email-code logins; `0` disables it |
 | `APP_BASE_URL` | — | Public URL; needed behind a reverse proxy so redirects and share links are right |
 | `SEARCH_ENGINE` | `sqlite` | FTS5 full-text index |
 | `INDEX_SYNC_INTERVAL_SECONDS` | `30` | How often to notice content changed outside the wiki |

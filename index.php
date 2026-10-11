@@ -4,7 +4,9 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 require_once 'config.php';
 require_once 'mailer.php';
+require_once 'remember_me.php';
 session_start();
+wiki_remember_restore();
 
 // Anonymous access: allow unauthenticated visitors as readers when the option is enabled.
 $isAnonymous = AUTHENTICATION_ENABLED && defined('ANONYMOUS_ACCESS_ENABLED') && ANONYMOUS_ACCESS_ENABLED && !isset($_SESSION['user']);
@@ -1549,7 +1551,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
         window.WIKI_USER_FONT      = '<?php echo htmlspecialchars($userFont); ?>';
         window.WIKI_USER_FONT_SIZE = '<?php echo htmlspecialchars($userFontSize); ?>';
         window.WIKI_USER_SPACES  = <?php echo json_encode($_SESSION['user']['spaces'] ?? null); ?>; // null = all spaces
-        window.WIKI_SESSION_TIMEOUT = <?php echo (AUTHENTICATION_ENABLED && defined('SESSION_TIMEOUT')) ? (int)SESSION_TIMEOUT : 0; ?>;
+        window.WIKI_SESSION_TIMEOUT = <?php echo (AUTHENTICATION_ENABLED && defined('SESSION_TIMEOUT') && empty($_SESSION['remembered'])) ? (int)SESSION_TIMEOUT : 0; ?>;
         window.WIKI_AUTH_MODE = '<?php echo AUTHENTICATION; ?>';
         window.WIKI_SEARCH_ENGINE = '<?php echo defined('SEARCH_ENGINE') ? SEARCH_ENGINE : 'basic'; ?>';
     </script>

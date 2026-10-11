@@ -128,8 +128,10 @@ function wiki_wf_page_context(array $run): string {
     $vars  = wiki_wf_vars(['name' => $run['workflow_name'] ?? ''], $run);
     $out = "This run was started by the wiki workflow \"{$vars['workflow']}\", because the page \"{$path}\""
          . ($space !== '' ? " in the space \"{$space}\"" : '') . " was {$vars['event']} by {$vars['actor']}.";
-    if (($run['event'] ?? '') === 'page_renamed') $out .= " Its previous path was \"{$vars['old_path']}\".";
-    if (($run['event'] ?? '') === 'fm_changed') {
+    // Keyed on what the run carries rather than its event: a run that waited can have
+    // absorbed a field change while being named after the save that started it.
+    if (($run['old_path'] ?? '') !== '') $out .= " Its previous path was \"{$vars['old_path']}\".";
+    if (($run['field'] ?? '') !== '') {
         $out .= " Its front-matter field \"{$vars['field']}\" changed from \"{$vars['old_value']}\" to \"{$vars['new_value']}\".";
     }
     if (!empty($run['tags'])) $out .= " Tags involved: {$vars['tags']}.";
@@ -480,17 +482,19 @@ function wiki_wf_alert_disabled(array $wf, string $why, string $error): void {
  */
 function wiki_wf_synthetic_run(array $wf, string $space, string $path, array $actor): array {
     $entry = $path !== '' ? wiki_wf_index_entry($space, $path) : null;
-    $type  = (string)($wf['trigger']['type'] ?? 'page_updated');
+    // With several triggers the preview is the first, but carries every chosen trigger's
+    // stand-ins, so each variable the actions use shows something rather than nothing.
+    $types = wiki_wf_trigger_types($wf) ?: ['page_updated'];
     $run = [
         'id' => 'preview', 'workflow_id' => (string)($wf['id'] ?? ''), 'workflow_name' => $wf['name'] ?? '',
-        'space' => $space, 'path' => $path, 'event' => $type, 'page_id' => (string)($entry['id'] ?? ''),
+        'space' => $space, 'path' => $path, 'event' => $types[0], 'page_id' => (string)($entry['id'] ?? ''),
         'actor' => $actor, 'base_url' => wiki_wf_base_url(), 'chain' => [], 'depth' => 0,
     ];
-    if ($type === 'page_renamed') $run['old_path'] = '(previous path)';
-    if ($type === 'tag_added' || $type === 'tag_removed') {
+    if (in_array('page_renamed', $types, true)) $run['old_path'] = '(previous path)';
+    if (array_intersect(['tag_added', 'tag_removed'], $types)) {
         $run['tags'] = [($wf['trigger']['tag'] ?? '') !== '' ? $wf['trigger']['tag'] : 'example'];
     }
-    if ($type === 'fm_changed') {
+    if (in_array('fm_changed', $types, true)) {
         $run['field'] = $wf['trigger']['field'] ?? '';
         $run['old_value'] = '(previous value)';
         $run['new_value'] = ($wf['trigger']['value'] ?? '') !== ''

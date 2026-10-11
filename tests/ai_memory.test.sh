@@ -216,5 +216,17 @@ r=$(get_as "$ALICE" 'api.php?action=get_mentions&name=Alice&uid=7')
 assert_contains     "an ordinary page naming her is a mention" 'Standup.md' "$r"
 assert_not_contains "the memory naming her is not"             'Alice prefers short summaries' "$r"
 
+section 'AI memory can be chosen in the create-Space dialog'
+r=$(post_as "$JAR" 'api.php?action=create_space' 'name=Learns&memory=1')
+assert_contains "created with memory on"                  '"memory":true' "$r"
+ss=$(get_as "$JAR" 'api.php?action=admin_space_settings')
+assert_eq "the settings dialog reports it on" 'True' "$(printf '%s' "$ss" | python3 -c 'import json,sys
+d=json.load(sys.stdin); s=d.get("spaces") or d.get("data") or []
+print(next((x["memory"] for x in s if x["name"]=="Learns"), None))')"
+# The folder belongs to the first remembered fact, exactly as with the settings toggle.
+assert_file_missing "no memory/ folder until something is remembered" "$WIKI_PAGES/Learns/memory"
+r=$(post_as "$JAR" 'api.php?action=create_space' 'name=Forgets')
+assert_contains "left unticked, it stays off"             '"memory":false' "$r"
+
 printf '\n'
 exit $(( ASSERT_FAIL > 0 ))

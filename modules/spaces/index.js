@@ -260,6 +260,14 @@ const _render = (spaces, active) => {
                         <option value="on">${t('spaces.settings.stamp-on')}</option>
                     </select>
                     <p class="form-hint">${t('spaces.settings.stamp-hint')}</p>
+                </div>
+                <div class="form-group">
+                    <span class="form-label">${t('spaces.settings.memory-title')}</span>
+                    <label class="space-settings-switch-row">
+                        <input type="checkbox" id="new-space-memory">
+                        <span>${t('spaces.settings.memory-label')}</span>
+                    </label>
+                    <p class="form-hint">${t('spaces.settings.memory-hint')}</p>
                 </div>`;
             const ok = await confirmModal(t('spaces.new-btn'), {
                 messageHtml: html, confirmLabel: t('spaces.new-create-btn'), icon: icons.space,
@@ -269,9 +277,10 @@ const _render = (spaces, active) => {
             const name   = document.getElementById('new-space-name')?.value.trim() || '';
             const fmEdit = document.getElementById('new-space-fm')?.value || 'off';
             const fmStamp = document.getElementById('new-space-stamp')?.value || 'off';
+            const memory  = document.getElementById('new-space-memory')?.checked ? '1' : '0';
             if (!ok || !name) return;
             const res = await api.call('create_space',
-                { name, fm_edit: fmEdit, fm_autostamp: fmStamp }, 'POST');
+                { name, fm_edit: fmEdit, fm_autostamp: fmStamp, memory }, 'POST');
             if (res.success) {
                 showToast(t('spaces.created', { name }), 'success');
                 const newSpaces = await _reload(name);

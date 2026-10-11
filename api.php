@@ -23,8 +23,10 @@ require_once __DIR__ . '/wikilinks.php';
 require_once __DIR__ . '/realtime.php';
 require_once __DIR__ . '/page_chat.php';
 require_once __DIR__ . '/memory.php';
+require_once __DIR__ . '/remember_me.php';
 
 session_start();
+wiki_remember_restore();   // OTP "keep me signed in" — before anything reads $_SESSION['user']
 
 // --- Service Token auth (AI users: wk_ai_…, API Accounts: wk_sys_…) ---
 $ai_auth_user = resolve_service_token_auth();
@@ -114,16 +116,20 @@ if (isset($_REQUEST['action'])) {
     function wiki_scaffold_space(string $space_dir_new, ?int $uid = null, ?string $user_name = null): void {
         $main_md = rtrim($space_dir_new, '/') . '/Main.md';
         if (!file_exists($main_md)) {
-            file_put_contents($main_md,
-                  "# Welcome to " . APP_TITLE . "\n\n"
-                . "This is your wiki's start page.\n\n"
-                . "- Use the **New ...** button in the sidebar to create pages, folders, diagrams and lists\n"
-                . "- Click any page in the left sidebar to open it\n"
-                . "- Use the pencil icon (top right) to edit a Markdown page\n"
-                . "- Embed diagrams and lists in any page using the toolbar insert options\n\n"
-                . "## Help & Documentation\n\n"
-                . "Full documentation is available at [astucia.wiki](https://astucia.wiki).\n");
-            (new PageIndexer($space_dir_new))->addPage('Main.md', $uid, $user_name);
+            // The start page is a tour of the features, kept as a file so it can be edited
+            // as Markdown rather than as a PHP string. %APP_TITLE% is the only substitution.
+            $tour = @file_get_contents(__DIR__ . '/defaults/Main.md');
+            if ($tour === false) $tour = "# Welcome to %APP_TITLE%\n\nFull documentation is at [astucia.wiki](https://astucia.wiki).\n";
+            file_put_contents($main_md, str_replace('%APP_TITLE%', APP_TITLE, $tour));
+            $sc_indexer = new PageIndexer($space_dir_new);
+            $sc_id = $sc_indexer->addPage('Main.md', $uid, $user_name);
+            // Stamped like any other new page (create_file does the same), so a Space
+            // created with stamping on does not start with the one page that lacks the
+            // four fields. Only works if the Space's settings are saved *before* this
+            // runs, which is why create_space stores them first.
+            if ($sc_id !== null && wiki_space_dir_fm_autostamp($space_dir_new) === 'on') {
+                wiki_fm_autostamp_file($main_md, $sc_indexer->getAllPages()[$sc_id] ?? null, $user_name);
+            }
         }
         $src_templates = __DIR__ . '/templates';
         $dst_templates = rtrim($space_dir_new, '/') . '/templates';
@@ -4068,6 +4074,18 @@ if (isset($_REQUEST['action'])) {
                 if (file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($existing_uf, JSON_PRETTY_PRINT)) === false) {
                     throw new Exception('Failed to write users file.');
                 }
+                // An OTP account that was removed, moved to OIDC or given a different login
+                // address loses its "keep me signed in" tokens. Restoring re-checks users.json
+                // anyway, but uids are reused (max + 1), so a deleted account's token would
+                // otherwise sign its successor in.
+                $otp_login = fn(array $list) => array_column(array_map(
+                    fn($x) => ['uid' => (int)($x['uid'] ?? 0), 'email' => strtolower(trim($x['email'] ?? ''))],
+                    array_filter($list, fn($x) => ($x['auth'] ?? 'oidc') === 'otp' && empty($x['is_ai']) && empty($x['is_system']))
+                ), 'email', 'uid');
+                $otp_after = $otp_login($merged);
+                foreach ($otp_login($existing_by_uid) as $old_uid => $old_email) {
+                    if (($otp_after[$old_uid] ?? null) !== $old_email) wiki_remember_forget_user($old_uid);
+                }
                 echo json_encode(['success' => true]);
                 break;
 
@@ -4776,25 +4794,29 @@ if (isset($_REQUEST['action'])) {
                 if ($safe_space_name[0] === '.') throw new Exception('Space name cannot start with a dot.');
                 $new_space_dir = PAGES_DIR . '/' . $safe_space_name;
                 if (is_dir($new_space_dir)) throw new Exception('A space with that name already exists.');
+                // Chosen in the same dialog as the name. Validated before anything is
+                // created, so a bad value cannot leave a half-made Space behind.
+                $cs_fm    = trim($_POST['fm_edit'] ?? 'off');
+                $cs_stamp = trim($_POST['fm_autostamp'] ?? 'off');
+                if ($cs_fm !== 'off' && !in_array($cs_fm, WIKI_FM_EDIT_MODES, true)) throw new Exception('Unknown metadata mode.');
+                if ($cs_stamp !== 'off' && !in_array($cs_stamp, WIKI_FM_AUTOSTAMP_MODES, true)) throw new Exception('Unknown stamping mode.');
                 if (!mkdir($new_space_dir, 0755)) throw new Exception('Could not create space directory.');
+                // Saved before the scaffold, which reads them: with stamping on, the start
+                // page is stamped as it is written. 'off' writes nothing, so a Space
+                // created with the defaults has no record in spaces.json at all.
+                if ($cs_fm !== 'off')    wiki_space_set_fm_edit($safe_space_name, $cs_fm);
+                if ($cs_stamp !== 'off') wiki_space_set_fm_autostamp($safe_space_name, $cs_stamp);
+                // AI memory, the third choice in the dialog. Only the setting: the memory/
+                // folder is created by the first remembered fact, as admin_set_space_memory
+                // documents, so a Space that never learns anything never shows one.
+                if (($_POST['memory'] ?? '0') === '1') wiki_space_set_memory($safe_space_name, true);
                 // Start page + a copy of the app templates (see wiki_scaffold_space).
                 $actor = get_current_actor();
                 wiki_scaffold_space($new_space_dir, $actor['uid'] ?? null, $actor['name'] ?? null);
-                // Chosen in the same dialog as the name. 'off' writes nothing, so a Space
-                // created with the defaults has no record in spaces.json at all.
-                $cs_fm = trim($_POST['fm_edit'] ?? 'off');
-                if ($cs_fm !== 'off') {
-                    if (!in_array($cs_fm, WIKI_FM_EDIT_MODES, true)) throw new Exception('Unknown metadata mode.');
-                    wiki_space_set_fm_edit($safe_space_name, $cs_fm);
-                }
-                $cs_stamp = trim($_POST['fm_autostamp'] ?? 'off');
-                if ($cs_stamp !== 'off') {
-                    if (!in_array($cs_stamp, WIKI_FM_AUTOSTAMP_MODES, true)) throw new Exception('Unknown stamping mode.');
-                    wiki_space_set_fm_autostamp($safe_space_name, $cs_stamp);
-                }
                 echo json_encode(['success' => true,
                                   'fm_edit' => wiki_space_fm_edit($safe_space_name),
-                                  'fm_autostamp' => wiki_space_fm_autostamp($safe_space_name)]);
+                                  'fm_autostamp' => wiki_space_fm_autostamp($safe_space_name),
+                                  'memory' => wiki_space_memory($safe_space_name)]);
                 break;
 
             case 'admin_ai_builtin_instructions':
@@ -5676,7 +5698,7 @@ if (isset($_REQUEST['action'])) {
                 });
                 // The previous value of a watched field cannot be read after a write, so it
                 // is remembered; record it now for every page, or the first change is missed.
-                if (($wf_saved['trigger']['type'] ?? '') === 'fm_changed') wiki_workflow_seed_fm($wf_saved);
+                if (in_array('fm_changed', wiki_wf_trigger_types($wf_saved), true)) wiki_workflow_seed_fm($wf_saved);
                 else wiki_wf_forget_state($wf_saved['id']);
                 wiki_audit_log($wf_id === '' ? 'create' : 'update', 'success',
                     ['object_category' => 'workflow', 'object' => $wf_saved['name'], 'object_id' => $wf_saved['id']]);
@@ -5697,7 +5719,7 @@ if (isset($_REQUEST['action'])) {
                     return null;
                 });
                 if (!$wf_saved) throw new Exception('Workflow not found.');
-                if ($wf_on && ($wf_saved['trigger']['type'] ?? '') === 'fm_changed') wiki_workflow_seed_fm($wf_saved);
+                if ($wf_on) wiki_workflow_seed_fm($wf_saved);
                 wiki_audit_log('update', 'success', ['object_category' => 'workflow', 'object' => $wf_saved['name'],
                     'object_id' => $wf_id, 'enabled' => $wf_on ? 'on' : 'off']);
                 echo json_encode(['success' => true, 'workflow' => $wf_saved]);

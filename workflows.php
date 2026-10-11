@@ -47,6 +47,17 @@ const WIKI_WF_HISTORY_DAYS     = 14;
 const WIKI_WF_HISTORY_KEEP     = 1000;
 const WIKI_WF_RUNNING_TIMEOUT_MIN = 60;
 
+/**
+ * The events a workflow listens for. A trigger holds `types`, a list, so one workflow can
+ * answer "created or updated" without being duplicated; definitions saved before that
+ * hold a single `type`, read here as a list of one.
+ */
+function wiki_wf_trigger_types(array $wf): array {
+    $tr = $wf['trigger'] ?? [];
+    $types = is_array($tr['types'] ?? null) ? $tr['types'] : [(string)($tr['type'] ?? '')];
+    return array_values(array_intersect(WIKI_WF_TRIGGERS, $types));   // known ones, in canonical order
+}
+
 // --- Files ---------------------------------------------------------------------
 
 function wiki_wf_path(string $name): string {
@@ -261,41 +272,11 @@ function _wiki_workflow_event(string $space, string $event, string $path, array 
     $tags   = is_array($info['tags'] ?? null) ? $info['tags'] : [];
 
     foreach ($enabled as $wf) {
-        $id   = (string)($wf['id'] ?? '');
-        $type = (string)($wf['trigger']['type'] ?? '');
+        $id = (string)($wf['id'] ?? '');
         if ($id === '') continue;
-
-        $detail = [];
-        switch ($type) {
-            case 'page_created': if ($event !== 'create') continue 2; break;
-            case 'page_updated': if ($event !== 'update') continue 2; break;
-            case 'page_deleted': if ($event !== 'delete') continue 2; break;
-            case 'page_renamed':
-                if ($event !== 'rename') continue 2;
-                $detail['old_path'] = (string)($info['old_path'] ?? '');
-                break;
-            case 'tag_added':
-            case 'tag_removed':
-                if ($event !== 'tags') continue 2;
-                $changed = $info[$type === 'tag_added' ? 'added' : 'removed'] ?? [];
-                $want = trim((string)($wf['trigger']['tag'] ?? ''));
-                if ($want !== '') {
-                    $changed = array_values(array_filter($changed, fn($t) => wiki_wf_lc((string)$t) === wiki_wf_lc($want)));
-                }
-                if (!$changed) continue 2;
-                $detail['tags'] = array_values($changed);
-                break;
-            case 'fm_changed':
-                if (!in_array($event, ['create', 'update', 'delete'], true)) continue 2;
-                // The snapshot is kept whatever the filters say, so a page that comes into
-                // scope later is compared against what it really was.
-                $fm = wiki_wf_fm_transition($wf, $space, $path, $event);
-                if ($fm === null) continue 2;
-                $detail += $fm;
-                break;
-            default:
-                continue 2;
-        }
+        $match = wiki_wf_match($wf, $space, $event, $path, $info);
+        if ($match === null) continue;
+        [$type, $detail] = $match;
 
         if (wiki_workflow_filter_miss($wf, $space, $path, $tags, $actor) !== '') continue;
         // The loop rule: not on a write this workflow caused, however indirectly, and not
@@ -313,6 +294,49 @@ function _wiki_workflow_event(string $space, string $event, string $path, array 
             'base_url' => wiki_wf_base_url(),
         ] + $detail);
     }
+}
+
+/**
+ * Which of this workflow's triggers does the event satisfy? Returns [trigger type, the
+ * detail it carries], or null.
+ *
+ * With several triggers chosen, one write can satisfy more than one — a save that moves
+ * a watched field is both "updated" and "field changed". It still makes one run, named
+ * after the most specific trigger: the field change, since it carries the most. The
+ * field check comes first and runs on every write whatever else matches, because it
+ * moves the remembered value along; skipping it would compare the next change against
+ * a stale one. A tag event that adds and removes at once collects both.
+ */
+function wiki_wf_match(array $wf, string $space, string $event, string $path, array $info): ?array {
+    $types = wiki_wf_trigger_types($wf);
+    if (in_array('fm_changed', $types, true) && in_array($event, ['create', 'update', 'delete'], true)) {
+        // The snapshot is kept whatever the filters say, so a page that comes into
+        // scope later is compared against what it really was.
+        $fm = wiki_wf_fm_transition($wf, $space, $path, $event);
+        if ($fm !== null) return ['fm_changed', $fm];
+    }
+    $plain = ['page_created' => 'create', 'page_updated' => 'update', 'page_deleted' => 'delete', 'page_renamed' => 'rename'];
+    $type = null;
+    $detail = [];
+    foreach ($types as $tt) {
+        if (isset($plain[$tt])) {
+            if ($event !== $plain[$tt]) continue;
+            if ($tt === 'page_renamed') $detail['old_path'] = (string)($info['old_path'] ?? '');
+            return [$tt, $detail];
+        }
+        if ($tt === 'tag_added' || $tt === 'tag_removed') {
+            if ($event !== 'tags') continue;
+            $changed = $info[$tt === 'tag_added' ? 'added' : 'removed'] ?? [];
+            $want = trim((string)($wf['trigger']['tag'] ?? ''));
+            if ($want !== '') {
+                $changed = array_values(array_filter($changed, fn($t) => wiki_wf_lc((string)$t) === wiki_wf_lc($want)));
+            }
+            if (!$changed) continue;
+            $type ??= $tt;
+            $detail['tags'] = array_values(array_unique(array_merge($detail['tags'] ?? [], $changed)));
+        }
+    }
+    return $type === null ? null : [$type, $detail];
 }
 
 /**
@@ -355,7 +379,7 @@ function wiki_wf_fm_transition(array $wf, string $space, string $path, string $e
 
 /** Record every in-scope page's current value, so the first real change is seen as one. */
 function wiki_workflow_seed_fm(array $wf): int {
-    if (($wf['trigger']['type'] ?? '') !== 'fm_changed') return 0;
+    if (!in_array('fm_changed', wiki_wf_trigger_types($wf), true)) return 0;
     $field = trim((string)($wf['trigger']['field'] ?? ''));
     if ($field === '') return 0;
     $spaces = ($wf['space'] ?? '') === '*' ? wiki_wf_list_spaces() : [(string)($wf['space'] ?? '')];
@@ -426,6 +450,15 @@ function wiki_wf_enqueue(array $wf, array $entry): void {
             }
             // Front matter: keep where it started, follow where it ended up.
             if (array_key_exists('new_value', $entry)) $r['new_value'] = $entry['new_value'];
+            if (($entry['old_path'] ?? '') !== '' && ($r['old_path'] ?? '') === '') $r['old_path'] = $entry['old_path'];
+            if (array_key_exists('field', $entry) && !array_key_exists('field', $r)) {
+                $r['field'] = $entry['field'];
+                $r['old_value'] = $entry['old_value'];
+            }
+            // With several triggers a waiting run can absorb a different kind of event.
+            // A delete wins: "created" on a page that no longer exists would be a lie,
+            // and whatever the actions were going to do to it can no longer be done.
+            if ($entry['event'] === 'page_deleted') $r['event'] = 'page_deleted';
             if (($r['page_id'] ?? '') === '' && $entry['page_id'] !== '') $r['page_id'] = $entry['page_id'];
             if ($entry['base_url'] !== '') $r['base_url'] = $entry['base_url'];
             return;
@@ -490,13 +523,13 @@ function wiki_workflow_normalize(array $in, array $ai_uids, array $user_uids): a
         throw new Exception('Unknown space: ' . $space);
     }
 
-    $tt = (string)($in['trigger']['type'] ?? '');
-    if (!in_array($tt, WIKI_WF_TRIGGERS, true)) throw new Exception('Choose what starts the workflow.');
-    $trigger = ['type' => $tt];
-    if ($tt === 'tag_added' || $tt === 'tag_removed') {
+    $tts = wiki_wf_trigger_types(['trigger' => is_array($in['trigger'] ?? null) ? $in['trigger'] : []]);
+    if (!$tts) throw new Exception('Choose what starts the workflow.');
+    $trigger = ['types' => $tts];
+    if (array_intersect(['tag_added', 'tag_removed'], $tts)) {
         $trigger['tag'] = ltrim(_wiki_wf_str($in['trigger']['tag'] ?? '', 100), '#');
     }
-    if ($tt === 'fm_changed') {
+    if (in_array('fm_changed', $tts, true)) {
         $field = _wiki_wf_str($in['trigger']['field'] ?? '', 100);
         if (!preg_match('/^[A-Za-z_][A-Za-z0-9_.\- ]*$/', $field)) throw new Exception('Name the front-matter field to watch.');
         $trigger['field'] = $field;

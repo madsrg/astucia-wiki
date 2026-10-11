@@ -82,9 +82,23 @@ const run = async () => {
   // Build one: saved on page updates under Docs, two actions.
   click($('#admin-workflows-add-btn'));                       await sleep(400);
   $('#wf-f-name').value = 'Review';
-  set('#wf-f-trigger', 'tag_added');                          await sleep(100);
+  // Triggers are checkboxes: any ticked event starts a run. The variable list follows them.
+  const trig = (v) => $('.wf-f-trig[value="' + v + '"]');
+  const vars = () => $('#wf-f-vars').textContent;
+  out += ' default=' + $$('.wf-f-trig:checked').map(c => c.value).join('+');
+  out += ' varsupd=' + (vars().includes('{{old_value}}') || vars().includes('{{old_path}}') ? 'specific' : 'general');
+  click(trig('page_updated'));                                await sleep(100);
+  click(trig('tag_added'));                                   await sleep(100);
   out += ' tagbox=' + ($('#wf-f-tag') ? 'yes' : 'no');
   $('#wf-f-tag').value = 'review';
+  click(trig('fm_changed'));                                  await sleep(100);
+  out += ' fieldbox=' + ($('#wf-f-field') ? 'yes' : 'no') + ' tagkept=' + $('#wf-f-tag').value;
+  out += ' varsfm=' + (vars().includes('{{old_value}}') ? 'yes' : 'no');
+  out += ' partial=' + ($('#wf-f-vars div') ? 'yes' : 'no');
+  out += ' tip=' + ($('#wf-f-vars code[title]') ? 'yes' : 'no');
+  click(trig('fm_changed'));                                  await sleep(100);
+  click(trig('tag_removed'));                                 await sleep(100);
+  out += ' varsfmgone=' + (vars().includes('{{old_value}}') ? 'no' : 'yes');
   // The folder comes from the picker, not the keyboard.
   const clearOf = (id) => $('.wf-path-clear[data-for="' + id + '"]');
   out += ' xbefore=' + (clearOf('wf-f-folder').classList.contains('hidden') ? 'hidden' : 'shown');
@@ -130,7 +144,7 @@ const run = async () => {
   const rows = $$('#admin-workflows-list tbody tr');
   out += ' rows=' + rows.length;
   let wf = (await server())[0] || {};
-  out += ' stored=' + (wf.trigger && wf.trigger.type) + '/' + (wf.trigger && wf.trigger.tag) + '/' + (wf.filters && wf.filters.folder);
+  out += ' stored=' + (wf.trigger && (wf.trigger.types || []).join('+')) + '/' + (wf.trigger && wf.trigger.tag) + '/' + (wf.filters && wf.filters.folder);
   out += ' actions=' + (wf.actions || []).map(a => a.type).join('+');
   out += ' tags=' + ((wf.actions || [])[0] || {}).add;
   out += ' on=' + wf.enabled;
@@ -143,7 +157,7 @@ const run = async () => {
 
   // Edit opens with what was saved.
   click($('#admin-workflows-list .wf-edit'));                 await sleep(400);
-  out += ' editname=' + $('#wf-f-name').value + ' edittrigger=' + $('#wf-f-trigger').value;
+  out += ' editname=' + $('#wf-f-name').value + ' edittrigger=' + $$('.wf-f-trig:checked').map(c => c.value).join('+');
   out += ' editcards=' + $$('.wf-action-card').length;
   // Run now, for real, behind a confirmation.
   $('#wf-t-path').value = 'Docs/a.md';
@@ -210,12 +224,19 @@ assert_contains "choosing a chat fills it in"     'chat=Team.chat'       "$PROBE
 assert_contains "the test page is browsable too"  'testpath=Docs/a.md'   "$PROBE"
 
 section 'the editor'
+assert_contains "a new workflow starts on page updates" 'default=page_updated' "$PROBE"
+assert_contains "  …showing only the general variables" 'varsupd=general'   "$PROBE"
 assert_contains "a tag trigger asks for the tag"  'tagbox=yes'           "$PROBE"
+assert_contains "a second trigger adds its own inputs, keeping the first's" 'fieldbox=yes tagkept=review' "$PROBE"
+assert_contains "the field trigger offers its variables" 'varsfm=yes'     "$PROBE"
+assert_contains "  …with a note that they can be empty" 'partial=yes'     "$PROBE"
+assert_contains "  …and each variable explains itself" 'tip=yes'         "$PROBE"
+assert_contains "unticking it takes them away again" 'varsfmgone=yes'    "$PROBE"
 assert_contains "adding an action keeps the first" 'kept=seen, queued'   "$PROBE"
 assert_contains "Test previews the unsaved form"  'preview=rendered'     "$PROBE"
 assert_contains "  …every action of it"           'previewtags=yes'      "$PROBE"
 assert_contains "saving lists it"                 'rows=1'               "$PROBE"
-assert_contains "the trigger reached the server"  'stored=tag_added/review/Docs' "$PROBE"
+assert_contains "the trigger reached the server"  'stored=tag_added+tag_removed/review/Docs' "$PROBE"
 assert_contains "both actions, in order"          'actions=tag+chat'     "$PROBE"
 assert_contains "the tags were split"             'tags=seen,queued'     "$PROBE"
 assert_contains "new workflows start on"          'on=true'              "$PROBE"
@@ -223,7 +244,7 @@ assert_contains "new workflows start on"          'on=true'              "$PROBE
 section 'the overview'
 assert_contains "the switch reaches the server"   'toggled=false'        "$PROBE"
 assert_contains "and the row shows it is off"     'dimmed=yes'           "$PROBE"
-assert_contains "edit opens what was saved"       'editname=Review edittrigger=tag_added' "$PROBE"
+assert_contains "edit opens what was saved"       'editname=Review edittrigger=tag_added+tag_removed' "$PROBE"
 assert_contains "  …with both actions"            'editcards=2'          "$PROBE"
 assert_contains "Run now is not offered unsaved"  'runnew=no'            "$PROBE"
 assert_contains "it asks first"                   'confirm=asked'        "$PROBE"
