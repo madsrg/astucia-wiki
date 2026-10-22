@@ -13,16 +13,25 @@ every page is a file on disk, so a backup is an archive of one directory.
 **Content** — Markdown pages with **Mermaid** and draw.io diagrams · structured lists and
 JSON data pages · **YAML front matter** · page and diagram templates · attachments and file
 libraries · **paste a screenshot straight into a page** · copy buttons on code
-blocks · wikilinks, transclusion and tags · full-text search with saved searches · a
-knowledge graph · optional git version history · static site export.
+blocks · wikilinks and transclusion · full-text search with saved searches · a knowledge
+graph · optional git version history · static site export.
+
+**Tags with a taxonomy** — one tree of tags for the whole wiki: folders group, items are the
+tags pages carry (`Department/Finance`). A tree editor to rename, move and merge — every page
+using a tag follows — a tag picker beside the tag field, and a tagging mode from *free* to
+*controlled* for organisations that need consistent classification. Export and import the
+tree as JSON.
 
 **Page metadata that travels with the file** — a page may open with a `---` block of YAML,
 as Obsidian, Hugo and Jekyll write it. The wiki keeps it out of the editor and out of
 search, shows it on request, and puts it back byte-for-byte when the page is saved — so an
 imported note keeps its metadata, and a page copied out of the wiki takes its own with it.
-Per Space you can also let people **edit** those fields, or have the wiki **maintain**
-`created`, `createdBy`, `updated` and `updatedBy` itself. Both off by default: on a Space
-that mirrors somebody's vault, the wiki does not touch the block at all.
+Per Space you can also let people **edit** those fields, have the wiki **maintain**
+`created`, `createdBy`, `updated` and `updatedBy` itself, or keep a page's **tags** in its
+`tags:`. A folder of the taxonomy can define a field's allowed values — `department:` takes
+one of the items in Department — chosen from a dropdown and searchable as
+`department:Finance`. All off by default: on a Space that mirrors somebody's vault, the
+wiki does not touch the block at all.
 
 **AI** — AI users that read and write wiki pages · one-off and scheduled agent jobs · team
 and per-page chat · **AI memory**, so an AI keeps what it learns as ordinary pages you can
@@ -46,10 +55,10 @@ chats, pages, the file tree, mentions and job results arrive by push instead of 
 never broken. **Admin → Monitoring → Mercure** tells you whether it is working, and
 **Wiki Info** lists every version this install is running.
 
-> **This image bundles Mercure 1.1.2**, the current release. 1.1.0 fixed a request any
-> signed-in user could send to make the hub allocate about 1 GiB of memory, on top of the
-> earlier fixes in 1.0.2 (ten vulnerabilities, four high) and 1.0.3 (hardening against
-> slow-connection attacks). The hub runs inside the image, so updating the image is the
+> **This image bundles Mercure 1.1.4**, the current release. 1.1.4 closes two authorization
+> gaps in the hub; 1.1.0 fixed a request any signed-in user could send to make the hub
+> allocate about 1 GiB of memory, on top of the earlier fixes in 1.0.2 (ten
+> vulnerabilities, four high) and 1.0.3 (hardening against slow-connection attacks). The hub runs inside the image, so updating the image is the
 > fix. The live update stream is never compressed.
 
 ## Quick start
@@ -60,7 +69,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.10.4
+    madsrotwitt/astucia-wiki:2026.10.5
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -86,7 +95,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.10.4
+    madsrotwitt/astucia-wiki:2026.10.5
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -98,7 +107,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.10.4` | moves only if that release is rebuilt |
+| `2026.10.5` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
