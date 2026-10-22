@@ -9,6 +9,7 @@ import { showToast, confirmModal, highlightMentions, externalizeLinks } from '..
 import { getUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
 import { t } from '../i18n/index.js';
+import { EMOJIS } from '../core/emojis.js';
 import { openAiModal, closeAiModal, checkAiModal, startStatusPoll } from '../core/ai_modal.js';
 import { aiStatusStep, jobStatusElementId, syncJobStatus, stopJobStatus } from '../core/ai_status.js';
 import { getFocusAi, setFocusAi, renameFocusKey, applyFocus, createFocusChip } from '../core/chat_focus.js';
@@ -16,7 +17,6 @@ import { treeEntry, revealAndSelectFile, refreshFileTree } from '../file_tree/in
 
 const POLL_MS = 5000;
 const POLL_SLOW_MS = 120000;   // the safety net while push is live; see modules/realtime
-const EMOJIS  = ['😀','😂','😍','🤔','😢','😮','😡','👍','👎','👋','🙏','❤️','🎉','🔥','✅','❌','⭐','💡','🚀','📝','🎯','👀','💬','🤝'];
 const CHAT_COMMANDS = [
     { name: 'newTopic',  description: t('chat.cmd.new-topic') },
     { name: 'me',        description: t('chat.cmd.me') },

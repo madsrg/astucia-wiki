@@ -6,6 +6,82 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.10.5] — 2026-10-22
+
+Tags get a wiki-wide taxonomy: a tree of folders and items, a tagging mode, a tag picker,
+front-matter fields with fixed values, and tags kept in front matter where a Space wants
+them. AI users are told how their Space behaves. Spaces can be deleted, the editor gets
+an emoji button, and the bundled Mercure hub moves to 1.1.4.
+
+### Added
+- **A wiki-wide taxonomy for tags.** Tags can now be nested (`Department/Finance`), and
+  one tree of terms, kept in `taxonomy.json` at the root of `PAGES_DIR`, organises them
+  for every Space. **Folders** group (`Department`); **items** are the tags pages carry, and
+  an item can hold narrower items (`Finance` and `Finance/Budget`). A folder sits at the
+  top level or inside another folder, not inside an item. Admin → Content →
+  **Taxonomy** opens a tree editor in its own large window: one toolbar for the selected folder or item, a details
+  panel, inline rename, keyboard navigation and drag and drop to move. Renaming, moving or
+  merging retags every page that uses it, in every Space. Tags pages already use can be
+  added to the tree in one click. Matching is
+  case-insensitive, and a parent finds the pages tagged with its children — in tag pages,
+  advanced search (`tag:`) and AI search.
+- **A tagging mode:** *Free* (any tag; a new one joins the tree), *Suggest* (a new tag
+  joins the tree after the user confirms) or *Controlled* (only terms; tags pages already
+  have are kept). It applies to every way a tag is written: the tag field, AI users and
+  workflows. A workflow's tag action is checked when it is saved.
+- **A tag picker** beside the tag field: the whole tree in a lightbox 80% of the window,
+  with a filter, descriptions, usage counts and the page's tags that are not terms. The tag
+  field's type-ahead now offers terms by any part of their path.
+- **Taxonomy export and import.** Import checks the file first, lists every problem it
+  finds, and asks before replacing the current tree.
+- **Tags in front matter**, a per-Space setting (Space settings → Content, off by default).
+  When on, a page's tags are also kept in `tags:` in its front matter, so the
+  classification travels with the file. It applies to tag changes from then on. A tag only
+  the front matter has is never removed by it, and the file's modification time is kept.
+  Where a page's front matter and its tags disagree, the tag area offers to add the
+  missing tags in either direction, or to ignore the difference.
+- **Front-matter fields bound to the taxonomy.** A folder can be bound to a field,
+  such as `department` on the Department folder, and then `department:` takes the name of
+  an item inside it. The Metadata panel offers it as a dropdown (several values where the
+  field allows a list) and refuses anything else, as do workflows. Renaming or merging a
+  value updates every page that uses it. Advanced search filters on it
+  (`department:Finance`, which also finds the items below Finance), and so can AI users.
+  A value a page already had from outside the wiki is kept and marked as not in the
+  taxonomy.
+- **`wiki_get_taxonomy`**, an AI tool returning the tree and the mode, so AI users tag
+  with existing terms.
+- **AI users are told how the Space they work in behaves**: the tagging mode and taxonomy,
+  the front-matter fields with fixed values (and those values), whether tags or dates are
+  kept in front matter automatically, and whether the Space is read-only — each only when
+  it applies. A page an AI writes is held to the bound fields' values.
+- **Delete a Space** from Space settings → Advanced, after typing its name. The folder is
+  moved to `WIKI_SYSTEM_DATA/deleted_spaces/`, not erased. The last Space and a read-only
+  Space cannot be deleted. Access lists, scheduled jobs, queued jobs and workflows that
+  named it are cleaned up.
+- **An emoji button in the editor toolbar**, inserting at the cursor; Ctrl+Z removes it.
+
+### Changed
+- The New Space dialog asks about tags in front matter too, and is wider; on a short
+  window its settings scroll, so the Create button stays on screen.
+- **The Docker image no longer contains `.claude/` or `*.bak` files.** Images up to
+  2026.10.4 shipped Claude Code's design notes and local settings in `/var/www/html`.
+  Nothing sensitive was in them, and nginx refuses dot-paths, so they were not reachable
+  over the web — but anyone who pulled the image could read them.
+
+### Security
+- **The bundled Mercure hub is 1.1.4** (`Dockerfile`, `tools/install-mercure.sh`). It closes
+  two authorization gaps in the hub. Neither was reachable in this wiki's setup — it does
+  not run the hub in compatibility mode and sets no per-token subscription limit — but
+  there is no reason to stay behind. Space isolation on the push channel, the two-hub
+  setup and the idle-stream workaround were re-verified against the real 1.1.4 binary.
+  Bare-metal installs: `sudo ./tools/install-mercure.sh 1.1.4` upgrades every instance and
+  keeps their keys. 1.1.3 was never released, and the installer says so.
+
+### Fixed
+- A browser left open on a Space that had been deleted, renamed or merged away saved its
+  next page at the root of `PAGES_DIR`, where a folder could then appear as a new Space.
+  Such writes are now refused.
+
 ## [2026.10.4] — 2026-10-11
 
 The bundled realtime hub moves to Mercure 1.1.2, and the installer can now give each wiki

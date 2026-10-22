@@ -66,8 +66,8 @@ PHP
 
 # Drive one job the way the cron runner does, but in-process so the test owns the timing.
 run_out=$(cd "$WIKI_APP" && STUB_URL="$WIKI_URL/__test_llm.php" php -r '
-require "config.php"; require "indexer.php"; require "space_settings.php";
-require "ai_core.php"; require "mailer.php"; require "agent_jobs.php";
+require_once "config.php"; require_once "indexer.php"; require_once "space_settings.php";
+require_once "ai_core.php"; require_once "mailer.php"; require_once "agent_jobs.php";
 $space_dir = rtrim(PAGES_DIR, "/") . "/Main";
 $users = json_decode(file_get_contents(WIKI_SYSTEM_DATA . "users.json"), true)["users"];
 $ai = null; foreach ($users as $u) if (!empty($u["is_ai"])) $ai = $u;
@@ -114,8 +114,8 @@ assert_contains     "placeholder still pending" '"pending"' "$(cat "$WIKI_PAGES/
 section 'delivering the answer clears the progress file'
 assert_file_exists "status file exists before delivery" "$WIKI_PAGES/Main/T.chat.ai-status.2"
 (cd "$WIKI_APP" && php -r '
-require "config.php"; require "indexer.php"; require "space_settings.php";
-require "ai_core.php"; require "mailer.php"; require "agent_jobs.php";
+require_once "config.php"; require_once "indexer.php"; require_once "space_settings.php";
+require_once "ai_core.php"; require_once "mailer.php"; require_once "agent_jobs.php";
 $job = ["reply_to" => ["chat" => "T.chat", "message_id" => 2], "space" => "Main"];
 var_export(agent_job_deliver_to_chat($job, "All done.", null));
 ' > /dev/null 2>&1)

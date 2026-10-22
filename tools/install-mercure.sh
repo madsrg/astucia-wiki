@@ -5,7 +5,7 @@
 # =============================================================================
 # Install, configure and run the Mercure hub as a systemd service.
 #
-#   sudo ./tools/install-mercure.sh 1.1.2
+#   sudo ./tools/install-mercure.sh 1.1.4
 #
 # The wiki's realtime push needs a Mercure hub. The Docker image bundles one; this is
 # the equivalent for a bare-metal install. It downloads the release, verifies its
@@ -18,7 +18,7 @@
 # one key either wiki can sign tickets the other's hub accepts. For several wikis on one
 # machine, give each its own *instance*:
 #
-#   sudo MERCURE_INSTANCE=team ./tools/install-mercure.sh 1.1.2
+#   sudo MERCURE_INSTANCE=team ./tools/install-mercure.sh 1.1.4
 #
 # Without MERCURE_INSTANCE the script works on the default instance — the single-wiki
 # layout this script has always written (/etc/mercure, mercure.service).
@@ -88,14 +88,15 @@ usage() {
 Usage: sudo [MERCURE_INSTANCE=<name>] $0 <version>
 
   <version>   Mercure release to install, without the leading 'v'. For example:
-                sudo $0 1.1.2
+                sudo $0 1.1.4
               Releases: https://github.com/dunglas/mercure/releases
 
               The wiki mints Mercure 1.0 access tokens (OAuth 2.0), which a 0.x hub
               rejects, so 1.0.0 is the minimum. 1.0.2 fixed ten vulnerabilities an
               audit found in 1.0.0, 1.0.3 adds Caddy's security hardening, 1.1.0 closes
-              the gaps a second audit found, 1.1.1 updates the hub's HTTP/2 stack, and
-              1.1.2 fixes how a hub behind a proxy names itself — so 1.1.2 is what to
+              the gaps a second audit found, 1.1.1 updates the hub's HTTP/2 stack,
+              1.1.2 fixes how a hub behind a proxy names itself, and 1.1.4 closes two
+              authorization gaps (1.1.3 was never released) — so 1.1.4 is what to
               install.
 
   One hub serves one wiki. Running several wikis on this machine? Give each its own
@@ -112,15 +113,17 @@ case "$VERSION" in
     -h|--help) usage ;;
     v*) VERSION="${VERSION#v}" ;;   # tolerate 'v1.0.2'
 esac
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || die "'$VERSION' is not a version like 1.1.2"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || die "'$VERSION' is not a version like 1.1.4"
 # Refused rather than installed and left to fail at the first publish: the wiki signs
 # OAuth 2.0 access tokens (typ at+jwt, iss, aud, authorization_details), and a 0.x hub
 # answers 401 to every one of them while looking perfectly healthy from the outside.
 case "$VERSION" in
     0.*) die "Mercure $VERSION is too old for this wiki — it needs 1.0.0 or newer, whose
-      access-token format the wiki signs. Install 1.1.2 or later." ;;
+      access-token format the wiki signs. Install 1.1.4 or later." ;;
     1.0.1) die "Mercure 1.0.1 was tagged but never released — its build failed on 32-bit
-      platforms, so there are no binaries to download. Install 1.1.2." ;;
+      platforms, so there are no binaries to download. Install 1.1.4." ;;
+    1.1.3) die "Mercure 1.1.3 was tagged but never released — its fixes shipped in 1.1.4,
+      so there are no binaries to download. Install 1.1.4." ;;
 esac
 
 # An instance name becomes part of a directory, a systemd unit, a user name and a cookie
@@ -524,9 +527,9 @@ EOF
 	# (1 minute by default) overrides the hub's dispatch_timeout, so one subscriber that
 	# stops reading can hold a dispatch for a minute instead of a few seconds. It bounds a
 	# write that is *stuck*, not quiet time between writes — an idle stream with a pause of
-	# 70 s still received its next event, verified against 1.0.4 to 1.1.2 — so it costs
+	# 70 s still received its next event, verified against 1.0.4 to 1.1.4 — so it costs
 	# nothing. Drop it once the hub is built on a Caddy release that includes
-	# caddyserver/caddy#8145 (merged, but 1.1.2 is still on 2.11.7).
+	# caddyserver/caddy#8145 (merged, but 1.1.4 is still on 2.11.7).
 	servers {
 		timeouts {
 			write_idle 5s

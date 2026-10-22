@@ -38,8 +38,8 @@ get_as "$JAR" 'api.php?action=indexfiles&space=Main' > /dev/null
 # One PHP driver, run once per search engine. Prints KEY=value lines the shell asserts on.
 probe() {
     (cd "$WIKI_APP" && php -r '
-require "config.php"; require "indexer.php"; require "space_settings.php";
-require "search_index.php"; require "llm_providers.php"; require "wiki_ai_tools.php";
+require_once "config.php"; require_once "indexer.php"; require_once "space_settings.php";
+require_once "search_index.php"; require_once "llm_providers.php"; require_once "wiki_ai_tools.php";
 $space_dir = rtrim(PAGES_DIR, "/") . "/Main";
 $ix = new PageIndexer($space_dir);
 $ai = ["uid" => -9, "name" => "Bot", "role" => "editor", "is_ai" => true];
@@ -109,7 +109,7 @@ done
 
 section 'the tool descriptions say so, which is how the model finds out'
 defs=$(cd "$WIKI_APP" && php -r '
-require "config.php"; require "llm_providers.php"; require "wiki_ai_tools.php";
+require_once "config.php"; require_once "llm_providers.php"; require_once "wiki_ai_tools.php";
 foreach (wiki_tool_definitions() as $t) echo $t["name"], "|", $t["description"], "\n";')
 read_desc=$(printf '%s' "$defs" | sed -n 's/^wiki_read_page|//p')
 srch_desc=$(printf '%s' "$defs" | sed -n 's/^wiki_search_pages|//p')
@@ -119,7 +119,7 @@ assert_contains "search advertises .json"     '.json'   "$srch_desc"
 assert_contains "wiki_write_json is offered"  'wiki_write_json|' "$defs"
 
 section 'the system prompt names the chart types that exist'
-prompt=$(cd "$WIKI_APP" && php -r 'require "config.php"; require "llm_providers.php"; require "ai_core.php";
+prompt=$(cd "$WIKI_APP" && php -r 'require_once "config.php"; require_once "llm_providers.php"; require_once "ai_core.php";
 echo wiki_markdown_features_prompt();' 2>/dev/null)
 assert_contains "xychart is named"   'xychart' "$prompt"
 assert_contains "pie is named"       'pie'     "$prompt"

@@ -13,6 +13,11 @@ if (is_file(__DIR__ . '/realtime.php')) require_once __DIR__ . '/realtime.php';
 // Workflows hook the same funnel, for the same reason: every content write already comes
 // through here, so a trigger cannot miss a write path. See workflows.php.
 if (is_file(__DIR__ . '/workflows.php')) require_once __DIR__ . '/workflows.php';
+// The tag policy lives on the same funnel: updateTags() is where every tag write arrives.
+require_once __DIR__ . '/taxonomy.php';
+// …and the per-Space front-matter `tags:` sync, which follows every tag change.
+require_once __DIR__ . '/space_settings.php';
+require_once __DIR__ . '/frontmatter.php';
 
 class PageIndexer {
     // Content types that get a stable page id. Defined once because two paths walk the
@@ -49,6 +54,8 @@ class PageIndexer {
             foreach ($entries as $e) {
                 if ($e === '.' || $e === '..' || $e[0] === '.') continue;
                 if ($dir === $root && ($e === 'index.json' || $e === 'graph.json')) continue;
+                // The wiki-wide taxonomy sits at the root of PAGES_DIR; it is not a page.
+                if ($dir === $root && $e === WIKI_TAX_FILE && $root === rtrim(PAGES_DIR, '/')) continue;
                 $abs = $dir . '/' . $e;
                 $rel = $prefix === '' ? $e : $prefix . '/' . $e;
                 if (is_dir($abs)) {
@@ -324,11 +331,19 @@ class PageIndexer {
         $this->announceTree();
     }
 
-    public function updateTags($id, $tags) {
+    /**
+     * @param bool $policy Apply the taxonomy (taxonomy.php): spelling, headings, and the
+     *                     mode's rule for new tags. Off only for AI memory, whose tags are
+     *                     the model's own filing, and for a copy, which carries tags that
+     *                     were already accepted.
+     * @throws WikiTaxonomyException when the policy refuses a tag; nothing is written.
+     */
+    public function updateTags($id, $tags, bool $policy = true) {
         if (isset($this->indexData[$id])) {
             $oldTags = $this->indexData[$id]['tags'] ?? [];
             // Ensure tags are unique and clean
             $cleanedTags = array_unique(array_filter(array_map('trim', $tags)));
+            if ($policy) $cleanedTags = wiki_tax_apply($cleanedTags, $oldTags);
             $this->indexData[$id]['tags'] = array_values($cleanedTags); // Re-index array
             $this->saveIndex();
             $this->announce($this->indexData[$id]['path'] ?? '', 'update');
@@ -341,6 +356,7 @@ class PageIndexer {
             // not fire because somebody tagged a page.
             $added   = array_values(array_diff($this->indexData[$id]['tags'], $oldTags));
             $removed = array_values(array_diff($oldTags, $this->indexData[$id]['tags']));
+            if ($added || $removed) $this->syncFmTags($this->indexData[$id]['path'] ?? '', $added, $removed);
             if ($added || $removed) {
                 $this->workflowEvent('tags', $this->indexData[$id]['path'] ?? '',
                     ['id' => $id, 'tags' => $this->indexData[$id]['tags'], 'added' => $added, 'removed' => $removed]);
@@ -348,6 +364,59 @@ class PageIndexer {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Map every tag on every page through $fn, deduplicating case-insensitively, in one
+     * write. For taxonomy renames and merges: no workflow events (a vocabulary change is
+     * not somebody tagging a page) and one tree event rather than one per page.
+     *
+     * @return int pages whose tags changed
+     */
+    public function rewriteTags(callable $fn): int {
+        $changed = 0;
+        $synced = [];
+        foreach ($this->indexData as $id => &$entry) {
+            $old = $entry['tags'] ?? [];
+            if (!$old) continue;
+            $next = []; $seen = [];
+            foreach ($old as $t) {
+                $m = (string)$fn((string)$t);
+                $lc = wiki_tax_lc($m);
+                if ($m === '' || isset($seen[$lc])) continue;
+                $seen[$lc] = true;
+                $next[] = $m;
+            }
+            if ($next !== array_values($old)) {
+                $entry['tags'] = $next;
+                $changed++;
+                $synced[] = [$entry['path'] ?? '', array_values(array_diff($next, $old)), array_values(array_diff($old, $next))];
+            }
+        }
+        unset($entry);
+        if ($changed) { $this->saveIndex(); $this->announceTree(); }
+        // A frozen Space's index follows a renamed term (see taxonomy.php), but its files
+        // are content and stay as they are; syncFmTags() checks that itself.
+        foreach ($synced ?? [] as [$p, $a, $r]) $this->syncFmTags($p, $a, $r, false);
+        return $changed;
+    }
+
+    /**
+     * Mirror a tag change into the page's front-matter `tags:` when its Space syncs them
+     * (space_settings.php). A delta, never an overwrite, and mtime is kept — see
+     * wiki_fm_tags_apply(). Committed with the page's own git setting when $commit.
+     */
+    private function syncFmTags(string $path, array $added, array $removed, bool $commit = true): void {
+        if ($path === '' || strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'md') return;
+        $dir = dirname($this->indexFile);
+        if (wiki_space_dir_fm_tags_sync($dir) !== 'on' || wiki_space_dir_is_readonly($dir)) return;
+        $abs = $dir . '/' . ltrim($path, '/');
+        if (wiki_fm_tags_apply($abs, $added, $removed) === null) return;
+        if ($commit && function_exists('git_auto_commit') && $this->getGitCommit($path, true)) {
+            $actor = function_exists('get_current_actor') ? get_current_actor() : [];
+            $email = !empty($_SESSION['user']['email']) ? $_SESSION['user']['email'] : 'wiki@localhost';
+            git_auto_commit($abs, $actor['name'] ?? 'Wiki', $email, 'Tags: ' . $path, $dir);
+        }
     }
 
     public function getPageData($id) {

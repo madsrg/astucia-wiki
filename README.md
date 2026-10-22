@@ -229,7 +229,7 @@ Turned on with `ENABLE_REALTIME`, the wiki pushes changes over a single SSE conn
 Push is served by a [Mercure](https://mercure.rocks) hub. The Docker image ships one and starts it automatically. On a bare install, `tools/install-mercure.sh` does the whole job — it downloads the release and verifies its checksum, creates a locked-down service account, generates the shared key, writes the hub config and a hardened systemd unit, starts it and checks that it answers:
 
 ```bash
-sudo ./tools/install-mercure.sh 1.1.2
+sudo ./tools/install-mercure.sh 1.1.4
 ```
 
 It shows what it is about to do and waits for a key press (`MERCURE_ASSUME_YES=1` skips that for unattended runs), prints every path it writes, and leaves the `config.php` constants (key included) in `/etc/mercure/wiki-config-snippet.php` along with the nginx block you still need. Re-run it with a newer version to upgrade in place; the key is never regenerated, since `config.php` holds a copy.
@@ -237,12 +237,12 @@ It shows what it is about to do and waits for a key press (`MERCURE_ASSUME_YES=1
 **One hub serves one wiki.** Every wiki publishes the same topic names, so two wikis sharing a hub would receive each other's change events, and with one key either could sign tickets the other accepts. To run several wikis on one machine, give each its own *instance*:
 
 ```bash
-sudo MERCURE_INSTANCE=team ./tools/install-mercure.sh 1.1.2
+sudo MERCURE_INSTANCE=team ./tools/install-mercure.sh 1.1.4
 ```
 
 A named instance gets its own config directory (`/etc/mercure-team/`), service (`mercure-team`), service account, key, port (the first free one from 3001), and issuer, audience and cookie name — so copy all of its snippet into that wiki's `config.php`, not only the key. Each wiki also needs its own hostname, since the hub is always reached at `/.well-known/mercure`. Without `MERCURE_INSTANCE` the script works on the default instance, exactly as a single-wiki install always has. **Upgrading upgrades every instance:** they share one binary, so the script finds them all, regenerates each one's configuration from the settings it was installed with, and restarts the ones that were running.
 
-**The hub must be Mercure 1.0.0 or newer, and you want 1.1.2.** 1.0 replaced the protocol's bespoke JWT claim with an ordinary OAuth 2.0 access token, and the wiki signs those — a 0.x hub answers 401 to every publish. The installer refuses a 0.x version rather than leaving you with a hub that looks healthy and delivers nothing, and warns if you ask for anything older than 1.1.0, the newest release fixing something reachable in this setup. (1.0.1 was tagged but never built.) Upgrading an existing install means re-running the script *and* adding the three constants it now writes into the snippet (`MERCURE_ISSUER`, `MERCURE_RESOURCE_ID`, `MERCURE_COOKIE_NAME`); the hub and the wiki have to agree on all three. Docker installs need nothing: the image ships the hub and configures both sides. Because an SSE stream occupies one of the browser's ~6 connections per origin, realtime wants **HTTP/2** — that is, TLS at your reverse proxy. It works over HTTP/1.1, but a few open tabs will exhaust the connection budget.
+**The hub must be Mercure 1.0.0 or newer, and you want 1.1.4.** 1.0 replaced the protocol's bespoke JWT claim with an ordinary OAuth 2.0 access token, and the wiki signs those — a 0.x hub answers 401 to every publish. The installer refuses a 0.x version rather than leaving you with a hub that looks healthy and delivers nothing, and warns if you ask for anything older than 1.1.0, the newest release fixing something reachable in this setup. (1.0.1 was tagged but never built, and 1.1.3 tagged but never released.) Upgrading an existing install means re-running the script *and* adding the three constants it now writes into the snippet (`MERCURE_ISSUER`, `MERCURE_RESOURCE_ID`, `MERCURE_COOKIE_NAME`); the hub and the wiki have to agree on all three. Docker installs need nothing: the image ships the hub and configures both sides. Because an SSE stream occupies one of the browser's ~6 connections per origin, realtime wants **HTTP/2** — that is, TLS at your reverse proxy. It works over HTTP/1.1, but a few open tabs will exhaust the connection budget.
 
 **Events are hints, not payloads.** An event says *"this thread changed, re-read it"*; it never carries the message. Reading still goes through the API and its guards, so nothing bypasses Space or role permissions, and a subscriber that missed events while disconnected is correct again as soon as it re-reads.
 

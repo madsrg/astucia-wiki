@@ -105,7 +105,7 @@ assert_not_contains "and the keys are gone again" 'sk-shared-1111' "$(cat "$WIKI
 
 section 'an LLM call goes through the connection'
 r=$(cd "$WIKI_APP" && php -r '
-require "config.php"; require "ai_core.php";
+require_once "config.php"; require_once "ai_core.php";
 $u = json_decode(file_get_contents(WIKI_SYSTEM_DATA . "users.json"), true)["users"];
 $dot = array_values(array_filter($u, fn($x) => ($x["name"] ?? "") === "Dot"))[0];
 $r = _ai_quick_reply($dot, "s", "hi", 50);
@@ -113,7 +113,7 @@ echo $r["ok"] ? $r["reply"] : "ERR " . $r["error"];' 2>&1)
 assert_eq "the connection's key was sent"         'KEY=sk-gateway-3333' "$r"
 # Positive control for the fallback: an un-migrated record still works inline.
 r=$(cd "$WIKI_APP" && STUB="$STUB" php -r '
-require "config.php"; require "ai_core.php";
+require_once "config.php"; require_once "ai_core.php";
 $r = _ai_quick_reply(["name" => "Old", "ai_config" => ["provider" => "openai", "api_url" => getenv("STUB"),
                      "api_key" => "sk-inline-9", "model" => "m"]], "s", "hi", 50);
 echo $r["ok"] ? $r["reply"] : "ERR " . $r["error"];' 2>&1)

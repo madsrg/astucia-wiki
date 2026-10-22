@@ -313,6 +313,9 @@ export const processIncludes = async (content, processedIds = []) => {
  * indicator, since "this page has metadata" is otherwise a chip with no information in it.
  */
 export const updateFrontmatterBadge = () => {
+    // Whoever compares the block with something else (the tag area's sync notice) follows
+    // every change to it from here, rather than from each of the places that set it.
+    document.dispatchEvent(new CustomEvent('wiki:frontmatter'));
     const badge = document.getElementById('frontmatter-badge');
     if (!badge) return;
     const keys = Object.keys(state.currentPageFrontmatter || {});

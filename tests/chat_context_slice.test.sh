@@ -47,7 +47,7 @@ EOF
 
 section 'the slice itself'
 out=$(cd "$WIKI_APP" && php -r '
-require "config.php"; require "llm_providers.php"; require "ai_core.php";
+require_once "config.php"; require_once "llm_providers.php"; require_once "ai_core.php";
 $msgs = json_decode(file_get_contents(rtrim(PAGES_DIR,"/") . "/Main/Sales.chat"), true)["messages"];
 $msgs[] = ["id" => 7, "uid" => -9, "name" => "deepbot", "text" => "", "pending" => true, "job_id" => "j"];
 foreach (wiki_chat_context_slice($msgs, 10) as $m) echo $m["name"], "|", $m["text"], "\n";')
@@ -103,8 +103,8 @@ DEEPBODY nested page.'
 printf '%s' '{"messages":[],"nextMessageId":1}' > "$WIKI_PAGES/Main/Sub/Deep.chat"
 
 ctx=$(cd "$WIKI_APP" && php -r '
-require "config.php"; require "indexer.php"; require "llm_providers.php";
-require "wiki_ai_tools.php"; require "ai_core.php";
+require_once "config.php"; require_once "indexer.php"; require_once "llm_providers.php";
+require_once "wiki_ai_tools.php"; require_once "ai_core.php";
 $dir = rtrim(PAGES_DIR, "/") . "/Main";
 $one = fn($f) => str_replace("\n", " ", wiki_page_context_prompt($dir . "/" . $f, $dir));
 echo "PAGED=",  $one("Report.chat"), "\n";
@@ -129,7 +129,7 @@ section 'an age on every line'
 # from one three weeks old, and a long gap before the latest message is the strongest
 # available sign that the subject has changed.
 ages=$(cd "$WIKI_APP" && php -r '
-require "config.php"; require "llm_providers.php"; require "ai_core.php";
+require_once "config.php"; require_once "llm_providers.php"; require_once "ai_core.php";
 $now = strtotime("2026-06-01T12:00:00+00:00");
 $at  = fn($s) => date("c", strtotime($s, $now));
 $rows = [
@@ -161,7 +161,7 @@ assert_contains "  and so does a missing one"        'J=[]'            "$ages"
 
 section 'and the line that carries it'
 line=$(cd "$WIKI_APP" && php -r '
-require "config.php"; require "llm_providers.php"; require "ai_core.php";
+require_once "config.php"; require_once "llm_providers.php"; require_once "ai_core.php";
 $now = strtotime("2026-06-01T12:00:00+00:00");
 echo "WITH=",    wiki_chat_context_line(["name" => "Ann", "text" => "hello",
                      "timestamp" => date("c", strtotime("-2 days", $now))], $now), "\n";
@@ -179,8 +179,8 @@ assert_contains "the src: marker is stripped"   'SRC=Ann (just now): look at thi
 section 'the prompt says what the ages are for'
 # The labels are only evidence if something tells the model to weigh them.
 prompts=$(cd "$WIKI_APP" && php -r '
-require "config.php"; require "indexer.php"; require "llm_providers.php";
-require "wiki_ai_tools.php"; require "ai_core.php";
+require_once "config.php"; require_once "indexer.php"; require_once "llm_providers.php";
+require_once "wiki_ai_tools.php"; require_once "ai_core.php";
 echo "CHAT=", str_replace("\n", " ", wiki_chat_context_prompt("Main", "Sales", "")), "\n";
 echo "JOB=",  str_replace("\n", " ", wiki_job_context_prompt("Main", "", "Admin")), "\n";')
 assert_contains "the chat prompt warns of an unrelated topic" \

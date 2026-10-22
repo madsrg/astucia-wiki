@@ -165,7 +165,7 @@ if (isset($_REQUEST['action'])) {
         foreach ($entries as $e) {
             if ($e === '.' || $e === '..' || $e[0] === '.') continue;
             if (is_dir($root . '/' . $e)) return null;              // a Space already exists
-            if ($e === 'index.json' || $e === 'graph.json') continue; // sidecars, not content
+            if ($e === 'index.json' || $e === 'graph.json' || $e === WIKI_TAX_FILE) continue; // sidecars, not content
             if (in_array(strtolower(pathinfo($e, PATHINFO_EXTENSION)), PageIndexer::CONTENT_EXTS, true)) {
                 $has_root_content = true;
             }
@@ -207,6 +207,10 @@ if (isset($_REQUEST['action'])) {
         $path = str_replace('..', '', $path);
         $path = ltrim($path, '/');
         $abs  = $space_dir . '/' . $path;
+
+        // The wiki-wide taxonomy is at the root of PAGES_DIR, where a space-less request's
+        // paths resolve too. It is edited through the Taxonomy admin page and nowhere else.
+        if (wiki_tax_is_reserved($abs)) throw new Exception('That name is reserved for the taxonomy.');
 
         // The ?space= guard in the bootstrap covers the parameter; this covers the path.
         // With no ?space= the base is PAGES_DIR itself, so a *relative* path of
@@ -967,11 +971,11 @@ if (isset($_REQUEST['action'])) {
     $edit_actions  = ['save', 'create_file', 'save_message_page', 'create_folder', 'create_diagram', 'create_list', 'create_chat', 'create_search',
                       'post_chat_message', 'queue_agent_job', 'toggle_chat_debug', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'purge_chat_messages', 'set_chat_retention', 'toggle_sticky',
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
-                      'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags',
+                      'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags', 'sync_fm_tags',
                       'save_diagram_svg', 'upload_page', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
                       'retarget_wikilinks', 'set_frontmatter'];
     $admin_actions = ['admin_chat_retention', 'admin_frontmatter_settings', 'admin_mention_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
-                      'admin_set_space_fm_edit', 'admin_set_space_fm_autostamp', 'admin_set_space_memory',
+                      'admin_set_space_fm_edit', 'admin_set_space_fm_autostamp', 'admin_set_space_fm_tags_sync', 'admin_set_space_memory',
                       'admin_get_users', 'admin_save_users', 'admin_get_user_requests',
                       'admin_approve_request', 'admin_deny_request',
                       'admin_get_logs', 'admin_get_log_content',
@@ -991,7 +995,8 @@ if (isset($_REQUEST['action'])) {
                       'admin_get_workflow_runs', 'admin_test_workflow', 'admin_run_workflow',
                       'admin_realtime_status', 'admin_realtime_test',
                       'admin_audit_config', 'admin_set_audit_enabled', 'admin_get_audit_entries',
-                      'admin_ai_builtin_instructions', 'admin_space_settings', 'admin_set_space_readonly', 'admin_merge_space_preflight', 'admin_merge_space'];
+                      'admin_ai_builtin_instructions', 'admin_space_settings', 'admin_set_space_readonly', 'admin_merge_space_preflight', 'admin_merge_space', 'admin_delete_space',
+                      'admin_taxonomy', 'admin_taxonomy_mode', 'admin_taxonomy_node', 'admin_taxonomy_adopt', 'admin_taxonomy_import'];
     $requested_action = $_REQUEST['action'];
     $current_role     = get_current_role();
 
@@ -1037,6 +1042,22 @@ if (isset($_REQUEST['action'])) {
     // pending-message sweep in chat_messages (which would otherwise leave a
     // placeholder spinning forever) and the addPage() calls in list/get_start_page
     // that give an existing file an id.
+    // A `space` that no longer exists falls back to PAGES_DIR above, which for a read
+    // only shows the wrong tree but for a write puts content at the root — and a folder
+    // created there becomes a new Space. A browser left open on a space that another
+    // admin deleted (or renamed, or merged away) sends exactly that, so writes are
+    // refused instead.
+    if ($_sp !== '' && rtrim($space_dir, '/') === rtrim(PAGES_DIR, '/')
+        && in_array($requested_action, array_merge($edit_actions, ['toggle_reaction']), true)
+        && !in_array($requested_action, ['create_space', 'rename_space'], true)) {
+        echo json_encode([
+            'success'       => false,
+            'space_missing' => basename($_sp),
+            'message'       => 'The space "' . basename($_sp) . '" no longer exists. Reload to continue.',
+        ]);
+        exit;
+    }
+
     $readonly_actions = array_merge($edit_actions, ['toggle_reaction']);
     if (in_array($requested_action, $readonly_actions, true)
         && !in_array($requested_action, ['create_space', 'rename_space'], true)) {
@@ -1371,6 +1392,7 @@ if (isset($_REQUEST['action'])) {
                         if ($file[0] === '.') continue; // skip hidden files/dirs (.git, .gitignore, etc.)
                         // System sidecars at the space root (PageIndexer index + graph cache) are not content.
                         if ($dir === $base_dir && ($file === 'index.json' || $file === 'graph.json')) continue;
+                        if ($dir === rtrim(PAGES_DIR, '/') && $file === WIKI_TAX_FILE) continue;
 
                         $path = $dir . '/' . $file;
                         $is_dir = is_dir($path);
@@ -1451,9 +1473,8 @@ if (isset($_REQUEST['action'])) {
                         // …and which ones it must show but not let anyone edit, because
                         // the wiki rewrites them on the next save. Letting somebody type
                         // into a field that is about to be overwritten is a trap.
-                        if (wiki_space_dir_fm_autostamp($space_dir) === 'on') {
-                            $fm_managed_get = WIKI_FM_STAMP_KEYS;
-                        }
+                        // Stamping's four fields, and `tags` where the Space syncs them.
+                        $fm_managed_get = wiki_fm_managed_keys($space_dir);
                     }
                     if (in_array($ext_get, ['md', 'drawio'], true)) {
                         $git_commit = $indexer->getGitCommit($rel_get, true);
@@ -1958,7 +1979,7 @@ if (isset($_REQUEST['action'])) {
                 // draws them read-only; this is what makes that true, since a client-side
                 // rule is a hint and not a guard.
                 $fm_stamping = wiki_space_dir_fm_autostamp($space_dir) === 'on';
-                $fm_managed  = $fm_stamping ? array_map('strtolower', WIKI_FM_STAMP_KEYS) : [];
+                $fm_managed  = array_map('strtolower', wiki_fm_managed_keys($space_dir));
 
                 // Validation, because a typed value must not be able to break the block —
                 // a stray line break would put the rest of the value into the document as
@@ -2006,6 +2027,16 @@ if (isset($_REQUEST['action'])) {
                     if (preg_match('/[\r\n]/', $fm_v)) throw new Exception('A field value cannot contain a line break: ' . $fm_k);
                     if (strlen($fm_v) > 2000) throw new Exception('Field "' . $fm_k . '" is too long.');
                     $fm_clean[$fm_k] = $fm_v;
+                }
+                // A field bound to a branch of the taxonomy takes only that branch's items,
+                // spelled as the tree spells them (taxonomy.php).
+                foreach ($fm_clean as $fm_k => $fm_v) {
+                    try { $fm_clean[$fm_k] = wiki_tax_field_check((string)$fm_k, $fm_v); }
+                    catch (WikiTaxonomyException $e) {
+                        wiki_audit_finish($_audit, 'failure', $e->getMessage(), null, $_audit_space);
+                        echo json_encode(['success' => false, 'refused' => true, 'message' => $e->getMessage()]);
+                        exit;
+                    }
                 }
                 $fm_drop = [];
                 foreach ($fm_removals as $fm_r) {
@@ -2062,7 +2093,7 @@ if (isset($_REQUEST['action'])) {
                     'success'     => true,
                     'frontmatter' => wiki_fm_ordered(wiki_fm_split($fm_final)['meta']) ?: null,
                     'frontmatter_nested' => wiki_fm_nested_keys($fm_final) ?: null,
-                    'frontmatter_managed' => $fm_stamping ? WIKI_FM_STAMP_KEYS : null,
+                    'frontmatter_managed' => wiki_fm_managed_keys($space_dir) ?: null,
                     'lastUpdated' => filemtime($fm_path),
                     'size'        => strlen($fm_final),
                 ]);
@@ -2733,6 +2764,11 @@ if (isset($_REQUEST['action'])) {
             case 'get_pages_by_tag':
                 $tag = $_GET['tag'] ?? '';
                 $_gpt_all = !empty($_GET['all_spaces']);
+                // A term includes everything below it: `Finance` finds `Finance/Budget`.
+                $_gpt_hit = function ($tags) use ($tag): bool {
+                    foreach ((array)$tags as $t) if (wiki_tax_under((string)$t, (string)$tag)) return true;
+                    return false;
+                };
 
                 // Helper: extract header + preview lines from page content.
                 $extract_preview = function(string $content): array {
@@ -2755,7 +2791,7 @@ if (isset($_REQUEST['action'])) {
                     // Current space only.
                     $results = [];
                     foreach ($indexer->getAllPages() as $id => $data) {
-                        if (!isset($data['tags']) || !in_array($tag, $data['tags'])) continue;
+                        if (!isset($data['tags']) || !$_gpt_hit($data['tags'])) continue;
                         $abs = sanitize_path($data['path']);
                         if (!file_exists($abs)) continue;
                         [$hdr, $prv] = $extract_preview(file_get_contents($abs));
@@ -2781,7 +2817,7 @@ if (isset($_REQUEST['action'])) {
                         if (!file_exists($_gpt_dir . '/index.json')) continue;
                         $_gpt_idx = new PageIndexer($_gpt_dir);
                         foreach ($_gpt_idx->getAllPages() as $id => $data) {
-                            if (!isset($data['tags']) || !in_array($tag, $data['tags'])) continue;
+                            if (!isset($data['tags']) || !$_gpt_hit($data['tags'])) continue;
                             $abs = rtrim($_gpt_dir, '/') . '/' . ltrim($data['path'], '/');
                             if (!file_exists($abs)) continue;
                             [$hdr, $prv] = $extract_preview(file_get_contents($abs));
@@ -3004,7 +3040,7 @@ if (isset($_REQUEST['action'])) {
                 }
 
                 // ── Current wiki path ───────────────────────────────────────
-                $adv_data = wiki_search_pages($adv_parsed['text'], $indexer, $space_dir, $adv_parsed['days'], $adv_parsed['tags']);
+                $adv_data = wiki_search_pages($adv_parsed['text'], $indexer, $space_dir, $adv_parsed['days'], $adv_parsed['tags'], $adv_parsed['fields']);
                 echo json_encode(['success' => true, 'mode' => 'wiki', 'source' => _sidx_space(), 'data' => $adv_data]);
                 break;
 
@@ -3234,8 +3270,35 @@ if (isset($_REQUEST['action'])) {
             case 'update_tags':
                 $id = $_POST['id'];
                 $tags = json_decode($_POST['tags'], true);
-                if ($indexer->updateTags($id, $tags)) {
-                    echo json_encode(['success' => true, 'message' => 'Tags updated.']);
+                if (!is_array($tags)) throw new Exception('Tags must be a list.');
+                // The taxonomy may respell a tag or refuse one, so the stored list is
+                // returned for the client to show. A refusal is an answer, not a fault.
+                try {
+                    $_ut_ok = $indexer->updateTags($id, $tags);
+                } catch (WikiTaxonomyException $e) {
+                    wiki_audit_finish($_audit, 'failure', $e->getMessage(), null, $_audit_space);
+                    echo json_encode(['success' => false, 'refused' => true, 'message' => $e->getMessage(),
+                                      'tags' => $indexer->getTags($id)]);
+                    exit;
+                }
+                if ($_ut_ok) {
+                    $_ut_out = ['success' => true, 'message' => 'Tags updated.', 'tags' => $indexer->getTags($id)];
+                    // With front-matter sync on, the file changed too: hand back its size
+                    // (mtime is kept) and block, or the open-page watcher reloads the page
+                    // under the author and the Metadata panel describes the old block.
+                    $_ut_path = (string)($indexer->getPath($id) ?? '');
+                    if (strtolower(pathinfo($_ut_path, PATHINFO_EXTENSION)) === 'md') {
+                        $_ut_abs = sanitize_path($_ut_path);
+                        clearstatcache(true, $_ut_abs);
+                        if (is_file($_ut_abs)) {
+                            $_ut_raw = (string)file_get_contents($_ut_abs);
+                            $_ut_out += ['size' => strlen($_ut_raw), 'lastUpdated' => filemtime($_ut_abs),
+                                         'frontmatter' => wiki_fm_ordered(wiki_fm_split($_ut_raw)['meta']) ?: null,
+                                         'frontmatter_nested' => wiki_fm_nested_keys($_ut_raw) ?: null,
+                                         'frontmatter_managed' => wiki_fm_managed_keys($space_dir) ?: null];
+                        }
+                    }
+                    echo json_encode($_ut_out);
                 } else {
                     throw new Exception('Could not update tags.');
                 }
@@ -3323,8 +3386,7 @@ if (isset($_REQUEST['action'])) {
                         'size'        => $fm_size,
                         'frontmatter' => $fm_meta_out,
                         'frontmatter_nested' => $fm_nest_out,
-                        'frontmatter_managed' => ($ext_save === 'md'
-                            && wiki_space_dir_fm_autostamp($space_dir) === 'on') ? WIKI_FM_STAMP_KEYS : null,
+                        'frontmatter_managed' => $ext_save === 'md' ? (wiki_fm_managed_keys($space_dir) ?: null) : null,
                     ]);
                     if ($search_idx && in_array($ext_save, ['md', 'json'], true)) {
                         // Body only: front matter in the index would put YAML in every
@@ -3755,7 +3817,7 @@ if (isset($_REQUEST['action'])) {
                     $actor  = get_current_actor();
                     $new_id = $dest_indexer->addPage($new_path_rel, $actor['uid'], $actor['name']);
                     if ($new_id && !empty($source_tags)) {
-                        $dest_indexer->updateTags($new_id, $source_tags);
+                        $dest_indexer->updateTags($new_id, $source_tags, false);   // already accepted on the source
                     }
                     echo json_encode(['success' => true, 'message' => 'Page copied successfully.']);
                     if ($search_idx) {
@@ -4667,9 +4729,11 @@ if (isset($_REQUEST['action'])) {
                     fn($s) => wiki_space_fm_edit($s) === 'manual'));
                 $_ls_fm_stamp = array_values(array_filter($spaces_list,
                     fn($s) => wiki_space_fm_autostamp($s) === 'on'));
+                $_ls_fm_tags = array_values(array_filter($spaces_list,
+                    fn($s) => wiki_space_fm_tags_sync($s) === 'on'));
                 echo json_encode(['success' => true, 'data' => $spaces_list,
                                   'readonly' => $_ls_readonly, 'fm_edit' => $_ls_fm_edit,
-                                  'fm_autostamp' => $_ls_fm_stamp]);
+                                  'fm_autostamp' => $_ls_fm_stamp, 'fm_tags_sync' => $_ls_fm_tags]);
                 break;
 
             case 'get_all_tags':
@@ -4737,6 +4801,72 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true, 'data' => $_tc_result]);
                 break;
 
+            case 'get_taxonomy':
+                // The tree, the mode and how often each term is used — counted only in the
+                // Spaces this actor may see. The tree itself is wiki-wide by design.
+                $_tx_allowed = AUTHENTICATION_ENABLED ? actor_spaces_filter(get_current_role(), $ai_auth_user) : null;
+                $_tx_counts = [];
+                foreach (wiki_tax_usage($_tx_allowed) as $_tx_lc => $_tx_u) $_tx_counts[$_tx_lc] = $_tx_u['count'];
+                echo json_encode(['success' => true, 'mode' => wiki_tax_mode(), 'nodes' => wiki_tax_nodes(),
+                                  'counts' => (object)$_tx_counts]);
+                break;
+
+            case 'admin_taxonomy':
+                $_tx_counts = [];
+                foreach (wiki_tax_usage() as $_tx_lc => $_tx_u) $_tx_counts[$_tx_lc] = $_tx_u['count'];
+                echo json_encode(['success' => true, 'mode' => wiki_tax_mode(), 'nodes' => wiki_tax_nodes(),
+                                  'counts' => (object)$_tx_counts, 'unclassified' => wiki_tax_unclassified(),
+                                  // Pages using each value of each bound field, from the blocks.
+                                  'field_counts' => (object)wiki_tax_field_usage(),
+                                  // Folders inside an item, from before that was refused.
+                                  'misplaced' => wiki_tax_misplaced_folders()]);
+                break;
+
+            case 'admin_taxonomy_mode':
+                $_tx_mode = (string)($_POST['mode'] ?? '');
+                if (!in_array($_tx_mode, WIKI_TAX_MODES, true)) throw new Exception('Unknown mode.');
+                if (!wiki_setting_set('taxonomy_mode', $_tx_mode)) {
+                    throw new Exception('Could not save the setting — is WIKI_SYSTEM_DATA writable?');
+                }
+                echo json_encode(['success' => true, 'mode' => $_tx_mode]);
+                break;
+
+            case 'admin_taxonomy_node':
+                @set_time_limit(300);   // a rename rewrites the tags of every Space
+                try {
+                    $_tx_res = wiki_tax_op((string)($_POST['op'] ?? ''), $_POST);
+                } catch (WikiTaxonomyException $e) {
+                    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+                    break;
+                }
+                echo json_encode(['success' => true, 'rewritten' => $_tx_res['rewritten'], 'nodes' => wiki_tax_nodes()]);
+                break;
+
+            case 'admin_taxonomy_adopt':
+                try { $_tx_n = wiki_tax_adopt(); }
+                catch (WikiTaxonomyException $e) { echo json_encode(['success' => false, 'message' => $e->getMessage()]); break; }
+                echo json_encode(['success' => true, 'added' => $_tx_n]);
+                break;
+
+            case 'admin_taxonomy_import':
+                // Two passes, like a space merge: dry_run validates and reports what the
+                // import would do, and only a second request replaces the tree.
+                $_tx_chk = wiki_tax_import_check((string)($_POST['data'] ?? ''));
+                $_tx_out = ['terms' => $_tx_chk['terms'], 'errors' => $_tx_chk['errors'],
+                            'unclassified' => $_tx_chk['unclassified'], 'current' => count(wiki_tax_index())];
+                if ($_tx_chk['errors']) {
+                    echo json_encode(['success' => false, 'message' => 'The file is not a valid taxonomy.'] + $_tx_out);
+                    break;
+                }
+                if (!empty($_POST['dry_run'])) {
+                    echo json_encode(['success' => true, 'dry_run' => true] + $_tx_out);
+                    break;
+                }
+                try { wiki_tax_import($_tx_chk['nodes']); }
+                catch (WikiTaxonomyException $e) { echo json_encode(['success' => false, 'message' => $e->getMessage()]); break; }
+                echo json_encode(['success' => true] + $_tx_out);
+                break;
+
             case 'rename_space':
                 $rs_old = trim($_POST['old_name'] ?? '');
                 $rs_new = trim($_POST['new_name'] ?? '');
@@ -4745,6 +4875,7 @@ if (isset($_REQUEST['action'])) {
                 $rs_safe_new = basename($rs_new);
                 if ($rs_safe_old !== $rs_old || $rs_safe_new !== $rs_new) throw new Exception('Invalid characters in space name.');
                 if ($rs_safe_new[0] === '.') throw new Exception('Space name cannot start with a dot.');
+                if ($rs_safe_new === WIKI_TAX_FILE) throw new Exception('That name is reserved for the taxonomy.');
                 if ($rs_safe_old === $rs_safe_new) { echo json_encode(['success' => true]); break; }
                 $rs_old_dir = PAGES_DIR . '/' . $rs_safe_old;
                 $rs_new_dir = PAGES_DIR . '/' . $rs_safe_new;
@@ -4792,6 +4923,7 @@ if (isset($_REQUEST['action'])) {
                 $safe_space_name = basename($new_space_name);
                 if ($safe_space_name !== $new_space_name) throw new Exception('Invalid characters in space name.');
                 if ($safe_space_name[0] === '.') throw new Exception('Space name cannot start with a dot.');
+                if ($safe_space_name === WIKI_TAX_FILE) throw new Exception('That name is reserved for the taxonomy.');
                 $new_space_dir = PAGES_DIR . '/' . $safe_space_name;
                 if (is_dir($new_space_dir)) throw new Exception('A space with that name already exists.');
                 // Chosen in the same dialog as the name. Validated before anything is
@@ -4800,12 +4932,15 @@ if (isset($_REQUEST['action'])) {
                 $cs_stamp = trim($_POST['fm_autostamp'] ?? 'off');
                 if ($cs_fm !== 'off' && !in_array($cs_fm, WIKI_FM_EDIT_MODES, true)) throw new Exception('Unknown metadata mode.');
                 if ($cs_stamp !== 'off' && !in_array($cs_stamp, WIKI_FM_AUTOSTAMP_MODES, true)) throw new Exception('Unknown stamping mode.');
+                $cs_tags  = trim($_POST['fm_tags_sync'] ?? 'off');
+                if (!in_array($cs_tags, ['off', 'on'], true)) throw new Exception('Unknown front-matter tags mode.');
                 if (!mkdir($new_space_dir, 0755)) throw new Exception('Could not create space directory.');
                 // Saved before the scaffold, which reads them: with stamping on, the start
                 // page is stamped as it is written. 'off' writes nothing, so a Space
                 // created with the defaults has no record in spaces.json at all.
                 if ($cs_fm !== 'off')    wiki_space_set_fm_edit($safe_space_name, $cs_fm);
                 if ($cs_stamp !== 'off') wiki_space_set_fm_autostamp($safe_space_name, $cs_stamp);
+                if ($cs_tags !== 'off')  wiki_space_set_fm_tags_sync($safe_space_name, $cs_tags);
                 // AI memory, the third choice in the dialog. Only the setting: the memory/
                 // folder is created by the first remembered fact, as admin_set_space_memory
                 // documents, so a Space that never learns anything never shows one.
@@ -4816,6 +4951,7 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true,
                                   'fm_edit' => wiki_space_fm_edit($safe_space_name),
                                   'fm_autostamp' => wiki_space_fm_autostamp($safe_space_name),
+                                  'fm_tags_sync' => wiki_space_fm_tags_sync($safe_space_name),
                                   'memory' => wiki_space_memory($safe_space_name)]);
                 break;
 
@@ -4851,6 +4987,49 @@ if (isset($_REQUEST['action'])) {
                         fn($t) => ['name' => $t['name'], 'description' => $t['description']],
                         wiki_tool_definitions($bi_mem)),
                 ]);
+                break;
+
+            case 'admin_set_space_fm_tags_sync':
+                $sts_name = basename(trim($_POST['space_name'] ?? ''));
+                $sts_mode = trim($_POST['mode'] ?? 'off');
+                if ($sts_name === '' || !is_dir(PAGES_DIR . '/' . $sts_name)) throw new Exception('No such space.');
+                if (!in_array($sts_mode, ['off', 'on'], true)) throw new Exception('Unknown mode.');
+                if (!wiki_space_set_fm_tags_sync($sts_name, $sts_mode)) {
+                    throw new Exception('Could not save the setting — is WIKI_SYSTEM_DATA writable?');
+                }
+                wiki_audit_log('update', 'success', ['object' => 'spaces.json',
+                    'object_type' => 'setting', 'change_type' => 'frontmatter_tags_sync',
+                    'object_category' => 'settings', 'value' => $sts_name . '=' . $sts_mode]);
+                echo json_encode(['success' => true, 'space' => $sts_name, 'mode' => $sts_mode]);
+                break;
+
+            case 'sync_fm_tags':
+                // The notice's "write to front matter": put the page's tags that its block
+                // lacks into the block. Additive only — the block's own extra tags are the
+                // other half of the notice, and only the person can decide about those.
+                $sft_rel = ltrim(str_replace('..', '', (string)($_POST['file'] ?? '')), '/');
+                $sft_abs = sanitize_path($sft_rel);
+                if (strtolower(pathinfo($sft_rel, PATHINFO_EXTENSION)) !== 'md' || !is_file($sft_abs)) {
+                    throw new Exception('Not a Markdown page.');
+                }
+                if (wiki_space_dir_fm_tags_sync($space_dir) !== 'on') {
+                    throw new Exception('This Space does not keep tags in front matter.');
+                }
+                $sft_id = $indexer->getId($sft_rel);
+                if ($sft_id === null) throw new Exception('Page not found in the index.');
+                wiki_fm_tags_apply($sft_abs, $indexer->getTags($sft_id), []);
+                clearstatcache(true, $sft_abs);
+                $sft_raw = (string)file_get_contents($sft_abs);
+                if ($indexer->getGitCommit($sft_rel, true)) {
+                    $sft_actor = get_current_actor();
+                    git_auto_commit($sft_abs, $sft_actor['name'] ?? 'Wiki',
+                        (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost',
+                        'Tags: ' . $sft_rel);
+                }
+                echo json_encode(['success' => true, 'size' => strlen($sft_raw), 'lastUpdated' => filemtime($sft_abs),
+                                  'frontmatter' => wiki_fm_ordered(wiki_fm_split($sft_raw)['meta']) ?: null,
+                                  'frontmatter_nested' => wiki_fm_nested_keys($sft_raw) ?: null,
+                                  'frontmatter_managed' => wiki_fm_managed_keys($space_dir) ?: null]);
                 break;
 
             case 'admin_set_space_fm_autostamp':
@@ -4912,6 +5091,7 @@ if (isset($_REQUEST['action'])) {
                         'readonly' => wiki_space_is_readonly($ss_f),
                         'fm_edit'  => wiki_space_fm_edit($ss_f),
                         'fm_autostamp' => wiki_space_fm_autostamp($ss_f),
+                        'fm_tags_sync' => wiki_space_fm_tags_sync($ss_f),
                         'memory'   => wiki_space_memory($ss_f),
                         // So the dialog can say how much is in there without a second call.
                         'memories' => is_dir($ss_dir . '/' . WIKI_MEMORY_DIR)
@@ -4986,6 +5166,24 @@ if (isset($_REQUEST['action'])) {
                     ? $_SESSION['user']['email'] : 'wiki@localhost';
                 $ms_plan = space_merge_plan($ms_src, $ms_tgt);
                 echo json_encode(space_merge_execute($ms_src, $ms_tgt, $ms_plan, $search_idx, $ms_actor));
+                break;
+
+            case 'admin_delete_space':
+                // Soft delete: the folder moves to WIKI_SYSTEM_DATA/deleted_spaces/.
+                // The dialog makes the admin type the name; the server checks it too,
+                // so a request that did not come from that dialog has to as well.
+                require_once __DIR__ . '/space_delete.php';
+                @set_time_limit(600);
+                $ds_name    = trim($_POST['name'] ?? '');
+                $ds_confirm = trim($_POST['confirm'] ?? '');
+                if ($ds_name === '' || $ds_confirm !== $ds_name) {
+                    echo json_encode(['success' => false, 'blocked' => 'confirm-mismatch']);
+                    break;
+                }
+                $ds_actor = get_current_actor();
+                $ds_actor['email'] = (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email']))
+                    ? $_SESSION['user']['email'] : 'wiki@localhost';
+                echo json_encode(space_delete_execute($ds_name, $search_idx, $ds_actor));
                 break;
 
             case 'admin_get_ai_users':

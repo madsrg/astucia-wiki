@@ -2,7 +2,8 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { state } from '../core/state.js';
-import { insertMarkdown, insertBlock, insertSmart, insertHeading, prependLines, deleteCurrentLine } from './editor.js';
+import { insertMarkdown, insertBlock, insertSmart, insertHeading, prependLines, deleteCurrentLine, insertTyped } from './editor.js';
+import { EMOJIS } from '../core/emojis.js';
 import { openIncludeLightbox, openImageLightbox, openDiagramInsertLightbox, openListInsertLightbox } from './insert_media.js';
 import { openCommentLightbox } from './insert_comment.js';
 import { openLinkLightbox, openExternalLinkLightbox } from './link_lightbox.js';
@@ -211,6 +212,50 @@ export const createEditorToolbar = () => {
         t('tb.code'),
         () => insertSmart(hk('alt+c').prefix, hk('alt+c').suffix)
     );
+
+    // ── Emoji ───────────────────────────────────────────────────────────────
+    // The chat composers' grid, inserting the character itself rather than a `:smile:`
+    // shortcode — neither marked nor the static export's Parsedown would render one, and a
+    // real character reads the same in Obsidian, on GitHub and in a git diff. Not on the
+    // mobile toolbar: a phone keyboard has its own emoji picker.
+    {
+        const wrap = document.createElement('div');
+        wrap.className = 'dropdown-container toolbar-emoji';
+        const btn = addBtn(
+            svg('<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>'),
+            t('tb.emoji'),
+            () => {
+                const open = !picker.classList.contains('hidden');
+                closeAllDropdowns();
+                if (!open) picker.classList.remove('hidden');
+            }
+        );
+        btn.id = 'editor-emoji-btn';
+        const picker = document.createElement('div');
+        picker.id = 'editor-emoji-picker';
+        picker.className = 'chat-emoji-picker toolbar-emoji-picker hidden';
+        allDropdowns.push(picker);
+        EMOJIS.forEach(e => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'chat-emoji-item';
+            item.textContent = e;
+            // Keeps the caret where it was: focus never leaves the textarea.
+            item.addEventListener('mousedown', ev => ev.preventDefault());
+            item.addEventListener('click', ev => {
+                ev.preventDefault();
+                picker.classList.add('hidden');
+                insertTyped(e);
+            });
+            picker.appendChild(item);
+        });
+        // The button's click would otherwise reach the document listener and close the
+        // picker it just opened.
+        btn.addEventListener('click', ev => ev.stopPropagation());
+        wrap.appendChild(btn);
+        wrap.appendChild(picker);
+        toolbar.appendChild(wrap);
+    }
 
     // ── Lists ───────────────────────────────────────────────────────────────
     addBtn(

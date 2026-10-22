@@ -45,6 +45,11 @@ tools/
 .gitignore
 .gitattributes
 CLAUDE.md
+# Claude Code's design notes and local settings, and local backups. Never read by the
+# wiki; images up to 2026.10.4 shipped .claude/ in /var/www/html (unreachable over the
+# web, since nginx refuses dot-paths, but readable by anyone who pulls the image).
+.claude/
+*.bak
 node_modules
 *.log
 .DS_Store

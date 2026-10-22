@@ -62,6 +62,19 @@ const replaceRange = (ed, start, end, text) => {
 };
 
 /**
+ * Insert text at the caret (replacing any selection) as though it had been typed, so
+ * Ctrl+Z takes it back out. For the emoji picker: a misclicked emoji is exactly the thing
+ * someone reaches for undo to remove, and setRangeText would have wiped the undo history.
+ */
+export const insertTyped = (text) => {
+    const ed = getEditor();
+    if (!ed || !text) return;
+    if (!replaceRange(ed, ed.selectionStart, ed.selectionEnd, text)) {
+        ed.dispatchEvent(new Event('input'));
+    }
+};
+
+/**
  * Indent (Tab) or outdent (Shift+Tab) whatever the selection touches.
  *
  * A caret, or a selection inside a single line, indents like typing a character. Anything

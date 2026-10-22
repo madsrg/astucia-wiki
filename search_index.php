@@ -300,6 +300,7 @@ class SearchIndex {
             if ($item === '.' || $item === '..' || $item[0] === '.') continue;
             // System sidecars at the space root (PageIndexer index + graph cache) are not content.
             if ($dir === $base && ($item === 'index.json' || $item === 'graph.json')) continue;
+            if ($dir === rtrim(PAGES_DIR, '/') && $item === 'taxonomy.json') continue;   // the wiki's taxonomy, not a page
             $full = $dir . '/' . $item;
             if (is_dir($full)) {
                 if (str_ends_with($item, '.uploads') || $item === 'templates') continue;

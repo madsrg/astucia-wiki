@@ -11,6 +11,8 @@ require_once __DIR__ . '/llm_providers.php';
 require_once __DIR__ . '/llm_connections.php';   // wiki_ai_effective_config()
 require_once __DIR__ . '/frontmatter.php';
 require_once __DIR__ . '/memory.php';
+require_once __DIR__ . '/space_settings.php';
+require_once __DIR__ . '/taxonomy.php';   // wiki_space_rules_prompt() describes it
 require_once __DIR__ . '/wiki_ai_tools.php';
 require_once __DIR__ . '/llm_trace.php';
 
@@ -395,6 +397,64 @@ function wiki_memory_prompt(string $space_dir, $indexer, array $ai_config): stri
         . wiki_memory_index_prompt($indexer);
 }
 
+/** Cap on the allowed values listed per bound field in the prompt; beyond it, the tool. */
+const WIKI_AI_PROMPT_FIELD_VALUES = 25;
+
+/**
+ * What an AI should know about how *this* Space and the wiki's taxonomy behave before it
+ * writes: tagging, the front-matter fields the wiki maintains or constrains, a frozen Space.
+ * Built from the live settings on every request, and each part only when it applies — a
+ * Space with none of them adds nothing to the prompt.
+ *
+ * Without it the AI learnt these rules by breaking them: a controlled-mode tag refused, a
+ * `tags:` written into a block in a Space that syncs it (bypassing the tags and raising
+ * the "front matter disagrees" notice), a `created:` the wiki overwrites, a field value
+ * outside its folder, a write into a frozen Space.
+ */
+function wiki_space_rules_prompt(string $space_dir): string {
+    $lines = [];
+    $has_space = $space_dir !== '' && rtrim($space_dir, '/') !== rtrim(PAGES_DIR, '/');
+
+    if ($has_space && wiki_space_dir_is_readonly($space_dir)) {
+        $lines[] = 'This space is read-only: you can read and search it, but nothing in it can be created, changed, tagged or deleted — say so rather than trying.';
+    }
+
+    $mode = wiki_tax_mode();
+    if (wiki_tax_nodes() || $mode !== 'free') {
+        $how = [
+            'free'       => 'a tag that is not in it yet is added to it',
+            'suggest'    => 'prefer existing terms; a new tag is added to it',
+            'controlled' => 'only its items can be used — anything else is refused',
+        ][$mode];
+        $lines[] = 'Tags come from the wiki\'s taxonomy, a shared tree; a tag is an item\'s path such as "Department/Finance" (' . $how
+            . '). Call wiki_get_taxonomy before tagging, and set tags with wiki_add_tags or wiki_set_tags — never by writing them into page text.';
+    }
+
+    if ($has_space && wiki_space_dir_fm_tags_sync($space_dir) === 'on') {
+        $lines[] = 'In this space a page\'s "tags:" in its front matter follows its tags automatically. Change tags only with the tag tools; do not write or edit "tags:" in front matter.';
+    }
+    if ($has_space && wiki_space_dir_fm_autostamp($space_dir) === 'on') {
+        $lines[] = 'In this space the wiki maintains created, createdBy, updated and updatedBy in each page\'s front matter. Do not write those fields.';
+    }
+
+    $fields = wiki_tax_fields();
+    if ($fields) {
+        $parts = [];
+        foreach ($fields as $f) {
+            $vals = array_column($f['values'], 'value');
+            $shown = array_slice($vals, 0, WIKI_AI_PROMPT_FIELD_VALUES);
+            $more = count($vals) - count($shown);
+            $parts[] = '"' . $f['field'] . '" (' . ($f['multiple'] ? 'one or more of' : 'one of') . ': '
+                . ($shown ? implode(', ', $shown) : 'no values yet')
+                . ($more > 0 ? ', and ' . $more . ' more — see wiki_get_taxonomy' : '') . ')';
+        }
+        $lines[] = 'These front-matter fields take fixed values from the taxonomy — write the plain value, exactly as listed: '
+            . implode('; ', $parts) . '. A value outside its list is refused.';
+    }
+
+    return $lines ? implode("\n", $lines) . "\n" : '';
+}
+
 function wiki_chat_context_prompt(string $space_name, string $chat_name, string $chat_dir_rel,
                                   string $space_dir = '', $indexer = null, array $ai_config = []): string {
     return wiki_memory_prompt($space_dir, $indexer, $ai_config)
@@ -407,6 +467,7 @@ function wiki_chat_context_prompt(string $space_name, string $chat_name, string 
         . "When calling wiki_write_page you MUST include the complete markdown content in the \"content\" field in the same tool call — never call it with an empty or missing content field. "
         . "When the user asks you to create or modify wiki content, call the appropriate tool immediately — do not describe what you are about to do before doing it. "
         . "Only invoke tools when the user's request actually requires wiki content. "
+        . wiki_space_rules_prompt($space_dir)
         . wiki_markdown_features_prompt()
         . wiki_mentions_prompt()
         . "When writing internal links to other wiki pages, use the Markdown syntax [Page Title](?pageid=ID&space=SPACE) "
@@ -430,6 +491,7 @@ function wiki_job_context_prompt(string $space_name, string $dir_rel, string $re
         . "Use wiki_list_pages to discover pages, wiki_read_page to read content, "
         . "and wiki_write_page to create or update .md pages. "
         . "When calling wiki_write_page you MUST include the complete markdown content in the \"content\" field. "
+        . wiki_space_rules_prompt($space_dir)
         . wiki_markdown_features_prompt()
         . wiki_mentions_prompt()
         . "Proceed with tasks directly using tools — do not describe what you are about to do before doing it.\n\n";

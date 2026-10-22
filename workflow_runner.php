@@ -268,6 +268,8 @@ function wiki_wf_do_action(array $a, array $ctx, string &$log): array {
             }
             $raw = (string)file_get_contents($abs);
             $value = wiki_wf_render((string)$a['value'], $vars);
+            // A rendered template may name something the field does not allow.
+            if ($value !== '') $value = (string)wiki_tax_field_check((string)$a['field'], $value);
             $new = $value === '' ? wiki_fm_set($raw, [], [$a['field']]) : wiki_fm_set($raw, [$a['field'] => $value]);
             if ($new === $raw) return ['status' => 'ok', 'detail' => 'The field already had that value.'];
             if (file_put_contents($abs, $new) === false) throw new Exception('Could not write the page.');

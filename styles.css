@@ -303,6 +303,22 @@ body {
 .audit-via     { font-size: 0.68rem; padding: 0.1em 0.45em; border-radius: 4px; background: #edf2f7; color: var(--accent-gray); }
 .audit-reason  { color: var(--accent-danger); font-size: 0.75rem; }
 
+/* New Space. Four settings with a hint each now (metadata, stamping, tags in front matter,
+   AI memory), so it is wider — the hints wrap onto fewer lines — and its body scrolls:
+   measured at four settings it needed ~680px, and in a 700px window the 80vh cap left the
+   Create button 100px below the screen, unreachable. The name and the buttons stay put and
+   only the settings scroll, the same fix the Space settings dialog got. Content-keyed like
+   the variants around it. */
+#confirm-modal .input-modal-content:has(.new-space-form) { max-width: 640px; max-height: 85vh; }
+#confirm-modal .input-modal-content:has(.new-space-form) .confirm-modal-message {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.25rem;
+}
+/* AI memory's heading is a span (its control is a checkbox with its own label), so it took
+   none of the label styling its three neighbours have — while the checkbox's label, caught
+   by `.form-group label`, was bold. The heading reads as the others do; the choice as text. */
+.new-space-form .form-group > span.form-label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+.new-space-form .form-group label.space-settings-switch-row { font-weight: normal; }
+
 /* /jobs overview — reuses the /aiUsers table, plus state pills and a log viewer. */
 /* Wider and taller than the /aiUsers dialog it shares a class with: a job row carries a
    free-text prompt and a path, where an AI user row carries short fixed fields. Height is
@@ -591,6 +607,8 @@ body {
     font-weight: bold;
 }
 .toolbar-icon-btn { min-width: 28px; padding: 4px 5px !important; display: inline-flex; align-items: center; justify-content: center; }
+/* The editor toolbar's emoji grid: the chat picker, opening downward from its button. */
+.toolbar-emoji-picker { top: calc(100% + 4px); bottom: auto; left: 0; }
 .toolbar-btn-danger { color: #e53e3e !important; border-color: #fed7d7 !important; }
 .toolbar-btn-danger:hover { background: #fff5f5 !important; color: #c53030 !important; border-color: #fc8181 !important; }
 .editor-help-dropdown { min-width: 210px !important; right: 0; left: auto; }
@@ -659,7 +677,115 @@ body {
 .tag { background-color: var(--accent-blue); color: white; padding: 4px 8px; border-radius: 12px; font-size: 0.8rem; display: flex; align-items: center; }
 .tag button { background: none; border: none; color: white; margin-left: 6px; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0; }
 .tag-input-wrap { position: relative; display: inline-block; }
-#tag-input { border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 8px; width: 200px; font-family: 'JetBrains Mono', monospace; }
+/* The front-matter tag sync notice: the page's tags and its block disagree. */
+.tags-fm-notice { margin-top: 0.6rem; padding: 0.5rem 0.75rem; background: #fffbea; border: 1px solid #f6e05e; border-radius: 6px; font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.tags-fm-line { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.tags-fm-ignore { align-self: flex-start; background: none; border: none; padding: 0; color: var(--accent-gray); text-decoration: underline; cursor: pointer; font-size: 0.8rem; }
+/* Opens the taxonomy tree beside the type-ahead field, on the same line and the same
+   height (the field renders 29px). By id, because a later button rule sets
+   `display: flex`, which put it on a line of its own below the field. The reader and
+   mobile hide rules are !important, so they still win. */
+#tag-picker-btn { display: inline-flex; align-items: center; vertical-align: top; box-sizing: border-box; height: 29px; margin: 0 0 0 4px; padding: 0 8px; }
+
+/* The tag picker: 80% of the window in each direction, as asked. Both classes, so
+   specificity rather than sheet order beats .lightbox-content (the Space settings trap),
+   and border-box so 80vw means 80vw. min-height: 0 on the body is what lets it scroll. */
+.lightbox-content.tag-picker-content { box-sizing: border-box; width: 80vw; max-width: 80vw; height: 80vh; max-height: 80vh; }
+.tag-picker-search { margin: 0.75rem 0 0.5rem; }
+.tag-picker-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.75rem; }
+.tag-picker-tree, .tag-picker-tree ul { list-style: none; margin: 0; padding: 0; }
+.tag-picker-tree ul { padding-left: 1.4rem; }
+.tag-picker-line { display: flex; align-items: center; gap: 0.15rem; min-height: 1.9rem; }
+.tag-picker-twisty { width: 1.3rem; flex: none; border: none; background: none; cursor: pointer; color: var(--accent-gray); font-size: 0.8rem; padding: 0; }
+.tag-picker-twisty.is-leaf { cursor: default; }
+.tag-picker-row { display: flex; align-items: center; gap: 0.45rem; flex: 1; min-width: 0; padding: 0.15rem 0.35rem; border-radius: 4px; cursor: pointer; }
+.tag-picker-row:hover { background: #f0f4f8; }
+.tag-picker-row input { margin: 0; flex: none; }
+.tag-picker-name { white-space: nowrap; }
+.tag-picker-heading { font-weight: 600; padding: 0.15rem 0.35rem; display: inline-flex; align-items: center; gap: 0.35rem; }
+.tag-picker-icon { display: inline-flex; flex: none; }
+.tag-picker-icon svg { width: 15px; height: 15px; }
+.tag-picker-n { font-size: 0.7rem; color: var(--accent-gray); background: #edf2f7; border-radius: 8px; padding: 0 0.45em; flex: none; }
+.tag-picker-desc { font-size: 0.78rem; color: var(--accent-gray); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tag-picker-add { margin-bottom: 0.5rem; }
+.tag-picker-empty { color: var(--accent-gray); font-size: 0.85rem; }
+.tag-picker-extras { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px dashed var(--border-color); }
+.tag-picker-extras h4 { margin: 0 0 0.35rem; font-size: 0.8rem; color: var(--accent-gray); font-weight: 600; }
+.tag-picker-footer { align-items: center; }
+.tag-picker-count { margin-right: auto; font-size: 0.85rem; color: var(--accent-gray); }
+
+/* Admin → Content → Taxonomy: a tree editor — one toolbar acting on the selection, the
+   tree on the left, the selected node's details on the right. */
+.admin-taxonomy-body { padding: 0.75rem 0; }
+.admin-taxonomy-body .tax-mode { max-width: 560px; }
+/* Half the width it had (502px), as asked: three short options do not need a long box. */
+#admin-tax-mode { flex: 0 0 251px; }
+.tax-launch-row { display: flex; align-items: center; gap: 0.75rem; margin: 1rem 0 0.75rem; }
+.tax-summary { font-size: 0.85rem; color: var(--accent-gray); }
+/* The editor's own lightbox: 80% of the window each way. Both classes, so specificity
+   rather than sheet order beats .lightbox-content, and border-box so 80vw means 80vw. The
+   tree and the details panel take the height that is left and scroll inside it. */
+.lightbox-content.tax-editor-content { box-sizing: border-box; width: 80vw; max-width: 80vw; height: 80vh; max-height: 80vh; }
+.tax-editor-content .tax-toolbar { margin-top: 0.75rem; }
+.tax-editor-content .tax-split { flex: 1 1 auto; min-height: 0; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+.tax-editor-content .tax-tree { max-height: none; height: 100%; box-sizing: border-box; }
+.tax-editor-content .tax-details { overflow-y: auto; box-sizing: border-box; }
+/* The folders-and-items tree a size more compact than the rest of the dialog (asked for):
+   smaller type, less padding and indent, slightly smaller icons. 32px rows became 26px. */
+.tax-tree { font-size: 0.92em; }
+.tax-tree .tax-row { min-height: 1.6rem; padding-top: 0.05rem; padding-bottom: 0.05rem; gap: 0.3rem; }
+.tax-tree .tax-icon svg { width: 14px; height: 14px; }
+.tax-tree .tax-twisty { width: 0.9rem; }
+/* The details panel's labels at the tree's size (13.5px). The four field labels are bold
+   — "Type" too, which as a <span> had missed the label rule — and the choices under them
+   (Folder, Item, Allow several values) are plain, since `.form-group label` made them
+   bold as well and they read as headings. */
+.tax-details .form-group > .form-label { display: block; font-size: 0.92em; font-weight: bold; margin-bottom: 0.35rem; }
+.tax-details .form-group label.tax-type { font-size: 0.92em; font-weight: normal; margin-bottom: 0; }
+.tax-toolbar { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; margin: 1rem 0 0.5rem; }
+.tax-tb-btn { display: inline-flex; align-items: center; gap: 0.35rem; }
+.tax-tb-btn svg { width: 14px; height: 14px; flex: none; }
+.tax-tb-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.tax-tb-sep { width: 1px; align-self: stretch; background: var(--border-color); margin: 0 0.25rem; }
+.tax-tb-right { margin-left: auto; display: flex; gap: 0.35rem; }
+.tax-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(240px, 2fr); gap: 1rem; align-items: start; }
+.tax-tree { border: 1px solid var(--border-color); border-radius: 6px; padding: 0.25rem 0; min-height: 12rem; max-height: 55vh; overflow-y: auto; outline: none; }
+.tax-tree:focus-visible { border-color: var(--accent-blue); }
+.tax-row { display: flex; align-items: center; gap: 0.35rem; padding: 0.15rem 0.5rem; min-height: 1.9rem; cursor: pointer; user-select: none; }
+.tax-row:hover { background: #f7fafc; }
+.tax-row.is-selected { background: #dbeafe; }
+.tax-row.is-drop-target { outline: 2px dashed var(--accent-blue); outline-offset: -2px; background: #ebf8ff; }
+.tax-row.is-dragging { opacity: 0.5; }
+.tax-row.is-misplaced .tax-name { text-decoration: underline wavy #d69e2e; }
+.tax-misplaced { font-size: 0.82rem; background: #fffbea; border: 1px solid #f6e05e; border-radius: 6px; padding: 0.4rem 0.75rem; margin: 0 0 0.5rem; }
+.tax-twisty { width: 1rem; flex: none; text-align: center; color: var(--accent-gray); font-size: 0.75rem; }
+.tax-icon { display: inline-flex; flex: none; }
+.tax-icon svg { width: 16px; height: 16px; }
+.tax-row.is-folder .tax-name { font-weight: 600; }
+.tax-count { font-size: 0.7rem; color: var(--accent-gray); background: #edf2f7; border-radius: 8px; padding: 0 0.45em; }
+.tax-rename { font: inherit; padding: 0.1rem 0.3rem; border: 1px solid var(--accent-blue); border-radius: 3px; min-width: 12rem; }
+.tax-empty { color: var(--accent-gray); padding: 0.75rem; margin: 0; }
+.tax-details { border: 1px solid var(--border-color); border-radius: 6px; padding: 0.75rem 1rem; }
+.tax-details-empty { color: var(--accent-gray); margin: 0; }
+.tax-details-head { display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.75rem; }
+.tax-details-path { font-size: 0.85rem; word-break: break-all; }
+.tax-type-row { display: flex; gap: 1.25rem; }
+.tax-type { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
+.tax-usage { font-size: 0.8rem; color: var(--accent-gray); margin: 0.25rem 0; }
+.tax-multi { margin-top: 0.4rem; }
+/* A node bound to a front-matter field: its items are that field's values. */
+.tax-field-chip { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: #2c5282; background: #ebf8ff; border: 1px solid #bee3f8; border-radius: 4px; padding: 0 0.35em; }
+.tax-details textarea { resize: vertical; }
+.tax-unclassified { margin-top: 1.5rem; }
+.tax-unclassified h4 { margin: 0 0 0.25rem; }
+.tax-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.5rem 0 0.75rem; }
+.tax-errors { text-align: left; font-size: 0.8rem; color: var(--accent-danger); padding-left: 1.2rem; max-height: 40vh; overflow-y: auto; }
+#confirm-modal .input-modal-content:has(.tax-dialog) { max-width: 480px; }
+.tax-dialog { text-align: left; }
+.tax-dialog textarea { resize: vertical; }
+/* An explicit height, so the field and the picker button beside it are the same size
+   whether or not the web font has loaded yet (its metrics set the field's height otherwise). */
+#tag-input { border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 8px; width: 200px; font-family: 'JetBrains Mono', monospace; box-sizing: border-box; height: 29px; }
 #tag-input:focus { outline: 2px solid var(--accent-blue); border-color: var(--accent-blue); }
 .tag-suggestions { position: absolute; bottom: calc(100% + 2px); left: 0; z-index: 200; background: #fff; border: 1px solid var(--border-color); border-radius: 4px; box-shadow: 0 -4px 12px rgba(0,0,0,.1); list-style: none; margin: 0; padding: 4px 0; min-width: 200px; max-height: 220px; overflow-y: auto; }
 .tag-suggestions.hidden { display: none; }
@@ -1494,6 +1620,7 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 :is(.role-reader, .space-readonly) #search-btn,
 :is(.role-reader, .space-readonly) #attach-file-btn,
 :is(.role-reader, .space-readonly) #tag-input,
+:is(.role-reader, .space-readonly) #tag-picker-btn,
 :is(.role-reader, .space-readonly) #add-item-btn,
 :is(.role-reader, .space-readonly) #view-settings-btn,
 :is(.role-reader, .space-readonly) .view-tab-new,
@@ -2227,6 +2354,7 @@ body.mobile #add-column-btn,
 body.mobile #list-props-btn,
 body.mobile .view-tab-new,
 body.mobile .tag-input-wrap,
+body.mobile #tag-picker-btn,
 body.mobile #page-meta-row,
 body.mobile #admin-btn,
 body.mobile #mcp-explorer-btn { display: none !important; }
@@ -2530,3 +2658,32 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 .fm-multi-row { display: flex; align-items: center; gap: 0.4rem; margin: 0.4rem 0 0; font-size: 0.78rem; color: var(--accent-gray); cursor: pointer; }
 .fm-multi-row input { margin: 0; }
 .fm-multi-note { font-size: 0.7rem; color: var(--accent-gray); margin-left: 4px; white-space: nowrap; }
+/* A field bound to the taxonomy is chosen from its branch; a value outside it is flagged. */
+/* A select dressed as the Space Selector (modules/core/dropdown.js): a bordered box with the
+   chosen value in bold and a chevron, opening a white menu of rows. The native select stays
+   in the DOM, hidden, as the value's source of truth. */
+.dd { position: relative; display: flex; width: 100%; min-width: 0; }
+.dd-native { display: none !important; }
+.dd-btn { display: flex; align-items: center; gap: 0.4rem; width: 100%; min-width: 0; padding: 0.35rem 0.6rem; border: 1px solid var(--border-color); border-radius: 6px; background: white; color: var(--text-color); font: inherit; font-size: 0.82rem; text-align: left; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.dd-btn:hover { background: #f7fafc; }
+.dd-btn:focus-visible, .dd.is-open .dd-btn { outline: none; border-color: var(--accent-blue); }
+.dd-btn:disabled { cursor: default; opacity: 0.6; }
+.dd-label { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-label.is-placeholder { font-weight: 400; color: var(--accent-gray); }
+.dd-chevron { display: flex; flex-shrink: 0; color: var(--accent-gray); }
+.dd-menu { position: fixed; z-index: 1200; background: white; border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); max-height: 260px; overflow-y: auto; padding: 3px 0; }
+.dd-item { display: flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.75rem; font-size: 0.82rem; cursor: pointer; color: var(--text-color); white-space: nowrap; }
+.dd-item.is-active { background: #f0f4f8; }
+.dd-item.is-selected { font-weight: 600; color: var(--accent-blue); background: #ebf8ff; }
+.dd-item.is-selected.is-active { background: #dbeafe; }
+.dd-check { display: flex; width: 12px; flex-shrink: 0; }
+.fm-tax-note { display: block; margin: 3px 0 0 2px; }
+.fm-tax-note.is-empty { color: #975a16; white-space: normal; }
+/* The name box sits under the field chooser once "Other field…" reveals it — and only then.
+   With no chooser (the page has every bound field) it is the row's first box and must line
+   up with the value box beside it; an unconditional margin put it 4px lower. */
+.fm-key .dd + #fm-new-key:not(.hidden) { margin-top: 4px; }
+/* In the metadata table a dropdown is the height of the inputs around it (22px), so a row
+   lines up at the bottom as well as the top. */
+.fm-table .dd-btn { box-sizing: border-box; height: 22px; padding: 0 6px; font-size: 0.82rem; border-radius: 4px; }
+.fm-not-in-tax { background: #fffbea; color: #975a16; border-color: #f6e05e; }

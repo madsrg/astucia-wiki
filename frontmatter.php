@@ -574,6 +574,99 @@ function wiki_fm_autostamp_file(string $abs_path, ?array $index_entry,
     return strlen($new);
 }
 
+// =================================================================
+// TAGS SYNC
+//
+// When a Space has it on, a page's `tags:` follows its tags in index.json. index.json stays
+// the source of truth, as with stamping — but the sync writes a **delta**, never the whole
+// list: a tag the block carries that the index does not (an imported Obsidian note) is kept
+// until somebody decides about it, through the notice in the tag area. Overwriting would
+// delete exactly the tags that notice exists to ask about.
+//
+// The file's **mtime is put back** after the write. A tag is index data, not a page edit
+// (updateTags() fires no "page updated" either): moving mtime would make index_sync treat
+// it as an external change, the daily digest list the page as changed, and `{lastUpdated}`
+// report the moment somebody tagged it. The size still changes, so callers return it for
+// the open-page watcher to re-baseline from.
+// =================================================================
+
+/** The managed keys for a Space: what the Metadata panel shows read-only and set_frontmatter refuses. */
+function wiki_fm_managed_keys(?string $space_dir): array {
+    $keys = [];
+    if (function_exists('wiki_space_dir_fm_autostamp') && wiki_space_dir_fm_autostamp($space_dir) === 'on') {
+        $keys = WIKI_FM_STAMP_KEYS;
+    }
+    if (function_exists('wiki_space_dir_fm_tags_sync') && wiki_space_dir_fm_tags_sync($space_dir) === 'on') {
+        $keys[] = 'tags';
+    }
+    return $keys;
+}
+
+/**
+ * A block's tags as a list, or null when it has no `tags` key. Accepts a YAML list, a flow
+ * list and a comma-separated string; a leading `#` (Obsidian writes them that way in
+ * places) is dropped.
+ */
+function wiki_fm_tags_of(array $meta): ?array {
+    foreach ($meta as $k => $v) {
+        if (strcasecmp((string)$k, 'tags') !== 0) continue;
+        $items = is_array($v) ? $v : explode(',', (string)$v);
+        $out = [];
+        foreach ($items as $it) {
+            $it = ltrim(trim((string)$it), '#');
+            if ($it !== '') $out[] = $it;
+        }
+        return $out;
+    }
+    return null;
+}
+
+/**
+ * Apply added/removed tags to a page's `tags:`, keeping everything else — including the
+ * key's spelling and whether it was a list or a comma-separated string. Creates the key
+ * (and the block) only when there is something to add. Removes the key when it empties.
+ *
+ * @return int|null the file's new byte length, or null when nothing was written
+ */
+function wiki_fm_tags_apply(string $abs_path, array $added, array $removed): ?int {
+    if (!is_file($abs_path)) return null;
+    $raw = (string)@file_get_contents($abs_path);
+    $split = wiki_fm_split($raw);
+    $key = 'tags';
+    $was_string = false;
+    foreach ($split['meta'] as $k => $v) {
+        if (strcasecmp((string)$k, 'tags') === 0) { $key = (string)$k; $was_string = !is_array($v); break; }
+    }
+    // A nested mapping under `tags` is not something to rewrite on anyone's behalf.
+    if (in_array(strtolower($key), array_map('strtolower', wiki_fm_nested_keys($raw)), true)) return null;
+
+    $cur = wiki_fm_tags_of($split['meta']);
+    $had_key = $cur !== null;
+    $cur = $cur ?? [];
+    $lc = fn($s) => function_exists('mb_strtolower') ? mb_strtolower((string)$s, 'UTF-8') : strtolower((string)$s);
+    $drop = array_map($lc, $removed);
+    $next = array_values(array_filter($cur, fn($t) => !in_array($lc($t), $drop, true)));
+    $have = array_map($lc, $next);
+    foreach ($added as $t) {
+        $t = trim((string)$t);
+        if ($t !== '' && !in_array($lc($t), $have, true)) { $next[] = $t; $have[] = $lc($t); }
+    }
+    if ($next === $cur && ($had_key || !$next)) return null;
+
+    if (!$next) {
+        $new = wiki_fm_set($raw, [], [$key]);
+    } else {
+        $new = wiki_fm_set($raw, [$key => $was_string ? implode(', ', $next) : $next]);
+    }
+    if ($new === $raw) return null;
+    clearstatcache(true, $abs_path);
+    $mtime = @filemtime($abs_path);
+    if (@file_put_contents($abs_path, $new) === false) return null;
+    if ($mtime) @touch($abs_path, $mtime);
+    clearstatcache(true, $abs_path);
+    return strlen($new);
+}
+
 /**
  * Whether AI users and MCP clients are shown a page's front matter. Off unless enabled.
  *

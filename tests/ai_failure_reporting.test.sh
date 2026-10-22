@@ -78,8 +78,8 @@ PHP
 run_job() {  # run_job <mode> <effort>
     rm -f "$WIKI_ROOT/calls.txt"
     (cd "$WIKI_APP" && STUB="$WIKI_URL/__test_llm.php?mode=$1" EFFORT="$2" php -r '
-require "config.php"; require "indexer.php"; require "space_settings.php";
-require "ai_core.php"; require "mailer.php"; require "agent_jobs.php";
+require_once "config.php"; require_once "indexer.php"; require_once "space_settings.php";
+require_once "ai_core.php"; require_once "mailer.php"; require_once "agent_jobs.php";
 $space_dir = rtrim(PAGES_DIR, "/") . "/Main";
 $cfg = ["provider" => "openai", "model" => "m", "api_key" => "k",
         "api_url" => getenv("STUB"), "max_tokens" => 16000];

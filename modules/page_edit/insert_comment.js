@@ -3,8 +3,7 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { insertMarkdown, insertBlock } from './editor.js';
 import { getUsers, getMentionableUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
-
-const EMOJIS = ['😀','😂','😍','🤔','😢','😮','😡','👍','👎','👋','🙏','❤️','🎉','🔥','✅','❌','⭐','💡','🚀','📝','🎯','👀','💬','🤝'];
+import { EMOJIS } from '../core/emojis.js';
 
 export const openCommentLightbox = () => {
     const lb    = document.getElementById('comment-lightbox');

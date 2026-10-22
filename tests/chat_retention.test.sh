@@ -27,7 +27,7 @@ fixture_login "$JAR" "uid=1&sub=s1&name=Admin&role=admin"
 # ── unit: the selection logic ────────────────────────────────────────────────
 section 'what a policy keeps and removes (unit)'
 unit=$(cd "$WIKI_APP" && php -r '
-require "config.php"; require "chat_retention.php";
+require_once "config.php"; require_once "chat_retention.php";
 $now = time();
 $ts = fn($d) => date("c", $now - $d * 86400);
 $m = [];

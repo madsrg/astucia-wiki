@@ -37,6 +37,7 @@ export const state = {
     spaceReadOnly: false,           // the active space is frozen (see modules/spaces)
     spaceFmEdit: false,             // the active space allows manual front-matter editing
     spaceFmStamp: false,            // the active space stamps created/updated into the block
+    spaceFmTagsSync: false,         // the active space keeps each page's front-matter `tags:` in step
     pageChatPath: null,
     isMobile: false, // effective mobile layout (from viewport + user override)
     displayMode: localStorage.getItem('wiki_displayMode') || 'auto', // 'auto' | 'desktop' | 'mobile'

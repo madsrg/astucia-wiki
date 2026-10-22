@@ -2,7 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 //
-// Space settings — admin only: rename, read-only mode, and merge-into-another-space.
+// Space settings — admin only: rename, read-only mode, merge-into-another-space, delete.
 //
 // Built in JS rather than as markup in index.php because the whole dialog is
 // admin-only and every field in it (the space list, the page counts, which spaces
@@ -34,11 +34,13 @@ const section = (title, hint) => {
  * @param {object} handlers
  *   onRenamed(oldName, newName)        after a successful rename
  *   onMerged(sourceName, targetName)   after the source space has been dissolved
+ *   onDeleted(spaceName, nextName)     after the space was moved out of the wiki
  *   onReadOnly(spaceName, readonly)    after the flag was flipped
  *   onFmEdit(spaceName, mode)           after the metadata mode changed
  *   onFmStamp(spaceName, mode)          after automatic stamping was switched
+ *   onFmTags(spaceName, mode)           after front-matter tag sync was switched
  */
-export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onReadOnly, onFmEdit, onFmStamp } = {}) => {
+export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onDeleted, onReadOnly, onFmEdit, onFmStamp, onFmTags } = {}) => {
     document.getElementById(OVERLAY_ID)?.remove();
 
     const info = await api.call('admin_space_settings');
@@ -162,6 +164,7 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onRead
         // which the other two panes say for themselves. All of them are in the DOM
         // whichever tab is open, so this reaches them without switching tabs.
         refreshMerge();
+        refreshDelete();
         refreshFrozen();
         onReadOnly?.(spaceName, want);
     });
@@ -237,6 +240,44 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onRead
         self.fm_autostamp = want;
         showToast(t('spaces.settings.fm-saved'), 'success');
         onFmStamp?.(spaceName, want);
+    });
+
+    // ── Tags in front matter ──────────────────────────────────────────────────
+    //
+    // A third independent switch beside the two above. Off by default for the same reason
+    // they are: it makes the wiki write into a page's own block. The hint says the two
+    // things people would otherwise discover by surprise — it only applies from now on,
+    // and `tags:` stops being editable in the Metadata panel.
+    const ftSec = section(t('spaces.settings.fmtags-title'), t('spaces.settings.fmtags-hint'));
+    const ftRow = el('div', 'space-settings-row');
+    const ftSel = el('select', 'form-control');
+    ftSel.id = 'space-fm-tags';
+    [['off', 'spaces.settings.fmtags-off'], ['on', 'spaces.settings.fmtags-on']]
+        .forEach(([value, key]) => {
+            const o = el('option', '', t(key));
+            o.value = value;
+            ftSel.appendChild(o);
+        });
+    ftSel.value = self.fm_tags_sync || 'off';
+    ftRow.appendChild(ftSel);
+    ftSec.appendChild(ftRow);
+    ftSec.appendChild(el('p', 'pref-hint', t('spaces.settings.fmtags-warn')));
+    panes.content.appendChild(ftSec);
+
+    ftSel.addEventListener('change', async () => {
+        const want = ftSel.value;
+        ftSel.disabled = true;
+        const res = await api.call('admin_set_space_fm_tags_sync',
+            { space_name: spaceName, mode: want }, 'POST');
+        ftSel.disabled = false;
+        if (!res.success) {
+            ftSel.value = self.fm_tags_sync || 'off';         // the server is the truth
+            showToast(res.message || t('spaces.settings.fm-failed'), 'error');
+            return;
+        }
+        self.fm_tags_sync = want;
+        showToast(t('spaces.settings.fm-saved'), 'success');
+        onFmTags?.(spaceName, want);
     });
 
     // ── AI memory ─────────────────────────────────────────────────────────────
@@ -413,6 +454,78 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onRead
     });
 
     refreshMerge();
+
+    // ── Delete ────────────────────────────────────────────────────────────────
+    //
+    // A soft delete — the server moves the folder to WIKI_SYSTEM_DATA/deleted_spaces/ —
+    // but for everyone using the wiki it is gone, so the confirmation asks for the
+    // space's name rather than a click. The server compares the name as well.
+    const delSec = section(t('spaces.settings.delete-title'), t('spaces.settings.delete-hint'));
+    const delRow = el('div', 'space-settings-row');
+    const delBtn = el('button', 'btn btn-danger', t('spaces.settings.delete-btn'));
+    delRow.appendChild(delBtn);
+    delSec.appendChild(delRow);
+    const delStatus = el('div', 'space-settings-status');
+    delSec.appendChild(delStatus);
+    panes.advanced.appendChild(delSec);
+
+    const deleteBlockedText = (code) => ({
+        'last-space':       t('spaces.settings.blocked-last-space'),
+        'source-readonly':  t('spaces.settings.blocked-delete-readonly'),
+        'confirm-mismatch': t('spaces.settings.blocked-confirm-mismatch'),
+    }[code] || blockedText(code));
+
+    // The same two refusals the server makes, said before the button is pressed.
+    function refreshDelete() {
+        const code = spaces.length <= 1 ? 'last-space' : (self.readonly ? 'source-readonly' : '');
+        delBtn.disabled = !!code;
+        delStatus.className = 'space-settings-status' + (code ? ' is-blocked' : '');
+        delStatus.textContent = code ? deleteBlockedText(code) : '';
+    }
+    refreshDelete();
+
+    delBtn.addEventListener('click', async () => {
+        const esc = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const html = `<p>${esc(t('spaces.settings.delete-confirm-body', { name: spaceName, pages: self.pages ?? 0 }))}</p>
+            <div class="form-group">
+                <label class="form-label" for="space-delete-confirm">${esc(t('spaces.settings.delete-confirm-label', { name: spaceName }))}</label>
+                <input type="text" id="space-delete-confirm" class="form-control" autocomplete="off" spellcheck="false">
+            </div>`;
+        const pending = confirmModal(t('spaces.settings.delete-confirm-title', { name: spaceName }), {
+            messageHtml: html,
+            confirmLabel: t('spaces.settings.delete-confirm-btn'),
+            dangerous: true,
+            icon: icons.warning,
+        });
+        // confirmModal has no notion of a precondition, so the button is held here: it
+        // only arms once the typed name matches exactly. The dialog is shared, hence the
+        // reset afterwards whichever way it closed.
+        const okBtn = document.getElementById('confirm-modal-ok');
+        const input = document.getElementById('space-delete-confirm');
+        okBtn.disabled = true;
+        input?.addEventListener('input', () => { okBtn.disabled = input.value.trim() !== spaceName; });
+        setTimeout(() => input?.focus(), 60);
+        const ok = await pending;
+        const typed = input?.value.trim() || '';
+        okBtn.disabled = false;
+        if (!ok || typed !== spaceName) return;
+
+        delBtn.disabled = true;
+        delStatus.className = 'space-settings-status';
+        delStatus.textContent = t('spaces.settings.delete-running');
+        const res = await api.call('admin_delete_space', { name: spaceName, confirm: typed }, 'POST');
+        delStatus.className = 'space-settings-status is-blocked';
+        if (!res.success) {
+            delBtn.disabled = false;
+            delStatus.textContent = res.blocked
+                ? deleteBlockedText(res.blocked)
+                : (res.message || t('spaces.settings.delete-failed'));
+            return;
+        }
+        showToast(t('spaces.settings.deleted', { name: spaceName }), 'success');
+        close();
+        onDeleted?.(spaceName, res.next || null);
+    });
 
     // ── Footer ────────────────────────────────────────────────────────────────
     const footer = el('div', 'lightbox-footer');

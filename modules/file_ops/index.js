@@ -13,6 +13,8 @@ import { openCopyLightbox, init as initCopy } from './copy.js';
 import { openMoveLightbox, init as initMove } from './move.js';
 import { t } from '../i18n/index.js';
 import { pageExt, stripExt, typeIcon } from '../core/page_types.js';
+import { getTaxonomy, boundFields } from '../core/taxonomy.js';
+import { enhanceSelect } from '../core/dropdown.js';
 
 export const handleRename = async () => {
     if (!state.currentPagePath) return;
@@ -287,6 +289,41 @@ const showFrontmatter = async () => {
     // the author's. `frontmatter_managed` is the wiki's list, so it also gives the order —
     // created, createdBy, updated, updatedBy — rather than however the file happens to
     // list them.
+    // Fields bound to a branch of the taxonomy are chosen, not typed: a dropdown of the
+    // branch's items (several when the field allows a list). A value already in the file
+    // that is not one of them is kept and flagged, never silently dropped — the server
+    // refuses only what is *saved* through this panel.
+    const fields = boundFields((await getTaxonomy()).nodes);
+    const fieldOf = (k) => fields.get(String(k).toLowerCase()) || null;
+    const notInTax = (k, val) => {
+        const f = fieldOf(k);
+        if (!f || val === '') return [];
+        return _fmSplitList(val).filter(v => !f.values.some(x => x.toLowerCase() === v.toLowerCase()));
+    };
+    // The select is dressed as the Space Selector once the dialog is up (enhanceSelect);
+    // it stays in the DOM as the value's source of truth. `cls` lets the add row's chooser
+    // stay out of the `.fm-input` set that Save collects.
+    const fieldSelect = (k, val, cls = 'fm-input fm-select', id = '') => {
+        const f = fieldOf(k);
+        const cur = _fmSplitList(val);
+        const extra = notInTax(k, val);
+        const opt = (v, label) => `<option value="${_fmEsc(v)}"${cur.some(c => c.toLowerCase() === v.toLowerCase()) ? ' selected' : ''}>${_fmEsc(label ?? v)}</option>`;
+        const opts = (f.multiple ? '' : opt('', '—'))
+            + f.values.map(v => opt(v)).join('')
+            + extra.map(v => opt(v, t('fm.not-in-tax', { value: v }))).join('');
+        // A field whose folder has no items yet says so, rather than offering an empty list.
+        const note = !f.values.length ? t('fm.tax-empty', { field: f.field, path: f.path })
+            : t(f.multiple ? 'fm.tax-multi' : 'fm.tax-one', { path: f.path });
+        return `<select class="${cls}" data-key="${_fmEsc(k)}"${id ? ` id="${id}"` : ''}`
+             + `${f.multiple ? ' multiple data-multi="1"' : ''}>`
+             + opts + `</select>`
+             + `<span class="fm-multi-note fm-tax-note${!f.values.length ? ' is-empty' : ''}">${_fmEsc(note)}</span>`;
+    };
+    // The add row's field chooser: the bound fields the page does not have yet, then
+    // "Other field…", which is what reveals the free-text name box. A dropdown that is
+    // plainly a dropdown — the datalist input it replaces looked like one showing its
+    // placeholder as a value.
+    const unusedFields = [...fields.values()].filter(f => !allRows.some(([k]) => k.toLowerCase() === f.field.toLowerCase()));
     const managedOrder = (state.currentPageFrontmatterManaged || []).map(k => String(k).toLowerCase());
     const managedRows  = allRows.filter(([k]) => managed.has(k.toLowerCase()))
         .sort((a, b) => managedOrder.indexOf(a[0].toLowerCase()) - managedOrder.indexOf(b[0].toLowerCase()));
@@ -324,10 +361,15 @@ const showFrontmatter = async () => {
         return '';
     };
     const isLocked = (k) => nested.has(k.toLowerCase()) || managed.has(k.toLowerCase());
+    const warn = (k, val) => {
+        const bad = notInTax(k, val);
+        return bad.length ? ` <span class="fm-locked fm-not-in-tax" title="${_fmEsc(t('fm.not-in-tax-hint', { field: k }))}">${_fmEsc(t('fm.not-in-tax-badge'))}</span>` : '';
+    };
     const valueCell = (k, val, isList) => {
         if (!editable || isLocked(k)) {
-            return `<td class="fm-val">${val === '' ? '<em>—</em>' : _fmEsc(val)}${badge(k)}</td>`;
+            return `<td class="fm-val">${val === '' ? '<em>—</em>' : _fmEsc(val)}${badge(k)}${warn(k, val)}</td>`;
         }
+        if (fieldOf(k)) return `<td class="fm-val">${fieldSelect(k, val)}</td>`;
         // data-multi marks a field whose text is split back into a list on save, so a
         // value that legitimately contains a comma stays one value everywhere else.
         return `<td class="fm-val"><input type="text" class="form-control fm-input"`
@@ -383,8 +425,14 @@ const showFrontmatter = async () => {
               // the table's, which is alignment by coincidence.
               + (editable
                   ? `<tfoot><tr class="fm-add-row">
-                         <td class="fm-key"><input type="text" id="fm-new-key" class="form-control" placeholder="${_fmEsc(t('fm.new-key'))}"></td>
-                         <td class="fm-val"><input type="text" id="fm-new-val" class="form-control" placeholder="${_fmEsc(t('fm.new-value'))}"></td>
+                         <td class="fm-key">`
+                    + (unusedFields.length
+                        ? `<select id="fm-new-pick" data-dd-prompt><option value="">${_fmEsc(t('fm.pick-field'))}</option>`
+                          + unusedFields.map(f => `<option value="${_fmEsc(f.field)}">${_fmEsc(f.field)}</option>`).join('')
+                          + `<option value="__other">${_fmEsc(t('fm.pick-other'))}</option></select>`
+                        : '')
+                    + `<input type="text" id="fm-new-key" class="form-control${unusedFields.length ? ' hidden' : ''}" placeholder="${_fmEsc(t('fm.new-key'))}"></td>
+                         <td class="fm-val" id="fm-new-valcell"><input type="text" id="fm-new-val" class="form-control" placeholder="${_fmEsc(t('fm.new-value'))}"></td>
                          <td class="fm-rm-cell"><button type="button" id="fm-add-btn" class="btn btn-secondary btn-sm">${_fmEsc(t('fm.add'))}</button></td>
                      </tr></tfoot>`
                   : '')
@@ -420,9 +468,35 @@ const showFrontmatter = async () => {
     };
     // Returns false only when the typed field was rejected; an empty row is "nothing to
     // add" rather than an error.
+    // The add row's value box follows the chosen field: the field's own dropdown for a
+    // bound one, the plain text box otherwise.
+    const resetNewValue = (key = '') => {
+        const cell = document.getElementById('fm-new-valcell');
+        if (!cell) return;
+        if (key && fieldOf(key)) {
+            cell.innerHTML = fieldSelect(key, '', 'fm-new-valsel', 'fm-new-valsel');
+            enhanceSelect(cell.querySelector('select'), { placeholder: '—' });
+        } else {
+            cell.innerHTML = `<input type="text" id="fm-new-val" class="form-control" placeholder="${_fmEsc(t('fm.new-value'))}">`;
+        }
+    };
+    const onPick = () => {
+        const pick = document.getElementById('fm-new-pick');
+        const kEl = document.getElementById('fm-new-key');
+        if (!pick || !kEl) return;
+        const other = pick.value === '__other';
+        kEl.classList.toggle('hidden', !other);
+        kEl.value = other || !pick.value ? '' : pick.value;
+        // Swap the value box only when its kind changes.
+        const wantDropdown = !other && !!pick.value && !!fieldOf(pick.value);
+        if (wantDropdown || document.getElementById('fm-new-valsel')) resetNewValue(wantDropdown ? pick.value : '');
+        if (other) kEl.focus();
+    };
+
     const commitNewField = () => {
         const kEl = document.getElementById('fm-new-key');
         const vEl = document.getElementById('fm-new-val');
+        const vSel = document.getElementById('fm-new-valsel');
         const mEl = document.getElementById('fm-new-multi');
         const key = (kEl?.value || '').trim();
         if (!key) return true;
@@ -433,17 +507,32 @@ const showFrontmatter = async () => {
         const tbody = host?.querySelector('.fm-table tbody');
         if (!tbody) return false;
         const multi = !!mEl?.checked;
-        const val   = vEl?.value || '';
+        const val   = vSel ? [...vSel.selectedOptions].map(o => o.value).filter(Boolean).join(', ') : (vEl?.value || '');
         const row = document.createElement('tr');
         row.className = 'fm-new';
         row.innerHTML = `<td class="fm-key">${_fmEsc(key)}</td>`
-            + `<td class="fm-val"><input type="text" class="form-control fm-input" data-key="${_fmEsc(key)}"`
-            + `${multi ? ' data-multi="1"' : ''} value="${_fmEsc(val)}">`
-            + (multi ? ` <span class="fm-multi-note">${_fmEsc(t('fm.multi-note'))}</span>` : '')
-            + `</td><td class="fm-rm-cell"></td>`;
+            + (fieldOf(key)
+                ? `<td class="fm-val">${fieldSelect(key, val)}</td>`
+                : `<td class="fm-val"><input type="text" class="form-control fm-input" data-key="${_fmEsc(key)}"`
+                  + `${multi ? ' data-multi="1"' : ''} value="${_fmEsc(val)}">`
+                  + (multi ? ` <span class="fm-multi-note">${_fmEsc(t('fm.multi-note'))}</span>` : '')
+                  + `</td>`)
+            + `<td class="fm-rm-cell"></td>`;
         tbody.appendChild(row);
+        row.querySelectorAll('select.fm-select').forEach(sel => enhanceSelect(sel, { placeholder: '—' }));
         if (kEl) kEl.value = '';
         if (vEl) vEl.value = '';
+        const pick = document.getElementById('fm-new-pick');
+        if (pick) {
+            // The field just added is not offered again, and the chooser starts over.
+            [...pick.options].find(o => o.value.toLowerCase() === key.toLowerCase())?.remove();
+            pick.value = '';
+            pick.dispatchEvent(new Event('change'));
+        } else if (vSel) {
+            // Only a dropdown is swapped back: the plain text box stays the same element,
+            // so typing several fields from the keyboard keeps working.
+            resetNewValue('');
+        }
         // The checkbox is deliberately left as it was: somebody adding one list is often
         // adding several. Focus returns to the key box so the next field can be typed
         // straight away without reaching for the mouse.
@@ -470,9 +559,18 @@ const showFrontmatter = async () => {
 
     let confirmed = false;
     try {
-        confirmed = await confirmModal(t('fm.title'), editable
+        const pending = confirmModal(t('fm.title'), editable
             ? { messageHtml: body, confirmLabel: t('btn.save'), cancelLabel: t('btn.cancel') }
             : { messageHtml: body, confirmLabel: t('btn.close'), hideCancel: true });
+        // The dialog's markup is in place once confirmModal returns its promise: dress the
+        // selects as the Space Selector, and let the field chooser drive the add row.
+        host?.querySelectorAll('select.fm-select').forEach(sel => enhanceSelect(sel, { placeholder: '—' }));
+        const pick = document.getElementById('fm-new-pick');
+        if (pick) {
+            pick.addEventListener('change', onPick);
+            enhanceSelect(pick, { placeholder: t('fm.pick-field') });
+        }
+        confirmed = await pending;
     } finally {
         host?.removeEventListener('click', onClick);
         host?.removeEventListener('keydown', onKeydown);
@@ -489,8 +587,10 @@ const showFrontmatter = async () => {
     host?.querySelectorAll('.fm-input').forEach(inp => {
         const key = inp.dataset.key;
         if (removals.has(key)) return;
-        if (original.has(key) && original.get(key) === inp.value) return;
-        updates[key] = inp.dataset.multi ? _fmSplitList(inp.value) : inp.value;
+        // A multi-select reads as its chosen options, joined the way the row displays them.
+        const text = inp.multiple ? [...inp.selectedOptions].map(o => o.value).join(', ') : inp.value;
+        if (original.has(key) && original.get(key) === text) return;
+        updates[key] = inp.dataset.multi ? _fmSplitList(text) : text;
     });
     if (!Object.keys(updates).length && !removals.size) {
         showToast(t('fm.unchanged'), 'info');

@@ -6,7 +6,7 @@ import { state } from '../core/state.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { t } from '../i18n/index.js';
-import { renameSpaceInStorage, setAvailableSpaces } from '../nav/index.js';
+import { renameSpaceInStorage, forgetSpaceInStorage, setAvailableSpaces } from '../nav/index.js';
 import { openSpaceSettings } from './settings.js';
 
 const STORAGE_KEY = 'wiki_currentSpace';
@@ -17,6 +17,7 @@ let _allSpaces = [];
 let _readOnly = new Set();
 let _fmEdit   = new Set();
 let _fmStamp  = new Set();
+let _fmTags   = new Set();
 
 export const getAllSpaces = () => _allSpaces;
 export const isSpaceReadOnly = (name) => _readOnly.has(name);
@@ -37,6 +38,7 @@ const _applyReadOnly = () => {
     // once at render. No body class: it gates one panel, not a set of controls.
     state.spaceFmEdit = !!state.currentSpace && _fmEdit.has(state.currentSpace);
     state.spaceFmStamp = !!state.currentSpace && _fmStamp.has(state.currentSpace);
+    state.spaceFmTagsSync = !!state.currentSpace && _fmTags.has(state.currentSpace);
 };
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -50,6 +52,7 @@ export const initSpaces = async ({ onSpaceChange }) => {
     _readOnly  = new Set(result.readonly || []);
     _fmEdit    = new Set(result.fm_edit || []);
     _fmStamp   = new Set(result.fm_autostamp || []);
+    _fmTags    = new Set(result.fm_tags_sync || []);
     setAvailableSpaces(spaces);
 
     // Determine active space: URL param → localStorage → first available
@@ -129,6 +132,7 @@ const _reload = async (activeName) => {
     _readOnly  = new Set(refreshed.readonly || []);
     _fmEdit    = new Set(refreshed.fm_edit || []);
     _fmStamp   = new Set(refreshed.fm_autostamp || []);
+    _fmTags    = new Set(refreshed.fm_tags_sync || []);
     setAvailableSpaces(_allSpaces);
     const container = document.getElementById('space-switcher');
     if (container) {
@@ -167,6 +171,22 @@ const _afterMerge = async (source, target) => {
     }
     await _reload(state.currentSpace);
     if (wasActive && _onSpaceChange) await _onSpaceChange(target);
+};
+
+// The space is gone and has no successor: its recents, favourites and tabs go with it,
+// and if it was the open one the first remaining space takes over.
+const _afterDelete = async (name, next) => {
+    forgetSpaceInStorage(name);
+    try { localStorage.removeItem(`wikiTabs:${name}`); } catch {}
+    const wasActive = name === state.currentSpace;
+    if (wasActive) {
+        state.currentSpace = null;
+        localStorage.removeItem(STORAGE_KEY);
+    }
+    const spaces = await _reload(wasActive ? null : state.currentSpace);
+    if (!wasActive) return;
+    const target = (next && spaces.includes(next)) ? next : spaces[0];
+    if (target) await switchSpace(target, spaces);
 };
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -241,7 +261,7 @@ const _render = (spaces, active) => {
         newBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> ${t('spaces.new-btn')}`;
         newBtn.addEventListener('click', async () => {
             dropdown.classList.add('hidden');
-            const html = `<div class="form-group">
+            const html = `<div class="new-space-form"><div class="form-group">
                     <label class="form-label" for="new-space-name">${t('spaces.prompt')}</label>
                     <input type="text" id="new-space-name" class="form-control" placeholder="${t('spaces.ph')}">
                 </div>
@@ -262,13 +282,21 @@ const _render = (spaces, active) => {
                     <p class="form-hint">${t('spaces.settings.stamp-hint')}</p>
                 </div>
                 <div class="form-group">
+                    <label class="form-label" for="new-space-fmtags">${t('spaces.settings.fmtags-title')}</label>
+                    <select id="new-space-fmtags" class="form-control">
+                        <option value="off">${t('spaces.settings.fmtags-off')}</option>
+                        <option value="on">${t('spaces.settings.fmtags-on')}</option>
+                    </select>
+                    <p class="form-hint">${t('spaces.settings.fmtags-hint')}</p>
+                </div>
+                <div class="form-group">
                     <span class="form-label">${t('spaces.settings.memory-title')}</span>
                     <label class="space-settings-switch-row">
                         <input type="checkbox" id="new-space-memory">
                         <span>${t('spaces.settings.memory-label')}</span>
                     </label>
                     <p class="form-hint">${t('spaces.settings.memory-hint')}</p>
-                </div>`;
+                </div></div>`;
             const ok = await confirmModal(t('spaces.new-btn'), {
                 messageHtml: html, confirmLabel: t('spaces.new-create-btn'), icon: icons.space,
             });
@@ -277,10 +305,11 @@ const _render = (spaces, active) => {
             const name   = document.getElementById('new-space-name')?.value.trim() || '';
             const fmEdit = document.getElementById('new-space-fm')?.value || 'off';
             const fmStamp = document.getElementById('new-space-stamp')?.value || 'off';
+            const fmTags  = document.getElementById('new-space-fmtags')?.value || 'off';
             const memory  = document.getElementById('new-space-memory')?.checked ? '1' : '0';
             if (!ok || !name) return;
             const res = await api.call('create_space',
-                { name, fm_edit: fmEdit, fm_autostamp: fmStamp, memory }, 'POST');
+                { name, fm_edit: fmEdit, fm_autostamp: fmStamp, fm_tags_sync: fmTags, memory }, 'POST');
             if (res.success) {
                 showToast(t('spaces.created', { name }), 'success');
                 const newSpaces = await _reload(name);
@@ -322,6 +351,7 @@ const _render = (spaces, active) => {
             openSpaceSettings(state.currentSpace, {
                 onRenamed: (oldName, newName) => _afterRename(oldName, newName),
                 onMerged:  (source, target)   => _afterMerge(source, target),
+                onDeleted: (name, next)       => _afterDelete(name, next),
                 onReadOnly: async (name, readonly) => {
                     if (readonly) _readOnly.add(name); else _readOnly.delete(name);
                     await _reload(state.currentSpace);
@@ -329,6 +359,11 @@ const _render = (spaces, active) => {
                 onFmStamp: async (name, mode) => {
                     if (mode === 'on') _fmStamp.add(name); else _fmStamp.delete(name);
                     await _reload(state.currentSpace);
+                },
+                onFmTags: async (name, mode) => {
+                    if (mode === 'on') _fmTags.add(name); else _fmTags.delete(name);
+                    await _reload(state.currentSpace);
+                    document.dispatchEvent(new CustomEvent('wiki:fmtagssync'));
                 },
                 onFmEdit: async (name, mode) => {
                     if (mode === 'manual') _fmEdit.add(name); else _fmEdit.delete(name);

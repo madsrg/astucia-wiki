@@ -57,7 +57,8 @@ function wiki_tool_definitions(bool $with_memory = true): array {
                 'properties' => [
                     'query'               => ['type' => 'string',  'description' => 'Search string, e.g. "onboarding checklist". Omit to list purely by recency and/or tags.'],
                     'updated_within_days' => ['type' => 'integer', 'description' => 'Only return pages updated within this many days. E.g. 7 for the last week. Omit for no date restriction.'],
-                    'tags'                => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Only return pages carrying ALL of these exact tags (case-insensitive). Omit for no tag restriction.'],
+                    'tags'                => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Only return pages carrying ALL of these tags (case-insensitive; a taxonomy path also matches the items below it). Omit for no tag restriction.'],
+                    'fields'              => ['type' => 'object', 'description' => 'Only return pages whose front matter has these values, e.g. {"department": "Finance"}. Only fields bound to the taxonomy (see wiki_get_taxonomy); a value also matches the items below it.'],
                 ],
                 'required'   => [],
             ],
@@ -108,8 +109,13 @@ function wiki_tool_definitions(bool $with_memory = true): array {
             ],
         ],
         [
+            'name'        => 'wiki_get_taxonomy',
+            'description' => 'Get the wiki\'s taxonomy: the one wiki-wide tree of terms that tags are chosen from. A tag is a term\'s full path, e.g. "Department/Finance". Returns the tagging mode and every term, one per line, indented by level, with its description. Folders group terms and can never be used as tags. Call this before tagging so you use existing terms rather than inventing near-duplicates; in "controlled" mode a tag that is not a term is refused.',
+            'params'      => ['type' => 'object', 'properties' => (object)[], 'required' => []],
+        ],
+        [
             'name'        => 'wiki_add_tags',
-            'description' => 'Add one or more tags to an existing wiki page without removing its current tags. Use this when you want to tag a page without affecting tags already on it. Only available when the AI user has editor role.',
+            'description' => 'Add one or more tags to an existing wiki page without removing its current tags. Use this when you want to tag a page without affecting tags already on it. Tags are paths in the wiki taxonomy ("Department/Finance") — see wiki_get_taxonomy. Only available when the AI user has editor role.',
             'params'      => [
                 'type'       => 'object',
                 'properties' => [
@@ -239,20 +245,37 @@ function get_wiki_tools($provider, bool $with_memory = true) {
 // $updated_within_days > 0 restricts to pages updated within that many days.
 // $tags (exact, case-insensitive, AND) restricts to pages carrying all of them.
 // An empty $query returns a listing filtered by date/tags (requires at least one filter).
-function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_within_days = 0, array $tags = []): array {
+function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_within_days = 0, array $tags = [], array $fields = []): array {
     $space_name = basename($space_dir);
     $cutoff     = $updated_within_days > 0 ? time() - $updated_within_days * 86400 : 0;
     $all        = $indexer->getAllPages();
     $updated_of = fn($id) => isset($all[$id]['updated']) ? (int)$all[$id]['updated'] : 0;
     $iso        = fn($ts) => $ts ? date('c', $ts) : null;
 
-    // Exact tag match (case-insensitive); page must carry every requested tag.
-    $want_tags = array_map('strtolower', array_filter(array_map('trim', $tags)));
+    // Tag match (case-insensitive); page must carry every requested tag — or, the tag
+    // being a taxonomy path, something below it: tag:Finance finds Finance/Budget.
+    $want_tags = array_filter(array_map('trim', $tags));
     $has_all_tags = function($page_tags) use ($want_tags) {
         if (!$want_tags) return true;
-        $have = array_map('strtolower', is_array($page_tags) ? $page_tags : []);
-        foreach ($want_tags as $wt) if (!in_array($wt, $have, true)) return false;
+        $have = is_array($page_tags) ? $page_tags : [];
+        foreach ($want_tags as $wt) {
+            $hit = false;
+            foreach ($have as $h) if (wiki_tax_under((string)$h, $wt)) { $hit = true; break; }
+            if (!$hit) return false;
+        }
         return true;
+    };
+    // Fields bound to the taxonomy: field => value, matched against the page's own block,
+    // a value including the items below it. Read from the file, so only when asked for.
+    $field_filters = [];
+    foreach ($fields as $fk => $fv) {
+        if (trim((string)$fv) !== '') $field_filters[strtolower((string)$fk)] = wiki_tax_field_expand((string)$fk, (string)$fv);
+    }
+    $fields_ok = function (string $rel) use ($field_filters, $space_dir): bool {
+        if (!$field_filters) return true;
+        if (strtolower(pathinfo($rel, PATHINFO_EXTENSION)) !== 'md') return false;
+        $raw = (string)@file_get_contents(rtrim($space_dir, '/') . '/' . $rel, false, null, 0, 65536);
+        return wiki_tax_meta_matches(wiki_fm_split($raw)['meta'], $field_filters);
     };
 
     // Pure listing — no text query, so no file reads needed.
@@ -264,6 +287,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
             $upd = (int)($data['updated'] ?? 0);
             if ($cutoff && $upd < $cutoff) continue;
             if (!$has_all_tags($data['tags'] ?? [])) continue;
+            if (!$fields_ok($data['path'])) continue;
             $rows[] = [
                 'id'        => (string)$id,
                 'path'      => $data['path'],
@@ -287,6 +311,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
                 if ($page_id === null) continue;
                 if ($cutoff && $updated_of($page_id) < $cutoff) continue;
                 if (!$has_all_tags($all[$page_id]['tags'] ?? [])) continue;
+                if (!$fields_ok($row['path'])) continue;
                 $results[] = [
                     'id'      => (string)$page_id,
                     'path'    => $row['path'],
@@ -307,6 +332,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
         if (wiki_is_template_path($data['path']) || wiki_is_memory_path($data['path'])) continue;
         if ($cutoff && (int)($data['updated'] ?? 0) < $cutoff) continue;
         if (!$has_all_tags($data['tags'] ?? [])) continue;
+        if (!$fields_ok($data['path'])) continue;
         $abs = rtrim($space_dir, '/') . '/' . $data['path'];
         if (!file_exists($abs)) continue;
         $content = file_get_contents($abs);
@@ -330,6 +356,40 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
     return $results;
 }
 
+/**
+ * Check the bound front-matter fields an AI write changed (taxonomy.php). Returns
+ * [content, error]: the content with valid values respelled as the tree spells them, or an
+ * error naming the field and its values. Only a value that differs from what the file
+ * already held is checked — an odd value from an import is not the AI's to answer for.
+ */
+function wiki_ai_check_bound_fields(string $prev_raw, string $new_raw): array {
+    $fields = wiki_tax_fields();
+    if (!$fields) return [$new_raw, ''];
+    $old = wiki_fm_split($prev_raw)['meta'];
+    $new = wiki_fm_split($new_raw)['meta'];
+    $norm = function ($v, bool $multi) {
+        $items = is_array($v) ? $v : ($multi ? explode(',', (string)$v) : [(string)$v]);
+        return array_values(array_filter(array_map(fn($x) => trim((string)$x), $items), fn($x) => $x !== ''));
+    };
+    $updates = [];
+    foreach ($new as $k => $v) {
+        $f = $fields[strtolower((string)$k)] ?? null;
+        if (!$f) continue;
+        $was = null;
+        foreach ($old as $ok => $ov) if (strcasecmp((string)$ok, (string)$k) === 0) { $was = $ov; break; }
+        $items = $norm($v, $f['multiple']);
+        if ($was !== null && array_map('wiki_tax_lc', $norm($was, $f['multiple'])) === array_map('wiki_tax_lc', $items)) continue;
+        try {
+            $ok_v = wiki_tax_field_check((string)$k, $f['multiple'] ? $items : ($items[0] ?? ''));
+        } catch (WikiTaxonomyException $e) {
+            return [$new_raw, $e->getMessage()];
+        }
+        $canon = is_array($ok_v) ? $ok_v : [$ok_v];
+        if ($canon !== $items) $updates[(string)$k] = is_array($v) || $f['multiple'] ? $canon : $ok_v;
+    }
+    return [$updates ? wiki_fm_set($new_raw, $updates) : $new_raw, ''];
+}
+
 // Parses the compact Advanced Search query language into structured parts:
 //   src:<slug>     route to a registered MCP source (0 or 1; first wins)
 //   tag:<value>    exact tag filter (0+, AND); tag:"multi word" is honored
@@ -338,7 +398,8 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
 // Returns ['src'=>?string, 'tags'=>string[], 'days'=>int, 'text'=>string,
 //          'filters'=>bool (any tag/date filter present)].
 function parse_search_query(string $raw): array {
-    $src = null; $tags = []; $days = 0; $words = [];
+    $src = null; $tags = []; $days = 0; $words = []; $fields = [];
+    $bound = function_exists('wiki_tax_fields') ? wiki_tax_fields() : [];
     // Tokenize respecting quotes so tag:"multi word" stays one token.
     preg_match_all('/(?:[^\s"]+"[^"]*")|"[^"]*"|\S+/', trim($raw), $m);
     foreach ($m[0] as $tok) {
@@ -349,6 +410,10 @@ function parse_search_query(string $raw): array {
             if ($v !== '') $tags[] = $v;
         } elseif (preg_match('/^updated:<?(\d+)d?$/i', $tok, $mm)) {
             $days = (int)$mm[1];
+        } elseif (preg_match('/^([A-Za-z_][A-Za-z0-9_.\-]*):(.+)$/', $tok, $mm) && isset($bound[strtolower($mm[1])])) {
+            // A front-matter field bound to the taxonomy: department:Finance.
+            $v = trim($mm[2], '"');
+            if ($v !== '') $fields[$bound[strtolower($mm[1])]['field']] = $v;
         } else {
             $words[] = $tok;
         }
@@ -357,8 +422,9 @@ function parse_search_query(string $raw): array {
         'src'     => $src,
         'tags'    => $tags,
         'days'    => $days,
+        'fields'  => $fields,
         'text'    => implode(' ', $words),
-        'filters' => (!empty($tags) || $days > 0),
+        'filters' => (!empty($tags) || $days > 0 || !empty($fields)),
     ];
 }
 
@@ -467,6 +533,13 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
     // '..' stripped, so with no ?space= the base is PAGES_DIR and a path of
     // "Bravo/secret.md" reaches Bravo without the parameter ever being set. Ask which
     // Space the resolved path lands in instead.
+    // The taxonomy file is not a page, whoever asks — see taxonomy.php.
+    foreach (['path', 'new_path', 'target'] as $arg) {
+        $rel = ltrim(str_replace('..', '', (string)($tool_input[$arg] ?? '')), '/');
+        if ($rel !== '' && wiki_tax_is_reserved(rtrim($space_dir, '/') . '/' . $rel)) {
+            return 'Error: "' . WIKI_TAX_FILE . '" is the wiki\'s taxonomy, not a page. Use wiki_get_taxonomy to read it.';
+        }
+    }
     if (defined('AUTHENTICATION_ENABLED') && AUTHENTICATION_ENABLED) {
         $acl = actor_spaces_filter($ai_user['role'] ?? 'reader', $ai_user);
         if ($acl !== null) {
@@ -578,8 +651,10 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             $days  = (int)($tool_input['updated_within_days'] ?? 0);
             $tags  = $tool_input['tags'] ?? [];
             if (!is_array($tags)) $tags = [];
-            if ($query === '' && $days <= 0 && !$tags) return 'Error: provide "query", "updated_within_days", "tags", or a combination.';
-            return json_encode(wiki_search_pages($query, $indexer, $space_dir, $days, $tags));
+            $sp_fields = $tool_input['fields'] ?? [];
+            if (!is_array($sp_fields)) $sp_fields = [];
+            if ($query === '' && $days <= 0 && !$tags && !$sp_fields) return 'Error: provide "query", "updated_within_days", "tags", "fields", or a combination.';
+            return json_encode(wiki_search_pages($query, $indexer, $space_dir, $days, $tags, $sp_fields));
 
         case 'wiki_read_page':
             $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
@@ -607,12 +682,18 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             $content = $tool_input['content'];
             $abs     = rtrim($space_dir, '/') . '/' . $rel;
             $dir     = dirname($abs);
-            if (!is_dir($dir)) mkdir($dir, 0755, true);
             $is_new  = !file_exists($abs);
             // The model is shown the body without front matter (unless exposed), so it
             // returns one without it. Re-attach, or an AI edit deletes a page's metadata.
             $fm_prev = $is_new ? '' : (string)@file_get_contents($abs);
             $content = wiki_fm_preserve($abs, $content);
+            // Fields bound to the taxonomy, where the AI changed them: checked, and
+            // respelled as the tree spells them. A value the page already had is left
+            // alone — it may have come from an import, which is somebody else's.
+            [$content, $fv_err] = wiki_ai_check_bound_fields($fm_prev, $content);
+            if ($fv_err !== '') return 'Error: ' . $fv_err . ' Nothing was written.';
+            // Only now: a refused write must not leave an empty folder behind.
+            if (!is_dir($dir)) mkdir($dir, 0755, true);
             $fm_changed = $is_new || wiki_fm_body($fm_prev) !== wiki_fm_body($content);
             if (file_put_contents($abs, $content) === false) return 'Error: could not write file.';
             // Index the body only, matching the save path.
@@ -895,6 +976,38 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             foreach ($related as &$_r) { $_r['space'] = $space_name_rp; $_r['id'] = (string)$_r['id']; }
             return json_encode($related);
 
+        case 'wiki_get_taxonomy':
+            $tx_mode = wiki_tax_mode();
+            $tx_lines = ['Mode: ' . $tx_mode . ' — ' . [
+                'free'       => 'any tag may be used; a new one is added to the taxonomy.',
+                'suggest'    => 'prefer existing terms; a new tag is added to the taxonomy.',
+                'controlled' => 'only the terms below may be used as tags.',
+            ][$tx_mode]];
+            $tx_walk = function (array $nodes, string $parent, int $depth) use (&$tx_walk, &$tx_lines) {
+                foreach ($nodes as $n) {
+                    if (count($tx_lines) > 3000) return;
+                    $path = $parent === '' ? $n['name'] : $parent . '/' . $n['name'];
+                    $tx_lines[] = str_repeat('  ', $depth) . $path
+                        . (!empty($n['heading']) ? ' (folder, not a tag)' : '')
+                        . (!empty($n['description']) ? ' — ' . $n['description'] : '');
+                    if (!empty($n['children'])) $tx_walk($n['children'], $path, $depth + 1);
+                }
+            };
+            $tx_walk(wiki_tax_nodes(), '', 0);
+            if (count($tx_lines) === 1) $tx_lines[] = '(The taxonomy is empty.)';
+            // Front-matter fields bound to a branch: what wiki_write_page's block and
+            // wiki_search_pages' "fields" may use.
+            $tx_fields = wiki_tax_fields();
+            if ($tx_fields) {
+                $tx_lines[] = '';
+                $tx_lines[] = 'Front-matter fields (write the plain value, not the path):';
+                foreach ($tx_fields as $f) {
+                    $tx_lines[] = '  ' . $f['field'] . ($f['multiple'] ? ' (one or more of)' : ' (one of)') . ': '
+                        . (implode(', ', array_column($f['values'], 'value')) ?: '(no values yet)');
+                }
+            }
+            return implode("\n", $tx_lines);
+
         case 'wiki_add_tags':
             if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot set tags.';
             $rel = ltrim(str_replace('..', '', $tool_input['path'] ?? ''), '/');
@@ -905,8 +1018,9 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             if ($page_id === null) return 'Error: page not found in index — make sure the path matches exactly what wiki_list_pages returns.';
             $existing_tags = $indexer->getTags($page_id);
             $merged_tags = array_values(array_unique(array_merge($existing_tags, array_filter(array_map('trim', $tags_input)))));
-            $indexer->updateTags($page_id, $merged_tags);
-            return "Tags on {$rel}: " . implode(', ', $merged_tags);
+            try { $indexer->updateTags($page_id, $merged_tags); }
+            catch (WikiTaxonomyException $e) { return 'Error: ' . $e->getMessage() . ' Call wiki_get_taxonomy for the terms.'; }
+            return "Tags on {$rel}: " . implode(', ', $indexer->getTags($page_id));
 
         case 'wiki_set_tags':
             if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot set tags.';
@@ -916,9 +1030,10 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             if (!is_array($tags_input)) return 'Error: tags must be an array.';
             $page_id = $indexer->getId($rel);
             if ($page_id === null) return 'Error: page not found in index — make sure the path matches exactly what wiki_list_pages returns.';
-            $indexer->updateTags($page_id, $tags_input);
-            $set_count = count(array_filter(array_map('trim', $tags_input)));
-            return $set_count > 0 ? "Tags set on {$rel}: " . implode(', ', array_filter(array_map('trim', $tags_input))) : "Tags cleared on {$rel}.";
+            try { $indexer->updateTags($page_id, $tags_input); }
+            catch (WikiTaxonomyException $e) { return 'Error: ' . $e->getMessage() . ' Call wiki_get_taxonomy for the terms.'; }
+            $now_tags = $indexer->getTags($page_id);
+            return $now_tags ? "Tags set on {$rel}: " . implode(', ', $now_tags) : "Tags cleared on {$rel}.";
 
         default:
             return 'Error: unknown tool.';

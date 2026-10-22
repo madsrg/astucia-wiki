@@ -381,6 +381,18 @@ export const renameSpaceInStorage = (oldSpace, newSpace) => {
     update(FAVORITES_KEY);
 };
 
+// A deleted space has nowhere to repoint to, so its entries are dropped.
+export const forgetSpaceInStorage = (space) => {
+    const drop = (key) => {
+        try {
+            const items = JSON.parse(localStorage.getItem(key) || '[]');
+            localStorage.setItem(key, JSON.stringify(items.filter(e => e.space !== space)));
+        } catch {}
+    };
+    drop(RECENTS_KEY);
+    drop(FAVORITES_KEY);
+};
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 export const init = ({ onNavigate, onRoot } = {}) => {

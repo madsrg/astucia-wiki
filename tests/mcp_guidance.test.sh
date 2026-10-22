@@ -43,7 +43,7 @@ section 'the two texts compose, server first'
 # wiki_mcp_guidance() is the one assembler both run paths use, so this pins the contract.
 probe() {  # probe <server-text> <per-ai-text>
     (cd "$WIKI_APP" && SRV="$1" AI="$2" php -r '
-require "config.php"; require "llm_providers.php"; require "ai_core.php";
+require_once "config.php"; require_once "llm_providers.php"; require_once "ai_core.php";
 $servers = [["id" => "s1", "name" => "Jira", "instructions" => getenv("SRV")]];
 $per_ai  = getenv("AI") === "" ? [] : ["s1" => getenv("AI")];
 echo json_encode(wiki_mcp_guidance($servers, $per_ai));')

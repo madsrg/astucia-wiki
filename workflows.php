@@ -598,12 +598,29 @@ function wiki_workflow_normalize(array $in, array $ai_uids, array $user_uids): a
             case 'tag':
                 $act = ['type' => 'tag', 'add' => _wiki_wf_tags($a['add'] ?? []), 'remove' => _wiki_wf_tags($a['remove'] ?? [])];
                 if (!$act['add'] && !$act['remove']) throw new Exception("Action {$n}: name a tag to add or remove.");
+                // Checked now rather than when it runs: in a controlled taxonomy a tag that
+                // is not a term would fail every run, and the author is here to fix it.
+                if (function_exists('wiki_tax_mode') && wiki_tax_mode() === 'controlled') {
+                    $tx_ix = wiki_tax_index();
+                    foreach ($act['add'] as $tx_t) {
+                        $tx_e = $tx_ix[wiki_tax_lc(wiki_tax_normalize($tx_t))] ?? null;
+                        if (!$tx_e || $tx_e['heading']) {
+                            throw new Exception("Action {$n}: \"{$tx_t}\" is not a term in the taxonomy, and only terms can be used as tags.");
+                        }
+                    }
+                }
                 break;
             case 'frontmatter':
                 $field = _wiki_wf_str($a['field'] ?? '', 100);
                 if (!preg_match('/^[A-Za-z_][A-Za-z0-9_.\- ]*$/', $field)) throw new Exception("Action {$n}: name the field to set.");
                 $value = _wiki_wf_str($a['value'] ?? '', 2000);
                 if (preg_match('/[\r\n]/', $value)) throw new Exception("Action {$n}: a value cannot contain a line break.");
+                // A field bound to the taxonomy takes only its branch's items. Checked now
+                // unless the value is a template, which only has a value when it runs.
+                if ($value !== '' && strpos($value, '{') === false && function_exists('wiki_tax_field_check')) {
+                    try { $value = (string)wiki_tax_field_check($field, $value); }
+                    catch (WikiTaxonomyException $e) { throw new Exception("Action {$n}: " . $e->getMessage()); }
+                }
                 $act = ['type' => 'frontmatter', 'field' => $field, 'value' => $value];
                 break;
             default:

@@ -49,9 +49,9 @@ MEM=$WIKI_PAGES/Main/memory
 # runner call them, through execute_ai_tool().
 probe() {
     (cd "$WIKI_APP" && MEMCFG="$1" php -r '
-require "config.php"; require "indexer.php"; require "space_settings.php";
-require "search_index.php"; require "llm_providers.php"; require "wiki_ai_tools.php";
-require "ai_core.php";
+require_once "config.php"; require_once "indexer.php"; require_once "space_settings.php";
+require_once "search_index.php"; require_once "llm_providers.php"; require_once "wiki_ai_tools.php";
+require_once "ai_core.php";
 $space = getenv("MEMSPACE") ?: "Main";
 $space_dir = rtrim(PAGES_DIR, "/") . "/" . $space;
 $ix  = new PageIndexer($space_dir);

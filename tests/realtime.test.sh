@@ -9,7 +9,7 @@
 #     for the hub, which records every POST. That covers the topics, the payload and — most
 #     importantly — `private=on`.
 #   - **Whether the hub honours a token's matchers** is upstream's contract, verified by
-#     hand against a real Mercure 1.1.2 hub rather than by downloading 34 MB in CI. What
+#     hand against a real Mercure 1.1.4 hub rather than by downloading 34 MB in CI. What
 #     that check covers, and what nothing here can: a Main-only ticket minted by this
 #     wiki's own code, against the Caddyfile tools/install-mercure.sh generates, receives
 #     Main, root-level and its own user topics and is refused Bravo, Main2 and another
@@ -182,7 +182,7 @@ json.dump(["Q3 report.md", "Notes/Q3 report.md", "A&B (draft).md", "it's here!.m
           open(sys.argv[1], 'w'))
 CASES
 php_side=$(cd "$WIKI_APP" && php -r '
-require "realtime.php";
+require_once "realtime.php";
 $c = json_decode(file_get_contents($argv[1]), true);
 // JSON_UNESCAPED_SLASHES, or PHP writes Notes\/… and node writes Notes/… — identical
 // values that differ only in serialisation, which is not what is under test here.
@@ -225,7 +225,7 @@ assert_contains "the Space name is encoded" 'wiki/Two%20Words/*' "$(claim "$WIKI
 assert_not_contains "not raw in the pattern" '"wiki/Two Words/' "$(claim "$WIKI_ROOT/jar-2w")"
 # rawurlencode() leaves only A-Za-z0-9-_.~ alone, so every character URL Pattern treats as
 # syntax is already a %XX literal by the time the hub compiles the matcher. Verified against
-# real 1.0.2 to 1.1.2 hubs: a Space called 'A (draft)' grants exactly itself, not a capture group.
+# real 1.0.2 to 1.1.4 hubs: a Space called 'A (draft)' grants exactly itself, not a capture group.
 fixture_space 'A (draft)'
 fixture_users '{"users":[
   {"uid":1,"sub":"s1","name":"Admin","role":"admin","auth":"oidc"},
@@ -290,7 +290,7 @@ assert_contains "and tree"   'topic=wiki%2FMain%2Ftree'           "$(posts)"
 section 'the ticket is the ACL, in the token'
 # `*` is a URL Pattern wildcard and matches across `/`, which is what `{+rest}` did before
 # Mercure 1.0 retired URI Templates. The trailing separator is what carries the isolation:
-# confirmed against real 1.0.2 to 1.1.2 hubs, `wiki/Main/*` matches wiki/Main/page/Note.md and does
+# confirmed against real 1.0.2 to 1.1.4 hubs, `wiki/Main/*` matches wiki/Main/page/Note.md and does
 # not match wiki/Main2/page/Leak.md — the same containment rule as service_auth.php's paths.
 assert_eq 'an unrestricted user gets the whole tree' \
   '{"subscribe": [{"match": "wiki/*", "match_type": "urlpattern"}]}' "$(claim "$ADMIN")"
@@ -377,7 +377,7 @@ section 'the hub probe keeps the real hostname and pins it to loopback'
 # header: overriding Host breaks the cookie the session rides on, so that route tests the
 # fixture's plumbing instead of the code.
 targets=$(cd "$WIKI_APP" && php -r '
-require "realtime.php";
+require_once "realtime.php";
 $out = [];
 foreach ([
     "tls"          => ["HTTP_HOST" => "wiki.example.test", "SERVER_PORT" => "443"],

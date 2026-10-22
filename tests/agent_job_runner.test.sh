@@ -35,7 +35,7 @@ import datetime,sys
 print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=float(sys.argv[1]))).isoformat())" "$1")" \
     > "$WIKI_SYS/agent_jobs_heartbeat.json"; }
 stalled() { (cd "$WIKI_APP" && php -r '
-require "config.php"; require "indexer.php"; require "agent_jobs.php";
+require_once "config.php"; require_once "indexer.php"; require_once "agent_jobs.php";
 echo agent_job_runner_stalled() ? "stalled" : "alive";'); }
 ls "$WIKI_SYS" | grep -q heartbeat || hb 0
 hb 0;  assert_eq "fresh heartbeat"                 "alive"   "$(stalled)"
@@ -64,8 +64,8 @@ PHP
 
 section 'the heartbeat is refreshed from inside the run'
 out=$(cd "$WIKI_APP" && STUB_URL="$WIKI_URL/__test_llm.php" php -r '
-require "config.php"; require "indexer.php"; require "space_settings.php";
-require "ai_core.php"; require "mailer.php"; require "agent_jobs.php";
+require_once "config.php"; require_once "indexer.php"; require_once "space_settings.php";
+require_once "ai_core.php"; require_once "mailer.php"; require_once "agent_jobs.php";
 $space_dir = rtrim(PAGES_DIR, "/") . "/Main";
 $ai = ["uid" => -9, "name" => "Bot", "role" => "editor", "is_ai" => true,
        "ai_config" => ["provider" => "openai", "model" => "m", "api_key" => "k",

@@ -334,6 +334,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <div class="tag-input-wrap">
                                 <input type="text" id="tag-input" data-i18n-placeholder="tags.placeholder" placeholder="Add a tag…" />
                             </div>
+                            <button type="button" id="tag-picker-btn" class="btn btn-sm btn-secondary tag-picker-btn" data-i18n-title="tags.picker-btn" title="Choose tags from the taxonomy"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="10" width="6" height="5" rx="1"/><rect x="15" y="17" width="6" height="5" rx="1"/><path d="M6 9v10h9"/><path d="M6 12.5h9"/></svg></button>
                         </div>
                     </div>
                     <div id="pc-page-input-area" class="chat-input-area hidden">
@@ -1302,6 +1303,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab hidden" data-tab="deleted" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg><span data-i18n="admin.tab.deleted">Deleted Pages</span></button>
                 <button class="admin-tab hidden" data-tab="chatpolicy" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><polyline points="12 7 12 10 14 11"/></svg><span data-i18n="admin.tab.chatpolicy">Chat Retention</span></button>
                 <button class="admin-tab hidden" data-tab="metadata" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg><span data-i18n="admin.tab.metadata">Page Metadata</span></button>
+                <button class="admin-tab hidden" data-tab="taxonomy" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="10" width="6" height="5" rx="1"/><rect x="15" y="17" width="6" height="5" rx="1"/><path d="M6 9v10h9"/><path d="M6 12.5h9"/></svg><span data-i18n="admin.tab.taxonomy">Taxonomy</span></button>
                 <button class="admin-tab hidden" data-tab="mentions" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg><span data-i18n="admin.tab.mentions">Mentions</span></button>
                 <button class="admin-tab hidden" data-tab="workflows" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M9 6h5a3 3 0 0 1 3 3v6"/><polyline points="14 12 17 15 20 12"/></svg><span data-i18n="admin.tab.workflows">Workflows</span></button>
             </div>
@@ -1434,6 +1436,15 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <p class="pref-hint" data-i18n="admin.metadata.expose-ai-hint"></p>
                         </div>
                         <button id="admin-fm-save" class="btn btn-blue" data-i18n="btn.save">Save</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="admin-pane-taxonomy" class="admin-pane hidden">
+                <div class="admin-scroll-area">
+                    <div class="admin-taxonomy-body">
+                        <p class="admin-reindex-desc" data-i18n="admin.tax.desc"></p>
+                        <div id="admin-taxonomy-root"></div>
                     </div>
                 </div>
             </div>

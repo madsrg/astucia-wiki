@@ -431,10 +431,12 @@ setTimeout(() => {
             // say so on the tab you are looking at — the server refuses the writes
             // either way, so nothing else would tell you.
             + ' frozenNotesHidden=' + document.querySelectorAll(
-                  '.space-settings-pane .space-settings-status.is-blocked.hidden').length
+                  '.space-settings-pane > .space-settings-status.is-blocked.hidden').length
             // …and below the settings they are about, not above them.
+            // Direct children only: a section's own status line (merge, delete) is
+            // inside the section, and is not a freeze note.
             + ' frozenNotesLast=' + [...document.querySelectorAll(
-                  '.space-settings-pane .space-settings-status.is-blocked')]
+                  '.space-settings-pane > .space-settings-status.is-blocked')]
                   .filter(n => n.parentElement.lastElementChild === n).length
             + ' paneH=' + tabs.map(t => {
                   t.click();
@@ -454,7 +456,15 @@ setTimeout(() => {
       const sel  = document.getElementById('new-space-fm');
       const st   = document.getElementById('new-space-stamp');
       const mem  = document.getElementById('new-space-memory');
+      const ft   = document.getElementById('new-space-fmtags');
+      // Four settings with a hint each: the box must hold them without the buttons
+      // leaving the window (it scrolls its body below a certain height instead).
+      const box  = document.querySelector('#confirm-modal .input-modal-content').getBoundingClientRect();
+      const okR  = document.getElementById('confirm-modal-ok').getBoundingClientRect();
       document.title = 'PROBE name=' + (name ? 'yes' : 'no')
+        + ' boxW=' + Math.round(box.width)
+        + ' okInView=' + (okR.bottom <= window.innerHeight && okR.top >= 0)
+        + ' fmTags=' + (ft ? ft.value + ':' + [...ft.options].map(o => o.value).join(',') : 'no')
         + ' select=' + (sel ? 'yes' : 'no')
         + ' default=' + (sel ? sel.value : '-')
         + ' options=' + (sel ? [...sel.options].map(o => o.value).join(',') : '-')
@@ -465,6 +475,7 @@ setTimeout(() => {
       if (name && sel) { name.value = 'FromDialog'; sel.value = 'manual'; }
       if (st) st.value = 'on';
       if (mem) mem.checked = true;
+      if (ft) ft.value = 'on';
       document.getElementById('confirm-modal-ok').click();
     }, 1500);
     return;
@@ -475,6 +486,12 @@ setTimeout(() => {
       const host = document.getElementById('confirm-modal-message');
       const inp  = host.querySelector('.fm-input[data-key="status"]');
       if (inp) inp.value = 'published';
+      // No taxonomy here, so no field chooser: the name box is the row's first box and
+      // must sit level with the value box (a margin meant for under the chooser once put
+      // it 4px lower).
+      const kr = document.getElementById('fm-new-key').getBoundingClientRect();
+      const vr = document.getElementById('fm-new-val').getBoundingClientRect();
+      const rowAligned = Math.abs(kr.top - vr.top) < 1 && Math.abs(kr.bottom - vr.bottom) < 1;
       const beforeAdd = host.querySelectorAll('.fm-input').length;
       document.getElementById('fm-new-key').value = 'owner';
       document.getElementById('fm-new-val').value = 'Ada Lovelace';
@@ -483,7 +500,8 @@ setTimeout(() => {
       document.title = 'PROBE editable=' + beforeAdd
         + ' afterAdd=' + host.querySelectorAll('.fm-input').length
         + ' locked=' + host.querySelectorAll('.fm-locked').length
-        + ' struck=' + host.querySelectorAll('.fm-removed').length;
+        + ' struck=' + host.querySelectorAll('.fm-removed').length
+        + ' rowAligned=' + rowAligned;
       document.getElementById('confirm-modal-ok').click();
     }, 1500);
     return;
@@ -514,7 +532,7 @@ load() {
     local sp="${3:-Main}"
     local q="pageid=$(page_id "$1" "$sp")&space=$sp"
     [ -n "${2:-}" ] && q="$q&probe=$2"
-    "$CHROME" --headless=new --disable-gpu --no-sandbox --window-size=1280,900 \
+    "$CHROME" --headless=new --disable-gpu --no-sandbox --window-size="${WINDOW:-1280,900}" \
         --virtual-time-budget=25000 \
         --dump-dom "$WIKI_URL/index.php?$q" > "$WIKI_ROOT/dom.html" 2>/dev/null
     DOM=$(cat "$WIKI_ROOT/dom.html")
@@ -630,6 +648,7 @@ assert_not_contains "  and is not sent to a dialog they cannot open" 'the gear b
 
 section 'editing writes through to the file'
 load Edit.md edit-field Editable
+assert_contains "the add row's name and value boxes line up" 'rowAligned=true' "$PROBE"
 # title, status and the tags list — a list is editable as well now.
 assert_contains "all three fields were editable"   'editable=3' "$PROBE"
 assert_contains "  and the added field joined them" 'afterAdd=4' "$PROBE"
@@ -655,11 +674,20 @@ assert_contains "  also defaulting to off"       'stampDefault=off'  "$PROBE"
 assert_contains "  with both modes"              'stampOptions=off,on' "$PROBE"
 assert_contains "  and offers AI memory"         'memoryBox=checkbox:' "$PROBE"
 assert_contains "  unticked by default"          'memoryBox=checkbox:unticked' "$PROBE"
+assert_contains "  and asks about tags in front matter, off by default" 'fmTags=off:off,on' "$PROBE"
+assert_contains "the dialog is wider for four settings" 'boxW=684' "$PROBE"
+assert_contains "  and its buttons are on screen" 'okInView=true' "$PROBE"
+# A short window is where it broke: at four settings the 80vh cap put Create ~100px below
+# the screen. The body scrolls now, so the buttons stay in view. (This run creates a second
+# Space, FromDialog being taken, so it is checked for the button and nothing after.)
+WINDOW=1280,700 load Report.md new-space Main
+assert_contains "  in a 700px window as well"     'okInView=true' "$PROBE"
 sleep 1
 created=$(curl -s "$WIKI_URL/api.php?action=list_spaces")
 assert_contains "the Space was created"          'FromDialog'        "$created"
 assert_contains "  with the chosen policy"       '"fm_edit":["Editable","FromDialog"]' "$created"
 assert_contains "  and the chosen stamping"      '"fm_autostamp":["Editable","FromDialog"]' "$created"
+assert_contains "  and tags in front matter"     '"fm_tags_sync":["FromDialog"]' "$created"
 assert_eq "  and AI memory, as ticked" 'True' "$(python3 -c "import json
 print(json.load(open('$WIKI_SYS/spaces.json')).get('FromDialog', {}).get('memory'))")"
 assert_file_missing "  with no memory/ folder yet"  "$WIKI_PAGES/FromDialog/memory"
@@ -814,10 +842,10 @@ assert_contains "the stamping select is there"  'stamp=on'    "$PROBE"
 # The callback fired by that change was once referenced without being declared, which threw
 # only in the browser, only after the request had already succeeded.
 assert_contains "and changing it raises no error" 'error=none' "$PROBE"
-# Six sections now, grouped into four tabs — which is what stopped the dialog growing
+# Eight sections now (front-matter tags joined Content, delete joined Advanced), grouped into four tabs — which is what stopped the dialog growing
 # past its box again. Every pane is measured, not just the one that opens first: a tab
 # nobody looked at is exactly where an oversized section would hide.
-assert_contains "every section is present"      'sections=6'       "$PROBE"
+assert_contains "every section is present"      'sections=8'       "$PROBE"
 assert_contains "grouped into four tabs"        'tabs=4'           "$PROBE"
 assert_contains "named as expected"             'tabNames=general,content,ai,advanced' "$PROBE"
 assert_contains "every tab fits the window"     'fitsAll=yes'      "$PROBE"

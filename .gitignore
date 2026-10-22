@@ -9,3 +9,6 @@ docker/wiki.env
 
 # Written by docker/build.sh: the exact image tag it produced
 docker/.image-tag
+
+# Local backups (CLAUDE.md.pre-split.bak and the like)
+*.bak

@@ -166,6 +166,39 @@ function wiki_space_set_fm_autostamp(string $space, string $mode): bool {
 }
 
 /**
+ * Does this space keep each page's front-matter `tags:` in step with its tags?
+ *
+ * Off by default, like stamping and for the same reason: it makes the wiki write into a
+ * file's own block, which a Space mirroring somebody's Obsidian vault may not want. When on,
+ * every tag change on a `.md` page is applied to its `tags:` as a delta (see
+ * wiki_fm_tags_apply()), so tags the block has and the index does not are never dropped.
+ * No backfill: pages are written as their tags next change.
+ */
+function wiki_space_fm_tags_sync(?string $space): string {
+    $space = trim((string)$space);
+    if ($space === '') return 'off';
+    return (wiki_space_settings_get(basename($space))['fm_tags_sync'] ?? 'off') === 'on' ? 'on' : 'off';
+}
+
+function wiki_space_dir_fm_tags_sync(?string $space_dir): string {
+    if (!$space_dir) return 'off';
+    $dir = rtrim($space_dir, '/');
+    if ($dir === rtrim(PAGES_DIR, '/')) return 'off';
+    return wiki_space_fm_tags_sync(basename($dir));
+}
+
+function wiki_space_set_fm_tags_sync(string $space, string $mode): bool {
+    $space = basename(trim($space));
+    if ($space === '' || !in_array($mode, ['off', 'on'], true)) return false;
+    $all = wiki_space_settings_all(true);
+    $rec = is_array($all[$space] ?? null) ? $all[$space] : [];
+    if ($mode === 'off') unset($rec['fm_tags_sync']);
+    else                 $rec['fm_tags_sync'] = 'on';
+    $all[$space] = $rec;
+    return wiki_space_settings_save($all);
+}
+
+/**
  * Does this space keep an AI memory store?
  *
  * Off unless the record says otherwise, so a new space — and a space that predates the

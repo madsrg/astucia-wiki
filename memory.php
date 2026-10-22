@@ -224,7 +224,7 @@ function wiki_memory_write(string $space_dir, $indexer, string $title, string $f
         $id = $indexer->getId($rel);
         if ($id !== null) {
             $clean = array_values(array_unique(array_filter(array_map('trim', $tags))));
-            if ($clean) $indexer->updateTags($id, $clean);
+            if ($clean) $indexer->updateTags($id, $clean, false);   // the model's own filing, not the taxonomy's
         }
     }
     return ['ok' => true, 'path' => $rel, 'created' => $created, 'error' => ''];

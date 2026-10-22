@@ -249,6 +249,7 @@ const helpHtml = () => `
             <li><code>tag:hr</code> — ${t('asearch.help-tag')}</li>
             <li><code>tag:"multi word"</code> — ${t('asearch.help-tag-quoted')}</li>
             <li><code>updated:7d</code> — ${t('asearch.help-updated')}</li>
+            <li><code>department:Finance</code> — ${t('asearch.help-field')}</li>
             <li><code>src:othersite</code> — ${t('asearch.help-src')}</li>
         </ul>
         <p class="form-hint">${t('asearch.help-note')}</p>
