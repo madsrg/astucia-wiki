@@ -109,6 +109,11 @@ export default {
     'search.replace-btn': 'Ersetzen', 'search.replace-all': 'Alle ersetzen',
     'search.results': 'Suchergebnisse für „{query}"',
     'search.no-results': 'Keine Seiten gefunden.', 'search.tag-results': 'Seiten mit Tag „{tag}"', 'search.all-spaces': 'Alle Bereiche',
+    'search.tags-show-all': 'Alle anzeigen ({count})',
+    'search.tags-show-fewer': 'Weniger anzeigen',
+    'search.tags-none': 'Keine passenden Tags',
+    'search.tags-expand': 'Aufklappen',
+    'search.tags-collapse': 'Zuklappen',
     'search.prev': '← Zurück', 'search.next': 'Weiter →', 'search.page-of': 'Seite {page} von {total}',
 
     'chat.send': 'Senden', 'chat.placeholder': 'Nachricht eingeben… (Enter zum Senden, Umschalt+Enter für neue Zeile, @ für Personen, # für KI, / für Befehle)',

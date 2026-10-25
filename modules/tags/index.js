@@ -6,7 +6,7 @@ import { state } from '../core/state.js';
 import { refreshFileTree, revealAndSelectFile, treeEntry } from '../file_tree/index.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { t } from '../i18n/index.js';
-import { getTaxonomy, invalidateTaxonomy, indexByPath, flatten, normalizeTag, lc } from '../core/taxonomy.js';
+import { getTaxonomy, invalidateTaxonomy, indexByPath, flatten, normalizeTag, lc, tagLeaf } from '../core/taxonomy.js';
 import { openTagPicker } from './picker.js';
 
 // Session-level cache of all tags across all accessible spaces.
@@ -47,7 +47,9 @@ export const renderTags = () => {
     state.currentPageTags.forEach((tag, index) => {
         const tagEl = document.createElement('span');
         tagEl.className = 'tag';
-        tagEl.textContent = tag;
+        // A nested tag shows its last segment; the full path is the tooltip.
+        tagEl.textContent = tagLeaf(tag);
+        if (tagLeaf(tag) !== tag) tagEl.title = tag;
         const removeBtn = document.createElement('button');
         removeBtn.className = 'tag-remove';
         removeBtn.textContent = '×';

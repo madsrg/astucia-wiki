@@ -4780,25 +4780,50 @@ if (isset($_REQUEST['action'])) {
                         $_tc_spaces = array_values(array_filter($_tc_spaces, fn($s) => in_array($s, $_tc_allowed, true)));
                     }
                 }
+                // `branches` adds, for every term that has nested tags below it
+                // (`Finance` for `Finance/Budget`), how many distinct pages carry it or
+                // anything under it — the cloud's grouped view. Summing the children's
+                // counts would count a page tagged with two of them twice.
                 $_tc_counts = [];
+                $_tc_under  = [];   // lc term => ['tag' => spelling, 'pages' => n]
                 foreach ($_tc_spaces as $_tc_sp) {
                     $_tc_idx = rtrim(PAGES_DIR, '/') . '/' . $_tc_sp . '/index.json';
                     if (!file_exists($_tc_idx)) continue;
                     $_tc_data = json_decode(file_get_contents($_tc_idx), true) ?? [];
                     foreach ($_tc_data as $_tc_entry) {
                         if (!empty($_tc_entry['tags']) && is_array($_tc_entry['tags'])) {
+                            $_tc_seen = [];
                             foreach ($_tc_entry['tags'] as $_tc_tag) {
                                 $_tc_counts[$_tc_tag] = ($_tc_counts[$_tc_tag] ?? 0) + 1;
+                                $_tc_acc = '';
+                                foreach (explode('/', (string)$_tc_tag) as $_tc_seg) {
+                                    $_tc_acc = $_tc_acc === '' ? $_tc_seg : $_tc_acc . '/' . $_tc_seg;
+                                    $_tc_seen[wiki_tax_lc($_tc_acc)] = $_tc_acc;
+                                }
+                            }
+                            foreach ($_tc_seen as $_tc_lc => $_tc_sp_tag) {
+                                if (!isset($_tc_under[$_tc_lc])) $_tc_under[$_tc_lc] = ['tag' => $_tc_sp_tag, 'pages' => 0];
+                                $_tc_under[$_tc_lc]['pages']++;
                             }
                         }
                     }
                 }
                 ksort($_tc_counts, SORT_STRING | SORT_FLAG_CASE);
                 $_tc_result = [];
+                $_tc_parents = [];
                 foreach ($_tc_counts as $_tc_tag => $_tc_n) {
                     $_tc_result[] = ['tag' => $_tc_tag, 'count' => $_tc_n];
+                    $_tc_segs = explode('/', (string)$_tc_tag);
+                    while (count($_tc_segs) > 1) {
+                        array_pop($_tc_segs);
+                        $_tc_parents[wiki_tax_lc(implode('/', $_tc_segs))] = true;
+                    }
                 }
-                echo json_encode(['success' => true, 'data' => $_tc_result]);
+                $_tc_branches = [];
+                foreach (array_keys($_tc_parents) as $_tc_lc) {
+                    if (isset($_tc_under[$_tc_lc])) $_tc_branches[] = $_tc_under[$_tc_lc];
+                }
+                echo json_encode(['success' => true, 'data' => $_tc_result, 'branches' => $_tc_branches]);
                 break;
 
             case 'get_taxonomy':

@@ -109,6 +109,11 @@ export default {
     'search.replace-btn': 'Remplacer', 'search.replace-all': 'Tout remplacer',
     'search.results': 'Résultats de recherche pour « {query} »',
     'search.no-results': 'Aucune page trouvée.', 'search.tag-results': 'Pages avec le tag « {tag} »', 'search.all-spaces': 'Tous les espaces',
+    'search.tags-show-all': 'Tout afficher ({count})',
+    'search.tags-show-fewer': 'Afficher moins',
+    'search.tags-none': 'Aucun tag correspondant',
+    'search.tags-expand': 'Développer',
+    'search.tags-collapse': 'Réduire',
     'search.prev': '← Précédent', 'search.next': 'Suivant →', 'search.page-of': 'Page {page} sur {total}',
 
     'chat.send': 'Envoyer', 'chat.placeholder': 'Tapez un message… (Entrée pour envoyer, Maj+Entrée pour nouvelle ligne, @ pour les personnes, # pour l\'IA, / pour commandes)',

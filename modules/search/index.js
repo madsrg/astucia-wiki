@@ -7,19 +7,136 @@ import { hidePageControls } from '../core/page_chrome.js';
 import { loadPage } from '../page_view/index.js';
 import { revealAndSelectFile, refreshFileTree } from '../file_tree/index.js';
 import { t } from '../i18n/index.js';
+import { lc, tagLeaf } from '../core/taxonomy.js';
 import { updateFavoriteBtn } from '../nav/index.js';
+
+// The cloud shows the TAG_CLOUD_TOP most-used entries until expanded, and only the
+// tags matching the sidebar search box while something is typed in it. Both are
+// client-side over one fetch, so typing never costs a request.
+//
+// Nested tags (`Department/Finance`, the taxonomy's convention) are grouped: the top level
+// shows one chip per first segment, counted in distinct pages by the server (`branches`),
+// and its caret opens the next level in place. Grouping reads the tag strings rather than
+// the taxonomy tree, so it works in every mode and with tags the tree does not hold.
+// Clicking a branch's name lists everything under it — get_pages_by_tag already matches
+// descendants. While filtering, the list is flat and matches on the full path, so typing
+// `budget` finds `Department/Finance/Budget` without opening anything. Every chip shows
+// only a tag's last segment; the full path is its tooltip.
+const TAG_CLOUD_TOP = 40;
+let _tagData     = [];
+let _tagTree     = [];
+let _tagFilter   = '';
+let _tagExpanded = false;
+const _tagOpen   = new Set();   // lower-cased paths of the branches opened
+
+const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+
+const buildTagTree = (tags, branches) => {
+    const pages = new Map((branches || []).map(b => [lc(b.tag), b.pages]));
+    const root = new Map();
+    tags.forEach(({ tag, count }) => {
+        let level = root, path = '', node = null;
+        String(tag).split('/').forEach(seg => {
+            path = path ? path + '/' + seg : seg;
+            const key = lc(seg);
+            node = level.get(key);
+            if (!node) {
+                node = { name: seg, path, count: 0, children: new Map() };
+                level.set(key, node);
+            }
+            level = node.children;
+        });
+        node.count += count;
+    });
+    const finish = (level) => [...level.values()].map(n => {
+        const children = finish(n.children);
+        return { ...n, children,
+                 weight: children.length ? (pages.get(lc(n.path)) ?? n.count) : n.count };
+    }).sort(byName);
+    return finish(root);
+};
+
+const tagChip = (tag, label, count) => {
+    const el = document.createElement('span');
+    el.className = 'tag-cloud-item';
+    el.textContent = `${label} (${count})`;
+    el.dataset.tag = tag;
+    if (label !== tag) el.title = tag;
+    return el;
+};
+
+const renderTagNode = (node, into) => {
+    if (!node.children.length) {
+        into.appendChild(tagChip(node.path, node.name, node.weight));
+        return;
+    }
+    const open = _tagOpen.has(lc(node.path));
+    const chip = tagChip(node.path, node.name, node.weight);
+    chip.classList.add('tag-cloud-branch');
+    const caret = document.createElement('button');
+    caret.type = 'button';
+    caret.className = 'tag-cloud-caret';
+    caret.dataset.branch = lc(node.path);
+    caret.textContent = open ? '▾' : '▸';
+    caret.setAttribute('aria-expanded', open ? 'true' : 'false');
+    caret.title = open ? t('search.tags-collapse') : t('search.tags-expand');
+    caret.setAttribute('aria-label', caret.title);
+    chip.prepend(caret);
+    if (!open) { into.appendChild(chip); return; }
+
+    const group = document.createElement('div');
+    group.className = 'tag-cloud-group';
+    group.appendChild(chip);
+    const kids = document.createElement('div');
+    kids.className = 'tag-cloud-children';
+    node.children.forEach(child => renderTagNode(child, kids));
+    group.appendChild(kids);
+    into.appendChild(group);
+};
+
+const renderTagCloud = () => {
+    const tagCloud = document.getElementById('tag-cloud');
+    if (!tagCloud) return;
+    tagCloud.innerHTML = '';
+
+    const filter = _tagFilter.trim().toLowerCase();
+    if (filter) {
+        const shown = _tagData.filter(({ tag }) => tag.toLowerCase().includes(filter));
+        shown.forEach(({ tag, count }) => tagCloud.appendChild(tagChip(tag, tagLeaf(tag), count)));
+        if (!shown.length && _tagData.length) {
+            const empty = document.createElement('span');
+            empty.className = 'tag-cloud-empty';
+            empty.textContent = t('search.tags-none');
+            tagCloud.appendChild(empty);
+        }
+        return;
+    }
+
+    let shown = _tagTree;
+    if (!_tagExpanded && _tagTree.length > TAG_CLOUD_TOP) {
+        // Pick by count, but keep alphabetical order for scanning.
+        const top = new Set([..._tagTree].sort((a, b) => b.weight - a.weight)
+            .slice(0, TAG_CLOUD_TOP));
+        shown = _tagTree.filter(n => top.has(n));
+    }
+    shown.forEach(node => renderTagNode(node, tagCloud));
+
+    if (_tagTree.length > TAG_CLOUD_TOP) {
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'tag-cloud-toggle';
+        toggle.textContent = _tagExpanded
+            ? t('search.tags-show-fewer')
+            : t('search.tags-show-all', { count: _tagTree.length });
+        tagCloud.appendChild(toggle);
+    }
+};
 
 export const generateTagCloud = async () => {
     const result = await api.call('get_tag_cloud');
-    const tagCloud = document.getElementById('tag-cloud');
-    tagCloud.innerHTML = '';
-    (result.data || []).forEach(({ tag, count }) => {
-        const tagEl = document.createElement('span');
-        tagEl.className = 'tag-cloud-item';
-        tagEl.textContent = `${tag} (${count})`;
-        tagEl.dataset.tag = tag;
-        tagCloud.appendChild(tagEl);
-    });
+    _tagData = result.data || [];
+    _tagTree = buildTagTree(_tagData, result.branches);
+    renderTagCloud();
 };
 
 const RESULTS_PER_PAGE = 50;
@@ -179,8 +296,21 @@ export const init = () => {
     }
 
     tagCloud.addEventListener('click', async (e) => {
-        if (e.target.classList.contains('tag-cloud-item')) {
-            const tag = e.target.dataset.tag;
+        if (e.target.classList.contains('tag-cloud-toggle')) {
+            _tagExpanded = !_tagExpanded;
+            renderTagCloud();
+            return;
+        }
+        const caret = e.target.closest('.tag-cloud-caret');
+        if (caret) {
+            const key = caret.dataset.branch;
+            if (_tagOpen.has(key)) _tagOpen.delete(key); else _tagOpen.add(key);
+            renderTagCloud();
+            return;
+        }
+        const chip = e.target.closest('.tag-cloud-item');
+        if (chip) {
+            const tag = chip.dataset.tag;
             const result = await api.call('get_pages_by_tag', { tag, all_spaces: '1' });
             if (result.success) displaySearchResults(t('search.tag-results', { tag }), result.data, !!result.cross_space);
         }
@@ -188,6 +318,12 @@ export const init = () => {
 
     searchQueryBtn.addEventListener('click', performSearch);
     searchQueryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') performSearch(); });
+    // Typing narrows the tag cloud; Enter still runs the full-text search. Only real
+    // typing counts — a search started elsewhere fills the box without filtering.
+    searchQueryInput.addEventListener('input', () => {
+        _tagFilter = searchQueryInput.value;
+        renderTagCloud();
+    });
 
     // Click on a search result link — handles same-space and cross-space navigation.
     viewerContent.addEventListener('click', async (e) => {

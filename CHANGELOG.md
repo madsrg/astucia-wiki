@@ -6,6 +6,30 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.10.6] — 2026-10-25
+
+The tag cloud stays usable on a wiki with many tags and groups nested tags by branch, a
+nested tag shows only its last part, and the Docker image moves to Mercure 1.1.5 and PHP
+8.5.12.
+
+### Changed
+- **The tag cloud shows the 40 most-used tags**, alphabetically, with *Show all* for the
+  rest. Typing in the sidebar search box narrows it to the matching tags while you type;
+  Enter still searches the pages. The cloud scrolls instead of growing past half the
+  window.
+- **Nested tags are grouped by branch in the tag cloud.** `Department/Finance` and
+  `Department/HR` appear under one *Department* chip, which counts the pages under it once
+  each; its arrow opens the next level, and clicking the name lists every page under it.
+- **A nested tag shows its last part** — *Finance* rather than `Department/Finance` — in
+  the tag cloud and in a page's tag list. The full path is the tooltip.
+
+### Security
+- **The Docker image bundles Mercure 1.1.5**, built with Go 1.27.3, which distrusts
+  compromised intermediate certificates (GO-2026-6809). Re-verified on the real hub:
+  Space isolation, root and per-user topics, and refusal of a forged token.
+  `tools/install-mercure.sh` and the README now recommend 1.1.5.
+- **The Docker image is built on PHP 8.5.12**, the security release of 21 October 2026.
+
 ## [2026.10.5] — 2026-10-22
 
 Tags get a wiki-wide taxonomy: a tree of folders and items, a tagging mode, a tag picker,

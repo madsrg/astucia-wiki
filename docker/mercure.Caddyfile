@@ -23,7 +23,7 @@
 	# write that is *stuck*, not quiet time between writes — an idle stream with a pause of
 	# 70 s still received its next event, verified against 1.0.4 to 1.1.4 — so it costs
 	# nothing. Drop it once the hub is built on a Caddy release that includes
-	# caddyserver/caddy#8145 (merged, but 1.1.4 is still on 2.11.7).
+	# caddyserver/caddy#8145 (merged, but 1.1.5 is still on 2.11.7).
 	servers {
 		timeouts {
 			write_idle 5s

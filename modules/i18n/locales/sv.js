@@ -109,6 +109,11 @@ export default {
     'search.replace-btn': 'Ersätt', 'search.replace-all': 'Ersätt alla',
     'search.results': 'Sökresultat för "{query}"',
     'search.no-results': 'Inga sidor hittades.', 'search.tag-results': 'Sidor taggade med "{tag}"', 'search.all-spaces': 'Alla utrymmen',
+    'search.tags-show-all': 'Visa alla ({count})',
+    'search.tags-show-fewer': 'Visa färre',
+    'search.tags-none': 'Inga matchande taggar',
+    'search.tags-expand': 'Fäll ut',
+    'search.tags-collapse': 'Fäll ihop',
     'search.prev': '← Föregående', 'search.next': 'Nästa →', 'search.page-of': 'Sida {page} av {total}',
 
     'chat.send': 'Skicka', 'chat.placeholder': 'Skriv ett meddelande… (Enter för att skicka, Skift+Enter för ny rad, @ för personer, # för AI, / för kommandon)',

@@ -31,6 +31,9 @@ export const lc = (s) => String(s).toLocaleLowerCase();
 export const normalizeTag = (s) => String(s).split('/')
     .map(seg => seg.replace(/\s+/g, ' ').trim()).filter(Boolean).join('/');
 
+/** "Department/Finance" → "Finance": what a tag chip shows; the full path goes in its tooltip. */
+export const tagLeaf = (tag) => String(tag).split('/').pop();
+
 /**
  * The tree as a file browser shows it: at every level folders first, then items, each
  * alphabetical — case-insensitive and numeric-aware, so "Q2" comes before "Q10". A copy,

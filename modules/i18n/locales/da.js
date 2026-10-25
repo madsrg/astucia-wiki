@@ -110,6 +110,11 @@ export default {
     'search.replace-btn': 'Erstat', 'search.replace-all': 'Erstat alle',
     'search.results': 'Søgeresultater for "{query}"',
     'search.no-results': 'Ingen sider fundet.', 'search.tag-results': 'Sider tagget med "{tag}"', 'search.all-spaces': 'Alle rum',
+    'search.tags-show-all': 'Vis alle ({count})',
+    'search.tags-show-fewer': 'Vis færre',
+    'search.tags-none': 'Ingen matchende tags',
+    'search.tags-expand': 'Fold ud',
+    'search.tags-collapse': 'Fold sammen',
     'search.prev': '← Forrige', 'search.next': 'Næste →', 'search.page-of': 'Side {page} af {total}',
 
     'chat.send': 'Send', 'chat.placeholder': 'Skriv en besked… (Enter for at sende, Skift+Enter for ny linje, @ for personer, # for AI, / for kommandoer)',

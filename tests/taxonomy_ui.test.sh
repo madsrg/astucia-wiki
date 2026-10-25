@@ -116,7 +116,7 @@ setTimeout(async () => {
     $$('.tag-picker-footer .btn-blue')[0].click(); await sleep(1500);
     out += ' closed=' + !$('#tag-picker-modal');
     out += ' tags=' + JSON.stringify(state.currentPageTags);
-    out += ' shown=' + $$('#tags-display .tag').map(x => x.firstChild.textContent).join(',');
+    out += ' shown=' + $$('#tags-display .tag').map(x => x.firstChild.textContent + '@' + (x.title || '-')).join(',');
     const tax = await api.call('get_taxonomy', { space: '' });
     out += ' grew=' + JSON.stringify(tax.nodes).includes('Apollo');
 
@@ -202,7 +202,8 @@ assert_contains "  normalised, and ticked"          'extras=Project/Apollo:true'
 section 'apply'
 assert_contains "Apply closes the picker"           'closed=true'       "$PROBE"
 assert_contains "  and tags the page"               'tags=["Department/Finance","Project/Apollo"]' "$PROBE"
-assert_contains "  which the page shows"            'shown=Department/Finance,Project/Apollo' "$PROBE"
+assert_contains "  which the page shows by last segment, full path on hover" \
+                                                    'shown=Finance@Department/Finance,Apollo@Project/Apollo' "$PROBE"
 assert_contains "the new tag joined the tree"       'grew=true'         "$PROBE"
 
 section 'type-ahead'
