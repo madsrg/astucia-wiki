@@ -20,7 +20,8 @@ graph · optional git version history · static site export.
 tags pages carry (`Department/Finance`). A tree editor to rename, move and merge — every page
 using a tag follows — a tag picker beside the tag field, and a tagging mode from *free* to
 *controlled* for organisations that need consistent classification. Export and import the
-tree as JSON.
+tree as JSON. The tag cloud groups nested tags by branch and stays manageable however many
+tags you have.
 
 **Page metadata that travels with the file** — a page may open with a `---` block of YAML,
 as Obsidian, Hugo and Jekyll write it. The wiki keeps it out of the editor and out of
@@ -55,8 +56,9 @@ chats, pages, the file tree, mentions and job results arrive by push instead of 
 never broken. **Admin → Monitoring → Mercure** tells you whether it is working, and
 **Wiki Info** lists every version this install is running.
 
-> **This image bundles Mercure 1.1.4**, the current release. 1.1.4 closes two authorization
-> gaps in the hub; 1.1.0 fixed a request any signed-in user could send to make the hub
+> **This image bundles Mercure 1.1.5**, the current release, and runs on **PHP 8.5.12**, the
+> security release of 21 October 2026. 1.1.5 is built with a Go release that stops trusting
+> compromised intermediate certificates; 1.1.4 closed two authorization gaps in the hub; 1.1.0 fixed a request any signed-in user could send to make the hub
 > allocate about 1 GiB of memory, on top of the earlier fixes in 1.0.2 (ten
 > vulnerabilities, four high) and 1.0.3 (hardening against slow-connection attacks). The hub runs inside the image, so updating the image is the
 > fix. The live update stream is never compressed.
@@ -69,7 +71,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.10.5
+    madsrotwitt/astucia-wiki:2026.10.6
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -95,7 +97,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.10.5
+    madsrotwitt/astucia-wiki:2026.10.6
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -107,7 +109,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.10.5` | moves only if that release is rebuilt |
+| `2026.10.6` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
