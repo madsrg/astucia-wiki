@@ -13,6 +13,7 @@ import { isLive, subscribe, rtTopic } from '../realtime/index.js';
 import { loadWorkflows, initWorkflows } from './workflows.js';
 import { openPagePicker } from './page_picker.js';
 import { loadTaxonomyPane } from './taxonomy.js';
+import { loadSkills, initSkills } from './skills.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ const updateRequestsBadge = () => {
 
 const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
-    ai:         ['ai', 'llm', 'jobs', 'mcp'],
+    ai:         ['ai', 'llm', 'jobs', 'mcp', 'skills'],
     monitoring: ['logs', 'errorlog', 'audit', 'diagnostics', 'realtime', 'sysinfo'],
     content:    ['reindex', 'deleted', 'chatpolicy', 'metadata', 'taxonomy', 'mentions', 'workflows'],
 };
@@ -83,6 +84,7 @@ const switchTab = (name) => {
     document.getElementById('admin-footer-deleted')?.classList.toggle('hidden',      name !== 'deleted');
     document.getElementById('admin-footer-reindex')?.classList.toggle('hidden',      name !== 'reindex');
     document.getElementById('admin-footer-workflows')?.classList.toggle('hidden',    name !== 'workflows');
+    document.getElementById('admin-footer-skills')?.classList.toggle('hidden',       name !== 'skills');
     const activeTab = document.querySelector(`.admin-tab[data-tab="${name}"]`);
     if (activeTab?.dataset.group) lastTabInGroup[activeTab.dataset.group] = name;
     if (name === 'logs')        loadLogFiles();
@@ -104,6 +106,7 @@ const switchTab = (name) => {
     if (name === 'llm')         loadLlmConnections();
     if (name === 'workflows')   loadWorkflows();
     if (name === 'taxonomy')    loadTaxonomyPane();
+    if (name === 'skills')      loadSkills();
 };
 
 
@@ -1312,7 +1315,8 @@ const showBuiltinInstructions = async () => {
     // The Learning setting currently in the form, not the saved one: the preview is
     // read while deciding, and the memory block is part of what this AI gets told.
     const res = await api.call('admin_ai_builtin_instructions',
-                               { memory: document.getElementById('ai-f-memory')?.value || '' });
+                               { memory: document.getElementById('ai-f-memory')?.value || '',
+                                 skills: document.getElementById('ai-f-skills')?.value || '' });
     if (!res.success) { showToast(res.message || t('admin.ai.instructions-failed'), 'error'); return; }
 
     const el = (tag, cls, text) => {
@@ -1567,6 +1571,15 @@ const openAiUserForm = async (u) => {
                     </select>
                     <p class="form-hint">${t('admin.ai.memory-hint')}</p>
                 </div>
+                <!-- Skills: the same tri-state, but the wiki default is On — an
+                     administrator has already written the skill and switched the Space on. -->
+                <div class="form-group">
+                    <label>${t('admin.ai.skills')}</label>
+                    <select id="ai-f-skills" class="form-control">
+                        ${['', 'on', 'off'].map(v => `<option value="${v}"${(cfg.skills ?? '') === v ? ' selected' : ''}>${t('admin.ai.skills-' + (v || 'default'))}</option>`).join('')}
+                    </select>
+                    <p class="form-hint">${t('admin.ai.skills-hint')}</p>
+                </div>
             </div>
             <div class="admin-ai-form-section-header">${t('admin.ai.behaviour')}</div>
             <div class="admin-ai-form-section">
@@ -1768,6 +1781,7 @@ const saveAiUser = async (uid) => {
     const always_background = !!document.getElementById('ai-f-background')?.checked;
     const reasoning_effort  = document.getElementById('ai-f-effort')?.value || '';
     const memory            = document.getElementById('ai-f-memory')?.value || '';
+    const skills            = document.getElementById('ai-f-skills')?.value || '';
     const mcp_server_ids   = [...document.querySelectorAll('.ai-f-mcp-cb:checked')].map(cb => cb.value);
     const mcp_instructions = {};
     document.querySelectorAll('.ai-f-mcp-instr').forEach(ta => {
@@ -1787,7 +1801,7 @@ const saveAiUser = async (uid) => {
         uid: uid !== null ? String(uid) : '',
         name, role,
         spaces: JSON.stringify(spaces),
-        ai_config: JSON.stringify({ connection_id, avatar, model, system_prompt, system_prompt_space, system_prompt_page, context_messages, temperature, max_tokens, always_background, reasoning_effort, memory, mcp_server_ids, mcp_instructions }),
+        ai_config: JSON.stringify({ connection_id, avatar, model, system_prompt, system_prompt_space, system_prompt_page, context_messages, temperature, max_tokens, always_background, reasoning_effort, memory, skills, mcp_server_ids, mcp_instructions }),
     }, 'POST');
 
     saveBtn.disabled = false;
@@ -3228,6 +3242,7 @@ export const init = () => {
     document.querySelectorAll('.admin-tab').forEach(tab =>
         tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
     initWorkflows();
+    initSkills();
 
     document.getElementById('admin-audit-refresh-btn')?.addEventListener('click', loadAuditPane);
     document.getElementById('admin-audit-date')?.addEventListener('change', loadAuditEntries);

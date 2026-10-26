@@ -11,6 +11,7 @@ require_once __DIR__ . '/llm_providers.php';
 require_once __DIR__ . '/llm_connections.php';   // wiki_ai_effective_config()
 require_once __DIR__ . '/frontmatter.php';
 require_once __DIR__ . '/memory.php';
+require_once __DIR__ . '/skills.php';
 require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/taxonomy.php';   // wiki_space_rules_prompt() describes it
 require_once __DIR__ . '/wiki_ai_tools.php';
@@ -458,6 +459,7 @@ function wiki_space_rules_prompt(string $space_dir): string {
 function wiki_chat_context_prompt(string $space_name, string $chat_name, string $chat_dir_rel,
                                   string $space_dir = '', $indexer = null, array $ai_config = []): string {
     return wiki_memory_prompt($space_dir, $indexer, $ai_config)
+        . wiki_skills_prompt($space_dir, $ai_config)
         . "You are operating in the \"{$space_name}\" wiki space (current chat: \"{$chat_name}\"). "
         . "Each message below is prefixed with its author's name, so \"me\" is whoever wrote the message you are answering. "
         . wiki_chat_recency_prompt()
@@ -484,6 +486,7 @@ function wiki_job_context_prompt(string $space_name, string $dir_rel, string $re
         ? "This job was requested by {$requester}; \"me\" and \"the requester\" mean @{$requester}. "
         : '';
     return wiki_memory_prompt($space_dir, $indexer, $ai_config)
+        . wiki_skills_prompt($space_dir, $ai_config)
         . "You are an AI agent operating in the \"{$space_name}\" wiki space. "
         . $who_ctx
         . wiki_chat_recency_prompt()
@@ -1347,7 +1350,9 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
                                 'requested_by' => $job['requested_by']['name'] ?? null]);
     }
     $job_page_ctx = (string)($job['page_context'] ?? '');
-    $full_system  = $wiki_ctx . $job_page_ctx . $sys_prompt;
+    $full_system  = $wiki_ctx . $job_page_ctx . $sys_prompt
+                  . wiki_skill_invocation_prompt($space_dir, $config, !empty($job['skill'])
+                        ? '/skill ' . $job['skill'] : (string)($job['prompt'] ?? ''));
 
     // --- Live progress, for the placeholder waiting in the thread ---
     // An AI user set to always run in the background reaches the chat through this
@@ -1408,7 +1413,8 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     // difference nobody could see from the outside until a job was asked to do one of
     // those things and simply could not.
     $tools_def = wiki_tool_definitions(
-        wiki_ai_memory_enabled($config) && wiki_space_dir_memory($space_dir));
+        wiki_ai_memory_enabled($config) && wiki_space_dir_memory($space_dir),
+        wiki_skills_active($space_dir, $config));
 
     $mcp_server_ids    = $config['mcp_server_ids']   ?? [];
     $mcp_instructions  = $config['mcp_instructions'] ?? [];

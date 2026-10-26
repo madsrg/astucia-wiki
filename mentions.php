@@ -50,10 +50,12 @@ function wiki_mention_cutoff(): int {
 //
 // memory/ is skipped for a sharper reason than tidiness: an AI that remembers "Alice
 // prefers short summaries" would otherwise notify Alice — again on every edit of that
-// memory, and again in her daily digest.
+// memory, and again in her daily digest. skills/ likewise: a skill saying "@Alice reviews
+// these" is an instruction to an AI, not a message to Alice.
 function _mention_is_template(string $path): bool {
     $rel = ltrim($path, '/');
-    return str_starts_with($rel, 'templates/') || str_starts_with($rel, 'memory/');
+    return str_starts_with($rel, 'templates/') || str_starts_with($rel, 'memory/')
+        || str_starts_with(strtolower($rel), 'skills/');
 }
 
 /** Every space this actor may read, as names. null $allowed means unrestricted. */

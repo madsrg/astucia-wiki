@@ -236,6 +236,37 @@ function wiki_space_set_memory(string $space, bool $on): bool {
     return wiki_space_settings_save($all);
 }
 
+/**
+ * Does this space offer AI skills?
+ *
+ * Off unless the record says otherwise, like memory — and for the same two-switch reason:
+ * the space says whether skills apply here (its own `skills/` folder *and* the wiki-wide
+ * ones), the AI User says whether it uses them (`wiki_ai_skills_enabled()` in skills.php).
+ */
+function wiki_space_skills(?string $space): bool {
+    $space = trim((string)$space);
+    if ($space === '') return false;
+    return !empty(wiki_space_settings_get(basename($space))['skills']);
+}
+
+function wiki_space_dir_skills(?string $space_dir): bool {
+    if (!$space_dir) return false;
+    $dir = rtrim($space_dir, '/');
+    if ($dir === rtrim(PAGES_DIR, '/')) return false;   // a root-level wiki has no record
+    return wiki_space_skills(basename($dir));
+}
+
+function wiki_space_set_skills(string $space, bool $on): bool {
+    $space = basename(trim($space));
+    if ($space === '') return false;
+    $all = wiki_space_settings_all(true);
+    $rec = is_array($all[$space] ?? null) ? $all[$space] : [];
+    if ($on) $rec['skills'] = true;
+    else     unset($rec['skills']);
+    $all[$space] = $rec;
+    return wiki_space_settings_save($all);
+}
+
 // Keep settings attached to the space through a rename (mirrors what rename_space
 // already does for the `spaces` arrays in users.json).
 function wiki_space_settings_rename(string $old, string $new): void {

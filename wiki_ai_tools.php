@@ -10,6 +10,7 @@
 require_once __DIR__ . '/git_helpers.php';
 require_once __DIR__ . '/frontmatter.php';
 require_once __DIR__ . '/memory.php';
+require_once __DIR__ . '/skills.php';
 require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/llm_trace.php';
 require_once __DIR__ . '/wikilinks.php';
@@ -42,7 +43,7 @@ function wiki_all_users(): array {
  *        ever answer "Error: memory is off" costs tokens on every call and invites the
  *        model to keep trying it.
  */
-function wiki_tool_definitions(bool $with_memory = true): array {
+function wiki_tool_definitions(bool $with_memory = true, bool $with_skills = false): array {
     $defs = [
         [
             'name'        => 'wiki_list_pages',
@@ -205,13 +206,28 @@ function wiki_tool_definitions(bool $with_memory = true): array {
             ],
         ],
     ];
+    // Same reasoning as memory: a tool that can only answer "skills are off" is not offered.
+    if ($with_skills) {
+        $defs[] = [
+            'name'        => 'wiki_read_skill',
+            'description' => 'Read one of the skills listed in your instructions: procedures an administrator wrote for a kind of task. Call it with the skill\'s name before starting a task the skill describes, and follow what it says. Without "file" it returns the skill\'s instructions and the names of its reference files; with "file" it returns that reference file.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => [
+                    'name' => ['type' => 'string', 'description' => 'The skill\'s name exactly as listed, e.g. weekly-status-report'],
+                    'file' => ['type' => 'string', 'description' => 'Optional: a reference file the skill names, e.g. reference.md. Omit to read the skill itself.'],
+                ],
+                'required'   => ['name'],
+            ],
+        ];
+    }
     if ($with_memory) return $defs;
     return array_values(array_filter($defs,
         fn($t) => !in_array($t['name'], ['wiki_remember', 'wiki_recall', 'wiki_forget'], true)));
 }
 
-function get_wiki_tools($provider, bool $with_memory = true) {
-    $tools_def = wiki_tool_definitions($with_memory);
+function get_wiki_tools($provider, bool $with_memory = true, bool $with_skills = false) {
+    $tools_def = wiki_tool_definitions($with_memory, $with_skills);
     $family = llm_family($provider);
     if ($family === 'anthropic') {
         return array_map(fn($t) => [
@@ -283,7 +299,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
         $rows = [];
         foreach ($all as $id => $data) {
             if (!isset($data['path']) || !in_array(pathinfo($data['path'], PATHINFO_EXTENSION), WIKI_AI_SEARCH_EXTS, true)) continue;
-            if (wiki_is_template_path($data['path']) || wiki_is_memory_path($data['path'])) continue;
+            if (wiki_is_template_path($data['path']) || wiki_is_memory_path($data['path']) || wiki_is_skill_path($data['path'])) continue;
             $upd = (int)($data['updated'] ?? 0);
             if ($cutoff && $upd < $cutoff) continue;
             if (!$has_all_tags($data['tags'] ?? [])) continue;
@@ -306,7 +322,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
         try {
             $search_idx = new SearchIndex();
             foreach ($search_idx->search($query, [$space_name], false) as $row) {
-                if (wiki_is_template_path($row['path']) || wiki_is_memory_path($row['path'])) continue;
+                if (wiki_is_template_path($row['path']) || wiki_is_memory_path($row['path']) || wiki_is_skill_path($row['path'])) continue;
                 $page_id = $indexer->getId($row['path']);
                 if ($page_id === null) continue;
                 if ($cutoff && $updated_of($page_id) < $cutoff) continue;
@@ -329,7 +345,7 @@ function wiki_search_pages(string $query, $indexer, $space_dir, int $updated_wit
 
     foreach ($all as $id => $data) {
         if (!isset($data['path']) || !in_array(pathinfo($data['path'], PATHINFO_EXTENSION), WIKI_AI_SEARCH_EXTS, true)) continue;
-        if (wiki_is_template_path($data['path']) || wiki_is_memory_path($data['path'])) continue;
+        if (wiki_is_template_path($data['path']) || wiki_is_memory_path($data['path']) || wiki_is_skill_path($data['path'])) continue;
         if ($cutoff && (int)($data['updated'] ?? 0) < $cutoff) continue;
         if (!$has_all_tags($data['tags'] ?? [])) continue;
         if (!$fields_ok($data['path'])) continue;
@@ -558,6 +574,20 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
                 if ($real === false || !wiki_space_allowed($acl, wiki_path_space($real))) {
                     return 'Error: access denied to that space.';
                 }
+            }
+        }
+    }
+    // Skills are written by administrators, never by an AI — whatever its role, and on
+    // every route at once, since this is where chat, MCP and the cron runner converge.
+    // On the resolved path, like the Space check above: with no ?space= the base is
+    // PAGES_DIR and "Alpha/skills/…" reaches Alpha's skills.
+    if (in_array($tool_name, WIKI_AI_WRITE_TOOLS, true)) {
+        foreach (['path', 'new_path', 'target'] as $arg) {
+            $rel = ltrim(str_replace('..', '', (string)($tool_input[$arg] ?? '')), '/');
+            if ($rel !== '' && wiki_skill_guarded_abs(rtrim($space_dir, '/') . '/' . $rel)) {
+                $denied = 'Error: "' . WIKI_SKILLS_DIR . '/" holds this space\'s skills, which only an administrator can change. Nothing was written.';
+                _wiki_ai_audit($tool_name, $tool_input, $ai_user, $indexer, $space_dir, $denied, true);
+                return $denied;
             }
         }
     }
@@ -837,6 +867,20 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             git_auto_commit($mu_abs, $mu_git_name, $mu_git_email, 'Mention ' . implode(', ', $mu_resolved) . ' in ' . basename($mu_rel), $space_dir);
             return 'Mentioned ' . implode(', ', $mu_resolved) . ' in ' . $mu_rel
                  . '. They will see it in their My Mentions list.';
+
+        case 'wiki_read_skill': {
+            // Both switches again: an MCP client or a retried call can name a tool that
+            // was never offered.
+            if (!wiki_space_dir_skills($space_dir)) {
+                return 'Error: the space "' . basename(rtrim($space_dir, '/'))
+                     . '" does not offer AI skills. An administrator can turn that on in Space settings.';
+            }
+            if (!wiki_ai_skills_enabled($ai_user['ai_config'] ?? [])) {
+                return 'Error: skills are switched off for this AI user. An administrator can turn them on in Admin → AI Users.';
+            }
+            $sk = wiki_skill_read($space_dir, (string)($tool_input['name'] ?? ''), (string)($tool_input['file'] ?? ''));
+            return $sk['ok'] ? $sk['text'] : 'Error: ' . $sk['error'] . '.';
+        }
 
         case 'wiki_remember':
         case 'wiki_recall':

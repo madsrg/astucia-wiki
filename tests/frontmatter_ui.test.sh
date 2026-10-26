@@ -842,10 +842,10 @@ assert_contains "the stamping select is there"  'stamp=on'    "$PROBE"
 # The callback fired by that change was once referenced without being declared, which threw
 # only in the browser, only after the request had already succeeded.
 assert_contains "and changing it raises no error" 'error=none' "$PROBE"
-# Eight sections now (front-matter tags joined Content, delete joined Advanced), grouped into four tabs — which is what stopped the dialog growing
+# Nine sections now (front-matter tags joined Content, delete joined Advanced, skills joined AI), grouped into four tabs — which is what stopped the dialog growing
 # past its box again. Every pane is measured, not just the one that opens first: a tab
 # nobody looked at is exactly where an oversized section would hide.
-assert_contains "every section is present"      'sections=8'       "$PROBE"
+assert_contains "every section is present"      'sections=9'       "$PROBE"
 assert_contains "grouped into four tabs"        'tabs=4'           "$PROBE"
 assert_contains "named as expected"             'tabNames=general,content,ai,advanced' "$PROBE"
 assert_contains "every tab fits the window"     'fitsAll=yes'      "$PROBE"

@@ -6,6 +6,22 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+### Added
+- **AI skills.** Procedures an administrator writes once, in the open Agent Skills format
+  (a folder with a `SKILL.md` holding `name` and `description`), which AI users read when a
+  request matches. Per Space in a `skills/` folder, and wiki-wide; a Space's skill replaces
+  a wiki-wide one of the same name. Managed in the new **Admin → AI → Skills** tab, switched
+  on per Space (Space settings → AI, off by default) and per AI user (on by default).
+- **Only administrators can change skills, and no AI user can**, whatever its role — the
+  `skills/` folder is refused to everyone else for every kind of write.
+- **`/skill <name>` in a chat** makes an AI follow that skill for the request, with names
+  completed as you type; it works for queued jobs too.
+- **Import skills from a git repository or a zip file.** You choose which skills to keep and
+  where before anything is written. Only text and images are imported — scripts are left
+  out, and the import lists what was dropped.
+- **Skills are MCP prompts**: `mcp.php` answers `prompts/list` and `prompts/get`.
+- The Docker image includes PHP's `zip` extension.
+
 ## [2026.10.6] — 2026-10-25
 
 The tag cloud stays usable on a wiki with many tags and groups nested tags by branch, a

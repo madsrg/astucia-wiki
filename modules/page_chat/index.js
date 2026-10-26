@@ -8,6 +8,7 @@ import { paintAvatar, repaintAvatars } from '../core/avatars.js';
 import { showToast, confirmModal, highlightMentions, externalizeLinks } from '../core/utils.js';
 import { getUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
+import { skillTypeahead } from '../core/skills.js';
 import { t } from '../i18n/index.js';
 import { EMOJIS } from '../core/emojis.js';
 import { openAiModal, closeAiModal, checkAiModal, startStatusPoll } from '../core/ai_modal.js';
@@ -24,6 +25,7 @@ const CHAT_COMMANDS = [
     { name: 'purge',     description: t('chat.cmd.purge') },
     { name: 'summarize', description: t('chat.cmd.summarize') },
     { name: 'aiJob',     description: t('chat.cmd.ai-job'), editorOnly: true },
+    { name: 'skill',     description: t('chat.cmd.skill') },
     { name: 'aiUsers',   description: t('chat.cmd.ai-users') },
     { name: 'jobs',      description: t('chat.cmd.jobs') },
     { name: 'debug',     description: t('chat.cmd.debug'), editorOnly: true },
@@ -366,6 +368,7 @@ const doSend = async () => {
                 res.debug ? 'success' : 'info');
             return;
         }
+        if (cmd === '/skill' && !arg) { showToast(t('chat.cmd.skill-usage'), 'error'); return; }
         if (cmd === '/summarize') {
             textarea.value = '#';
             textarea.dispatchEvent(new Event('input'));
@@ -542,6 +545,23 @@ const setupInput = () => {
         const typed = !e.inputType || e.inputType.startsWith('insert');
         autoResize(textarea);
         const val = textarea.value, pos = textarea.selectionStart;
+
+        // "/skill <name>": after the command, the space's skills are the completions.
+        const sk = await skillTypeahead(val, pos, mentionPop, (name) => {
+            const curPos = textarea.selectionStart;
+            const insert = name + ' ';
+            textarea.value = textarea.value.slice(0, triggerStart) + insert + textarea.value.slice(curPos);
+            textarea.selectionStart = textarea.selectionEnd = triggerStart + insert.length;
+            closePop();
+        });
+        if (sk) {
+            if (!sk.count) { closePop(); return; }
+            triggerStart = sk.start; triggerChar = ''; selectedIdx = -1;
+            if (autoPick(sk.query, typed)) return;
+            setSelected(0);
+            mentionPop.classList.remove('hidden');
+            return;
+        }
 
         // "src:<slug>" is a word-prefix trigger (unlike the single-char # / triggers
         // below) — explicitly forces an AI reply to use only that MCP server's tools.

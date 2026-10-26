@@ -32,10 +32,11 @@ FROM php:8.5-fpm-alpine
 # buffer uploaded attachments, so those are chowned here too.
 # pdo_sqlite is compiled against the system sqlite (PHP no longer bundles it), so
 # the headers and a toolchain are installed as a virtual package and removed again
-# — only sqlite-libs is needed at runtime.
-RUN apk add --no-cache nginx supervisor git tzdata shadow sqlite-libs \
- && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS sqlite-dev \
- && docker-php-ext-install -j"$(nproc)" pdo_sqlite \
+# — only sqlite-libs is needed at runtime. zip is built the same way, against libzip,
+# for importing AI skills from a zip file (Admin → Skills); libzip stays for runtime.
+RUN apk add --no-cache nginx supervisor git tzdata shadow sqlite-libs libzip \
+ && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS sqlite-dev libzip-dev \
+ && docker-php-ext-install -j"$(nproc)" pdo_sqlite zip \
  && apk del --no-network .build-deps \
  && chown -R www-data:www-data /var/lib/nginx
 

@@ -1293,6 +1293,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab hidden" data-tab="llm" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg><span data-i18n="admin.tab.llm">LLM Providers</span></button>
                 <button class="admin-tab hidden" data-tab="jobs" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span data-i18n="admin.tab.jobs">Agent Jobs</span></button>
                 <button class="admin-tab hidden" data-tab="mcp" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/></svg><span data-i18n="admin.tab.mcp">MCP Servers</span></button>
+                <button class="admin-tab hidden" data-tab="skills" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><span data-i18n="admin.tab.skills">Skills</span></button>
                 <button class="admin-tab hidden" data-tab="logs" data-group="monitoring"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span data-i18n="admin.tab.logs">Access Log</span></button>
                 <button class="admin-tab hidden" data-tab="errorlog" data-group="monitoring"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span data-i18n="admin.tab.errorlog">Error Log</span></button>
                 <button class="admin-tab hidden" data-tab="audit" data-group="monitoring"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg><span data-i18n="admin.tab.audit">Audit Log</span></button>
@@ -1405,6 +1406,10 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             </div>
 
             <!-- Mentions pane -->
+            <div id="admin-pane-skills" class="admin-pane hidden">
+                <div id="admin-skills-list" class="admin-scroll-area"></div>
+            </div>
+
             <div id="admin-pane-workflows" class="admin-pane hidden">
                 <div id="admin-workflows-list" class="admin-scroll-area"></div>
             </div>
@@ -1536,6 +1541,10 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 </div>
                 <div id="admin-footer-llm" class="admin-footer-pane hidden">
                     <button id="admin-llm-add-btn" class="btn btn-blue btn-sm" data-i18n="admin.llm.new-btn">+ New LLM Provider</button>
+                </div>
+                <div id="admin-footer-skills" class="admin-footer-pane hidden">
+                    <button id="admin-skills-import-btn" class="btn btn-secondary btn-sm" data-i18n="admin.skills.import-btn">Import…</button>
+                    <button id="admin-skills-add-btn" class="btn btn-blue btn-sm" data-i18n="admin.skills.new-btn">+ New Skill</button>
                 </div>
                 <div id="admin-footer-mcp" class="admin-footer-pane hidden">
                     <button id="admin-mcp-add-btn" class="btn btn-blue btn-sm" data-i18n="admin.mcp.new-btn">+ New MCP Server</button>

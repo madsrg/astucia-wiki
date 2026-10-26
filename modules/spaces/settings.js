@@ -12,6 +12,7 @@ import { api } from '../core/api.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { t } from '../i18n/index.js';
+import { invalidateSkills } from '../core/skills.js';
 
 const OVERLAY_ID = 'space-settings-modal';
 
@@ -316,6 +317,41 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onDele
             return;
         }
         self.memory = want;
+        showToast(t('spaces.settings.fm-saved'), 'success');
+    });
+
+    // ── AI skills ─────────────────────────────────────────────────────────────
+    //
+    // The Space's half of the switch (the AI User has the other), covering both this
+    // space's own skills/ folder and the wiki-wide skills. Editing them lives in
+    // Admin → Skills, which the hint names: one editor for both stores beats a second one
+    // squeezed into this dialog.
+    const skSec = section(t('spaces.settings.skills-title'), t('spaces.settings.skills-hint'));
+    const skRow = el('label', 'space-settings-switch-row');
+    const skBox = el('input', 'space-settings-switch');
+    skBox.type = 'checkbox';
+    skBox.checked = !!self.skills;
+    skRow.appendChild(skBox);
+    skRow.appendChild(el('span', '', t('spaces.settings.skills-label')));
+    skSec.appendChild(skRow);
+    skSec.appendChild(el('p', 'pref-hint', self.skill_count
+        ? t('spaces.settings.skills-count', { n: self.skill_count })
+        : t('spaces.settings.skills-empty')));
+    panes.ai.appendChild(skSec);
+
+    skBox.addEventListener('change', async () => {
+        const want = skBox.checked;
+        skBox.disabled = true;
+        const res = await api.call('admin_set_space_skills',
+            { space_name: spaceName, skills: want ? '1' : '0' }, 'POST');
+        skBox.disabled = false;
+        if (!res.success) {
+            skBox.checked = !want;                       // the server is the truth
+            showToast(res.message || t('spaces.settings.skills-failed'), 'error');
+            return;
+        }
+        self.skills = want;
+        invalidateSkills();
         showToast(t('spaces.settings.fm-saved'), 'success');
     });
 

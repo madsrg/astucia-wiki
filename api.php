@@ -23,6 +23,7 @@ require_once __DIR__ . '/wikilinks.php';
 require_once __DIR__ . '/realtime.php';
 require_once __DIR__ . '/page_chat.php';
 require_once __DIR__ . '/memory.php';
+require_once __DIR__ . '/skills.php';
 require_once __DIR__ . '/remember_me.php';
 
 session_start();
@@ -212,6 +213,13 @@ if (isset($_REQUEST['action'])) {
         // paths resolve too. It is edited through the Taxonomy admin page and nowhere else.
         if (wiki_tax_is_reserved($abs)) throw new Exception('That name is reserved for the taxonomy.');
 
+        // A Space's skills/ folder is written by administrators only — see skills.php. The
+        // flag is set in the bootstrap for writing actions by anyone else, so every action's
+        // path is covered here, the folder itself included (create, delete, rename *to* it).
+        if (!empty($GLOBALS['_wiki_skill_guard']) && wiki_skill_guarded_abs($abs)) {
+            throw new Exception('Only an administrator can change skills.');
+        }
+
         // The ?space= guard in the bootstrap covers the parameter; this covers the path.
         // With no ?space= the base is PAGES_DIR itself, so a *relative* path of
         // "Bravo/secret.md" reaches Bravo without the parameter ever being set and without
@@ -254,6 +262,11 @@ if (isset($_REQUEST['action'])) {
                     throw new Exception('Access denied to target space.');
             }
             $clean = ltrim(str_replace('..', '', $new_path_raw), '/');
+            // The cross-space branch does not pass through sanitize_path(), so it carries
+            // the skills guard itself: a move *into* another Space's skills/ is a write there.
+            if (!empty($GLOBALS['_wiki_skill_guard']) && wiki_skill_guarded_abs($target_base . '/' . $clean)) {
+                throw new Exception('Only an administrator can change skills.');
+            }
             return [$target_base . '/' . $clean, $clean, new PageIndexer($target_base)];
         }
         return [sanitize_path($new_path_raw), ltrim(str_replace('..', '', $new_path_raw), '/'), null];
@@ -463,11 +476,16 @@ if (isset($_REQUEST['action'])) {
         $page_ctx = wiki_page_context_prompt($chat_file, $space_dir);
 
         $full_system = $wiki_ctx . $page_ctx . $system_prompt;
+        // `/skill <name>` in the message being answered puts that skill in front of the
+        // model rather than leaving it to decide to fetch it.
+        $_skill_trig = array_values(array_filter($chat_data['messages'], fn($m) => empty($m['pending']) && empty($m['is_debug'])));
+        $full_system .= wiki_skill_invocation_prompt($space_dir, $config, (string)(end($_skill_trig)['text'] ?? ''));
         $debug_on    = !empty($chat_data['debug']);
 
         // Memory tools only where memory is actually on — see wiki_tool_definitions().
         $tools          = get_wiki_tools($provider,
-                              wiki_ai_memory_enabled($config) && wiki_space_dir_memory($space_dir));
+                              wiki_ai_memory_enabled($config) && wiki_space_dir_memory($space_dir),
+                              wiki_skills_active($space_dir, $config));
         $mcp_tool_map_c    = [];
         $mcp_calls_c       = [];
         $mcp_server_ids_c  = $config['mcp_server_ids']   ?? [];
@@ -976,6 +994,8 @@ if (isset($_REQUEST['action'])) {
                       'retarget_wikilinks', 'set_frontmatter'];
     $admin_actions = ['admin_chat_retention', 'admin_frontmatter_settings', 'admin_mention_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
                       'admin_set_space_fm_edit', 'admin_set_space_fm_autostamp', 'admin_set_space_fm_tags_sync', 'admin_set_space_memory',
+                      'admin_set_space_skills', 'admin_ai_skills_settings', 'admin_skills_list', 'admin_skill_get', 'admin_skill_save',
+                      'admin_skill_delete', 'admin_skill_import_stage', 'admin_skill_import_commit',
                       'admin_get_users', 'admin_save_users', 'admin_get_user_requests',
                       'admin_approve_request', 'admin_deny_request',
                       'admin_get_logs', 'admin_get_log_content',
@@ -1079,6 +1099,13 @@ if (isset($_REQUEST['action'])) {
             exit;
         }
     }
+
+    // Skills are authored by administrators only, and never by an AI whatever its role.
+    // Read by sanitize_path() and resolve_target(), which every action's file access goes
+    // through — so the rule is on the path a write lands on, not on a list of actions
+    // that the next new action would be missing from.
+    $GLOBALS['_wiki_skill_guard'] = in_array($requested_action, $readonly_actions, true)
+        && ($current_role !== 'admin' || ($ai_auth_user && !empty($ai_auth_user['is_ai'])));
 
     try {
         switch ($_REQUEST['action']) {
@@ -1819,9 +1846,12 @@ if (isset($_REQUEST['action'])) {
                                           'async_ai' => false, 'queued_job' => null]);
                         break;
                     }
+                    // `/skill <name>` from the message itself: the prompt above starts with
+                    // the thread's history, not with the message.
+                    $_bg_skill = wiki_skill_invocation($text);
                     agent_job_queue_mutate(function (array &$jobs) use (
                         $_bg_id, $_bg_actor, $_pending_ai_user, $_bg_space, $_bg_prompt, $_bg_rel,
-                        $_pending_placeholder_id, $_bg_page_ctx
+                        $_pending_placeholder_id, $_bg_page_ctx, $_bg_skill
                     ) {
                         $jobs[] = [
                             'id'           => $_bg_id,
@@ -1832,6 +1862,7 @@ if (isset($_REQUEST['action'])) {
                             'ai_user_name' => $_pending_ai_user['name'] ?? 'AI',
                             'space'        => $_bg_space,
                             'prompt'       => $_bg_prompt,
+                            'skill'        => $_bg_skill,
                             // A page chat's page travels with the job; run_agent_job puts
                             // it in the system prompt, where the inline path has it.
                             'page_context' => $_bg_page_ctx,
@@ -2069,6 +2100,10 @@ if (isset($_REQUEST['action'])) {
                                       'lastUpdated' => filemtime($fm_path), 'size' => strlen($fm_raw)]);
                     break;
                 }
+                if (($sk_folder = wiki_skill_file_folder_abs($fm_path)) !== null) {
+                    $sk_errs = wiki_skill_validate($fm_new, $sk_folder);
+                    if ($sk_errs) throw new Exception('This skill was not saved: ' . implode(' ', array_column($sk_errs, 'message')));
+                }
                 if (file_put_contents($fm_path, $fm_new) === false) throw new Exception('Failed to save metadata.');
 
                 $actor = get_current_actor();
@@ -2128,6 +2163,7 @@ if (isset($_REQUEST['action'])) {
                           'pdo_sqlite' => 'FTS5 search',
                           'mbstring' => 'non-ASCII titles and search',
                           'openssl' => 'OIDC login',
+                          'zip' => 'importing AI skills from a zip file',
                           'json' => 'everything'] as $si_name => $si_why) {
                     $si_ext[] = ['name' => $si_name, 'loaded' => extension_loaded($si_name), 'why' => $si_why];
                 }
@@ -2230,6 +2266,9 @@ if (isset($_REQUEST['action'])) {
                 $qj_path = sanitize_path($_POST['file'] ?? '');
                 if (!is_file($qj_path)) throw new Exception('Chat file not found.');
                 $qj_prompt = trim($_POST['prompt'] ?? '');
+                // Read before the thread history is put in front of the prompt, which
+                // would push `/skill <name>` off the start where it is recognised.
+                $qj_skill  = wiki_skill_invocation($qj_prompt);
                 if ($qj_prompt === '') throw new Exception('The job needs a prompt.');
                 if (mb_strlen($qj_prompt) > 4000) throw new Exception('Job prompt too long (max 4000 characters).');
 
@@ -2313,7 +2352,7 @@ if (isset($_REQUEST['action'])) {
                 $qj_eta = agent_job_eta_minutes($qj_ahead);
                 agent_job_queue_mutate(function (array &$jobs) use (
                     $qj_id, $qj_actor, $qj_uid, $qj_ai, $qj_space, $qj_prompt, $qj_rel, $qj_msg_id,
-                    $qj_page_ctx
+                    $qj_page_ctx, $qj_skill
                 ) {
                     $jobs[] = [
                         'id'           => $qj_id,
@@ -2324,6 +2363,7 @@ if (isset($_REQUEST['action'])) {
                         'ai_user_name' => $qj_ai['name'] ?? 'AI',
                         'space'        => $qj_space,
                         'prompt'       => $qj_prompt,
+                        'skill'        => $qj_skill,
                         // The page a page-chat thread is attached to, as the background
                         // chat path has always passed. Without it /aiJob asked in a page
                         // chat could not see the page, while mentioning the same AI in the
@@ -2604,6 +2644,20 @@ if (isset($_REQUEST['action'])) {
                 ], llm_providers())]);
                 break;
 
+            case 'list_skills':
+                // Non-admin, read-only: the skills that apply in this space (name and
+                // description), for the /skill type-ahead in chat. Empty when the space
+                // has skills switched off — offering a name that would only be refused is
+                // worse than offering none.
+                $ls_out = [];
+                if (wiki_space_dir_skills($space_dir)) {
+                    foreach (wiki_skills_list($space_dir) as $ls_s) {
+                        $ls_out[] = ['name' => $ls_s['name'], 'description' => $ls_s['description']];
+                    }
+                }
+                echo json_encode(['success' => true, 'data' => $ls_out]);
+                break;
+
             case 'list_mcp_servers':
                 // Non-admin, read-only: name + slug only (no url/token) — used by the
                 // src: type-ahead in chat/Page Chat. Whether a given AI User can
@@ -2854,7 +2908,7 @@ if (isset($_REQUEST['action'])) {
                     $space_indexers = []; // lazy cache
                     $results = [];
                     foreach ($fts_rows as $row) {
-                        if (wiki_is_template_path($row['path']) || wiki_is_memory_path($row['path'])) continue;
+                        if (wiki_is_template_path($row['path']) || wiki_is_memory_path($row['path']) || wiki_is_skill_path($row['path'])) continue;
                         $sp = $row['space'];
                         if (!isset($space_indexers[$sp])) {
                             $sp_dir = rtrim(PAGES_DIR, '/') . '/' . $sp;
@@ -2890,7 +2944,7 @@ if (isset($_REQUEST['action'])) {
                         if (!isset($data['path']) || pathinfo($data['path'], PATHINFO_EXTENSION) !== 'md') {
                             continue;
                         }
-                        if (wiki_is_template_path($data['path']) || wiki_is_memory_path($data['path'])) continue;
+                        if (wiki_is_template_path($data['path']) || wiki_is_memory_path($data['path']) || wiki_is_skill_path($data['path'])) continue;
                         $full_path = sanitize_path($data['path']);
                         if (!file_exists($full_path)) continue;
                         // Body only, or every page matches "status" and the snippet
@@ -3324,6 +3378,13 @@ if (isset($_REQUEST['action'])) {
                     // exactly what stamping is about to do.
                     $fm_body_changed = $fm_prev_raw === ''
                         || wiki_fm_body($fm_prev_raw) !== wiki_fm_body($content);
+                }
+                // A skill's SKILL.md is checked before it is written: an invalid one silently
+                // drops out of every AI's listing, so the author hears about it now, with
+                // their draft still in the editor, rather than never.
+                if ($ext_save === 'md' && ($sk_folder = wiki_skill_file_folder_abs($file_path)) !== null) {
+                    $sk_errs = wiki_skill_validate($content, $sk_folder);
+                    if ($sk_errs) throw new Exception('This skill was not saved: ' . implode(' ', array_column($sk_errs, 'message')));
                 }
                 if ($ext_save === 'json') {
                     // Data pages must stay well-formed; validate and normalise before writing
@@ -5001,7 +5062,9 @@ if (isset($_REQUEST['action'])) {
                 $bi_dir = rtrim(PAGES_DIR, '/') . '/' . $bi_space;
                 $bi_ix  = is_dir($bi_dir) ? new PageIndexer($bi_dir) : null;
                 $bi_cfg = ['memory' => in_array($_GET['memory'] ?? '', ['on', 'off'], true)
-                                       ? (string)$_GET['memory'] : ''];
+                                       ? (string)$_GET['memory'] : '',
+                           'skills' => in_array($_GET['skills'] ?? '', ['on', 'off'], true)
+                                       ? (string)$_GET['skills'] : ''];
                 $bi_mem = wiki_ai_memory_enabled($bi_cfg) && wiki_space_dir_memory($bi_dir);
                 echo json_encode([
                     'success' => true,
@@ -5010,7 +5073,7 @@ if (isset($_REQUEST['action'])) {
                     'job'     => wiki_job_context_prompt($bi_space, 'Team', $bi_actor, $bi_dir, $bi_ix, $bi_cfg),
                     'tools'   => array_map(
                         fn($t) => ['name' => $t['name'], 'description' => $t['description']],
-                        wiki_tool_definitions($bi_mem)),
+                        wiki_tool_definitions($bi_mem, wiki_skills_active($bi_dir, $bi_cfg))),
                 ]);
                 break;
 
@@ -5085,6 +5148,269 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true, 'space' => $sfm_name, 'mode' => $sfm_mode]);
                 break;
 
+            // ── Skills (skills.php) ────────────────────────────────────────────────
+            //
+            // Both stores are managed here: '' is wiki-wide (WIKI_SYSTEM_DATA/skills), any
+            // other `scope` is a Space's skills/ folder. Admin-only, like every action in
+            // this group; the path guard in sanitize_path() is what keeps everyone else out
+            // of a Space's folder by the ordinary page actions.
+            case 'admin_set_space_skills':
+                $sss_name = basename(trim($_POST['space_name'] ?? ''));
+                $sss_on   = ($_POST['skills'] ?? '0') === '1';
+                if ($sss_name === '' || !is_dir(PAGES_DIR . '/' . $sss_name)) throw new Exception('No such space.');
+                if (!wiki_space_set_skills($sss_name, $sss_on)) {
+                    throw new Exception('Could not save the setting — is WIKI_SYSTEM_DATA writable?');
+                }
+                wiki_audit_log('update', 'success', ['object' => 'spaces.json',
+                    'object_type' => 'setting', 'change_type' => 'ai_skills',
+                    'object_category' => 'settings', 'value' => $sss_name . '=' . ($sss_on ? '1' : '0')]);
+                echo json_encode(['success' => true, 'space' => $sss_name, 'skills' => $sss_on]);
+                break;
+
+            case 'admin_ai_skills_settings':
+                // The house default for "does this AI User use skills". On unless set —
+                // see wiki_ai_skills_enabled() for why that differs from memory.
+                if (isset($_POST['enabled'])) {
+                    $ais_on = in_array($_POST['enabled'], ['1', 'true'], true);
+                    if (!wiki_setting_set('ai_skills_default', $ais_on)) {
+                        throw new Exception('Could not save the setting — is WIKI_SYSTEM_DATA writable?');
+                    }
+                    wiki_audit_log('update', 'success', ['object' => 'settings.json',
+                        'object_type' => 'setting', 'change_type' => 'ai_skills_default',
+                        'value' => $ais_on ? '1' : '0']);
+                }
+                echo json_encode(['success' => true, 'enabled' => (bool)wiki_setting('ai_skills_default', true)]);
+                break;
+
+            case 'admin_skills_list':
+                // One store's skills, invalid ones included (with their reasons), and for
+                // each the shadowing that applies: a wiki-wide skill lists the Spaces whose
+                // own skill of that name replaces it; a Space skill says it replaces one.
+                $skl_scope = trim((string)($_GET['scope'] ?? ''));
+                [$skl_base, $skl_err] = wiki_skill_scope_base($skl_scope);
+                if ($skl_base === null) throw new Exception('No such space.');
+                $skl_spaces = [];
+                foreach (scandir(PAGES_DIR) ?: [] as $skl_f) {
+                    if ($skl_f === '.' || $skl_f === '..' || $skl_f[0] === '.') continue;
+                    if (!is_dir(rtrim(PAGES_DIR, '/') . '/' . $skl_f)) continue;
+                    $skl_spaces[] = ['name' => $skl_f, 'skills' => wiki_space_skills($skl_f)];
+                }
+                $skl_global_names = array_column(array_filter(wiki_skills_scan(wiki_skills_global_dir(), 'wiki'),
+                                                              fn($s) => $s['valid']), 'name');
+                $skl_out = [];
+                foreach (wiki_skills_scan($skl_base, $skl_scope === '' ? 'wiki' : 'space') as $s) {
+                    $row = ['name' => $s['name'], 'folder' => $s['folder'], 'description' => $s['description'],
+                            'valid' => $s['valid'], 'errors' => $s['errors'], 'updated' => $s['updated'],
+                            'files' => count(wiki_skill_files($s['dir']))];
+                    if ($skl_scope === '') {
+                        $row['shadowed_in'] = [];
+                        foreach ($skl_spaces as $sp) {
+                            $own = rtrim(PAGES_DIR, '/') . '/' . $sp['name'] . '/' . WIKI_SKILLS_DIR . '/' . $s['name'] . '/' . WIKI_SKILL_FILE;
+                            if ($s['valid'] && is_file($own) && !wiki_skill_validate((string)file_get_contents($own), $s['name'])) {
+                                $row['shadowed_in'][] = $sp['name'];
+                            }
+                        }
+                    } else {
+                        $row['overrides'] = $s['valid'] && in_array($s['name'], $skl_global_names, true);
+                    }
+                    $skl_out[] = $row;
+                }
+                // Loose files at the top of a Space's skills/ are not skills — most likely
+                // content from before the folder name was reserved, which editors can no
+                // longer change. Named here so an administrator can move them out.
+                $skl_stray = [];
+                if ($skl_scope !== '' && is_dir($skl_base)) {
+                    foreach (scandir($skl_base) ?: [] as $skl_sf) {
+                        if ($skl_sf[0] !== '.' && is_file($skl_base . '/' . $skl_sf)) $skl_stray[] = $skl_sf;
+                    }
+                }
+                echo json_encode([
+                    'success'  => true,
+                    'scope'    => $skl_scope,
+                    'stray'    => $skl_stray,
+                    'skills'   => $skl_out,
+                    'spaces'   => $skl_spaces,
+                    'default'  => (bool)wiki_setting('ai_skills_default', true),
+                    'template' => wiki_skill_template('new-skill'),
+                    'can_zip'  => class_exists('ZipArchive'),
+                    'can_git'  => function_exists('proc_open'),
+                ]);
+                break;
+
+            case 'admin_skill_get':
+                $skg_scope = trim((string)($_GET['scope'] ?? ''));
+                $skg_name  = basename(trim((string)($_GET['name'] ?? '')));
+                [$skg_base] = wiki_skill_scope_base($skg_scope);
+                if ($skg_base === null) throw new Exception('No such space.');
+                if ($skg_name === '' || $skg_name[0] === '.') throw new Exception('No such skill.');
+                $skg_dir = $skg_base . '/' . $skg_name;
+                if (!is_dir($skg_dir)) throw new Exception('No such skill.');
+                $skg_file = $skg_dir . '/' . WIKI_SKILL_FILE;
+                echo json_encode([
+                    'success' => true,
+                    'name'    => $skg_name,
+                    'content' => is_file($skg_file) ? (string)file_get_contents($skg_file) : '',
+                    'files'   => wiki_skill_files($skg_dir),
+                    'path'    => $skg_scope === '' ? null : WIKI_SKILLS_DIR . '/' . $skg_name . '/' . WIKI_SKILL_FILE,
+                ]);
+                break;
+
+            case 'admin_skill_save':
+                // Create, edit or rename one skill. The folder follows the `name` in the
+                // front matter — the spec requires the two to agree, and letting them
+                // drift apart is how a skill becomes unreachable by the name it shows.
+                $sks_scope   = trim((string)($_POST['scope'] ?? ''));
+                $sks_orig    = basename(trim((string)($_POST['original'] ?? '')));
+                $sks_content = str_replace("\r\n", "\n", (string)($_POST['content'] ?? ''));
+                [$sks_base] = wiki_skill_scope_base($sks_scope);
+                if ($sks_base === null) throw new Exception('No such space.');
+                if ($sks_scope !== '' && wiki_space_is_readonly(basename($sks_scope))) {
+                    throw new Exception('The space "' . basename($sks_scope) . '" is read-only.');
+                }
+                $sks_errs = wiki_skill_validate($sks_content, null);
+                if ($sks_errs) {
+                    echo json_encode(['success' => false, 'errors' => $sks_errs,
+                                      'message' => implode(' ', array_column($sks_errs, 'message'))]);
+                    break;
+                }
+                $sks_name = wiki_skill_parse($sks_content)['name'];
+                $sks_dir  = $sks_base . '/' . $sks_name;
+                if ($sks_orig !== '' && ($sks_orig[0] === '.' || !is_dir($sks_base . '/' . $sks_orig))) {
+                    throw new Exception('No such skill.');
+                }
+                if ($sks_name !== $sks_orig && is_dir($sks_dir)) {
+                    throw new Exception('A skill called "' . $sks_name . '" already exists here.');
+                }
+                if (!is_dir($sks_base) && !@mkdir($sks_base, 0755, true)) throw new Exception('Could not create the skills folder.');
+                $sks_created = $sks_orig === '';
+                if (!$sks_created && $sks_orig !== $sks_name) {
+                    if (!@rename($sks_base . '/' . $sks_orig, $sks_dir)) throw new Exception('Could not rename the skill.');
+                } elseif ($sks_created && !@mkdir($sks_dir, 0755, true)) {
+                    throw new Exception('Could not create the skill.');
+                }
+                if (@file_put_contents($sks_dir . '/' . WIKI_SKILL_FILE, $sks_content) === false) {
+                    throw new Exception('Could not write the skill.');
+                }
+                if ($sks_scope !== '') {
+                    $sks_space = rtrim(PAGES_DIR, '/') . '/' . basename($sks_scope);
+                    $sks_ix    = new PageIndexer($sks_space);
+                    $sks_actor = get_current_actor();
+                    if (!$sks_created && $sks_orig !== $sks_name) {
+                        $sks_ix->updateFolderPath(WIKI_SKILLS_DIR . '/' . $sks_orig, WIKI_SKILLS_DIR . '/' . $sks_name);
+                    }
+                    wiki_skill_reindex($sks_ix, $sks_space, WIKI_SKILLS_DIR . '/' . $sks_name, $sks_actor);
+                }
+                wiki_audit_log($sks_created ? 'create' : 'update', 'success', [
+                    'object' => ($sks_scope === '' ? 'wiki:' : $sks_scope . ':') . WIKI_SKILLS_DIR . '/' . $sks_name,
+                    'object_type' => 'skill', 'object_category' => 'skills', 'api_action' => 'admin_skill_save']
+                    + ($sks_orig !== '' && $sks_orig !== $sks_name ? ['old_object' => $sks_orig] : []));
+                echo json_encode(['success' => true, 'name' => $sks_name, 'created' => $sks_created]);
+                if ($sks_scope !== '') {
+                    if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+                    git_auto_commit($sks_space . '/' . WIKI_SKILLS_DIR, $sks_actor['name'] ?? 'Wiki',
+                        (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost',
+                        ($sks_created ? 'Create skill ' : 'Update skill ') . $sks_name, $sks_space);
+                }
+                break;
+
+            case 'admin_skill_delete':
+                $skd_scope = trim((string)($_POST['scope'] ?? ''));
+                $skd_name  = basename(trim((string)($_POST['name'] ?? '')));
+                [$skd_base] = wiki_skill_scope_base($skd_scope);
+                if ($skd_base === null) throw new Exception('No such space.');
+                if ($skd_name === '' || $skd_name[0] === '.' || !is_dir($skd_base . '/' . $skd_name)) throw new Exception('No such skill.');
+                if ($skd_scope !== '' && wiki_space_is_readonly(basename($skd_scope))) {
+                    throw new Exception('The space "' . basename($skd_scope) . '" is read-only.');
+                }
+                _wiki_skill_rmtree($skd_base . '/' . $skd_name);
+                if (is_dir($skd_base . '/' . $skd_name)) throw new Exception('Could not delete the skill.');
+                if ($skd_scope !== '') {
+                    $skd_space = rtrim(PAGES_DIR, '/') . '/' . basename($skd_scope);
+                    wiki_skill_reindex(new PageIndexer($skd_space), $skd_space, WIKI_SKILLS_DIR . '/' . $skd_name);
+                }
+                wiki_audit_log('delete', 'success', [
+                    'object' => ($skd_scope === '' ? 'wiki:' : $skd_scope . ':') . WIKI_SKILLS_DIR . '/' . $skd_name,
+                    'object_type' => 'skill', 'object_category' => 'skills', 'api_action' => 'admin_skill_delete']);
+                echo json_encode(['success' => true]);
+                if ($skd_scope !== '') {
+                    if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+                    $skd_actor = get_current_actor();
+                    git_auto_commit($skd_space . '/' . WIKI_SKILLS_DIR, $skd_actor['name'] ?? 'Wiki',
+                        (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost',
+                        'Delete skill ' . $skd_name, $skd_space);
+                }
+                break;
+
+            case 'admin_skill_import_stage':
+                // Step one of an import: fetch or unpack into a staging folder (through the
+                // one filter both sources share) and report what is in it. Nothing reaches
+                // a store until admin_skill_import_commit names what to keep.
+                $ski_source = (string)($_POST['source'] ?? '');
+                [$ski_id, $ski_stage] = wiki_skill_import_new();
+                try {
+                    if ($ski_source === 'zip') {
+                        $ski_up = $_FILES['file'] ?? null;
+                        if (!$ski_up || ($ski_up['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($ski_up['tmp_name'])) {
+                            throw new Exception('No zip file was received.');
+                        }
+                        $ski_res = wiki_skill_import_unzip($ski_up['tmp_name'], $ski_stage);
+                        $ski_from = basename((string)$ski_up['name']);
+                    } elseif ($ski_source === 'repo') {
+                        $ski_repo = wiki_skill_parse_repo((string)($_POST['url'] ?? ''), (string)($_POST['branch'] ?? ''),
+                                                          (string)($_POST['path'] ?? ''));
+                        $ski_res  = wiki_skill_import_git($ski_repo['url'], $ski_repo['branch'], $ski_repo['path'], $ski_stage);
+                        $ski_from = $ski_repo['url'] . ($ski_repo['path'] !== '' ? ' — ' . $ski_repo['path'] : '');
+                    } else {
+                        throw new Exception('Unknown import source.');
+                    }
+                    $ski_found = wiki_skill_import_scan($ski_stage, $ski_res['dropped']);
+                    if (!$ski_found) throw new Exception('No SKILL.md was found in that ' . ($ski_source === 'zip' ? 'archive.' : 'repository.'));
+                    file_put_contents($ski_stage . '/meta.json', json_encode(['from' => $ski_from, 'dropped' => $ski_res['dropped']]));
+                } catch (\Throwable $ski_e) {
+                    _wiki_skill_rmtree($ski_stage);
+                    throw $ski_e;
+                }
+                echo json_encode(['success' => true, 'import_id' => $ski_id, 'from' => $ski_from, 'skills' => $ski_found]);
+                break;
+
+            case 'admin_skill_import_commit':
+                $skc_stage = wiki_skill_import_dir((string)($_POST['import_id'] ?? ''));
+                if ($skc_stage === null) throw new Exception('That import has expired. Start it again.');
+                $skc_scope = trim((string)($_POST['scope'] ?? ''));
+                [$skc_base] = wiki_skill_scope_base($skc_scope);
+                if ($skc_base === null) throw new Exception('No such space.');
+                if ($skc_scope !== '' && wiki_space_is_readonly(basename($skc_scope))) {
+                    throw new Exception('The space "' . basename($skc_scope) . '" is read-only.');
+                }
+                $skc_choices = json_decode((string)($_POST['choices'] ?? '{}'), true);
+                if (!is_array($skc_choices)) throw new Exception('Malformed request.');
+                $skc_meta = json_decode((string)@file_get_contents($skc_stage . '/meta.json'), true) ?: [];
+                $skc_res  = wiki_skill_import_commit($skc_stage, $skc_choices, $skc_base);
+                _wiki_skill_rmtree($skc_stage);
+                if ($skc_scope !== '' && $skc_res['imported']) {
+                    $skc_space = rtrim(PAGES_DIR, '/') . '/' . basename($skc_scope);
+                    $skc_ix    = new PageIndexer($skc_space);
+                    $skc_actor = get_current_actor();
+                    foreach ($skc_res['imported'] as $skc_n) {
+                        wiki_skill_reindex($skc_ix, $skc_space, WIKI_SKILLS_DIR . '/' . $skc_n, $skc_actor);
+                    }
+                }
+                foreach ($skc_res['imported'] as $skc_n) {
+                    wiki_audit_log('create', 'success', [
+                        'object' => ($skc_scope === '' ? 'wiki:' : $skc_scope . ':') . WIKI_SKILLS_DIR . '/' . $skc_n,
+                        'object_type' => 'skill', 'object_category' => 'skills', 'api_action' => 'admin_skill_import_commit',
+                        'change_type' => 'import', 'value' => (string)($skc_meta['from'] ?? '')]);
+                }
+                echo json_encode(['success' => true, 'imported' => $skc_res['imported'],
+                                  'skipped' => $skc_res['skipped'], 'errors' => $skc_res['errors']]);
+                if ($skc_scope !== '' && $skc_res['imported']) {
+                    if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+                    git_auto_commit($skc_space . '/' . WIKI_SKILLS_DIR, $skc_actor['name'] ?? 'Wiki',
+                        (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost',
+                        'Import skills: ' . implode(', ', $skc_res['imported']), $skc_space);
+                }
+                break;
+
             case 'admin_set_space_memory':
                 // Whether this space keeps an AI memory store. The folder itself is not
                 // created here — the first remembered fact creates it, so switching the
@@ -5118,6 +5444,8 @@ if (isset($_REQUEST['action'])) {
                         'fm_autostamp' => wiki_space_fm_autostamp($ss_f),
                         'fm_tags_sync' => wiki_space_fm_tags_sync($ss_f),
                         'memory'   => wiki_space_memory($ss_f),
+                        'skills'   => wiki_space_skills($ss_f),
+                        'skill_count' => count(array_filter(wiki_skills_scan($ss_dir . '/' . WIKI_SKILLS_DIR, 'space'), fn($s) => $s['valid'])),
                         // So the dialog can say how much is in there without a second call.
                         'memories' => is_dir($ss_dir . '/' . WIKI_MEMORY_DIR)
                             ? count(glob($ss_dir . '/' . WIKI_MEMORY_DIR . '/*.md') ?: []) : 0,
@@ -5288,6 +5616,9 @@ if (isset($_REQUEST['action'])) {
                             // default is switched on. Same tri-state as chat retention.
                             'memory'            => in_array($ai_cfg_in['memory'] ?? $ec['memory'] ?? '', ['', 'on', 'off'], true)
                                 ? (string)($ai_cfg_in['memory'] ?? $ec['memory'] ?? '') : '',
+                            // Same tri-state for skills; see wiki_ai_skills_enabled().
+                            'skills'            => in_array($ai_cfg_in['skills'] ?? $ec['skills'] ?? '', ['', 'on', 'off'], true)
+                                ? (string)($ai_cfg_in['skills'] ?? $ec['skills'] ?? '') : '',
                             'mcp_server_ids'    => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? $ec['mcp_server_ids'] ?? []))),
                             'mcp_instructions'  => (array)($ai_cfg_in['mcp_instructions'] ?? $ec['mcp_instructions'] ?? []),
                             'avatar'            => $ai_avatar ?? (string)($ec['avatar'] ?? ''),
@@ -5322,6 +5653,8 @@ if (isset($_REQUEST['action'])) {
                                 ? (string)($ai_cfg_in['reasoning_effort'] ?? '') : '',
                             'memory'            => in_array($ai_cfg_in['memory'] ?? '', ['', 'on', 'off'], true)
                                 ? (string)($ai_cfg_in['memory'] ?? '') : '',
+                            'skills'            => in_array($ai_cfg_in['skills'] ?? '', ['', 'on', 'off'], true)
+                                ? (string)($ai_cfg_in['skills'] ?? '') : '',
                             'mcp_server_ids'   => array_values(array_filter(array_map('strval', $ai_cfg_in['mcp_server_ids'] ?? []))),
                             'mcp_instructions' => (array)($ai_cfg_in['mcp_instructions'] ?? []),
                             'avatar'           => $ai_avatar ?? '',

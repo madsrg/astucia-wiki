@@ -49,7 +49,8 @@ export const renameFocusKey = (oldPath, newPath) => {
 // Returns { text, mentionedAi }.
 export const applyFocus = (text, { chatPath, aiUsers, mentionedAi }) => {
     if (mentionedAi) return { text, mentionedAi };
-    if (text.startsWith('/')) return { text, mentionedAi: null };
+    // `/skill <name> …` is addressed to an AI like a plain message, so focus routes it.
+    if (text.startsWith('/') && !/^\/skill\s/i.test(text)) return { text, mentionedAi: null };
     const focusName = getFocusAi(chatPath);
     if (!focusName) return { text, mentionedAi: null };
     const ai = aiUsers.find(u => u.name.toLowerCase() === focusName.toLowerCase());

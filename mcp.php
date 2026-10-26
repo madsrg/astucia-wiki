@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         'endpoint' => $base_url,
         'auth'     => 'Authorization: Bearer <token>  (AI user or API account token from Admin → AI)',
         'space'    => 'Add ?space=SpaceName to target a specific space. Omit for the default space.',
-        'note'     => 'POST JSON-RPC 2.0 requests here: initialize, tools/list, tools/call.',
+        'note'     => 'POST JSON-RPC 2.0 requests here: initialize, tools/list, tools/call, prompts/list, prompts/get.',
     ], JSON_PRETTY_PRINT);
     exit;
 }
@@ -108,7 +108,9 @@ switch ($method) {
             'id'      => $id,
             'result'  => [
                 'protocolVersion' => '2024-11-05',
-                'capabilities'    => ['tools' => (object)[]],
+                // Skills are offered as MCP prompts too, so an outside agent borrowing this
+                // token can pull the same procedures in — see prompts/list below.
+                'capabilities'    => ['tools' => (object)[], 'prompts' => (object)[]],
                 'serverInfo'      => ['name' => 'astuciawiki', 'version' => '1.0'],
             ],
         ]);
@@ -132,8 +134,37 @@ switch ($method) {
             // Same gate as the chat and job paths: a memory tool is only listed where
             // the space keeps memories and this token's AI user learns.
         ], wiki_tool_definitions(wiki_ai_memory_enabled($ai_auth_user['ai_config'] ?? [])
-                                 && wiki_space_dir_memory($space_dir)));
+                                 && wiki_space_dir_memory($space_dir),
+                                 wiki_skills_active($space_dir, $ai_auth_user['ai_config'] ?? [])));
         echo json_encode(['jsonrpc' => '2.0', 'id' => $id, 'result' => ['tools' => $tools]]);
+        break;
+
+    case 'prompts/list':
+        // The skills that apply to this token in this space — the same two switches and
+        // the same list (Space skills shadowing wiki-wide ones) the system prompt uses, so
+        // an outside agent sees exactly what an inline AI would.
+        $mcp_prompts = [];
+        if (wiki_skills_active($space_dir, $ai_auth_user['ai_config'] ?? [])) {
+            foreach (wiki_skills_list($space_dir) as $sk) {
+                $mcp_prompts[] = ['name' => $sk['name'], 'description' => $sk['description'], 'arguments' => []];
+            }
+        }
+        echo json_encode(['jsonrpc' => '2.0', 'id' => $id, 'result' => ['prompts' => $mcp_prompts]]);
+        break;
+
+    case 'prompts/get':
+        $mcp_pname = (string)($params['name'] ?? '');
+        $mcp_sk    = wiki_skills_active($space_dir, $ai_auth_user['ai_config'] ?? [])
+                   ? wiki_skill_read($space_dir, $mcp_pname) : ['ok' => false, 'error' => 'skills are not available here'];
+        if (!$mcp_sk['ok']) {
+            echo json_encode(['jsonrpc' => '2.0', 'id' => $id, 'error' => ['code' => -32602, 'message' => 'Unknown prompt: ' . $mcp_pname]]);
+            break;
+        }
+        $mcp_found = wiki_skill_find($space_dir, $mcp_pname);
+        echo json_encode(['jsonrpc' => '2.0', 'id' => $id, 'result' => [
+            'description' => $mcp_found['description'] ?? '',
+            'messages'    => [['role' => 'user', 'content' => ['type' => 'text', 'text' => $mcp_sk['text']]]],
+        ]]);
         break;
 
     case 'tools/call':

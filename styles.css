@@ -2114,6 +2114,14 @@ button.avatar-circle:hover, button.avatar-circle:focus-visible { border-color: v
 .wf-pre { white-space: pre-wrap; font-size: 0.8rem; background: #f7fafc; padding: 0.4rem 0.6rem; border-radius: 4px; margin: 0.3rem 0 0; max-height: 14rem; overflow: auto; }
 .wf-result { font-size: 0.8rem; margin: 2px 0; }
 .wf-history-head { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.6rem; }
+/* Admin → Skills (modules/admin/skills.js) */
+.skills-head { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.skills-head label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
+.skills-head select { width: auto; min-width: 14rem; max-width: 22rem; }
+.skills-head .skills-default { margin-left: auto; font-weight: 400; }
+.skills-desc { font-size: 0.82rem; max-width: 34rem; }
+.skills-textarea { width: 100%; box-sizing: border-box; min-height: 340px; font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 0.82rem; line-height: 1.45; resize: vertical; margin: 0.25rem 0 0.4rem; }
+.skills-files code, .skills-desc code { font-size: 0.75rem; }
 .admin-job-run-result { border-radius: 6px; padding: 0.6rem 0.8rem; margin-top: 0.25rem; }
 .admin-job-run-ok  { background: #f0fff4; border: 1px solid #9ae6b4; }
 .admin-job-run-err { background: #fff5f5; border: 1px solid #feb2b2; }
