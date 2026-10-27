@@ -34,9 +34,11 @@ one of the items in Department — chosen from a dropdown and searchable as
 `department:Finance`. All off by default: on a Space that mirrors somebody's vault, the
 wiki does not touch the block at all.
 
-**AI** — AI users that read and write wiki pages · one-off and scheduled agent jobs · team
-and per-page chat · **AI memory**, so an AI keeps what it learns as ordinary pages you can
-read and correct · **LLM providers** set up once and shared by every AI user, so a key lives
+**AI** — AI users that read and write wiki pages · one-off agent jobs, and scheduled ones
+that run from every few minutes to once a year, or on any **cron expression** · team and
+per-page chat · **AI memory**, so an AI keeps what it learns as ordinary pages you can read
+and correct · **AI skills** — procedures an administrator writes once, in the open Agent
+Skills format, for every AI user to follow · **LLM providers** set up once and shared by every AI user, so a key lives
 in one place · avatars for AI users and people · an **MCP server** so other tools can use your wiki, and an **MCP client**
 so your AI users can use theirs.
 
@@ -47,8 +49,8 @@ tags and fields. One workflow can listen for several of these at once. Test one 
 acting, or run it for real on a chosen page first.
 
 **Teams** — Spaces with per-user access control, including read-only Spaces · OIDC login,
-or email codes with **Keep me signed in** · mentions, page comments and a daily digest email · an optional audit log · a REST API
-with service tokens · UI in nine languages.
+email codes with **Keep me signed in**, or both on one account · mentions, page comments and a daily digest email · an optional audit log · a REST API
+with service tokens, stored only as a hash · UI in nine languages.
 
 **Live updates** — a **Mercure** hub ships inside the image and is **on by default**, so
 chats, pages, the file tree, mentions and job results arrive by push instead of polling.
@@ -71,7 +73,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.10.6
+    madsrotwitt/astucia-wiki:2026.10.7
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -97,7 +99,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.10.6
+    madsrotwitt/astucia-wiki:2026.10.7
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -109,7 +111,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.10.6` | moves only if that release is rebuilt |
+| `2026.10.7` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
