@@ -86,7 +86,7 @@ assert_contains     "the key is in the new file"  'sk-shared-1111' "$(cat "$WIKI
 assert_contains     "a one-time backup holds the old shape" 'sk-shared-1111' "$(cat "$WIKI_SYS/users.json.pre-connections.bak" 2>/dev/null)"
 assert_eq "the AI user's own settings stayed"     'I am Ann|gpt-b|m1' \
     "$(py "print($(ai Ann)['system_prompt'] + '|' + $(ai Ben)['model'] + '|' + $(ai Ben)['mcp_server_ids'][0])")"
-assert_eq "the service token is untouched"        'wk_ai_ann' "$(py "print([x for x in u['users'] if x.get('name')=='Ann'][0]['service_token'])")"
+assert_eq "the service token is untouched"        "$(printf wk_ai_ann | sha256sum | cut -d' ' -f1)" "$(py "print([x for x in u['users'] if x.get('name')=='Ann'][0]['service_token_hash'])")"
 
 section 'the email migration it sits behind still ran'
 assert_eq "OIDC user's notifyEmail captured"      'alice@example.com' "$(py "print(u['users'][0].get('notifyEmail'))")"

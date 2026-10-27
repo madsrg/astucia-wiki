@@ -104,6 +104,8 @@ if (isset($_REQUEST['action'])) {
     // One-shot migrations, marked by `schema` in users.json. The connections one runs the
     // email one first: each is a step, and they only make sense in order.
     wiki_migrate_llm_connections();
+    // Not a numbered step: plain service tokens become hashes whenever any are left.
+    wiki_migrate_service_tokens();
 
     $indexer = new PageIndexer($space_dir);
 
@@ -5753,7 +5755,8 @@ if (isset($_REQUEST['action'])) {
                         'uid'           => $u['uid']           ?? null,
                         'name'          => $u['name']          ?? '',
                         'role'          => $u['role']          ?? 'editor',
-                        'service_token' => $u['service_token'] ?? '',
+                        // Never the token: only its hint. It is shown once, when made.
+                        'token_hint'    => $u['service_token_hint'] ?? '',
                         'spaces'        => array_key_exists('spaces', $u) ? $u['spaces'] : null,
                         'ai_config'     => array_merge($cfg, ['api_key_set' => $has_key]),
                     ];
@@ -5832,13 +5835,14 @@ if (isset($_REQUEST['action'])) {
                 } else {
                     $max_uid_ai = 0;
                     foreach ($uf_sai['users'] as $eu) { if (isset($eu['uid']) && $eu['uid'] > $max_uid_ai) $max_uid_ai = $eu['uid']; }
-                    $uf_sai['users'][] = [
-                        'uid'           => $max_uid_ai + 1,
+                    $new_ai_token = generate_ai_service_token();
+                    $new_ai_uid   = $max_uid_ai + 1;
+                    $uf_sai['users'][] = wiki_service_token_set([
+                        'uid'           => $new_ai_uid,
                         'name'          => $ai_name,
                         'role'          => $ai_role,
                         'is_ai'         => true,
                         'spaces'        => $ai_spaces_in,
-                        'service_token' => generate_ai_service_token(),
                         'ai_config'     => [
                             'connection_id'    => $ai_conn_id,
                             'model'            => trim($ai_cfg_in['model']              ?? ''),
@@ -5859,10 +5863,13 @@ if (isset($_REQUEST['action'])) {
                             'mcp_instructions' => (array)($ai_cfg_in['mcp_instructions'] ?? []),
                             'avatar'           => $ai_avatar ?? '',
                         ],
-                    ];
+                    ], $new_ai_token);
                 }
                 file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($uf_sai, JSON_PRETTY_PRINT));
-                echo json_encode(['success' => true]);
+                // A new AI user's token is in this response and nowhere else, ever.
+                echo json_encode(isset($new_ai_token)
+                    ? ['success' => true, 'uid' => $new_ai_uid, 'token' => $new_ai_token]
+                    : ['success' => true]);
                 break;
 
             case 'admin_delete_ai_user':
@@ -5882,7 +5889,7 @@ if (isset($_REQUEST['action'])) {
                 $found_regen = false;
                 foreach ($uf_regen['users'] as &$u) {
                     if (!empty($u['is_ai']) && (int)($u['uid'] ?? -1) === $regen_uid) {
-                        $u['service_token'] = $new_token;
+                        $u = wiki_service_token_set($u, $new_token);
                         $found_regen = true;
                         break;
                     }
@@ -5890,7 +5897,7 @@ if (isset($_REQUEST['action'])) {
                 unset($u);
                 if (!$found_regen) throw new Exception('AI user not found.');
                 file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($uf_regen, JSON_PRETTY_PRINT));
-                echo json_encode(['success' => true, 'token' => $new_token]);
+                echo json_encode(['success' => true, 'token' => $new_token, 'hint' => wiki_service_token_hint($new_token)]);
                 break;
 
             case 'admin_get_api_accounts':
@@ -5902,7 +5909,7 @@ if (isset($_REQUEST['action'])) {
                         'uid'           => $u['uid']           ?? null,
                         'name'          => $u['name']          ?? '',
                         'role'          => $u['role']          ?? 'editor',
-                        'service_token' => $u['service_token'] ?? '',
+                        'token_hint'    => $u['service_token_hint'] ?? '',
                         'spaces'        => array_key_exists('spaces', $u) ? $u['spaces'] : null,
                     ];
                 }
@@ -5932,10 +5939,16 @@ if (isset($_REQUEST['action'])) {
                 } else {
                     $max_uid_sys = 0;
                     foreach ($uf_ssys['users'] as $eu) { if (isset($eu['uid']) && $eu['uid'] > $max_uid_sys) $max_uid_sys = $eu['uid']; }
-                    $uf_ssys['users'][] = ['uid' => $max_uid_sys + 1, 'name' => $sys_name, 'role' => $sys_role, 'is_system' => true, 'spaces' => $sys_spaces_in, 'service_token' => generate_api_service_token()];
+                    $new_sys_token_c = generate_api_service_token();
+                    $new_sys_uid     = $max_uid_sys + 1;
+                    $uf_ssys['users'][] = wiki_service_token_set(
+                        ['uid' => $new_sys_uid, 'name' => $sys_name, 'role' => $sys_role, 'is_system' => true, 'spaces' => $sys_spaces_in],
+                        $new_sys_token_c);
                 }
                 file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($uf_ssys, JSON_PRETTY_PRINT));
-                echo json_encode(['success' => true]);
+                echo json_encode(isset($new_sys_token_c)
+                    ? ['success' => true, 'uid' => $new_sys_uid, 'token' => $new_sys_token_c]
+                    : ['success' => true]);
                 break;
 
             case 'admin_delete_api_account':
@@ -5955,7 +5968,7 @@ if (isset($_REQUEST['action'])) {
                 $found_sys_regen = false;
                 foreach ($uf_regen_sys['users'] as &$u) {
                     if (!empty($u['is_system']) && (int)($u['uid'] ?? -1) === $regen_sys_uid) {
-                        $u['service_token'] = $new_sys_token;
+                        $u = wiki_service_token_set($u, $new_sys_token);
                         $found_sys_regen = true;
                         break;
                     }
@@ -5963,7 +5976,7 @@ if (isset($_REQUEST['action'])) {
                 unset($u);
                 if (!$found_sys_regen) throw new Exception('System user not found.');
                 file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($uf_regen_sys, JSON_PRETTY_PRINT));
-                echo json_encode(['success' => true, 'token' => $new_sys_token]);
+                echo json_encode(['success' => true, 'token' => $new_sys_token, 'hint' => wiki_service_token_hint($new_sys_token)]);
                 break;
 
             case 'list_my_jobs':

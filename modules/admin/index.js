@@ -1371,6 +1371,41 @@ const loadErrorLogContent = async (filename) => {
 
 // ── AI Agent Instructions lightbox ────────────────────────────────────────────
 
+// ── Service tokens: shown once ──────────────────────────────────────────────
+// The server keeps only a hash of a token, so the full token exists in exactly one
+// response — the one that created or regenerated it. revealedTokens holds it for the rest
+// of this page's life, so the instructions dialog can fill it in without asking the server
+// (which cannot know it any more). Never persisted: a reload forgets it.
+const revealedTokens = new Map();
+
+const showNewToken = (token, name) => new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'lightbox-overlay admin-token-once';
+    overlay.innerHTML = `
+        <div class="lightbox-content" style="max-width:560px;height:auto">
+            <h3 style="margin:0 0 0.6rem">${t('admin.token.title')}</h3>
+            <p class="admin-token-once-warn">${escHtml(t('admin.token.warn', { name }))}</p>
+            <div class="admin-ai-token-row">
+                <input type="text" class="form-control admin-token-once-value" readonly value="${escHtml(token)}">
+                <button type="button" class="btn btn-sm btn-blue admin-token-once-copy">${t('admin.ai.copy-btn')}</button>
+            </div>
+            <p class="admin-ai-token-hint">${escHtml(t('admin.token.usage'))}</p>
+            <div class="lightbox-footer">
+                <button type="button" class="btn btn-green admin-token-once-done">${t('admin.token.done')}</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('.admin-token-once-value');
+    input.addEventListener('focus', () => input.select());
+    overlay.querySelector('.admin-token-once-copy').addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(token); showToast(t('admin.ai.token-copied'), 'success'); }
+        catch { input.select(); showToast(t('select.copy-failed'), 'error'); }
+    });
+    // Only the button closes it — a stray click outside must not throw the token away.
+    overlay.querySelector('.admin-token-once-done').addEventListener('click', () => { overlay.remove(); resolve(); });
+    input.focus();
+});
+
 const showAgentInstructions = async (token) => {
     const lightbox  = document.getElementById('agent-instructions-lightbox');
     const textarea  = document.getElementById('agent-instructions-text');
@@ -1381,9 +1416,11 @@ const showAgentInstructions = async (token) => {
     textarea.value = t('admin.ai.agent-instructions-loading');
     lightbox.classList.remove('hidden');
 
-    const result = await api.call('api_agent_instructions', { token });
+    // The token is not sent: it would land in access logs, and the server could not fill it
+    // in anyway. It answers with a placeholder, replaced here when the token is known.
+    const result = await api.call('api_agent_instructions', {});
     if (result.success) {
-        textarea.value = result.instructions;
+        textarea.value = token ? result.instructions.split('YOUR_TOKEN_HERE').join(token) : result.instructions;
     } else {
         textarea.value = result.message || t('admin.ai.instructions-failed');
     }
@@ -1709,8 +1746,7 @@ const openAiUserForm = async (u) => {
             <div class="admin-ai-form-section-header">${t('admin.ai.svc-token')}</div>
             <div class="admin-ai-form-section">
                 <div class="admin-ai-token-row">
-                    <code id="ai-f-token" class="admin-ai-token">${escHtml(u.service_token || '')}</code>
-                    <button type="button" id="ai-f-copy-btn" class="btn btn-sm btn-secondary">${t('admin.ai.copy-btn')}</button>
+                    <code id="ai-f-token" class="admin-ai-token">${escHtml(u.token_hint || '—')}</code>
                     <button type="button" id="ai-f-regen-btn" class="btn btn-sm btn-secondary">${t('admin.ai.regen-btn')}</button>
                 </div>
                 <p class="admin-ai-token-hint">${t('admin.ai.token-hint')}</p>
@@ -1837,16 +1873,9 @@ const openAiUserForm = async (u) => {
     document.getElementById('ai-f-builtin-btn').addEventListener('click', showBuiltinInstructions);
 
     if (!isNew) {
-        document.getElementById('ai-f-copy-btn').addEventListener('click', async () => {
-            const token = document.getElementById('ai-f-token')?.textContent.trim() || '';
-            if (!token) return;
-            try { await navigator.clipboard.writeText(token); showToast(t('admin.ai.token-copied'), 'success'); }
-            catch { showToast(t('select.copy-failed'), 'error'); }
-        });
-        document.getElementById('ai-f-regen-btn').addEventListener('click', () => regenerateAiToken(u.uid));
+        document.getElementById('ai-f-regen-btn').addEventListener('click', () => regenerateAiToken(u.uid, u.name));
         document.getElementById('ai-f-agent-instructions-btn').addEventListener('click', () => {
-            const token = document.getElementById('ai-f-token')?.textContent.trim() || '';
-            showAgentInstructions(token);
+            showAgentInstructions(revealedTokens.get(u.uid) || '');
         });
         document.getElementById('ai-f-clone-btn').addEventListener('click', () => cloneAiUser(u));
     }
@@ -1913,6 +1942,10 @@ const saveAiUser = async (uid) => {
     if (result.success) {
         showToast(t('admin.ai.saved'), 'success');
         invalidateUsers();
+        if (result.token) {
+            revealedTokens.set(result.uid, result.token);
+            await showNewToken(result.token, name);
+        }
         await loadAiUsers();
     } else {
         showToast(result.message || t('admin.err.save'), 'error');
@@ -1945,7 +1978,7 @@ const cloneAiUser = (source) => {
         if (!newName) { nameInput.focus(); return; }
         close();
         // The clone names the same connection, so there is no key to carry over.
-        openAiUserForm({ ...source, uid: null, name: newName, service_token: '' });
+        openAiUserForm({ ...source, uid: null, name: newName, token_hint: '' });
     };
 
     const onOverlay = (e) => { if (e.target === lb) close(); };
@@ -1973,14 +2006,16 @@ const deleteAiUser = async (u) => {
     }
 };
 
-const regenerateAiToken = async (uid) => {
+const regenerateAiToken = async (uid, name) => {
     const ok = await confirmModal(t('admin.ai.regen-confirm'), { confirmLabel: t('admin.ai.regen-btn'), dangerous: true });
     if (!ok) return;
     const result = await api.call('admin_regenerate_ai_token', { uid: String(uid) }, 'POST');
     if (result.success) {
         const tokenEl = document.getElementById('ai-f-token');
-        if (tokenEl) tokenEl.textContent = result.token;
+        if (tokenEl) tokenEl.textContent = result.hint || '';
+        revealedTokens.set(uid, result.token);
         showToast(t('admin.ai.regenerated'), 'success');
+        await showNewToken(result.token, name);
     } else {
         showToast(result.message || t('admin.err.regen'), 'error');
     }
@@ -2019,9 +2054,7 @@ const renderApiAccountList = () => {
 
         const tdToken = document.createElement('td');
         tdToken.className = 'admin-log-source';
-        const tok = u.service_token || '';
-        tdToken.textContent = tok ? tok.slice(0, 14) + '…' : '—';
-        tdToken.title = tok;
+        tdToken.textContent = u.token_hint || '—';
 
         const tdActions = document.createElement('td');
         tdActions.style.cssText = 'white-space:nowrap;display:flex;gap:4px;align-items:center;';
@@ -2100,7 +2133,7 @@ const openApiAccountForm = (u) => {
             <div class="admin-ai-form-section-header">${t('admin.api.token-section')}</div>
             <div class="admin-ai-form-section">
                 <div class="admin-ai-token-row">
-                    <code id="api-f-token" class="admin-ai-token">${escHtml(u.service_token || '')}</code>
+                    <code id="api-f-token" class="admin-ai-token">${escHtml(u.token_hint || '—')}</code>
                     <button type="button" id="api-f-regen-btn" class="btn btn-sm btn-secondary">${t('admin.ai.regen-btn')}</button>
                 </div>
                 <p class="admin-ai-token-hint">${t('admin.api.token-hint')}</p>
@@ -2115,7 +2148,7 @@ const openApiAccountForm = (u) => {
     document.getElementById('api-f-cancel-btn').addEventListener('click', () => renderApiAccountList());
     document.getElementById('api-f-save-btn').addEventListener('click', () => saveApiAccount(u?.uid ?? null));
     if (!isNew) {
-        document.getElementById('api-f-regen-btn').addEventListener('click', () => regenerateApiToken(u.uid));
+        document.getElementById('api-f-regen-btn').addEventListener('click', () => regenerateApiToken(u.uid, u.name));
     }
     wireSpacesField('api-f');
     document.getElementById('admin-api-add-btn')?.classList.add('hidden');
@@ -2142,6 +2175,10 @@ const saveApiAccount = async (uid) => {
 
     if (result.success) {
         showToast(t('admin.api.saved'), 'success');
+        if (result.token) {
+            revealedTokens.set(result.uid, result.token);
+            await showNewToken(result.token, name);
+        }
         await loadApiAccounts();
     } else {
         showToast(result.message || t('admin.err.save'), 'error');
@@ -2160,14 +2197,16 @@ const deleteApiAccount = async (u) => {
     }
 };
 
-const regenerateApiToken = async (uid) => {
+const regenerateApiToken = async (uid, name) => {
     const ok = await confirmModal(t('admin.ai.regen-confirm'), { confirmLabel: t('admin.ai.regen-btn'), dangerous: true });
     if (!ok) return;
     const result = await api.call('admin_regenerate_api_token', { uid: String(uid) }, 'POST');
     if (result.success) {
         const tokenEl = document.getElementById('api-f-token');
-        if (tokenEl) tokenEl.textContent = result.token;
+        if (tokenEl) tokenEl.textContent = result.hint || '';
+        revealedTokens.set(uid, result.token);
         showToast(t('admin.ai.regenerated'), 'success');
+        await showNewToken(result.token, name);
     } else {
         showToast(result.message || t('admin.err.regen'), 'error');
     }

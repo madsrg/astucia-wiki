@@ -7,6 +7,39 @@
 // Resolves an AI user (wk_ai_…) or API account (wk_sys_…) from the Authorization header.
 // =================================================================
 
+// A token is stored only as its SHA-256 (`service_token_hash`) plus a short hint for
+// recognising it in the admin panel (`service_token_hint`, e.g. "wk_ai_…3f9a"). The full
+// token is returned once — when it is created or regenerated — and never again, so a copy
+// of users.json (a backup, a support bundle) no longer hands out working credentials.
+// A fast hash is the right one here: a token is 48 random hex digits, so there is nothing
+// to brute-force that a slow password hash would protect.
+
+function wiki_service_token_hash(string $token): string {
+    return hash('sha256', $token);
+}
+
+function wiki_service_token_hint(string $token): string {
+    $prefix = str_starts_with($token, 'wk_sys_') ? 'wk_sys_' : (str_starts_with($token, 'wk_ai_') ? 'wk_ai_' : '');
+    return $prefix . '…' . substr($token, -4);
+}
+
+/** Give a user record a token: hash and hint stored, the token itself never. */
+function wiki_service_token_set(array $u, string $token): array {
+    $u['service_token_hash'] = wiki_service_token_hash($token);
+    $u['service_token_hint'] = wiki_service_token_hint($token);
+    unset($u['service_token']);
+    return $u;
+}
+
+/** Whether $token is this record's token — hashed, or a legacy plain one not yet migrated. */
+function wiki_service_token_matches(array $u, string $token): bool {
+    if (!empty($u['service_token_hash'])) {
+        return hash_equals((string)$u['service_token_hash'], wiki_service_token_hash($token));
+    }
+    return isset($u['service_token']) && $u['service_token'] !== ''
+        && hash_equals((string)$u['service_token'], $token);
+}
+
 function resolve_service_token_auth(): ?array {
     $hdr = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
     if (!$hdr && function_exists('getallheaders')) {
@@ -18,11 +51,40 @@ function resolve_service_token_auth(): ?array {
     }
     $token = substr($hdr, 7);
     foreach ((json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? []) as $u) {
-        if ((!empty($u['is_ai']) || !empty($u['is_system'])) && ($u['service_token'] ?? '') === $token) {
+        if ((!empty($u['is_ai']) || !empty($u['is_system'])) && wiki_service_token_matches($u, $token)) {
             return $u;
         }
     }
     return null;
+}
+
+/**
+ * Replace every plain `service_token` in users.json with its hash and hint. Idempotent and
+ * cheap when there is nothing to do, so it needs no schema number — the presence of the
+ * old field is the marker. Existing tokens keep working: the hash is of the same token.
+ * Deliberately no .bak file, unlike the other migrations: a backup would keep exactly the
+ * plain tokens this exists to remove.
+ */
+function wiki_migrate_service_tokens(): void {
+    if (!defined('WIKI_SYSTEM_DATA')) return;
+    $file = WIKI_SYSTEM_DATA . 'users.json';
+    if (!is_file($file)) return;
+    $raw = file_get_contents($file);
+    if ($raw === false || strpos($raw, '"service_token"') === false) return;
+    $data = json_decode($raw, true);
+    if (!is_array($data)) return;
+    $changed = false;
+    foreach (($data['users'] ?? []) as $i => $u) {
+        if (!array_key_exists('service_token', $u)) continue;
+        $tok = (string)$u['service_token'];
+        if ($tok !== '') {
+            $data['users'][$i] = wiki_service_token_set($u, $tok);
+        } else {
+            unset($data['users'][$i]['service_token']);
+        }
+        $changed = true;
+    }
+    if ($changed) file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT), LOCK_EX);
 }
 
 // --- User email: identity vs. notification -----------------------------------

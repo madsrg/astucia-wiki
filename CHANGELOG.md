@@ -45,6 +45,14 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   read-only browsing was off by default, but the line set `ANONYMOUS_ACCESS_ENABLED` to
   `true` — so a manual install copied from the template let anyone read the wiki without
   signing in. The Docker image was not affected. **Check your own `config.php`.**
+- **Service tokens are stored only as a hash, and shown once.** AI-user (`wk_ai_…`) and
+  API-account (`wk_sys_…`) tokens sat in `users.json` in plain text and came back in every
+  admin listing, so a backup of that file — or any admin page load — handed out working
+  credentials. Now only a SHA-256 hash and a short hint (`wk_ai_…3f9a`) are kept. A new or
+  regenerated token is shown once, in a dialog that says to save it; lost tokens are
+  regenerated. **Existing tokens keep working** — they are converted in place on the first
+  request, with no backup copy left behind. The API Agent Instructions no longer send the
+  token to the server.
 
 ### Fixed
 - **My Preferences opened for email-code users again.** It looked the account up by an SSO
