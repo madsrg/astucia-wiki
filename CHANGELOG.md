@@ -7,6 +7,13 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 ## [Unreleased]
 
 ### Added
+- **Richer schedules for agent jobs.** Besides daily, weekly and monthly, a job can now run
+  every N minutes or hours (optionally only between two times and on chosen days — "every
+  30 minutes, 08:00–17:00, Mon–Fri"), every N days / weeks / months / years, on "the second
+  Tuesday" or "the last weekday" of a month, within an optional start and end date — or on
+  any **cron expression** (`*/30 8-17 * * 1-5`, `@weekly`, …). The form previews the next
+  five runs as you edit it and flags a bad cron expression while you type; the job list
+  gains a *Next Run* column. Existing jobs keep their schedules unchanged.
 - **AI skills.** Procedures an administrator writes once, in the open Agent Skills format
   (a folder with a `SKILL.md` holding `name` and `description`), which AI users read when a
   request matches. Per Space in a `skills/` folder, and wiki-wide; a Space's skill replaces

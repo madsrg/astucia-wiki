@@ -14,45 +14,7 @@ require_once __DIR__ . '/ai_core.php';
 require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/agent_jobs.php';
 require_once __DIR__ . '/workflow_runner.php';
-
-// -- Schedule check -----------------------------------------------------------
-
-function is_job_due(array $job, int $now): bool {
-    $schedule = $job['schedule'] ?? null;
-    if (!$schedule || empty($schedule['type']) || empty($schedule['time'])) return false;
-
-    $parts = explode(':', $schedule['time']);
-    $h = (int)($parts[0] ?? 0);
-    $m = (int)($parts[1] ?? 0);
-
-    $year  = (int)date('Y', $now);
-    $month = (int)date('n', $now);
-    $day   = (int)date('j', $now);
-    $dow   = (int)date('w', $now); // 0=Sun … 6=Sat
-
-    switch ($schedule['type']) {
-        case 'daily':
-            break;
-        case 'weekly':
-            $days = array_map('intval', $schedule['days'] ?? []);
-            if (!in_array($dow, $days, true)) return false;
-            break;
-        case 'monthly':
-            $target     = max(1, (int)($schedule['day'] ?? 1));
-            $in_month   = (int)date('t', $now);
-            $actual_day = min($target, $in_month);
-            if ($day !== $actual_day) return false;
-            break;
-        default:
-            return false;
-    }
-
-    $scheduled_ts = mktime($h, $m, 0, $month, $day, $year);
-    if ($now < $scheduled_ts) return false; // not reached yet today
-
-    $last_run = !empty($job['last_run']) ? (int)strtotime($job['last_run']) : 0;
-    return $last_run < $scheduled_ts;
-}
+require_once __DIR__ . '/schedule.php';
 
 // -- Lock ---------------------------------------------------------------------
 
@@ -116,7 +78,7 @@ echo date('c') . " [agent-jobs] " . ($is_scheduler
 foreach (($is_scheduler ? $jobs : []) as $idx => &$job) {
     if (empty($job['enabled'])) continue;
 
-    if (!is_job_due($job, $now)) {
+    if (!schedule_job_is_due($job, $now)) {
         echo date('c') . " [agent-jobs] Skipping '{$job['name']}' (not due).\n";
         continue;
     }

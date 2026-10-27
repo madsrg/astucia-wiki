@@ -2158,6 +2158,15 @@ button.avatar-circle:hover, button.avatar-circle:focus-visible { border-color: v
 .admin-sched-days { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .admin-sched-days label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; cursor: pointer; }
 .admin-sched-days input[type=checkbox] { width: auto; margin: 0; }
+.admin-sched-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; font-size: 0.85rem; }
+.admin-sched-inline .form-control { width: auto; }
+.admin-sched-inline input[type=radio] { width: auto; margin: 0; }
+.admin-sched-on { display: flex; flex-direction: column; gap: 0.4rem; }
+.admin-sched-on > label { font-weight: 400; color: var(--text-color); cursor: pointer; }
+.job-f-sched-row > .wf-note { grid-column: 1 / -1; margin: 0; }
+.admin-job-field { max-width: 50%; }
+.admin-sched-preview { font-size: 0.82rem; color: var(--accent-gray); }
+.admin-sched-preview-error { color: #c53030; }
 
 /* ── Navigation features (Breadcrumbs, Recents, Favorites) ─────────────────── */
 

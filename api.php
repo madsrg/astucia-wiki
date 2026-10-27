@@ -11,6 +11,7 @@ require_once 'logger.php';
 require_once 'mailer.php';
 require_once __DIR__ . '/ai_core.php';
 require_once __DIR__ . '/agent_jobs.php';
+require_once __DIR__ . '/schedule.php';
 require_once __DIR__ . '/service_auth.php';
 require_once __DIR__ . '/chat_retention.php';
 require_once __DIR__ . '/system_prompt_gallery.php';
@@ -1007,7 +1008,7 @@ if (isset($_REQUEST['action'])) {
                       'admin_delete_ai_user', 'admin_regenerate_ai_token',
                       'admin_get_api_accounts', 'admin_save_api_account',
                       'admin_delete_api_account', 'admin_regenerate_api_token',
-                      'admin_get_agent_jobs', 'admin_save_agent_job', 'admin_delete_agent_job', 'admin_run_agent_job', 'admin_agent_job_status', 'admin_get_agent_job_logs',
+                      'admin_get_agent_jobs', 'admin_preview_schedule', 'admin_save_agent_job', 'admin_delete_agent_job', 'admin_run_agent_job', 'admin_agent_job_status', 'admin_get_agent_job_logs',
                       'admin_get_oneoff_job_log',
                       'git_deleted_files', 'git_restore_deleted',
                       'admin_reindex',
@@ -6017,9 +6018,15 @@ if (isset($_REQUEST['action'])) {
                 // admin can tell "nothing queued" from "the crontab entry is missing".
                 $aj_oneoff = agent_job_queue_read();
                 usort($aj_oneoff, fn($a, $b) => strcmp((string)($b['created_at'] ?? ''), (string)($a['created_at'] ?? '')));
+                $aj_now = time();
+                $aj_jobs = array_map(function ($j) use ($aj_now) {
+                    $next = !empty($j['enabled']) ? schedule_job_next_run($j, $aj_now) : null;
+                    $j['next_run'] = $next !== null ? date('c', $next) : null;
+                    return $j;
+                }, $aj_data['jobs'] ?? []);
                 echo json_encode([
                     'success'          => true,
-                    'jobs'             => $aj_data['jobs'] ?? [],
+                    'jobs'             => $aj_jobs,
                     'ai_users'         => $ai_map,
                     'spaces'           => $sp_list,
                     'server_time'      => date('Y-m-d H:i:s'),
@@ -6045,13 +6052,20 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true, 'file' => basename($ol_path), 'content' => $ol_body]);
                 break;
 
+            case 'admin_preview_schedule':
+                // The form's "next runs" line: validates as the save does, so a cron typo
+                // shows up while it is being typed rather than as a job that never runs.
+                $pv_sched = schedule_normalize(json_decode((string)($_REQUEST['schedule'] ?? ''), true));
+                echo json_encode(['success' => true, 'next' => array_map(fn($ts) => date('c', $ts),
+                    schedule_next($pv_sched, time(), 5))]);
+                break;
+
             case 'admin_save_agent_job':
                 $aj_file2 = WIKI_SYSTEM_DATA . 'agent_jobs.json';
                 $aj_data2 = file_exists($aj_file2) ? (json_decode(file_get_contents($aj_file2), true) ?? ['jobs' => []]) : ['jobs' => []];
                 $job_id2  = trim($_POST['id'] ?? '');
                 $sched_raw = trim($_POST['schedule'] ?? '{}');
-                $sched_obj = json_decode($sched_raw, true);
-                if (!is_array($sched_obj)) $sched_obj = [];
+                $sched_obj = schedule_normalize(json_decode($sched_raw, true));
                 $job_in2  = [
                     'id'          => $job_id2 ?: 'job_' . time() . '_' . rand(100, 999),
                     'name'        => trim($_POST['name'] ?? ''),
@@ -6070,6 +6084,11 @@ if (isset($_REQUEST['action'])) {
                             $job_in2['last_run']      = $_j2['last_run']      ?? null;
                             $job_in2['last_status']   = $_j2['last_status']   ?? null;
                             $job_in2['last_log_page'] = $_j2['last_log_page'] ?? null;
+                            $job_in2['last_log_file'] = $_j2['last_log_file'] ?? null;
+                            // A new schedule, or switching the job back on, starts counting
+                            // now: neither should fire for an occurrence already past.
+                            $job_in2['since'] = ($_j2['schedule'] ?? null) != $sched_obj || ($job_in2['enabled'] && empty($_j2['enabled']))
+                                ? date('c') : ($_j2['since'] ?? null);
                             $_j2 = $job_in2; $found2 = true; break;
                         }
                     }
@@ -6077,6 +6096,7 @@ if (isset($_REQUEST['action'])) {
                     if (!$found2) throw new Exception('Job not found.');
                 } else {
                     $job_in2['last_run'] = null; $job_in2['last_status'] = null; $job_in2['last_log_page'] = null;
+                    $job_in2['since'] = date('c');
                     $aj_data2['jobs'][] = $job_in2;
                 }
                 file_put_contents($aj_file2, json_encode($aj_data2, JSON_PRETTY_PRINT));

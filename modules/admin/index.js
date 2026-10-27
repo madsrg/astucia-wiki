@@ -8,7 +8,7 @@ import { showToast, confirmModal } from '../core/utils.js';
 import { invalidateUsers } from '../core/users.js';
 import { avatarCircleHtml, avatarPickerHtml, wireAvatarPicker } from '../core/avatars.js';
 import { invalidateMcpServers } from '../core/mcp_servers.js';
-import { t } from '../i18n/index.js';
+import { t, getLanguage } from '../i18n/index.js';
 import { isLive, subscribe, rtTopic } from '../realtime/index.js';
 import { loadWorkflows, initWorkflows } from './workflows.js';
 import { openPagePicker } from './page_picker.js';
@@ -2190,19 +2190,65 @@ let runnerInterval  = 15;
 // the admin panel is built after i18n.init() and rebuilt on a language change.
 const dowNames = () => ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].map(d => t(`admin.dow.${d}`));
 
+const monthName = (m) => new Intl.DateTimeFormat(getLanguage() || undefined, { month: 'long' })
+    .format(new Date(2000, m - 1, 1));
+// Schedules are server-local, as the form says, so their times are shown in the server's
+// zone rather than the browser's — or 08:00 would preview as 10:00 from another zone.
+const serverTimeString = (iso) => {
+    try { return new Date(iso).toLocaleString(undefined, agentServerTz ? { timeZone: agentServerTz } : {}); }
+    catch { return new Date(iso).toLocaleString(); }
+};
+const nthName = (n) => t(`admin.jobs.nth-${n === -1 ? 'last' : n}`);
+const weekdayName = (w) => (w === 'day' || w === 'weekday') ? t(`admin.jobs.wd-${w}`) : (dowNames()[w] || '?');
+
+// A schedule as one line for the job list. The shape is described in schedule.php.
 const formatSchedule = (sched) => {
     if (!sched || !sched.type) return '—';
     const time = sched.time || '?';
+    const n    = sched.interval || 1;
+    const days = (sched.days || []).map(d => dowNames()[d] || d).join(', ');
+    const onDay = sched.nth !== undefined
+        ? { nth: nthName(sched.nth), weekday: weekdayName(sched.weekday) }
+        : null;
+    let text;
     switch (sched.type) {
-        case 'daily':   return t('admin.jobs.sched-daily-at', { time });
-        case 'weekly': {
-            const names = dowNames();
-            const days = (sched.days || []).map(d => names[d] || d).join(', ');
-            return t('admin.jobs.sched-weekly-at', { days: days || '?', time });
+        case 'minutes':
+        case 'hourly': {
+            text = sched.type === 'minutes' ? t('admin.jobs.sum-every-minutes', { n })
+                 : n === 1 ? t('admin.jobs.sum-every-hour') : t('admin.jobs.sum-every-hours', { n });
+            if (time !== '00:00' || (sched.until && sched.until !== '23:59')) text += `, ${time}–${sched.until || '23:59'}`;
+            if (days) text += ` (${days})`;
+            break;
         }
-        case 'monthly': return t('admin.jobs.sched-monthly-at', { day: sched.day || 1, time });
-        default:        return '—';
+        case 'daily':
+            text = n === 1 ? t('admin.jobs.sched-daily-at', { time }) : t('admin.jobs.sum-every-days', { n, time });
+            break;
+        case 'weekly':
+            text = n === 1 ? t('admin.jobs.sched-weekly-at', { days: days || '?', time })
+                           : t('admin.jobs.sum-every-weeks', { n, days: days || '?', time });
+            break;
+        case 'monthly':
+            text = onDay
+                ? t(n === 1 ? 'admin.jobs.sum-monthly-nth' : 'admin.jobs.sum-every-months-nth', { ...onDay, n, time })
+                : t(n === 1 ? 'admin.jobs.sched-monthly-at' : 'admin.jobs.sum-every-months-day', { day: sched.day || 1, n, time });
+            break;
+        case 'yearly': {
+            const month = monthName(sched.month || 1);
+            text = onDay
+                ? t('admin.jobs.sum-yearly-nth', { ...onDay, month, time })
+                : t('admin.jobs.sum-yearly-day', { day: sched.day || 1, month, time });
+            if (n > 1) text += ` (${t('admin.jobs.sum-every-years', { n })})`;
+            break;
+        }
+        case 'cron':
+            text = t('admin.jobs.sum-cron', { expr: sched.cron || '?' });
+            break;
+        default:
+            return '—';
     }
+    if (sched.start) text += ` · ${t('admin.jobs.sum-from', { date: sched.start })}`;
+    if (sched.end)   text += ` · ${t('admin.jobs.sum-until', { date: sched.end })}`;
+    return text;
 };
 
 const loadAgentJobs = async () => {
@@ -2246,6 +2292,7 @@ const renderAgentJobList = () => {
         <th>${t('admin.jobs.col-ai-user')}</th>
         <th>${t('admin.jobs.col-space')}</th>
         <th>${t('admin.jobs.col-schedule')}</th>
+        <th>${t('admin.jobs.col-next-run')}</th>
         <th>${t('admin.jobs.col-last-run')}</th>
         <th></th>
     </tr></thead>`;
@@ -2254,6 +2301,7 @@ const renderAgentJobList = () => {
         const tr = document.createElement('tr');
         const aiName    = agentJobAiUsers[job.ai_user_uid] || `uid:${job.ai_user_uid}`;
         const lastRun   = job.last_run ? new Date(job.last_run).toLocaleString() : '—';
+        const nextRun   = job.next_run ? serverTimeString(job.next_run) : '—';
         const statusBadge = job.last_status
             ? `<span class="admin-job-status admin-job-status-${job.last_status === 'ok' ? 'ok' : 'err'}">${job.last_status}</span>`
             : '';
@@ -2266,6 +2314,7 @@ const renderAgentJobList = () => {
             <td>${escHtml(aiName)}</td>
             <td><span class="admin-log-source">${escHtml(job.space || '—')}</span></td>
             <td style="font-size:0.82rem">${escHtml(formatSchedule(job.schedule))}</td>
+            <td style="font-size:0.82rem">${nextRun}</td>
             <td>${lastRun} ${statusBadge}</td>
             <td style="white-space:nowrap;display:flex;gap:4px;align-items:center"></td>`;
 
@@ -2435,33 +2484,95 @@ const openJobForm = (job) => {
                 </label>
 
                 <label>${t('admin.jobs.ai-user-label')}</label>
-                <select id="job-f-ai-user" class="form-control">${aiOptions}</select>
+                <select id="job-f-ai-user" class="form-control admin-job-field">${aiOptions}</select>
 
                 <label>${t('admin.jobs.space-label')}</label>
-                <select id="job-f-space" class="form-control">${spaceOptions}</select>
+                <select id="job-f-space" class="form-control admin-job-field">${spaceOptions}</select>
             </div>
 
             <div class="admin-ai-form-section-header">${t('admin.jobs.sched-label')}${agentServerTime ? ` <span style="font-size:0.78rem;font-weight:400;color:var(--accent-gray)">${t('admin.jobs.server-time')}: ${agentServerTime} (${agentServerTz})</span>` : ''}</div>
             <div class="job-form-grid">
                 <label>${t('admin.jobs.sched-type')}</label>
-                <select id="job-f-sched-type" class="form-control">
-                    <option value="daily"   ${sched.type === 'daily'   ? 'selected' : ''}>${t('admin.jobs.sched-daily')}</option>
-                    <option value="weekly"  ${sched.type === 'weekly'  ? 'selected' : ''}>${t('admin.jobs.sched-weekly')}</option>
-                    <option value="monthly" ${sched.type === 'monthly' ? 'selected' : ''}>${t('admin.jobs.sched-monthly')}</option>
+                <select id="job-f-sched-type" class="form-control admin-job-field">
+                    ${['minutes', 'hourly', 'daily', 'weekly', 'monthly', 'yearly', 'cron'].map(ty =>
+                        `<option value="${ty}" ${sched.type === ty ? 'selected' : ''}>${t(`admin.jobs.sched-${ty}`)}</option>`).join('')}
                 </select>
 
-                <label>${t('admin.jobs.sched-time')}</label>
-                <input type="time" id="job-f-sched-time" class="form-control" value="${escHtml(sched.time || '08:00')}">
+                <div class="job-f-sched-row" data-for="minutes hourly daily weekly monthly yearly" style="display:contents">
+                    <label>${t('admin.jobs.sched-every')}</label>
+                    <div class="admin-sched-inline">
+                        <input type="number" id="job-f-sched-interval" class="form-control" min="1" value="${sched.interval || (sched.type === 'minutes' ? 15 : 1)}" style="max-width:6rem">
+                        <span id="job-f-sched-unit"></span>
+                    </div>
+                </div>
 
-                <div id="job-f-sched-days-wrapper" style="${sched.type === 'weekly' ? 'display:contents' : 'display:none'}">
+                <div class="job-f-sched-row" data-for="daily weekly monthly yearly" style="display:contents">
+                    <label>${t('admin.jobs.sched-time')}</label>
+                    <input type="time" id="job-f-sched-time" class="form-control admin-job-field" value="${escHtml(sched.time || '08:00')}">
+                </div>
+
+                <div class="job-f-sched-row" data-for="minutes hourly" style="display:contents">
+                    <label>${t('admin.jobs.sched-between')}</label>
+                    <div class="admin-sched-inline">
+                        <input type="time" id="job-f-sched-from" class="form-control" value="${escHtml(sched.time || '00:00')}">
+                        <span>${t('admin.jobs.sched-and')}</span>
+                        <input type="time" id="job-f-sched-until" class="form-control" value="${escHtml(sched.until || '23:59')}">
+                    </div>
+                </div>
+
+                <div class="job-f-sched-row" data-for="minutes hourly weekly" style="display:contents">
                     <label>${t('admin.jobs.sched-days')}</label>
                     <div class="admin-sched-days">${dowCheckboxes}</div>
+                    <p class="wf-note job-f-sched-row" data-for="minutes hourly">${t('admin.jobs.sched-days-hint')}</p>
                 </div>
 
-                <div id="job-f-sched-dom-wrapper" style="${sched.type === 'monthly' ? 'display:contents' : 'display:none'}">
-                    <label>${t('admin.jobs.sched-dom')}</label>
-                    <input type="number" id="job-f-sched-dom" class="form-control" min="1" max="31" value="${sched.day || 1}" style="max-width:6rem">
+                <div class="job-f-sched-row" data-for="yearly" style="display:contents">
+                    <label>${t('admin.jobs.sched-month')}</label>
+                    <select id="job-f-sched-month" class="form-control" style="width:auto;justify-self:start">
+                        ${Array.from({ length: 12 }, (_, i) => i + 1).map(m =>
+                            `<option value="${m}" ${(sched.month || 1) === m ? 'selected' : ''}>${escHtml(monthName(m))}</option>`).join('')}
+                    </select>
                 </div>
+
+                <div class="job-f-sched-row" data-for="monthly yearly" style="display:contents">
+                    <label>${t('admin.jobs.sched-on')}</label>
+                    <div class="admin-sched-on">
+                        <label class="admin-sched-inline">
+                            <input type="radio" name="job-f-sched-by" value="day" ${sched.nth === undefined ? 'checked' : ''}>
+                            ${t('admin.jobs.sched-on-day')}
+                            <input type="number" id="job-f-sched-dom" class="form-control" min="1" max="31" value="${sched.day || 1}" style="max-width:5rem">
+                        </label>
+                        <label class="admin-sched-inline">
+                            <input type="radio" name="job-f-sched-by" value="nth" ${sched.nth !== undefined ? 'checked' : ''}>
+                            ${t('admin.jobs.sched-on-the')}
+                            <select id="job-f-sched-nth" class="form-control" style="max-width:9rem">
+                                ${[1, 2, 3, 4, -1].map(n => `<option value="${n}" ${sched.nth === n ? 'selected' : ''}>${nthName(n)}</option>`).join('')}
+                            </select>
+                            <select id="job-f-sched-weekday" class="form-control" style="max-width:9rem">
+                                ${['day', 'weekday', 1, 2, 3, 4, 5, 6, 0].map(w =>
+                                    `<option value="${w}" ${String(sched.weekday ?? 'day') === String(w) ? 'selected' : ''}>${escHtml(weekdayName(w))}</option>`).join('')}
+                            </select>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="job-f-sched-row" data-for="cron" style="display:contents">
+                    <label>${t('admin.jobs.sched-cron-label')}</label>
+                    <input type="text" id="job-f-sched-cron" class="form-control" spellcheck="false" style="font-family:monospace" placeholder="0 * * * *" value="${escHtml(sched.cron || '')}">
+                    <p class="wf-note">${t('admin.jobs.sched-cron-hint')}</p>
+                </div>
+
+                <div class="job-f-sched-row" data-for="minutes hourly daily weekly monthly yearly cron" style="display:contents">
+                    <label>${t('admin.jobs.sched-start')}</label>
+                    <div class="admin-sched-inline">
+                        <input type="date" id="job-f-sched-start" class="form-control" value="${escHtml(sched.start || '')}">
+                        <span>${t('admin.jobs.sched-end')}</span>
+                        <input type="date" id="job-f-sched-end" class="form-control" value="${escHtml(sched.end || '')}">
+                    </div>
+                </div>
+
+                <label>${t('admin.jobs.sched-next')}</label>
+                <div id="job-f-sched-preview" class="admin-sched-preview"></div>
             </div>
 
             <div class="admin-ai-form-section-header">${t('admin.jobs.prompt-section')}</div>
@@ -2500,11 +2611,7 @@ const openJobForm = (job) => {
 
     document.getElementById('admin-jobs-add-btn')?.classList.add('hidden');
 
-    // Show/hide schedule sub-rows on type change
-    document.getElementById('job-f-sched-type').addEventListener('change', (e) => {
-        document.getElementById('job-f-sched-days-wrapper').style.display = e.target.value === 'weekly'  ? 'contents' : 'none';
-        document.getElementById('job-f-sched-dom-wrapper').style.display  = e.target.value === 'monthly' ? 'contents' : 'none';
-    });
+    wireScheduleForm();
 
     document.getElementById('job-f-save-btn').addEventListener('click', () => saveJob(isNew ? null : job.id));
     document.getElementById('job-f-cancel-btn').addEventListener('click', () => renderAgentJobList());
@@ -2550,16 +2657,76 @@ const wireJobLogViewer = (jobId) => {
     loadList();
 };
 
+// Rows carry the types they belong to in data-for; switching type shows those and hides
+// the rest. Every change asks the server for the next runs, so the form's preview and the
+// runner read one engine (schedule.php) — and a cron typo shows while it is typed.
+let _schedPreviewTimer = null;
+const wireScheduleForm = () => {
+    const typeSel = document.getElementById('job-f-sched-type');
+    const form    = typeSel?.closest('.job-form-grid');
+    if (!form) return;
+    const units = { minutes: 'minutes', hourly: 'hours', daily: 'days', weekly: 'weeks', monthly: 'months', yearly: 'years' };
+    const sync = () => {
+        const type = typeSel.value;
+        form.querySelectorAll('.job-f-sched-row').forEach(row => {
+            const on = row.dataset.for.split(' ').includes(type);
+            row.style.display = on ? (row.tagName === 'DIV' ? 'contents' : '') : 'none';
+        });
+        const unit = document.getElementById('job-f-sched-unit');
+        if (unit && units[type]) unit.textContent = t(`admin.jobs.unit-${units[type]}`);
+        const interval = document.getElementById('job-f-sched-interval');
+        if (interval) interval.min = type === 'minutes' ? '5' : '1';
+    };
+    const preview = () => {
+        clearTimeout(_schedPreviewTimer);
+        _schedPreviewTimer = setTimeout(async () => {
+            const out = document.getElementById('job-f-sched-preview');
+            if (!out) return;
+            const res = await api.call('admin_preview_schedule', { schedule: JSON.stringify(buildScheduleObject()) });
+            if (!document.body.contains(out)) return;
+            out.classList.toggle('admin-sched-preview-error', !res.success);
+            out.textContent = !res.success ? (res.message || t('admin.jobs.save-failed'))
+                : res.next?.length ? res.next.map(serverTimeString).join(' · ')
+                : t('admin.jobs.sched-no-next');
+        }, 300);
+    };
+    typeSel.addEventListener('change', sync);
+    form.addEventListener('input', preview);
+    form.addEventListener('change', preview);
+    sync();
+    preview();
+};
+
 const buildScheduleObject = () => {
-    const type = document.getElementById('job-f-sched-type')?.value || 'daily';
-    const time = document.getElementById('job-f-sched-time')?.value || '08:00';
-    const sched = { type, time };
-    if (type === 'weekly') {
-        sched.days = [...document.querySelectorAll('.job-f-dow:checked')].map(el => parseInt(el.value, 10));
+    const val  = (id) => document.getElementById(id)?.value ?? '';
+    const type = val('job-f-sched-type') || 'daily';
+    const sched = { type };
+    if (type === 'cron') {
+        sched.cron = val('job-f-sched-cron').trim();
+    } else {
+        sched.interval = parseInt(val('job-f-sched-interval') || '1', 10);
+        const days = [...document.querySelectorAll('.job-f-dow:checked')].map(el => parseInt(el.value, 10));
+        if (type === 'minutes' || type === 'hourly') {
+            sched.time  = val('job-f-sched-from') || '00:00';
+            sched.until = val('job-f-sched-until') || '23:59';
+            if (days.length) sched.days = days;
+        } else {
+            sched.time = val('job-f-sched-time') || '08:00';
+        }
+        if (type === 'weekly') sched.days = days;
+        if (type === 'monthly' || type === 'yearly') {
+            if (document.querySelector('input[name="job-f-sched-by"]:checked')?.value === 'nth') {
+                sched.nth = parseInt(val('job-f-sched-nth'), 10);
+                const wd = val('job-f-sched-weekday');
+                sched.weekday = (wd === 'day' || wd === 'weekday') ? wd : parseInt(wd, 10);
+            } else {
+                sched.day = parseInt(val('job-f-sched-dom') || '1', 10);
+            }
+        }
+        if (type === 'yearly') sched.month = parseInt(val('job-f-sched-month') || '1', 10);
     }
-    if (type === 'monthly') {
-        sched.day = parseInt(document.getElementById('job-f-sched-dom')?.value || '1', 10);
-    }
+    if (val('job-f-sched-start')) sched.start = val('job-f-sched-start');
+    if (val('job-f-sched-end'))   sched.end   = val('job-f-sched-end');
     return sched;
 };
 
