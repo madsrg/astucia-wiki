@@ -10,6 +10,7 @@ require_once 'logger.php';
 require_once 'mailer.php';
 require_once __DIR__ . '/service_auth.php';   // wiki_migrate_user_emails(), wiki_user_notify_email()
 require_once __DIR__ . '/remember_me.php';    // OTP "keep me signed in"
+require_once __DIR__ . '/accounts.php';       // the account model, codes, linking, wiki_oidc_complete()
 
 session_start();
 
@@ -18,61 +19,7 @@ if (!AUTHENTICATION_ENABLED) {
     exit;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function load_users(): array {
-    $file = WIKI_SYSTEM_DATA . 'users.json';
-    if (!file_exists($file)) return [];
-    return json_decode(file_get_contents($file), true)['users'] ?? [];
-}
-
-function save_users(array $users): void {
-    file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode(['users' => $users], JSON_PRETTY_PRINT));
-}
-
-// Stamp the moment a user signed in. Read by the My Mentions badge, which needs a line
-// between seen and new the first time a user opens the panel — without it every mention
-// the wiki ever recorded would count as new. Kept next to the login paths because those
-// are the only two places that know a login happened.
-function record_login(int $uid): void {
-    if ($uid <= 0) return;
-    $users = load_users();
-    foreach ($users as &$u) {
-        if ((int)($u['uid'] ?? -1) !== $uid) continue;
-        $u['lastLogin'] = time();
-        save_users($users);
-        return;
-    }
-}
-
-function load_requests(): array {
-    $file = WIKI_SYSTEM_DATA . 'user_requests.json';
-    if (!file_exists($file)) return [];
-    return json_decode(file_get_contents($file), true)['requests'] ?? [];
-}
-
-function save_requests(array $requests): void {
-    file_put_contents(WIKI_SYSTEM_DATA . 'user_requests.json', json_encode(['requests' => $requests], JSON_PRETTY_PRINT));
-}
-
 wiki_migrate_user_emails();   // before any read of users.json below
-
-function find_by_sub(array $list, string $sub): ?int {
-    foreach ($list as $i => $item) {
-        if (($item['sub'] ?? '') === $sub) return $i;
-    }
-    return null;
-}
-
-function find_otp_user(array $users, string $email): ?array {
-    foreach ($users as $u) {
-        if (strtolower(trim($u['email'] ?? '')) === $email
-            && ($u['auth'] ?? 'oidc') === 'otp') {
-            return $u;
-        }
-    }
-    return null;
-}
 
 $_action = $_GET['action'] ?? '';
 
@@ -109,21 +56,10 @@ if ($_action === 'otp_send' && in_array(AUTHENTICATION, ['otp', 'both'])) {
         header('Location: login.php');
         exit;
     }
-    $users = load_users();
-    $user  = find_otp_user($users, $email);
+    $user = wiki_find_user_by_otp_email(wiki_users_list(), $email);
     // Always say "code sent" — don't reveal whether the email exists
     if ($user) {
-        $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        $_SESSION['otp_pending'] = [
-            'email'    => $email,
-            'code'     => password_hash($code, PASSWORD_DEFAULT),
-            'expires'  => time() + 600,
-            'attempts' => 0,
-        ];
-        $html = "<p>Your login code for <strong>" . htmlspecialchars(APP_TITLE) . "</strong> is:</p>"
-              . "<p style='font-size:2rem;font-weight:bold;letter-spacing:0.3em;font-family:monospace'>{$code}</p>"
-              . "<p>This code expires in 10 minutes. If you didn't request this, you can ignore this email.</p>";
-        send_email($email, $user['name'] ?? '', 'Your login code for ' . APP_TITLE, $html);
+        wiki_otp_issue('login', $email, $user['name'] ?? '');
         write_access_log('OTP_SENT', $email, $user['name'] ?? '');
     }
     $_SESSION['login_notice'] = 'login.notice.code-sent';
@@ -135,36 +71,22 @@ if ($_action === 'otp_send' && in_array(AUTHENTICATION, ['otp', 'both'])) {
 
 if ($_action === 'otp_verify' && in_array(AUTHENTICATION, ['otp', 'both'])) {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') { header('Location: login.php'); exit; }
-    $pending = $_SESSION['otp_pending'] ?? null;
-    if (!$pending) {
-        $_SESSION['login_error'] = 'login.err.session-expired';
-        header('Location: login.php');
+    $pending = wiki_otp_check((string)($_POST['code'] ?? ''), ['login', 'link_request']);
+    if (is_string($pending)) {
+        $_SESSION['login_error'] = $pending;
+        // A wrong code keeps the code step open; everything else starts over.
+        header('Location: ' . ($pending === 'login.err.invalid-code' ? 'login.php?step=verify' : 'login.php'));
         exit;
     }
-    if (time() > ($pending['expires'] ?? 0)) {
-        unset($_SESSION['otp_pending']);
-        $_SESSION['login_error'] = 'login.err.code-expired';
-        header('Location: login.php');
-        exit;
-    }
-    if (($pending['attempts'] ?? 0) >= 5) {
-        unset($_SESSION['otp_pending']);
-        $_SESSION['login_error'] = 'login.err.too-many';
-        header('Location: login.php');
-        exit;
-    }
-    $submitted = trim($_POST['code'] ?? '');
-    if (!$submitted || !password_verify($submitted, $pending['code'] ?? '')) {
-        $_SESSION['otp_pending']['attempts'] = ($pending['attempts'] ?? 0) + 1;
-        $_SESSION['login_error'] = 'login.err.invalid-code';
-        header('Location: login.php?step=verify');
+    // A code that finishes a link an admin started: the SSO identity joins the account the
+    // code was sent to, and the person is signed in as that account.
+    if ($pending['purpose'] === 'link_request') {
+        header('Location: ' . wiki_link_request_complete($pending, !empty($_POST['remember'])));
         exit;
     }
     // Valid code — look up user and establish session
     $email = $pending['email'];
-    unset($_SESSION['otp_pending']);
-    $users = load_users();
-    $user  = find_otp_user($users, $email);
+    $user  = wiki_find_user_by_otp_email(wiki_users_list(), $email);
     if (!$user) {
         $_SESSION['login_error'] = 'login.err.no-account';
         header('Location: login.php');
@@ -200,110 +122,33 @@ try {
     $oidc->setRedirectURL(OIDC_REDIRECT_URI);
     $oidc->addScope(['openid', 'profile', 'email']);
 
+    if ($_action === 'link_sso') {
+        // A signed-in user adding SSO from My Preferences. The nonce was handed out by
+        // api.php (account_sso_link_start) to this session only, so a link to this URL
+        // from another site cannot start a link. The provider is asked to show its login
+        // whatever its own session holds, so the person sees which identity they attach.
+        $ls = $_SESSION['link_sso'] ?? null;
+        if (!$ls || !hash_equals((string)($ls['nonce'] ?? ''), (string)($_GET['n'] ?? ''))
+            || time() > (int)($ls['expires'] ?? 0) || (int)($_SESSION['user']['uid'] ?? 0) !== (int)($ls['uid'] ?? -1)) {
+            unset($_SESSION['link_sso']);
+            header('Location: index.php?account_error=account.err.link-expired');
+            exit;
+        }
+        // Only a marker that passed the nonce check here is honoured at the callback, or a
+        // forged POST to account_sso_link_start followed by a plain auth.php would link.
+        $_SESSION['link_sso']['started'] = true;
+        $oidc->addAuthParam(['prompt' => 'login']);
+    }
+
     if ($oidc->authenticate()) {
         $userInfo = $oidc->requestUserInfo();
-        $sub      = $userInfo->sub   ?? '';
-        $email    = $userInfo->email ?? '';
-        $name     = $userInfo->name  ?? 'Unknown User';
-        $locale   = $userInfo->locale ?? 'en_US';
-
-        if (!$sub) {
-            throw new Exception('OAuth token missing required `sub` claim.');
-        }
-
-        $users = load_users();
-
-        // ── Check approved users ───────────────────────────────────────────
-        $idx = find_by_sub($users, $sub);
-        if ($idx !== null) {
-            $u = $users[$idx];
-
-            // Reject if this user is configured for OTP auth only
-            if (($u['auth'] ?? 'oidc') === 'otp') {
-                write_access_log('LOGIN_DENIED', $sub, $name, 'OTP user attempted OIDC login');
-                session_destroy();
-                $_SESSION['login_error'] = 'login.err.otp-account';
-                header('Location: login.php');
-                exit;
-            }
-
-            $users[$idx]['name'] = $name;
-            // The provider is authoritative for the identity address. Before the
-            // email/notifyEmail split a saved preference overwrote this field, so a record
-            // could stop showing which provider account it belonged to; writing the claim
-            // back on every login repairs those without anyone having to touch users.json.
-            if ($email !== '') $users[$idx]['email'] = $email;
-            if (!isset($u['uid'])) {
-                $max_uid = 0;
-                foreach ($users as $eu) { if (isset($eu['uid']) && $eu['uid'] > $max_uid) $max_uid = $eu['uid']; }
-                $users[$idx]['uid'] = $max_uid + 1;
-                $u['uid'] = $users[$idx]['uid'];
-            }
-            if (!isset($u['auth'])) {
-                $users[$idx]['auth'] = 'oidc';
-            }
-            save_users($users);
-
-            $_SESSION['user'] = [
-                'sub'        => $sub,
-                'uid'        => $u['uid'],
-                'name'       => $name,
-                'email'      => $email,
-                'locale'     => $locale,
-                'role'       => $u['role']       ?? 'editor',
-                'spaces'     => $u['spaces']     ?? null,
-                'fontFamily' => $u['fontFamily'] ?? 'sans',
-                'fontSize'   => $u['fontSize']   ?? 'normal',
-                'auth'       => 'oidc',
-            ];
-            $_SESSION['id_token'] = $oidc->getIdToken();
-            record_login((int)$u['uid']);
-            write_access_log('LOGIN_OK', $sub, $name, $u['role'] ?? 'editor');
-            $redirect = $_SESSION['login_redirect'] ?? 'index.php';
-            unset($_SESSION['login_redirect']);
-            header("Location: " . $redirect);
-            exit;
-        }
-
-        // ── Not approved — check / create access request ───────────────────
-        $requests = load_requests();
-        $ridx     = find_by_sub($requests, $sub);
-
-        unset($_SESSION['user'], $_SESSION['id_token']);
-        session_regenerate_id(true);
-
-        if ($ridx !== null) {
-            $requests[$ridx]['name'] = $name;
-            save_requests($requests);
-            $_SESSION['pending_sub']    = $sub;
-            $_SESSION['pending_status'] = $requests[$ridx]['status'] ?? 'pending';
-            header("Location: pending_access.php");
-            exit;
-        }
-
-        $requests[] = [
-            'sub'          => $sub,
-            'name'         => $name,
-            'email'        => $email,
-            'requested_at' => date('c'),
-            'status'       => 'pending',
-        ];
-        save_requests($requests);
-
-        if (is_mail_configured()) {
-            $n = htmlspecialchars($name);
-            send_email(
-                mail_from_email(), APP_TITLE . ' Admin',
-                APP_TITLE . ': New Access Request from ' . $n,
-                "<p><strong>{$n}</strong> has requested access to <strong>" . htmlspecialchars(APP_TITLE) . "</strong>.</p>"
-                . "<p>Log in to the admin panel and open the <strong>Requests</strong> tab to approve or deny.</p>"
-            );
-        }
-
-        write_access_log('ACCESS_REQUESTED', $sub, $name);
-        $_SESSION['pending_sub']    = $sub;
-        $_SESSION['pending_status'] = 'pending';
-        header("Location: pending_access.php");
+        $redirect = wiki_oidc_complete([
+            'sub'    => $userInfo->sub    ?? '',
+            'email'  => $userInfo->email  ?? '',
+            'name'   => $userInfo->name   ?? '',
+            'locale' => $userInfo->locale ?? 'en_US',
+        ], $oidc->getIdToken());
+        header('Location: ' . $redirect);
         exit;
     }
 

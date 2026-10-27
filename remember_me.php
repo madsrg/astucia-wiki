@@ -17,10 +17,11 @@
  * would let the first one invalidate the cookie the others carry.
  *
  * Restoring re-reads users.json rather than trusting anything the token recorded, so
- * deleting a user, changing their role or moving them to OIDC takes effect at once.
+ * deleting a user, changing their role or removing their email-code address takes effect at once.
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/logger.php';
+require_once __DIR__ . '/accounts.php';   // wiki_session_user(), wiki_user_otp_email()
 
 const WIKI_REMEMBER_COOKIE = 'wiki_remember';
 
@@ -37,16 +38,9 @@ function wiki_remember_enabled(): bool {
 // The $_SESSION['user'] shape for an OTP user — shared by the code login in auth.php and
 // the cookie restore below, so the two cannot drift apart.
 function wiki_otp_session_user(array $user, string $email = ''): array {
-    return [
-        'uid'        => $user['uid']        ?? 0,
-        'name'       => $user['name']       ?? '',
-        'email'      => $user['email']      ?? $email,
-        'role'       => $user['role']       ?? 'editor',
-        'spaces'     => $user['spaces']     ?? null,
-        'fontFamily' => $user['fontFamily'] ?? 'sans',
-        'fontSize'   => $user['fontSize']   ?? 'normal',
-        'auth'       => 'otp',
-    ];
+    $s = wiki_session_user($user, 'otp');
+    if ($s['email'] === '') $s['email'] = $email;
+    return $s;
 }
 
 // Locked read-modify-write of the token store. $fn gets the token map and returns it.
@@ -148,7 +142,9 @@ function wiki_remember_restore(): bool {
     if ($uid) {
         $users = json_decode(@file_get_contents(WIKI_SYSTEM_DATA . 'users.json') ?: '', true)['users'] ?? [];
         foreach ($users as $u) {
-            if ((int)($u['uid'] ?? -1) === $uid && ($u['auth'] ?? 'oidc') === 'otp') { $user = $u; break; }
+            // Only while the account still signs in with a code: a token outlives neither
+            // the account nor its OTP address.
+            if ((int)($u['uid'] ?? -1) === $uid && wiki_user_is_person($u) && wiki_user_otp_email($u) !== '') { $user = $u; break; }
         }
     }
     if (!$user) {
@@ -160,6 +156,6 @@ function wiki_remember_restore(): bool {
     $_SESSION['user']          = wiki_otp_session_user($user);
     $_SESSION['last_activity'] = time();
     $_SESSION['remembered']    = true;
-    write_access_log('LOGIN_REMEMBERED', $user['email'] ?? '-', $user['name'] ?? '', $user['role'] ?? 'editor');
+    write_access_log('LOGIN_REMEMBERED', wiki_user_otp_email($user) ?: '-', $user['name'] ?? '', $user['role'] ?? 'editor');
     return true;
 }

@@ -595,7 +595,8 @@ const renderUsers = () => {
 
         const tdName = document.createElement('td');
         tdName.className = 'admin-td-name';
-        if (u.auth === 'otp') {
+        // Without SSO nothing refreshes the name from a provider, so it is the admin's to edit.
+        if (!u.sso) {
             const inp = document.createElement('input');
             inp.type = 'text';
             inp.className = 'form-control admin-inline-input';
@@ -615,16 +616,23 @@ const renderUsers = () => {
 
         const tdEmail = document.createElement('td');
         tdEmail.className = 'admin-td-email';
-        if (u.auth === 'otp') {
+        // The SSO address is the provider's and read-only; the email-code address is the
+        // admin's. An account with both shows the one above the other.
+        const hasOtp = u.otpEmail !== undefined;
+        if (u.sso) {
+            const ssoAddr = document.createElement('span');
+            ssoAddr.textContent = u.email || '—';
+            tdEmail.appendChild(ssoAddr);
+        }
+        if (hasOtp) {
             const inp = document.createElement('input');
             inp.type = 'email';
-            inp.className = 'form-control admin-inline-input';
-            inp.value = u.email || '';
+            inp.className = 'form-control admin-inline-input admin-otp-input';
+            inp.value = u.otpEmail || '';
             inp.placeholder = t('admin.users.email-ph');
-            inp.addEventListener('input', () => { users[i] = { ...users[i], email: inp.value }; markDirty(); inp.style.borderColor = ''; });
+            if (u.sso) inp.title = t('admin.users.otp-addr-title');
+            inp.addEventListener('input', () => { users[i] = { ...users[i], otpEmail: inp.value }; markDirty(); inp.style.borderColor = ''; });
             tdEmail.appendChild(inp);
-        } else {
-            tdEmail.textContent = u.email || '—';
         }
         // The address mail is actually sent to, when the person has chosen a different one
         // in My Preferences. Shown beneath the login address rather than replacing it —
@@ -637,9 +645,46 @@ const renderUsers = () => {
             tdEmail.appendChild(alt);
         }
 
+        // One badge per sign-in method. With both, either can be removed (×); an SSO
+        // account can be given an email code. Removing the last one is not offered.
         const tdAuth = document.createElement('td');
-        const authVal = u.auth || 'oidc';
-        tdAuth.innerHTML = `<span class="admin-auth-badge admin-auth-${authVal}">${authVal.toUpperCase()}</span>`;
+        tdAuth.className = 'admin-td-auth';
+        const methodBadge = (cls, label, onRemove) => {
+            const b = document.createElement('span');
+            b.className = `admin-auth-badge admin-auth-${cls}`;
+            b.textContent = label;
+            if (onRemove) {
+                const x = document.createElement('button');
+                x.type = 'button';
+                x.className = 'admin-auth-remove';
+                x.textContent = '×';
+                x.title = t('admin.users.remove-method', { method: label });
+                x.addEventListener('click', () => { onRemove(); markDirty(); renderUsers(); });
+                b.appendChild(x);
+            }
+            tdAuth.appendChild(b);
+        };
+        const both = u.sso && hasOtp;
+        if (u.sso) methodBadge('oidc', 'SSO', both ? () => { users[i] = { ...users[i], sso: false }; } : null);
+        if (hasOtp) methodBadge('otp', 'OTP', both ? () => {
+            const { otpEmail, ...rest } = users[i];
+            users[i] = { ...rest, _dropOtp: true };
+        } : null);
+        if (u.sso && !hasOtp && window.WIKI_AUTH_MODE === 'both') {
+            const add = document.createElement('button');
+            add.type = 'button';
+            add.className = 'admin-auth-add';
+            add.textContent = t('admin.users.add-otp-method');
+            add.title = t('admin.users.add-otp-method-title');
+            add.addEventListener('click', () => {
+                users[i] = { ...users[i], otpEmail: users[i].email || '' };
+                delete users[i]._dropOtp;
+                markDirty();
+                renderUsers();
+                document.querySelectorAll('#admin-users-table tbody tr')[i]?.querySelector('.admin-otp-input')?.focus();
+            });
+            tdAuth.appendChild(add);
+        }
 
         const tdRole = document.createElement('td');
         const sel = document.createElement('select');
@@ -702,9 +747,10 @@ const loadUsers = async () => {
 
 const saveUsers = async () => {
     // Validate OTP users before sending
-    const invalid = users.filter(u => u.auth === 'otp' && (!u.name?.trim() || !u.email?.trim()));
+    // Every account keeps a way in: without SSO it needs a name and a code address.
+    const invalid = users.filter(u => !u.sso && (!u.name?.trim() || !u.otpEmail?.trim()));
     if (invalid.length) {
-        showToast('OTP users require both a name and an email address.', 'error');
+        showToast(t('admin.users.otp-required'), 'error');
         // Highlight the first offending row
         document.querySelectorAll('#admin-users-table .admin-inline-input').forEach(inp => {
             inp.style.borderColor = (!inp.value.trim()) ? '#fc8181' : '';
@@ -715,7 +761,10 @@ const saveUsers = async () => {
     const btn = document.getElementById('admin-save-btn');
     btn.disabled = true;
     btn.textContent = t('admin.users.saving');
-    const result = await api.call('admin_save_users', { users: JSON.stringify(users) }, 'POST');
+    // An email code removed with × is sent as an empty address, which the server reads as
+    // "no OTP sign-in"; an absent field would mean "unchanged".
+    const payload = users.map(({ _dropOtp, ...u }) => (_dropOtp ? { ...u, otpEmail: '' } : u));
+    const result = await api.call('admin_save_users', { users: JSON.stringify(payload) }, 'POST');
     btn.textContent = t('admin.save-btn');
     if (result.success) {
         markDirty(false);
@@ -734,7 +783,7 @@ const renderRequests = () => {
     if (!container) return;
 
     const countEl = document.getElementById('admin-requests-count');
-    const pending = requests.filter(r => r.status === 'pending');
+    const pending = requests.filter(r => r.status === 'pending' || r.status === 'link');
     const denied  = requests.filter(r => r.status === 'denied');
 
     if (!requests.length) {
@@ -749,6 +798,7 @@ const renderRequests = () => {
     const buildRow = (r) => {
         const tr = document.createElement('tr');
         const isPending = r.status === 'pending';
+        const isLink    = r.status === 'link';
 
         const tdName = document.createElement('td');
         tdName.className = 'admin-td-email';
@@ -757,6 +807,26 @@ const renderRequests = () => {
         const tdEmail = document.createElement('td');
         tdEmail.className = 'admin-td-email';
         tdEmail.textContent = r.email || '—';
+        // The same address on an existing account usually means one person signing in the
+        // other way. Only a hint: an address the requester typed proves nothing, so the
+        // answer it offers (Link) still makes them prove the account is theirs.
+        const matches = Array.isArray(r.matches) ? r.matches : [];
+        if (isPending && matches.length) {
+            const note = document.createElement('span');
+            note.className = 'admin-req-match';
+            note.textContent = t('admin.req.match', { names: matches.map(m => `${m.name} (${m.auth === 'both' ? 'SSO + OTP' : m.auth === 'otp' ? 'OTP' : 'SSO'})`).join(', ') });
+            if (r.email_source === 'typed') {
+                note.textContent += ' ' + t('admin.req.match-typed');
+                note.classList.add('admin-req-match-typed');
+            }
+            tdEmail.appendChild(note);
+        }
+        if (isLink) {
+            const note = document.createElement('span');
+            note.className = 'admin-req-match';
+            note.textContent = t('admin.req.link-waiting-to', { name: r.link_name || '?' });
+            tdEmail.appendChild(note);
+        }
 
         const tdDate = document.createElement('td');
         tdDate.className = 'admin-log-time';
@@ -764,12 +834,35 @@ const renderRequests = () => {
 
         const tdStatus = document.createElement('td');
         const badge = document.createElement('span');
-        badge.className = `admin-log-badge ${isPending ? 'log-ok' : 'log-denied'}`;
-        badge.textContent = isPending ? t('admin.req.pending') : t('admin.req.denied');
+        badge.className = `admin-log-badge ${isPending || isLink ? 'log-ok' : 'log-denied'}`;
+        badge.textContent = isLink ? t('admin.req.link-waiting') : isPending ? t('admin.req.pending') : t('admin.req.denied');
         tdStatus.appendChild(badge);
 
         const tdActions = document.createElement('td');
         tdActions.className = 'admin-requests-actions';
+
+        // Deny is offered while a request is pending and while a link waits for its code.
+        const makeDenyBtn = () => {
+            const denyBtn = document.createElement('button');
+            denyBtn.className = 'btn btn-sm btn-danger';
+            denyBtn.textContent = t('admin.req.deny');
+            denyBtn.addEventListener('click', async () => {
+                const ok = await confirmModal(t('admin.req.deny-confirm', { name: r.name || r.email }), {
+                    confirmLabel: t('admin.req.deny'), dangerous: true,
+                });
+                if (!ok) return;
+                denyBtn.disabled = true;
+                const res = await api.call('admin_deny_request', { sub: r.sub }, 'POST');
+                if (res.success) {
+                    showToast(t('admin.req.denied-msg', { name: r.name || r.email }), 'success');
+                    await loadRequests();
+                } else {
+                    denyBtn.disabled = false;
+                    showToast(res.message || t('admin.err.deny'), 'error');
+                }
+            });
+            return denyBtn;
+        };
 
         if (isPending) {
             const roleWrap = document.createElement('span');
@@ -791,6 +884,11 @@ const renderRequests = () => {
             approveBtn.className = 'btn btn-sm btn-green';
             approveBtn.textContent = t('admin.req.approve');
             approveBtn.addEventListener('click', async () => {
+                if (matches.length) {
+                    const ok = await confirmModal(t('admin.req.approve-dup-confirm', { name: r.name || r.email, names: matches.map(m => m.name).join(', ') }),
+                        { confirmLabel: t('admin.req.approve'), cancelLabel: t('btn.cancel') });
+                    if (!ok) return;
+                }
                 approveBtn.disabled = true;
                 const res = await api.call('admin_approve_request',
                     { sub: r.sub, role: roleSel.value }, 'POST');
@@ -805,26 +903,31 @@ const renderRequests = () => {
                 }
             });
 
-            const denyBtn = document.createElement('button');
-            denyBtn.className = 'btn btn-sm btn-danger';
-            denyBtn.textContent = t('admin.req.deny');
-            denyBtn.addEventListener('click', async () => {
-                const ok = await confirmModal(t('admin.req.deny-confirm', { name: r.name || r.email }), {
-                    confirmLabel: t('admin.req.deny'), dangerous: true,
+            tdActions.append(roleWrap, approveBtn);
+            matches.filter(m => m.linkable).forEach(m => {
+                const linkBtn = document.createElement('button');
+                linkBtn.className = 'btn btn-sm btn-blue';
+                linkBtn.textContent = t('admin.req.link', { name: m.name });
+                linkBtn.addEventListener('click', async () => {
+                    const ok = await confirmModal(t('admin.req.link-confirm', { name: r.name || r.email, account: m.name }),
+                        { confirmLabel: t('admin.req.link', { name: m.name }), cancelLabel: t('btn.cancel') });
+                    if (!ok) return;
+                    linkBtn.disabled = true;
+                    const res = await api.call('admin_link_request', { sub: r.sub, uid: m.uid }, 'POST');
+                    if (res.success) {
+                        showToast(t('admin.req.link-sent', { account: m.name }), 'success');
+                        await loadRequests();
+                    } else {
+                        linkBtn.disabled = false;
+                        showToast(res.message || t('admin.err.generic'), 'error');
+                    }
                 });
-                if (!ok) return;
-                denyBtn.disabled = true;
-                const res = await api.call('admin_deny_request', { sub: r.sub }, 'POST');
-                if (res.success) {
-                    showToast(t('admin.req.denied-msg', { name: r.name || r.email }), 'success');
-                    await loadRequests();
-                } else {
-                    denyBtn.disabled = false;
-                    showToast(res.message || t('admin.err.deny'), 'error');
-                }
+                tdActions.appendChild(linkBtn);
             });
-
-            tdActions.append(roleWrap, approveBtn, denyBtn);
+            tdActions.appendChild(makeDenyBtn());
+        } else if (isLink) {
+            // Waiting for the person to enter the code; the admin can still say no.
+            tdActions.appendChild(makeDenyBtn());
         } else {
             // Denied — allow re-approval
             const reApproveBtn = document.createElement('button');
@@ -3273,7 +3376,7 @@ export const init = () => {
         document.getElementById('admin-otp-add-btn')?.classList.remove('hidden');
     }
     document.getElementById('admin-otp-add-btn')?.addEventListener('click', () => {
-        users.push({ uid: 0, name: '', email: '', role: 'editor', auth: 'otp', spaces: null });
+        users.push({ uid: 0, name: '', otpEmail: '', role: 'editor', auth: 'otp', sso: false, spaces: null });
         markDirty();
         renderUsers();
         // Focus the last name input

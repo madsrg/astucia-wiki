@@ -1219,6 +1219,13 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <input type="email" id="pref-email" class="form-control" data-i18n-placeholder="prefs.email-ph" placeholder="your@email.com">
                 <p class="pref-hint" data-i18n="prefs.email-hint">Where notifications are sent. Leave blank to use your login address.</p>
             </div>
+            <!-- Shown by modules/preferences when this wiki offers both ways of signing in,
+                 or the account already has both (so one can be removed). -->
+            <div class="form-group hidden" id="pref-signin-group">
+                <label data-i18n="prefs.signin-label">Sign-in methods</label>
+                <div id="pref-signin" class="pref-signin"></div>
+                <p class="pref-hint pref-hint-flush" data-i18n="prefs.signin-hint">Either way reaches this same account, with your pages, chats and mentions.</p>
+            </div>
             <div class="form-group">
                 <label data-i18n="prefs.font-label">Font</label>
                 <div style="display:flex;gap:0.5rem;margin-top:0.25rem">

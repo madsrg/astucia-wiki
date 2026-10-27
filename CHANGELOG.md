@@ -21,6 +21,21 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   out, and the import lists what was dropped.
 - **Skills are MCP prompts**: `mcp.php` answers `prompts/list` and `prompts/get`.
 - The Docker image includes PHP's `zip` extension.
+- **One account can sign in with single sign-on and with an email code** (with
+  `AUTHENTICATION = 'both'`). *My Preferences → Sign-in methods* adds the other method —
+  through the identity provider, or with a code sent to the new address — and removes one
+  as long as another remains. *Admin → Users* shows a badge per method and can give an SSO
+  account an email-code address. Existing accounts need no migration.
+- **A duplicate access request can be answered with a link.** When an email-code user signs
+  in with SSO by mistake, the *Requests* tab says which account the address matches and
+  offers *Link to …*. Nothing is linked on the address alone — it may have been typed by
+  whoever asked — so the next SSO sign-in sends a code to the existing account's address,
+  and only that code joins them. Approving such a request anyway asks first, and approving
+  an identity that already belongs to an account is refused.
+
+### Fixed
+- **My Preferences opened for email-code users again.** It looked the account up by an SSO
+  identity those sessions do not have, and answered "Not authenticated."
 
 ## [2026.10.6] — 2026-10-25
 

@@ -24,8 +24,13 @@ if (($_GET['action'] ?? '') === 'otp_cancel') {
 }
 
 $loggedOut  = isset($_GET['logged_out']);
-$otpStep    = isset($_SESSION['otp_pending']) || ($_GET['step'] ?? '') === 'verify';
+// A code pending for one of the two purposes this page completes. A code for adding an
+// address in My Preferences is entered there, by a user who is already signed in.
+$otpPurpose = $_SESSION['otp_pending']['purpose'] ?? 'login';
+$otpStep    = (isset($_SESSION['otp_pending']) && in_array($otpPurpose, ['login', 'link_request'], true))
+              || ($_GET['step'] ?? '') === 'verify';
 $otpEmail   = $_SESSION['otp_pending']['email'] ?? '';
+$linkStep   = $otpStep && $otpPurpose === 'link_request';
 $error      = $_SESSION['login_error']  ?? null; unset($_SESSION['login_error']);
 $notice     = $_SESSION['login_notice'] ?? null; unset($_SESSION['login_notice']);
 
@@ -42,6 +47,10 @@ $LOGIN_MSGS = [
     'login.err.no-account'       => 'Account not found.',
     'login.err.otp-account'      => 'This account uses email code (OTP) login. Please use the email field below.',
 ];
+// What finishing a link can refuse with; the English lives with the account model.
+foreach (['account.err.no-account', 'account.err.has-sso', 'account.err.sso-taken'] as $k) {
+    $LOGIN_MSGS[$k] = wiki_account_error_text($k);
+}
 $msgAttr = function (?string $msg) use ($LOGIN_MSGS): string {
     return isset($LOGIN_MSGS[$msg]) ? ' data-i18n="' . htmlspecialchars($msg) . '"' : '';
 };
@@ -195,7 +204,20 @@ function mask_email(string $email): string {
         </form>
         <?php endif; ?>
 
-        <?php if ($showOtp && $otpStep): ?>
+        <?php if ($linkStep): ?>
+            <p class="login-otp-target"><span data-i18n="login.link-intro">An administrator linked your single sign-on to an existing account. To confirm it is yours, enter the 6-digit code sent to that account's address</span><br><strong><?php echo htmlspecialchars(mask_email($otpEmail)); ?></strong></p>
+            <form method="POST" action="auth.php?action=otp_verify">
+                <div class="login-form-group">
+                    <label class="login-label" for="otp-code" data-i18n="login.code-label">Login code</label>
+                    <input class="login-input login-otp-code-input" type="text" id="otp-code" name="code" required autofocus maxlength="6" pattern="[0-9]{6}" inputmode="numeric" placeholder="000000" autocomplete="one-time-code">
+                </div>
+                <?php if (wiki_remember_enabled()): ?>
+                <label class="login-remember"><input type="checkbox" name="remember" value="1" checked> <span data-i18n="login.remember">Keep me signed in on this device</span></label>
+                <?php endif; ?>
+                <button type="submit" class="btn-login" data-i18n="login.link-confirm">Link and sign in</button>
+            </form>
+            <a href="login.php?action=otp_cancel" class="login-back" data-i18n="login.link-cancel">← Cancel</a>
+        <?php elseif ($showOtp && $otpStep): ?>
             <p class="login-otp-target"><span data-i18n="login.code-sent">Enter the 6-digit code sent to</span><br><strong><?php echo htmlspecialchars(mask_email($otpEmail)); ?></strong></p>
             <form method="POST" action="auth.php?action=otp_verify">
                 <div class="login-form-group">

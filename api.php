@@ -25,6 +25,7 @@ require_once __DIR__ . '/page_chat.php';
 require_once __DIR__ . '/memory.php';
 require_once __DIR__ . '/skills.php';
 require_once __DIR__ . '/remember_me.php';
+require_once __DIR__ . '/accounts.php';
 
 session_start();
 wiki_remember_restore();   // OTP "keep me signed in" — before anything reads $_SESSION['user']
@@ -997,7 +998,7 @@ if (isset($_REQUEST['action'])) {
                       'admin_set_space_skills', 'admin_ai_skills_settings', 'admin_skills_list', 'admin_skill_get', 'admin_skill_save',
                       'admin_skill_delete', 'admin_skill_import_stage', 'admin_skill_import_commit',
                       'admin_get_users', 'admin_save_users', 'admin_get_user_requests',
-                      'admin_approve_request', 'admin_deny_request',
+                      'admin_approve_request', 'admin_deny_request', 'admin_link_request',
                       'admin_get_logs', 'admin_get_log_content',
                       'admin_get_error_logs', 'admin_get_error_log_content',
                       'admin_send_test_email', 'admin_get_diag_log',
@@ -4109,12 +4110,14 @@ if (isset($_REQUEST['action'])) {
 
             case 'admin_get_users':
                 $uf_data = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? []) : [];
-                $human_users = array_values(array_filter($uf_data['users'] ?? [], fn($u) => empty($u['is_ai']) && empty($u['is_system'])));
-                // Normalize auth field for legacy records that predate the auth field
+                $human_users = array_values(array_filter($uf_data['users'] ?? [], 'wiki_user_is_person'));
+                // The sign-in methods as the account model reads them, so a legacy record
+                // (no otpEmail, `auth` absent or 'otp') arrives in the same shape as a new one.
                 $human_users = array_map(function($u) {
-                    if (!isset($u['auth'])) {
-                        $u['auth'] = (isset($u['sub']) && $u['sub']) ? 'oidc' : 'otp';
-                    }
+                    $u['auth'] = wiki_user_auth($u);
+                    $u['sso']  = wiki_user_sso_sub($u) !== '';
+                    $otp = wiki_user_otp_email($u);
+                    if ($otp !== '') $u['otpEmail'] = $otp; else unset($u['otpEmail']);
                     return $u;
                 }, $human_users);
                 echo json_encode(['success' => true, 'data' => $human_users]);
@@ -4124,66 +4127,83 @@ if (isset($_REQUEST['action'])) {
                 $incoming_users = json_decode($_POST['users'] ?? '[]', true);
                 if (!is_array($incoming_users)) throw new Exception('Invalid users data.');
                 $existing_uf = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? ['users' => []]) : ['users' => []];
-                $non_human_preserved = array_values(array_filter($existing_uf['users'] ?? [], fn($u) => !empty($u['is_ai']) || !empty($u['is_system'])));
+                $non_human_preserved = array_values(array_filter($existing_uf['users'] ?? [], fn($u) => !wiki_user_is_person($u)));
                 $existing_by_sub = [];
                 $existing_by_uid = [];
                 $max_uid_sv = 0;
                 foreach ($existing_uf['users'] ?? [] as $eu) {
-                    if (!empty($eu['is_ai']) || !empty($eu['is_system'])) continue;
-                    if ($eu['sub'] ?? '') $existing_by_sub[$eu['sub']] = $eu;
-                    if ($eu['uid'] ?? '') $existing_by_uid[(int)$eu['uid']] = $eu;
                     if ((int)($eu['uid'] ?? 0) > $max_uid_sv) $max_uid_sv = (int)$eu['uid'];
+                    if (!wiki_user_is_person($eu)) continue;
+                    if (($eu['sub'] ?? '') !== '') $existing_by_sub[$eu['sub']] = $eu;
+                    if ($eu['uid'] ?? '') $existing_by_uid[(int)$eu['uid']] = $eu;
                 }
                 $merged = [];
                 foreach ($incoming_users as $u) {
-                    $auth = $u['auth'] ?? ((isset($u['sub']) && $u['sub']) ? 'oidc' : 'otp');
+                    if (!is_array($u)) continue;
                     $role = in_array($u['role'] ?? '', ['admin', 'editor', 'reader']) ? $u['role'] : 'editor';
                     $sv_spaces = array_key_exists('spaces', $u)
                         ? (is_array($u['spaces']) ? array_values(array_filter($u['spaces'], 'is_string')) : null)
                         : null;
-                    if ($auth === 'oidc') {
-                        $sub = trim($u['sub'] ?? '');
-                        if (!$sub) continue;
-                        $base = $existing_by_sub[$sub] ?? ['sub' => $sub, 'name' => $u['name'] ?? '', 'email' => $u['email'] ?? ''];
-                        $base['role'] = $role;
-                        $base['auth'] = 'oidc';
-                        if (array_key_exists('spaces', $u)) $base['spaces'] = $sv_spaces;
-                    } else {
-                        $name  = trim($u['name'] ?? '');
-                        $email = trim($u['email'] ?? '');
-                        if (!$name || !$email) continue;
-                        $uid = (int)($u['uid'] ?? 0);
-                        $base = ($uid && isset($existing_by_uid[$uid])) ? $existing_by_uid[$uid] : [];
-                        if (!$uid || !$base) {
-                            $uid = ++$max_uid_sv;
+                    // The email-code address. This page sends `otpEmail`; a page loaded
+                    // before the field existed sends an OTP account's login as `email`.
+                    $otp_in = array_key_exists('otpEmail', $u) ? trim((string)$u['otpEmail'])
+                            : (($u['auth'] ?? '') === 'otp' ? trim((string)($u['email'] ?? '')) : null);
+                    if ($otp_in !== null && $otp_in !== '' && !filter_var($otp_in, FILTER_VALIDATE_EMAIL)) {
+                        throw new Exception('"' . $otp_in . '" is not a valid email address.');
+                    }
+                    $uid = (int)($u['uid'] ?? 0);
+                    $sub_in = trim((string)($u['sub'] ?? ''));
+                    $base = ($uid && isset($existing_by_uid[$uid])) ? $existing_by_uid[$uid]
+                          : (($sub_in !== '' && isset($existing_by_sub[$sub_in])) ? $existing_by_sub[$sub_in] : null);
+
+                    if ($base) {
+                        // An SSO identity is kept or removed here, never set or changed:
+                        // only the provider can vouch for one, at a sign-in.
+                        $have_sub = wiki_user_sso_sub($base);
+                        $sub = (array_key_exists('sso', $u) && !$u['sso']) ? '' : $have_sub;
+                        $otp = $otp_in ?? wiki_user_otp_email($base);
+                        if ($sub === '' && $otp === '') {
+                            throw new Exception('"' . ($base['name'] ?? '') . '" needs at least one way to sign in.');
                         }
-                        $base['uid']   = $uid;
-                        $base['name']  = $name;
-                        $base['email'] = $email;
-                        $base['role']  = $role;
-                        $base['auth']  = 'otp';
+                        if ($sub === '') {
+                            // Without SSO the name and address are the admin's to edit, and
+                            // `email` shows the login address as on any OTP account.
+                            $name = trim((string)($u['name'] ?? ''));
+                            if ($name !== '') $base['name'] = $name;
+                            $base['email'] = $otp;
+                        }
+                        $base['role'] = $role;
+                        if (array_key_exists('spaces', $u)) $base['spaces'] = $sv_spaces;
+                        $base = wiki_user_with_methods($base, $sub, $otp);
+                    } else {
+                        // A new account is always an email-code one; SSO accounts arrive
+                        // through an access request.
+                        $name = trim((string)($u['name'] ?? ''));
+                        $otp  = (string)$otp_in;
+                        if ($name === '' || $otp === '') continue;
+                        $base = wiki_user_with_methods([
+                            'uid' => ++$max_uid_sv, 'name' => $name, 'email' => $otp, 'role' => $role,
+                        ], '', $otp);
                         if (array_key_exists('spaces', $u)) $base['spaces'] = $sv_spaces;
                     }
                     $merged[] = $base;
                 }
 
-                // No two OTP accounts may claim the same login address. `email` is what
-                // find_otp_user() matches on, so a duplicate makes the lookup return
-                // whichever record comes first in the file — one person silently landing
-                // in another's account, with that account's role and Spaces.
+                // No two accounts may claim the same email-code address. It is what
+                // wiki_find_user_by_otp_email() matches on, so a duplicate makes the lookup
+                // return whichever record comes first in the file — one person silently
+                // landing in another's account, with that account's role and Spaces.
                 //
-                // Scoped to OTP records on purpose. An OIDC record is matched on `sub`, so
-                // sharing an address with one is harmless — and forbidding it would be a
-                // false alarm on a real pattern: one person's provider address also being
-                // an OTP account's login. The moment an account is switched *to* OTP both
-                // records are OTP and this check runs, which is exactly when it matters.
+                // Only the OTP address. An SSO account is matched on `sub`, so sharing its
+                // provider address with an OTP login is harmless — and forbidding it would be
+                // a false alarm on a real pattern: one person's provider address also being
+                // another account's login.
                 $seen_login = [];
                 foreach ($merged as $mu) {
-                    if (($mu['auth'] ?? 'oidc') !== 'otp') continue;
-                    $key = strtolower(trim((string)($mu['email'] ?? '')));
+                    $key = wiki_email_key(wiki_user_otp_email($mu));
                     if ($key === '') continue;
                     if (isset($seen_login[$key])) {
-                        throw new Exception('Two OTP accounts share the login email "' . $key
+                        throw new Exception('Two accounts share the login email "' . $key
                             . '". A login address identifies exactly one account — give one of them its own,'
                             . ' or use the notification email for a shared inbox.');
                     }
@@ -4197,50 +4217,77 @@ if (isset($_REQUEST['action'])) {
                 if (file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($existing_uf, JSON_PRETTY_PRINT)) === false) {
                     throw new Exception('Failed to write users file.');
                 }
-                // An OTP account that was removed, moved to OIDC or given a different login
-                // address loses its "keep me signed in" tokens. Restoring re-checks users.json
+                // An account that was removed, lost its email-code sign-in or was given a
+                // different login address loses its "keep me signed in" tokens. Restoring re-checks users.json
                 // anyway, but uids are reused (max + 1), so a deleted account's token would
                 // otherwise sign its successor in.
                 $otp_login = fn(array $list) => array_column(array_map(
-                    fn($x) => ['uid' => (int)($x['uid'] ?? 0), 'email' => strtolower(trim($x['email'] ?? ''))],
-                    array_filter($list, fn($x) => ($x['auth'] ?? 'oidc') === 'otp' && empty($x['is_ai']) && empty($x['is_system']))
+                    fn($x) => ['uid' => (int)($x['uid'] ?? 0), 'email' => wiki_email_key(wiki_user_otp_email($x))],
+                    array_filter($list, fn($x) => wiki_user_is_person($x) && wiki_user_otp_email($x) !== '')
                 ), 'email', 'uid');
                 $otp_after = $otp_login($merged);
                 foreach ($otp_login($existing_by_uid) as $old_uid => $old_email) {
                     if (($otp_after[$old_uid] ?? null) !== $old_email) wiki_remember_forget_user($old_uid);
+                }
+                // A sign-in method an admin added or removed is logged as the self-service
+                // ones are; it changes who can get into the account.
+                foreach ($merged as $mu) {
+                    if (!wiki_user_is_person($mu)) continue;
+                    $before = $existing_by_uid[(int)($mu['uid'] ?? 0)] ?? null;
+                    if (!$before) continue;
+                    if (wiki_user_sso_sub($before) !== '' && wiki_user_sso_sub($mu) === '') wiki_account_log('ACCOUNT_UNLINKED', $mu, 'sso, by admin');
+                    $ob = wiki_email_key(wiki_user_otp_email($before));
+                    $oa = wiki_email_key(wiki_user_otp_email($mu));
+                    if ($ob !== $oa) wiki_account_log($oa === '' ? 'ACCOUNT_UNLINKED' : 'ACCOUNT_LINKED', $mu, 'otp, by admin');
                 }
                 echo json_encode(['success' => true]);
                 break;
 
             case 'admin_get_user_requests':
                 $rq_data = file_exists(WIKI_SYSTEM_DATA . 'user_requests.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'user_requests.json'), true) ?? []) : [];
-                echo json_encode(['success' => true, 'data' => $rq_data['requests'] ?? []]);
+                // Existing accounts each request's address matches. A hint for the admin —
+                // the address may have been typed by the requester — so the only thing it
+                // offers is a link that the person still has to prove with a code.
+                $rq_users = wiki_users_list();
+                $rq_out = array_map(function ($r) use ($rq_users) {
+                    $r['matches'] = wiki_request_matches($rq_users, (string)($r['email'] ?? ''));
+                    if (($r['status'] ?? '') === 'link') {
+                        $li = wiki_find_user_index($rq_users, (int)($r['link_uid'] ?? 0));
+                        $r['link_name'] = $li === null ? '' : (string)($rq_users[$li]['name'] ?? '');
+                    }
+                    return $r;
+                }, $rq_data['requests'] ?? []);
+                echo json_encode(['success' => true, 'data' => $rq_out]);
                 break;
 
             case 'admin_approve_request':
                 $approve_sub  = trim($_POST['sub'] ?? '');
                 $approve_role = in_array($_POST['role'] ?? '', ['admin', 'editor', 'reader']) ? $_POST['role'] : 'editor';
                 if (!$approve_sub) throw new Exception('Missing sub.');
-                $rq2 = file_exists(WIKI_SYSTEM_DATA . 'user_requests.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'user_requests.json'), true) ?? ['requests' => []]) : ['requests' => []];
-                $found_rq = null;
-                $remaining = [];
-                foreach ($rq2['requests'] ?? [] as $r) {
-                    if ($r['sub'] === $approve_sub) { $found_rq = $r; } else { $remaining[] = $r; }
+                // An identity that already signs in to an account must not get a second one.
+                if (wiki_find_user_index_by_sub(wiki_users_list(), $approve_sub) !== null) {
+                    throw new Exception('This sign-in already belongs to an account.');
                 }
+                $found_rq = wiki_requests_mutate(function (array &$requests) use ($approve_sub) {
+                    foreach ($requests as $k => $r) {
+                        if (($r['sub'] ?? '') !== $approve_sub) continue;
+                        unset($requests[$k]);
+                        return $r;
+                    }
+                    return null;
+                });
                 if (!$found_rq) throw new Exception('Request not found.');
-                file_put_contents(WIKI_SYSTEM_DATA . 'user_requests.json', json_encode(['requests' => $remaining], JSON_PRETTY_PRINT));
-                $uf2 = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? ['users' => []]) : ['users' => []];
-                $max_uid2 = 0;
-                foreach ($uf2['users'] ?? [] as $eu2) { if (isset($eu2['uid']) && $eu2['uid'] > $max_uid2) $max_uid2 = $eu2['uid']; }
-                $uf2['users'][] = [
-                    'sub'    => $approve_sub,
-                    'uid'    => $max_uid2 + 1,
-                    'name'   => $found_rq['name']  ?? '',
-                    'email'  => $found_rq['email'] ?? '',
-                    'role'   => $approve_role,
-                    'spaces' => null, // null = all spaces; admin can restrict later
-                ];
-                file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($uf2, JSON_PRETTY_PRINT));
+                wiki_users_mutate(function (array &$doc) use ($approve_sub, $found_rq, $approve_role) {
+                    $max_uid2 = 0;
+                    foreach ($doc['users'] as $eu2) $max_uid2 = max($max_uid2, (int)($eu2['uid'] ?? 0));
+                    $doc['users'][] = wiki_user_with_methods([
+                        'uid'    => $max_uid2 + 1,
+                        'name'   => $found_rq['name']  ?? '',
+                        'email'  => $found_rq['email'] ?? '',
+                        'role'   => $approve_role,
+                        'spaces' => null, // null = all spaces; admin can restrict later
+                    ], $approve_sub, '');
+                });
                 $notify_to = $found_rq['email'] ?? '';
                 if ($notify_to && is_mail_configured()) {
                     $uname = htmlspecialchars($found_rq['name'] ?? 'User');
@@ -4253,13 +4300,53 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true]);
                 break;
 
+            case 'admin_link_request':
+                // Answer a request with "this is an existing account" instead of a new one.
+                // Nothing is linked here: the next time this identity signs in, a code goes
+                // to the existing account's own address, and only that code links them.
+                $lr_sub = trim($_POST['sub'] ?? '');
+                $lr_uid = (int)($_POST['uid'] ?? 0);
+                $lr_users = wiki_users_list();
+                $lr_i = wiki_find_user_index($lr_users, $lr_uid);
+                if ($lr_i === null) throw new Exception('Account not found.');
+                $lr_target = $lr_users[$lr_i];
+                if (wiki_user_sso_sub($lr_target) !== '') throw new Exception('That account already has single sign-on.');
+                if (wiki_user_otp_email($lr_target) === '') throw new Exception('That account has no email-code address to confirm the link with.');
+                // The link is finished with a code by mail; without mail it could never finish.
+                if (!is_mail_configured()) throw new Exception('Email is not configured, so the code that finishes a link cannot be sent.');
+                if (wiki_find_user_index_by_sub($lr_users, $lr_sub) !== null) throw new Exception('This sign-in already belongs to an account.');
+                $lr_req = wiki_requests_mutate(function (array &$requests) use ($lr_sub, $lr_uid) {
+                    foreach ($requests as $k => $r) {
+                        if (($r['sub'] ?? '') !== $lr_sub) continue;
+                        $requests[$k]['status']   = 'link';
+                        $requests[$k]['link_uid'] = $lr_uid;
+                        return $requests[$k];
+                    }
+                    return null;
+                });
+                if (!$lr_req) throw new Exception('Request not found.');
+                // Told to the account's owner, at the address the code will go to — if they
+                // did not ask for this, they hear about it before anyone can use it.
+                {
+                    $lr_name = htmlspecialchars($lr_target['name'] ?? '');
+                    send_email(wiki_user_otp_email($lr_target), $lr_target['name'] ?? '',
+                        'Single sign-on for your account on ' . APP_TITLE,
+                        "<p>Hello {$lr_name},</p><p>An administrator of <strong>" . htmlspecialchars(APP_TITLE) . "</strong> has allowed a "
+                        . "single sign-on identity (" . htmlspecialchars($lr_req['name'] ?? '') . ") to be added to your account. "
+                        . "Sign in with single sign-on to finish: a code will be sent to this address.</p>"
+                        . "<p>If you did not ask for this, ignore the code when it arrives — nothing is linked without it.</p>");
+                }
+                write_access_log('LINK_APPROVED', $lr_sub, $lr_req['name'] ?? '-', 'uid ' . $lr_uid);
+                echo json_encode(['success' => true]);
+                break;
+
             case 'admin_deny_request':
                 $deny_sub = trim($_POST['sub'] ?? '');
                 if (!$deny_sub) throw new Exception('Missing sub.');
                 $rq3 = file_exists(WIKI_SYSTEM_DATA . 'user_requests.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'user_requests.json'), true) ?? ['requests' => []]) : ['requests' => []];
                 $found_deny = null;
                 foreach ($rq3['requests'] as &$r3) {
-                    if ($r3['sub'] === $deny_sub) { $r3['status'] = 'denied'; $found_deny = $r3; break; }
+                    if ($r3['sub'] === $deny_sub) { $r3['status'] = 'denied'; unset($r3['link_uid']); $found_deny = $r3; break; }
                 }
                 unset($r3);
                 if (!$found_deny) throw new Exception('Request not found.');
@@ -4277,12 +4364,23 @@ if (isset($_REQUEST['action'])) {
                 break;
 
             case 'user_get_preferences':
-                $me_sub = $_SESSION['user']['sub'] ?? '';
-                if (!$me_sub) throw new Exception('Not authenticated.');
+                // By uid: an email-code session has no `sub`, so looking the account up by
+                // one left OTP users unable to open My Preferences at all.
+                $me_uid = (int)($_SESSION['user']['uid'] ?? 0);
+                if ($me_uid <= 0) throw new Exception('Not authenticated.');
                 $pref_data = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? ['users' => []]) : ['users' => []];
                 foreach ($pref_data['users'] ?? [] as $pu) {
-                    if (($pu['sub'] ?? '') === $me_sub) {
+                    if (wiki_user_is_person($pu) && (int)($pu['uid'] ?? 0) === $me_uid) {
                         echo json_encode(['success' => true, 'data' => [
+                            // How this account signs in, for the Sign-in methods section.
+                            // Adding a method needs both kinds of sign-in to be on offer.
+                            'signin'      => [
+                                'sso'      => wiki_user_sso_sub($pu) !== '',
+                                'ssoEmail' => wiki_user_sso_sub($pu) !== '' ? (string)($pu['email'] ?? '') : '',
+                                'otpEmail' => wiki_user_otp_email($pu),
+                                'via'      => (string)($_SESSION['user']['via'] ?? ''),
+                                'linkable' => AUTHENTICATION === 'both',
+                            ],
                             'name'        => $pu['name']       ?? '',
                             // The address they may change, not the one they log in with.
                             'email'       => wiki_user_notify_email($pu),
@@ -4302,8 +4400,8 @@ if (isset($_REQUEST['action'])) {
                 throw new Exception('User not found.');
 
             case 'user_save_preferences':
-                $me_sub2 = $_SESSION['user']['sub'] ?? '';
-                if (!$me_sub2) throw new Exception('Not authenticated.');
+                $me_uid2 = (int)($_SESSION['user']['uid'] ?? 0);
+                if ($me_uid2 <= 0) throw new Exception('Not authenticated.');
                 $new_email      = trim($_POST['email']      ?? '');
                 $new_font       = trim($_POST['fontFamily'] ?? 'sans');
                 $new_font_size  = trim($_POST['fontSize']   ?? 'normal');
@@ -4322,10 +4420,10 @@ if (isset($_REQUEST['action'])) {
                 $pref_data2 = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? ['users' => []]) : ['users' => []];
                 $found_pref = false;
                 foreach ($pref_data2['users'] as &$pu2) {
-                    if (($pu2['sub'] ?? '') === $me_sub2) {
-                        // notifyEmail, never email: on an OTP account `email` is the
-                        // credential the login lookup matches on, so a preference must not
-                        // be able to write it. Clearing the box falls back to the identity.
+                    if (wiki_user_is_person($pu2) && (int)($pu2['uid'] ?? 0) === $me_uid2) {
+                        // notifyEmail, never email or otpEmail: those are identities the
+                        // login matches on, so a preference must not be able to write them.
+                        // Clearing the box falls back to the identity.
                         if ($new_email) $pu2['notifyEmail'] = $new_email;
                         else            unset($pu2['notifyEmail']);
                         $pu2['fontFamily']  = $new_font;
@@ -4343,6 +4441,70 @@ if (isset($_REQUEST['action'])) {
                 file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($pref_data2, JSON_PRETTY_PRINT));
                 $_SESSION['user']['fontFamily'] = $new_font;
                 $_SESSION['user']['fontSize']   = $new_font_size;
+                echo json_encode(['success' => true]);
+                break;
+
+            // ── Sign-in methods (My Preferences) ────────────────────────────────────
+            // A person managing their own account, so open to every role — but only to a
+            // browser session: a service token is not a person and has no sign-in to manage.
+            // Each needs the person to be signed in with one method while completing the
+            // other, which is the whole of what makes linking safe.
+            case 'account_sso_link_start':
+            case 'account_otp_add_send':
+            case 'account_otp_add_verify':
+            case 'account_unlink':
+                $ac_uid = (int)($_SESSION['user']['uid'] ?? 0);
+                if ($ai_auth_user || $ac_uid <= 0) throw new Exception('Not authenticated.');
+                if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new Exception('POST required.');
+                $ac_users = wiki_users_list();
+                $ac_i = wiki_find_user_index($ac_users, $ac_uid);
+                if ($ac_i === null) throw new Exception('User not found.');
+                $ac_me = $ac_users[$ac_i];
+                $ac_fail = function (string $key) {
+                    echo json_encode(['success' => false, 'error' => $key, 'message' => wiki_account_error_text($key)]);
+                };
+                $ac_adding = in_array($requested_action, ['account_sso_link_start', 'account_otp_add_send', 'account_otp_add_verify'], true);
+                if ($ac_adding && AUTHENTICATION !== 'both') { $ac_fail('account.err.not-offered'); break; }
+
+                if ($requested_action === 'account_sso_link_start') {
+                    if (wiki_user_sso_sub($ac_me) !== '') { $ac_fail('account.err.has-sso'); break; }
+                    // The nonce goes to this page only; auth.php refuses a link without it.
+                    $ac_nonce = bin2hex(random_bytes(16));
+                    $_SESSION['link_sso'] = ['uid' => $ac_uid, 'nonce' => $ac_nonce, 'expires' => time() + WIKI_LINK_SSO_TTL];
+                    echo json_encode(['success' => true, 'url' => 'auth.php?action=link_sso&n=' . $ac_nonce]);
+                    break;
+                }
+                if ($requested_action === 'account_otp_add_send') {
+                    $ac_email = trim((string)($_POST['email'] ?? ''));
+                    if (!filter_var($ac_email, FILTER_VALIDATE_EMAIL)) { $ac_fail('login.err.invalid-email'); break; }
+                    $ac_owner = wiki_find_user_by_otp_email($ac_users, $ac_email);
+                    if ($ac_owner && (int)($ac_owner['uid'] ?? 0) !== $ac_uid) { $ac_fail('account.err.otp-taken'); break; }
+                    // Codes go to an address the person names, so a session may not use
+                    // this to mail strangers in a loop.
+                    $ac_prev = $_SESSION['otp_pending'] ?? null;
+                    if ($ac_prev && ($ac_prev['purpose'] ?? '') === 'add_otp' && time() - (int)($ac_prev['issued'] ?? 0) < WIKI_OTP_RESEND_GAP) {
+                        $ac_fail('account.err.wait'); break;
+                    }
+                    if (!is_mail_configured()) { $ac_fail('account.err.no-mail'); break; }
+                    wiki_otp_issue('add_otp', $ac_email, (string)($ac_me['name'] ?? ''), ['uid' => $ac_uid]);
+                    write_access_log('OTP_SENT', $ac_email, $ac_me['name'] ?? '', 'add sign-in address');
+                    echo json_encode(['success' => true]);
+                    break;
+                }
+                if ($requested_action === 'account_otp_add_verify') {
+                    $ac_p = wiki_otp_check((string)($_POST['code'] ?? ''), ['add_otp']);
+                    if (is_string($ac_p)) { $ac_fail($ac_p); break; }
+                    if ((int)($ac_p['ctx']['uid'] ?? 0) !== $ac_uid) { $ac_fail('login.err.session-expired'); break; }
+                    $ac_err = wiki_account_add_otp($ac_uid, (string)$ac_p['email']);
+                    if ($ac_err !== null) { $ac_fail($ac_err); break; }
+                    wiki_session_refresh();
+                    echo json_encode(['success' => true]);
+                    break;
+                }
+                // account_unlink
+                $ac_err = wiki_account_unlink($ac_uid, (string)($_POST['method'] ?? ''));
+                if ($ac_err !== null) { $ac_fail($ac_err); break; }
+                wiki_session_refresh();
                 echo json_encode(['success' => true]);
                 break;
 

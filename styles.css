@@ -1032,6 +1032,14 @@ body {
 .lightbox-content.prefs-content { max-width: 600px; height: auto; max-height: 85vh; box-sizing: border-box; }
 .prefs-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.25rem; }
 .pref-hint.pref-hint-flush { margin-left: 0; }
+/* My Preferences → Sign-in methods */
+.pref-signin-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.875rem; }
+.pref-signin-name { flex: 0 0 8.5rem; font-weight: 500; }
+.pref-signin-detail { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pref-signin-none { color: var(--accent-gray); }
+.pref-signin-form { padding-top: 0.5rem; }
+.pref-signin-step { display: flex; gap: 0.5rem; margin-bottom: 0.4rem; }
+.pref-signin-code { max-width: 8rem; letter-spacing: 0.3em; font-family: monospace; }
 /* "None" in the person's picker is their initial, as chat draws it. */
 .avatar-initial { font-weight: 700; font-size: 0.9rem; color: var(--accent-gray); }
 .avatar-circle-lg .avatar-initial { font-size: 1.2rem; }
@@ -1142,6 +1150,19 @@ body {
 .admin-auth-badge { display: inline-block; font-size: 0.7rem; font-weight: 700; border-radius: 3px; padding: 0.1rem 0.4rem; letter-spacing: 0.04em; }
 .admin-auth-oidc { background: #dbeafe; color: #1e40af; }
 .admin-auth-otp  { background: #dcfce7; color: #166534; }
+/* An account with both methods shows two badges, each removable; an SSO-only account can
+   be given an email code. */
+.admin-td-auth { white-space: nowrap; }
+.admin-td-auth .admin-auth-badge + .admin-auth-badge { margin-left: 0.25rem; }
+.admin-auth-remove { border: none; background: none; color: inherit; font: inherit; padding: 0 0 0 0.25rem; cursor: pointer; opacity: 0.6; }
+.admin-auth-remove:hover { opacity: 1; }
+.admin-auth-add { margin-left: 0.3rem; border: 1px dashed var(--border-color); background: none; border-radius: 3px; font-size: 0.7rem; color: var(--accent-gray); padding: 0.05rem 0.35rem; cursor: pointer; }
+.admin-auth-add:hover { color: var(--text-color); border-color: var(--accent-gray); }
+.admin-td-email .admin-otp-input { display: block; }
+.admin-td-email span + .admin-otp-input { margin-top: 0.2rem; }
+/* An access request whose address an existing account already has. */
+.admin-req-match { display: block; font-size: 0.72rem; color: #92400e; margin-top: 0.15rem; }
+.admin-req-match-typed { color: var(--accent-red, #c53030); }
 .admin-inline-input { font-size: 0.875rem; font-family: inherit; padding: 0.1rem 0.3rem 0.1rem 0; height: auto; border: 1px solid transparent; border-radius: 3px; background: #f0fdf4; width: 100%; box-sizing: border-box; }
 .admin-inline-input:focus { outline: none; border-color: #86efac; }
 
