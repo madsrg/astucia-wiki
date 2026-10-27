@@ -57,8 +57,8 @@ PY
 # The index stamp comes from the file's mtime on a rebuild, so this is what makes
 # Ancient.md old as far as the scan is concerned.
 touch -d '200 days ago' "$WIKI_PAGES/Main/Ancient.md"
-curl -s "$WIKI_URL/api.php?action=list_spaces" > /dev/null
-curl -s "$WIKI_URL/api.php?action=indexfiles&space=Main" > /dev/null
+get_as "$ADMIN" 'api.php?action=list_spaces' > /dev/null
+get_as "$ADMIN" 'api.php?action=indexfiles&space=Main' > /dev/null
 
 mentions() { get_as "$ED" 'api.php?action=get_mentions&name=Ed&uid=2'; }
 set_days() { post_as "$ADMIN" 'api.php?action=admin_mention_settings' "days=$1"; }

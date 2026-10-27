@@ -1503,7 +1503,7 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
         'Job prompt'           => ['tokens' => ai_token_estimate((string)($job['prompt'] ?? '')), 'note' => ''],
     ];
 
-    // --- Agentic loop (max 10 iterations) ---
+    // --- Agentic loop ($max_iters below: 12, or 24 when the model reasons) ---
     $reply        = null;
     $api_error    = null;
     $tools_called = false;

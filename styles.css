@@ -1655,6 +1655,7 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 :is(.role-reader, .space-readonly) #list-props-btn,
 :is(.role-reader, .space-readonly) .chat-input-area,
 :is(.role-reader, .space-readonly) .chat-focus-chip,
+:is(.role-reader, .space-readonly) .chat-save-btn,
 :is(.role-reader, .space-readonly) #chat-topic-btn,
 :is(.role-reader, .space-readonly) #add-column-btn,
 :is(.role-reader, .space-readonly) #ff-upload-btn,

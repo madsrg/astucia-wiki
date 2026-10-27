@@ -67,14 +67,40 @@ function wiki_chat_policy_for(array $chat_data): string {
  *
  * Returns [kept, removed]. Order is preserved; a kept message never changes position.
  */
+/**
+ * Whether a message survives any purge, automatic or a manual `/purge`: pinned on purpose,
+ * or the placeholder a queued job will write its answer into. One rule for both, so the
+ * manual command cannot destroy what the automatic one was careful to keep.
+ */
+function wiki_chat_is_protected(array $m): bool {
+    if (!empty($m['sticky'])) return true;
+    if (!empty($m['pending']) && !empty($m['job_id'])) return true;
+    return false;
+}
+
+/**
+ * The manual `/purge`: keep the last $keep messages the purge may touch, plus every
+ * protected one, in their original order. Returns [kept, removed]. A protected message
+ * does not count against $keep, as with the count policy below.
+ */
+function wiki_chat_purge_keep_last(array $messages, int $keep): array {
+    $kept = $removed = [];
+    $budget = max(0, $keep);
+    $keep_idx = [];
+    for ($i = count($messages) - 1; $i >= 0; $i--) {
+        if (wiki_chat_is_protected($messages[$i])) { $keep_idx[$i] = true; continue; }
+        if ($budget > 0) { $budget--; $keep_idx[$i] = true; }
+    }
+    foreach ($messages as $i => $m) {
+        if (isset($keep_idx[$i])) $kept[] = $m; else $removed[] = $m;
+    }
+    return [$kept, $removed];
+}
+
 function wiki_chat_apply_policy(array $messages, string $policy): array {
     if ($policy === '' || !$messages) return [$messages, []];
 
-    $protected = static function (array $m): bool {
-        if (!empty($m['sticky'])) return true;
-        if (!empty($m['pending']) && !empty($m['job_id'])) return true;
-        return false;
-    };
+    $protected = 'wiki_chat_is_protected';
 
     $doomed = [];   // message index => true
 

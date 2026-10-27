@@ -66,6 +66,11 @@ require_once 'graph.php';
 require_once 'search_index.php';
 require_once 'index_sync.php';
 
+// An empty draw.io diagram: "Blank diagram", and the fallback for a Space without a
+// templates/default.drawio. The same document the bundled default.drawio holds.
+const WIKI_BLANK_DRAWIO = '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
+    . '<mxfile host="app.diagrams.net"><diagram name="Page-1" id="blank"><mxGraphModel dx="906" dy="1047" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0"><root><mxCell id="0" /><mxCell id="1" parent="0" /></root></mxGraphModel></diagram></mxfile>' . "\n";
+
 // --- API ROUTER ---
 if (isset($_REQUEST['action'])) {
     header('Content-Type: application/json');
@@ -616,7 +621,7 @@ if (isset($_REQUEST['action'])) {
             ];
         }
 
-        // Agentic loop: call API → execute tools → repeat until text reply (max 8 iterations)
+        // Agentic loop: call API → execute tools → repeat until text reply ($max_iters below)
         $reply        = null;
         $api_error    = null;
         $tools_called = false; // tracks whether any tool has fired this session
@@ -1505,7 +1510,10 @@ if (isset($_REQUEST['action'])) {
                         // Stamping's four fields, and `tags` where the Space syncs them.
                         $fm_managed_get = wiki_fm_managed_keys($space_dir);
                     }
-                    if (in_array($ext_get, ['md', 'drawio'], true)) {
+                    // A .json page is committed on save like a .md (the save reads this
+                    // same flag), so it reports the flag too — it used to say "off" while
+                    // every save was being committed.
+                    if (in_array($ext_get, ['md', 'drawio', 'json'], true)) {
                         $git_commit = $indexer->getGitCommit($rel_get, true);
                     } elseif (in_array($ext_get, ['chat', 'list'], true)) {
                         $decoded    = json_decode($content, true);
@@ -1628,18 +1636,21 @@ if (isset($_REQUEST['action'])) {
             case 'create_diagram':
                 $file_path_raw = $_POST['path'];
                 $file_path_sanitized = sanitize_path($file_path_raw);
-                $tpl_name_dg   = isset($_POST['template']) ? basename($_POST['template']) : 'default';
-                $template_path = $space_dir . '/templates/' . $tpl_name_dg . '.drawio';
-
-                if (!file_exists($template_path)) {
+                // No template parameter means the Space's default.drawio, as it always has.
+                // An explicit empty one is the dialog's "Blank diagram", which used to fall
+                // through to default.drawio too — so on a Space with a customised default,
+                // "blank" was nothing of the sort. And a Space with no default.drawio at all
+                // gets an empty diagram rather than an error nobody saw.
+                $tpl_name_dg   = isset($_POST['template']) ? basename((string)$_POST['template']) : 'default';
+                $template_path = $tpl_name_dg === '' ? null : $space_dir . '/templates/' . $tpl_name_dg . '.drawio';
+                if ($template_path !== null && !file_exists($template_path)) {
                     $template_path = $space_dir . '/templates/default.drawio';
                 }
-                if (!file_exists($template_path)) {
-                    throw new Exception('Default diagram template not found.');
-                }
+                $diagram_xml = ($template_path !== null && file_exists($template_path))
+                    ? file_get_contents($template_path) : WIKI_BLANK_DRAWIO;
 
                 if (!file_exists($file_path_sanitized)) {
-                    if (copy($template_path, $file_path_sanitized)) {
+                    if ($diagram_xml !== false && file_put_contents($file_path_sanitized, $diagram_xml) !== false) {
                         $actor = get_current_actor();
                         $indexer->addPage($file_path_raw, $actor['uid'], $actor['name']);
                         echo json_encode(['success' => true, 'message' => 'Diagram created.']);
@@ -2489,7 +2500,10 @@ if (isset($_REQUEST['action'])) {
                 $chat_data = json_decode(file_get_contents($file_path), true);
                 if ($chat_data === null) throw new Exception('Invalid chat file.');
                 $_before = count($chat_data['messages'] ?? []);
-                $chat_data['messages'] = $keep === 0 ? [] : array_slice($chat_data['messages'] ?? [], -$keep);
+                // Pinned messages and a queued job's placeholder survive, as they do
+                // auto-purge: the cron runner writes its answer into that placeholder, and
+                // a purge that removed it left the answer with nowhere to go.
+                [$chat_data['messages']] = wiki_chat_purge_keep_last($chat_data['messages'] ?? [], $keep);
                 $_gone = $_before - count($chat_data['messages']);
                 if ($_gone > 0) wiki_audit_chat_purge($file_path, $_gone, 'manual');
                 wiki_chat_write($file_path, $chat_data);
@@ -2501,7 +2515,7 @@ if (isset($_REQUEST['action'])) {
                 $rel_sgc       = ltrim(str_replace('..', '', $_POST['file']), '/');
                 $ext_sgc       = pathinfo($rel_sgc, PATHINFO_EXTENSION);
                 $enabled_sgc   = ($_POST['enabled'] ?? '0') === '1';
-                if (in_array($ext_sgc, ['md', 'drawio'], true)) {
+                if (in_array($ext_sgc, ['md', 'drawio', 'json'], true)) {
                     $indexer->setGitCommit($rel_sgc, $enabled_sgc);
                 } elseif (in_array($ext_sgc, ['chat', 'list'], true)) {
                     if (!file_exists($file_path_sgc)) throw new Exception('File not found.');
@@ -3726,6 +3740,15 @@ if (isset($_REQUEST['action'])) {
                 if (file_exists($path_sanitized)) {
                     if (delete_recursive($path_sanitized, $indexer, $space_dir, $search_idx)) {
                         echo json_encode(['success' => true, 'message' => 'Item deleted.']);
+                        if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+                        // The page and what delete_recursive took with it, in one commit. A
+                        // folder is one path: `add -A` on it stages every removal inside.
+                        $actor_del = get_current_actor();
+                        git_delete_commit(
+                            [$path_sanitized, $path_sanitized . '.uploads', $path_sanitized . '.svg'],
+                            $actor_del['name'] ?? 'Wiki',
+                            (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost',
+                            'Delete ' . basename(rtrim($path_sanitized, '/')));
                     } else {
                         throw new Exception('Could not delete item.');
                     }
@@ -3780,7 +3803,10 @@ if (isset($_REQUEST['action'])) {
                                 $new_entry_rel = $new_base . '/' . $suffix;
                                 $cb_uid  = $pdata['createdBy']['uid']  ?? null;
                                 $cb_name = $pdata['createdBy']['name'] ?? null;
-                                $target_indexer->addPage($new_entry_rel, $cb_uid, $cb_name);
+                                $mv_id = $target_indexer->addPage($new_entry_rel, $cb_uid, $cb_name);
+                                // The taxonomy is wiki-wide, so tags accepted here are valid
+                                // there: carried without re-applying the mode, as copy_page does.
+                                if ($mv_id && !empty($pdata['tags'])) $target_indexer->updateTags($mv_id, $pdata['tags'], false);
                                 $indexer->removePage($ppath);
                                 if ($search_idx) {
                                     try { $search_idx->movePageCrossSpace($src_space_name, $ppath, $tgt_space_name, $new_entry_rel); } catch (\Throwable $_e) {}
@@ -3797,8 +3823,15 @@ if (isset($_REQUEST['action'])) {
                     } else {
                         $old_rel = ltrim(str_replace('..', '', $old_path_raw), '/');
                         if ($is_cross_space) {
-                            $actor = get_current_actor();
-                            $target_indexer->addPage($new_path_rel, $actor['uid'], $actor['name']);
+                            // A move, not a copy: the page keeps its creator and its tags. The
+                            // id is per Space, so that part has to be new. This used to credit
+                            // whoever moved it as the creator, and drop every tag.
+                            $mv_src   = $indexer->getAllPages()[$indexer->getId($old_rel)] ?? [];
+                            $actor    = get_current_actor();
+                            $mv_id    = $target_indexer->addPage($new_path_rel,
+                                $mv_src['createdBy']['uid']  ?? $actor['uid'],
+                                $mv_src['createdBy']['name'] ?? $actor['name']);
+                            if ($mv_id && !empty($mv_src['tags'])) $target_indexer->updateTags($mv_id, $mv_src['tags'], false);
                             $indexer->removePage($old_rel);
                             if ($search_idx) {
                                 try { $search_idx->movePageCrossSpace($src_space_name, $old_rel, $tgt_space_name, $new_path_rel); } catch (\Throwable $_e) {}
@@ -4782,7 +4815,11 @@ if (isset($_REQUEST['action'])) {
                 $deleted_files = [];
                 $gdf_cur       = null;
                 $gdf_prefix    = $gdf_root['prefix'];
-                $gdf_pages     = rtrim(PAGES_DIR, '/');
+                // $rel below has the Space prefix stripped, so it is relative to the Space —
+                // and so is the existence check. It used to test PAGES_DIR/<rel>, which for
+                // a page inside a Space looked in the wrong directory: a deleted page could
+                // be hidden, and one that still existed listed as deleted.
+                $gdf_pages     = rtrim($space_dir, '/');
                 foreach (explode("\n", $gdf_result['output']) as $raw) {
                     $line = trim($raw);
                     if (!$line) continue;
@@ -4798,7 +4835,7 @@ if (isset($_REQUEST['action'])) {
                     } elseif ($gdf_cur) {
                         if ($gdf_prefix !== '' && !str_starts_with($line, $gdf_prefix)) continue;
                         $rel = $gdf_prefix ? substr($line, strlen($gdf_prefix)) : $line;
-                        if (!preg_match('/\.(md|drawio|list|chat)$/', $rel)) continue;
+                        if (!preg_match('/\.(md|drawio|list|chat|json)$/', $rel)) continue;
                         if (file_exists($gdf_pages . '/' . $rel)) continue;
                         if (array_search($rel, array_column($deleted_files, 'path')) === false) {
                             $deleted_files[] = array_merge(['path' => $rel], $gdf_cur);

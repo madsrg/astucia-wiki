@@ -40,9 +40,35 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   and only that code joins them. Approving such a request anyway asks first, and approving
   an identity that already belongs to an account is refused.
 
+### Security
+- **`config.php.txt` no longer turns anonymous access on.** Its comment said anonymous
+  read-only browsing was off by default, but the line set `ANONYMOUS_ACCESS_ENABLED` to
+  `true` — so a manual install copied from the template let anyone read the wiki without
+  signing in. The Docker image was not affected. **Check your own `config.php`.**
+
 ### Fixed
 - **My Preferences opened for email-code users again.** It looked the account up by an SSO
   identity those sessions do not have, and answered "Not authenticated."
+- **Deleting a page is committed to git**, with its attachments, in one commit. Deletions
+  were never committed, so *Admin → Content → Deleted Pages* — which reads them from git —
+  did not list pages deleted in the wiki.
+- **Deleted Pages looks in the right Space.** It checked whether a page still existed
+  outside its Space, so it could list a page that still existed and miss one that was gone.
+  JSON pages are listed too.
+- **Moving a page to another Space keeps its tags and its creator.** Every tag was dropped,
+  and a single page was credited to whoever moved it.
+- **`/purge` keeps pinned messages and a queued job's placeholder**, as auto-purge always
+  has. Without the placeholder, the answer to a queued `/aiJob` had nowhere to go.
+- **The git tracking switch works on JSON pages.** It stored nothing for them, and the page
+  reported tracking as off while every save was being committed.
+- **"Blank diagram" is blank.** It used the Space's `default.drawio`, customised or not. A
+  Space without `default.drawio` now gets an empty diagram instead of refusing, and a failed
+  *New* shows why instead of doing nothing.
+- **Access requests are mailed to `ADMIN_EMAIL`**, as `config.php.txt` says, rather than to
+  the wiki's own sending address (still the fallback when `ADMIN_EMAIL` is unset).
+- Readers no longer see *Save as page* / *Append to page* on chat messages, which the server
+  refused. The MCP server URL hint, the env example and DOCKER.md no longer describe things
+  that changed.
 
 ## [2026.10.6] — 2026-10-25
 

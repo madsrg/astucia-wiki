@@ -68,6 +68,37 @@ function git_auto_commit(string $abs_path, string $git_name, string $git_email, 
 }
 
 /**
+ * Commit a deletion: the item and whatever went with it (attachments, a diagram's preview),
+ * in one commit. `git add` on a path that no longer exists stages its removal; each path is
+ * added on its own, because a single `add` naming one path git never tracked fails whole.
+ * Without this a page deleted in the wiki stayed in the repository as if it still existed,
+ * so Admin → Deleted Pages — which reads deletions out of `git log` — never listed it.
+ */
+function git_delete_commit(array $abs_paths, string $git_name, string $git_email, string $commit_msg,
+                           ?string $for_space = null): void {
+    if ($for_space === null) {
+        global $space_dir;
+        $for_space = (string)$space_dir;
+    }
+    $git_root = find_git_root($for_space);
+    if (!$git_root) return;
+    $root_prefix = rtrim($git_root['root'], '/') . '/';
+    $staged = false;
+    foreach ($abs_paths as $abs) {
+        if (strpos($abs, $root_prefix) !== 0) continue;
+        $rel = rtrim(substr($abs, strlen($root_prefix)), '/');
+        if ($rel === '') continue;
+        if (git_run(['add', '-A', '--', $rel], $git_root['root'])['code'] === 0) $staged = true;
+    }
+    if (!$staged) return;
+    git_run([
+        '-c', 'user.name=' . $git_name,
+        '-c', 'user.email=' . $git_email,
+        'commit', '-m', $commit_msg,
+    ], $git_root['root']);
+}
+
+/**
  * @param array $also Extra [old_abs, new_abs] pairs to stage into the *same* commit — a
  *                    page's `.chat` thread, which moves with it. A second commit would
  *                    split one rename into two entries in the history, and leave a commit

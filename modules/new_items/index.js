@@ -44,6 +44,9 @@ const createAndOpen = async (ext, apiAction, promptKey, defaultKey, createdKey, 
         switchToTreePane();
         const newFileEl = document.querySelector(`[data-path="${path}"]`);
         if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, [], { intent: 'permanent' }); }
+    } else {
+        // A refused create used to do nothing at all — no file, no message.
+        showToast(res.message || t('new.create-failed'), 'error');
     }
 };
 
@@ -181,14 +184,17 @@ export const init = () => {
         if (!fileName.endsWith('.drawio')) fileName += '.drawio';
         const path = getCreationPath() + fileName;
         closeNewDiagram();
-        const params = _selectedDiagramTemplate ? { path, template: _selectedDiagramTemplate } : { path };
-        const res = await api.call('create_diagram', params, 'POST');
+        // Always sent, even empty: '' is "Blank diagram", where leaving the parameter out
+        // means the Space's default.drawio.
+        const res = await api.call('create_diagram', { path, template: _selectedDiagramTemplate || '' }, 'POST');
         if (res.success) {
             showToast(t('new.diagram-created'), 'success');
             await refreshFileTree();
             switchToTreePane();
             const newFileEl = document.querySelector(`[data-path="${path}"]`);
             if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, [], { intent: 'permanent' }); }
+        } else {
+            showToast(res.message || t('new.create-failed'), 'error');
         }
     };
 
@@ -210,6 +216,8 @@ export const init = () => {
                 switchToTreePane();
                 const newFileEl = document.querySelector(`[data-path="${path}"]`);
                 if (newFileEl) { revealAndSelectFile(path); loadPage(path, newFileEl.dataset.id, [], { intent: 'permanent' }); }
+            } else {
+                showToast(r.message || t('new.create-failed'), 'error');
             }
             return;
         }

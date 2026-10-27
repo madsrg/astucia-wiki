@@ -124,7 +124,7 @@ kill "$WIKI_PID" 2>/dev/null; wait "$WIKI_PID" 2>/dev/null
     -S "127.0.0.1:$PORT" __router.php ) > "$WIKI_ROOT/router.log" 2>&1 &
 WIKI_PID=$!
 i=0
-until curl -sf --max-time 2 "$WIKI_URL/api.php?action=ping" > /dev/null 2>&1; do
+until curl -s --max-time 2 "$WIKI_URL/api.php?action=ping" > /dev/null 2>&1; do
     i=$((i + 1)); [ $i -gt 100 ] && { echo "router did not start" >&2; exit 1; }
     sleep 0.1
 done

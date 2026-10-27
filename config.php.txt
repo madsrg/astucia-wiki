@@ -49,7 +49,7 @@ define('AUTHENTICATION_ENABLED', AUTHENTICATION !== 'off');
 // When AUTHENTICATION_ENABLED is true and this is also true, unauthenticated
 // visitors can browse as readers without logging in. A Login button is shown
 // in the sidebar. When false (default), visitors are redirected to the login page.
-define('ANONYMOUS_ACCESS_ENABLED', true);
+define('ANONYMOUS_ACCESS_ENABLED', false);
 
 // --- Auth0 / OIDC Provider Configuration ---
 // Only needed when AUTHENTICATION_ENABLED is true.
@@ -81,7 +81,7 @@ define('OIDC_REDIRECT_URI',   'https://your-domain.example.com/auth.php');
 //
 // Bootstrap: when no users.json exists yet, create it with your first admin:
 //   { "users": [{ "sub": "auth0|YOUR_USER_ID", "name": "Your Name",
-//                 "email": "you@example.com", "notification_email": "", "role": "admin" }] }
+//                 "email": "you@example.com", "role": "admin" }] }
 // Find YOUR_USER_ID in Auth0 → User Management → Users → your account → user_id.
 define('WIKI_SYSTEM_DATA', '');
 

@@ -520,10 +520,14 @@ function wiki_oidc_complete(array $claims, ?string $id_token = null): string {
     }
 
     if (!empty($request['_new'])) {
-        if (is_mail_configured()) {
+        // To ADMIN_EMAIL, which config.php.txt documents as the address for access
+        // requests. The sending address is only the fallback for a wiki without one, so
+        // an install that never set ADMIN_EMAIL keeps getting these as it always has.
+        $admin_to = defined('ADMIN_EMAIL') && ADMIN_EMAIL ? ADMIN_EMAIL : mail_from_email();
+        if (is_mail_configured() && $admin_to) {
             $n = htmlspecialchars($name);
             send_email(
-                mail_from_email(), APP_TITLE . ' Admin',
+                $admin_to, APP_TITLE . ' Admin',
                 APP_TITLE . ': New Access Request from ' . $n,
                 "<p><strong>{$n}</strong> has requested access to <strong>" . htmlspecialchars(APP_TITLE) . "</strong>.</p>"
                 . "<p>Log in to the admin panel and open the <strong>Requests</strong> tab to approve or deny.</p>"

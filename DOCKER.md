@@ -38,7 +38,7 @@ it — see [Next steps](#next-steps).
 Published on Docker Hub, so running the wiki needs no checkout and no build:
 
 ```bash
-docker pull madsrotwitt/astucia-wiki:2026.7.44
+docker pull madsrotwitt/astucia-wiki:2026.10.6
 ```
 
 | Tag | Mutability | Use |
@@ -52,13 +52,13 @@ Then run it — nothing else is required:
 ```bash
 docker run -d --name astucia-wiki --restart=always \
     -p 8080:80 -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.7.44
+    madsrotwitt/astucia-wiki:2026.10.6
 ```
 
 Verify what you pulled, rather than trusting the tag:
 
 ```bash
-docker image inspect madsrotwitt/astucia-wiki:2026.7.44 \
+docker image inspect madsrotwitt/astucia-wiki:2026.10.6 \
     --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
 ```
 
@@ -205,7 +205,7 @@ landed in the registry and prints the platforms in the published manifest.
 Verify a published variant actually runs, rather than trusting the manifest:
 
 ```bash
-docker run --rm --platform linux/arm64 madsrotwitt/astucia-wiki:2026.7.45 \
+docker run --rm --platform linux/arm64 madsrotwitt/astucia-wiki:2026.10.6 \
     php -r 'echo php_uname("m"), " ", extension_loaded("pdo_sqlite") ? "ok" : "missing", "\n";'
 ```
 

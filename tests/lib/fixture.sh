@@ -86,9 +86,10 @@ SHIM
         -S "127.0.0.1:$port" ) > "$WIKI_ROOT/server.log" 2>&1 &
     WIKI_PID=$!
 
-    # Poll for readiness rather than sleeping a guessed interval.
+    # Poll for readiness rather than sleeping a guessed interval. Any HTTP answer means the
+    # server is up — with authentication on and anonymous access off, ping answers 401.
     local i=0
-    until curl -sf --max-time 2 "$WIKI_URL/api.php?action=ping" > /dev/null 2>&1; do
+    until curl -s --max-time 2 "$WIKI_URL/api.php?action=ping" > /dev/null 2>&1; do
         i=$((i + 1))
         if [ $i -gt 100 ]; then
             echo "fixture: server did not start; log follows" >&2

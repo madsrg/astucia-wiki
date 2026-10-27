@@ -168,5 +168,20 @@ assert_contains "refused for a reader" '"success":false' "$r"
 r=$(post_as "$WIKI_ROOT/jar-r" 'api.php?action=admin_chat_retention' 'policy=count:200')
 assert_contains "wiki-wide default is admin-only" '"success":false' "$r"
 
+# ── the manual /purge ────────────────────────────────────────────────────────
+# It used to be a plain array_slice: a pinned message went, and so did a queued job's
+# placeholder — after which the runner had nowhere to write its answer.
+section 'the manual /purge keeps what auto-purge keeps'
+printf '%s' '{"topic":"P","nextMessageId":7,"messages":[
+  {"id":1,"text":"old"},{"id":2,"text":"pinned","sticky":true},
+  {"id":3,"text":"waiting","pending":true,"job_id":"j9"},
+  {"id":4,"text":"a"},{"id":5,"text":"b"},{"id":6,"text":"newest"}]}' > "$WIKI_PAGES/Main/Purge.chat"
+purged() { python3 -c 'import json,sys;print(",".join(str(m["id"]) for m in json.load(open(sys.argv[1]))["messages"]))' "$WIKI_PAGES/Main/Purge.chat"; }
+r=$(post_as "$JAR" 'api.php?action=purge_chat_messages&space=Main' 'file=Purge.chat&keep=1')
+assert_contains "the purge succeeds (control)" '"success":true' "$r"
+assert_eq "keep=1: the newest, plus the pin and the placeholder, in order" "2,3,6" "$(purged)"
+post_as "$JAR" 'api.php?action=purge_chat_messages&space=Main' 'file=Purge.chat&keep=0' > /dev/null
+assert_eq "keep=0 still keeps the protected two" "2,3" "$(purged)"
+
 printf '\n'
 exit $(( ASSERT_FAIL > 0 ))

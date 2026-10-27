@@ -17,6 +17,10 @@ cd "$(dirname "$0")"
 . lib/fixture.sh
 
 fixture_start otp || exit 1
+# Anonymous reading on, so index.php renders for a visitor with no session — as uid 0 —
+# rather than redirecting to the login page; whoami() below depends on that. The
+# template's default is off.
+sed -i "s/^define('ANONYMOUS_ACCESS_ENABLED'.*/define('ANONYMOUS_ACCESS_ENABLED', true);/" "$WIKI_APP/config.php"
 trap fixture_stop EXIT
 
 fixture_users '{"users":[
@@ -48,8 +52,8 @@ otp_login() {
     local data="code=123456"; [ -n "${3:-}" ] && data="$data&remember=1"
     post_as "$1" "auth.php?action=otp_verify" "$data" > /dev/null
 }
-# Who index.php thinks is signed in: 0 is anonymous (the template allows anonymous
-# reading, so a bare API call succeeding proves nothing).
+# Who index.php thinks is signed in: 0 is anonymous (anonymous reading is switched on
+# above, so a bare API call succeeding proves nothing).
 whoami() { get_as "$1" 'index.php' | command grep -o 'data-user-uid="[0-9]*"' | command grep -o '[0-9]*'; }
 has_remember() { command grep -q 'wiki_remember' "$1" 2>/dev/null; }
 # Keep only the remember cookie: the browser after its session cookie is gone.
