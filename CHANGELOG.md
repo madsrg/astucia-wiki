@@ -6,6 +6,18 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.10.7] — 2026-10-27
+
+AI skills — procedures an administrator writes once for every AI user to follow; one
+account that can sign in with both single sign-on and an email code; agent-job schedules
+from every few minutes to yearly, or any cron expression; service tokens stored only as a
+hash; and a set of fixes found while checking the documentation against the code.
+
+**Upgrading:** check your `config.php` for `ANONYMOUS_ACCESS_ENABLED` — an install copied
+from an earlier `config.php.txt` has it `true`. Existing service tokens are converted on
+the first request and keep working, but can no longer be viewed: regenerate one you have
+not stored.
+
 ### Added
 - **Richer schedules for agent jobs.** Besides daily, weekly and monthly, a job can now run
   every N minutes or hours (optionally only between two times and on chosen days — "every
