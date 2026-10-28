@@ -14,6 +14,7 @@ import { loadWorkflows, initWorkflows } from './workflows.js';
 import { openPagePicker } from './page_picker.js';
 import { loadTaxonomyPane } from './taxonomy.js';
 import { loadSkills, initSkills } from './skills.js';
+import { loadRetentionPane } from './retention.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
     ai:         ['ai', 'llm', 'jobs', 'mcp', 'skills'],
     monitoring: ['logs', 'errorlog', 'audit', 'diagnostics', 'realtime', 'sysinfo'],
-    content:    ['reindex', 'deleted', 'chatpolicy', 'metadata', 'taxonomy', 'mentions', 'workflows'],
+    content:    ['reindex', 'deleted', 'retention', 'metadata', 'taxonomy', 'workflows'],
 };
 const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 'reindex' };
 
@@ -99,9 +100,8 @@ const switchTab = (name) => {
     if (name === 'jobs')        loadAgentJobs();
     if (name === 'deleted')     loadDeletedPages();
     if (name === 'reindex')     loadReindexPane();
-    if (name === 'chatpolicy')  loadChatPolicyPane();
+    if (name === 'retention')   loadRetentionPane();
     if (name === 'metadata')    loadMetadataPane();
-    if (name === 'mentions')    loadMentionsPane();
     if (name === 'mcp')         loadMcpServers();
     if (name === 'llm')         loadLlmConnections();
     if (name === 'workflows')   loadWorkflows();
@@ -166,37 +166,7 @@ const openPromptGallery = async () => {
     }
 };
 
-// ── Chat Retention tab (Content) ──────────────────────────────────────────────
-//
-// The wiki-wide default, for threads that have never chosen one. A thread that *has*
-// chosen — including choosing "off" — keeps its own setting, so raising a house policy
-// can never quietly re-enable trimming on a thread somebody deliberately exempted.
-
-const RETENTION_OPTIONS = ['', 'count:100', 'count:200', 'count:300', 'days:30', 'days:90', 'days:180'];
-
-const loadChatPolicyPane = async () => {
-    const sel  = document.getElementById('admin-chat-retention');
-    const save = document.getElementById('admin-chat-retention-save');
-    if (!sel || !save) return;
-
-    if (!sel.options.length) {
-        RETENTION_OPTIONS.forEach(v => {
-            const o = document.createElement('option');
-            o.value = v;
-            o.textContent = t('chat-topic.retention.' + (v === '' ? 'off' : v.replace(':', '-')));
-            sel.appendChild(o);
-        });
-        save.addEventListener('click', async () => {
-            save.disabled = true;
-            const res = await api.call('admin_chat_retention', { policy: sel.value }, 'POST');
-            save.disabled = false;
-            showToast(res.success ? t('admin.chatpolicy.saved') : (res.message || t('admin.chatpolicy.failed')),
-                      res.success ? 'success' : 'error');
-        });
-    }
-    const res = await api.call('admin_chat_retention');
-    if (res.success) sel.value = res.policy ?? '';
-};
+// Chat retention and Mentions live in the Retention policies tab — see retention.js.
 
 // ── Page Metadata tab (Content) ───────────────────────────────────────────────
 //
@@ -225,37 +195,6 @@ const loadMetadataPane = async () => {
     }
     const res = await api.call('admin_frontmatter_settings');
     if (res.success) box.checked = !!res.expose_ai;
-};
-
-// ── Mentions tab ──────────────────────────────────────────────────────────────
-//
-// How far back My Mentions looks. Unlike chat retention this deletes nothing and cannot:
-// a mention is not a record the wiki stores, it is found by reading pages and chats, so
-// the only thing a retention setting can do here is stop the scan looking further back.
-// Shortening it is therefore always reversible, and the hint says so — the alternative
-// reading, that old mentions are about to be destroyed, is the one somebody would fear.
-
-const loadMentionsPane = async () => {
-    const box  = document.getElementById('admin-mention-days');
-    const save = document.getElementById('admin-mention-save');
-    if (!box || !save) return;
-
-    if (!save.dataset.bound) {
-        save.dataset.bound = '1';
-        save.addEventListener('click', async () => {
-            save.disabled = true;
-            const res = await api.call('admin_mention_settings',
-                                       { days: String(Math.max(0, parseInt(box.value, 10) || 0)) }, 'POST');
-            save.disabled = false;
-            // From the response, not from the box: the server clamps, and the field
-            // should show what was actually stored.
-            if (res.success) box.value = res.days;
-            showToast(res.success ? t('admin.mentions.saved') : (res.message || t('admin.mentions.failed')),
-                      res.success ? 'success' : 'error');
-        });
-    }
-    const res = await api.call('admin_mention_settings');
-    if (res.success) box.value = res.days;
 };
 
 // ── Audit Log tab ─────────────────────────────────────────────────────────────

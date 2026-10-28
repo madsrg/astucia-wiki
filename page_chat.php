@@ -27,7 +27,16 @@
 //     answer is written into a thread nobody is looking at, or nowhere at all.
 //   - The transient `<chat>.ai-status.<id>` files follow, or a run in flight loses the
 //     status line its placeholder is displaying.
+//
+// Two things an AI or a workflow can do to a thread live here too, because they are about
+// the same convention: `wiki_page_chat_ensure()` creates a page's thread when nobody has
+// opened it yet, and `wiki_chat_append()` posts into any thread. Before them, a page chat
+// only came into being when a person clicked the panel open, so a workflow asked to "give
+// feedback on the page" had nowhere on the page to give it.
 // =================================================================
+
+require_once __DIR__ . '/realtime.php';   // wiki_chat_write()
+require_once __DIR__ . '/mentions.php';   // wiki_mention_announce()
 
 /**
  * The `.chat` counterpart of a Markdown page — absolute or relative, whichever you pass.
@@ -138,4 +147,71 @@ function wiki_page_chat_repoint_jobs(string $old_space, string $old_rel,
             unset($j);
         });
     } catch (\Throwable $_e) { /* a queue that cannot be rewritten must not fail the rename */ }
+}
+
+/**
+ * A Markdown page's chat thread, created if nobody has opened it yet.
+ *
+ * Only ever the sidecar of a page that exists: this is how an AI or a workflow gets a
+ * thread to talk in, and limiting it to that one thread per page is what keeps it from
+ * scattering chats around the wiki. Created exactly as the panel's `create_chat` call
+ * makes one — empty topic, messages not committed to git — and indexed, so it has an id
+ * from the start (a thread without one has nothing for `?pageid=` to point at).
+ *
+ * @return array{rel: string, abs: string, created: bool}
+ * @throws Exception naming what is wrong, in words fit for a tool result or a run log
+ */
+function wiki_page_chat_ensure(string $space_dir, string $md_rel, $indexer, ?array $actor = null): array {
+    $md_rel   = ltrim(str_replace('..', '', $md_rel), '/');
+    $chat_rel = wiki_page_chat_sidecar($md_rel);
+    if ($chat_rel === null) throw new Exception("\"{$md_rel}\" is not a Markdown page, so it has no page chat.");
+    $md_abs   = rtrim($space_dir, '/') . '/' . $md_rel;
+    $chat_abs = rtrim($space_dir, '/') . '/' . $chat_rel;
+    if (!is_file($md_abs)) throw new Exception("The page \"{$md_rel}\" does not exist.");
+    if (is_file($chat_abs)) return ['rel' => $chat_rel, 'abs' => $chat_abs, 'created' => false];
+    if (file_exists($chat_abs)) throw new Exception("\"{$chat_rel}\" exists but is not a chat thread.");
+
+    $thread = ['topic' => '', 'git_commit' => false, 'messages' => [], 'nextMessageId' => 1];
+    if (!wiki_chat_write($chat_abs, $thread)) throw new Exception("Could not create \"{$chat_rel}\".");
+    $indexer->addPage($chat_rel, $actor['uid'] ?? null, $actor['name'] ?? null);
+    if (defined('SEARCH_ENGINE') && SEARCH_ENGINE === 'sqlite' && class_exists('SearchIndex')) {
+        // The index holds a thread by path, with no text — as create_chat does.
+        try { (new SearchIndex())->upsertPage(basename(rtrim($space_dir, '/')), $chat_rel, ''); }
+        catch (\Throwable $_e) { /* search is a cache */ }
+    }
+    return ['rel' => $chat_rel, 'abs' => $chat_abs, 'created' => true];
+}
+
+/**
+ * Append one message to a `.chat` thread, as its author `$name` (`$uid`).
+ *
+ * Under the same `.joblock` the cron runner's job delivery takes, so a workflow, an AI
+ * tool and a queued job answering into one thread cannot overwrite each other's message.
+ * The id is computed past every existing one rather than trusted from `nextMessageId`,
+ * which a hand-edited or merged thread can leave behind. Mentions in the text are
+ * announced like a person's, so an `@Name` in an AI's message reaches the badge at once.
+ *
+ * @param array $extra fields stored on the message as well, e.g. `['workflow' => true]`
+ * @return int the new message's id
+ * @throws Exception when the thread is missing, is not a thread, or cannot be written
+ */
+function wiki_chat_append(string $abs, string $rel, string $text, int $uid, string $name, array $extra = []): int {
+    if (!is_file($abs)) throw new Exception("The chat \"{$rel}\" does not exist.");
+    $lock = @fopen($abs . '.joblock', 'c');
+    if ($lock) flock($lock, LOCK_EX);
+    try {
+        $data = json_decode((string)file_get_contents($abs), true);
+        if (!is_array($data) || !is_array($data['messages'] ?? null)) throw new Exception("\"{$rel}\" is not a chat thread.");
+        $next = (int)($data['nextMessageId'] ?? 0);
+        foreach ($data['messages'] as $m) $next = max($next, (int)($m['id'] ?? 0) + 1);
+        $data['messages'][] = ['id' => $next, 'uid' => $uid, 'name' => $name,
+                               'timestamp' => date('c'), 'text' => $text] + $extra;
+        $data['nextMessageId'] = $next + 1;
+        if (!wiki_chat_write($abs, $data)) throw new Exception("Could not write \"{$rel}\".");
+    } finally {
+        if ($lock) { flock($lock, LOCK_UN); fclose($lock); }
+        @unlink($abs . '.joblock');
+    }
+    wiki_mention_announce($text, '', $uid);
+    return $next;
 }

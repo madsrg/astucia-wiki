@@ -40,6 +40,7 @@ export const rtTopic = {
     users:   ()            => 'wiki//users',   // see wiki_rt_topic_users()
     job:     (uid)         => `wiki/user/${uid}/job`,
     mention: (uid)         => `wiki/user/${uid}/mention`,
+    workflow: (uid)        => `wiki/user/${uid}/workflow`,   // a run failed; admins only
     // The admin monitor's round-trip test. Under wiki/user/<uid>/ so it needs no new
     // selector in the subscribe token, and nobody else's token can match it.
     diag:    (uid)         => `wiki/user/${uid}/diag`,

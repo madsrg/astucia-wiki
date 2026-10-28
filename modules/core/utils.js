@@ -75,6 +75,24 @@ export const showToast = (message, type = 'info') => {
  * @param {string} o.key      de-duplication key: re-showing an existing key replaces it
  * @returns {Function} close it programmatically
  */
+/**
+ * Whether a chat message continues its predecessor's run — same author, written soon after —
+ * and so is drawn without its own avatar, name and time. Both chat views use it.
+ *
+ * Author alone used to decide, so a message landing weeks after the same author's last one
+ * (a workflow posting into a quiet page chat) sat under that old header and read as written
+ * on the old date. A gap of more than five minutes starts a new run, as most chat apps do;
+ * a message whose time cannot be read never continues one, since showing no time at all is
+ * better than showing the wrong one.
+ */
+const CHAT_RUN_GAP_MS = 5 * 60 * 1000;
+export const continuesChatRun = (prev, msg) => {
+    if (!prev || !msg || prev.uid !== msg.uid) return false;
+    const a = Date.parse(prev.timestamp), b = Date.parse(msg.timestamp);
+    if (Number.isNaN(a) || Number.isNaN(b)) return false;
+    return Math.abs(b - a) <= CHAT_RUN_GAP_MS;
+};
+
 export const showStickyToast = ({ title, body = '', type = 'info', linkText = '', onLink = null, key = '' } = {}) => {
     const stack = document.getElementById('toast-stack');
     if (!stack) return () => {};

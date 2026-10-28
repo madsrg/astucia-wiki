@@ -1309,10 +1309,9 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab hidden" data-tab="sysinfo" data-group="monitoring"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span data-i18n="admin.tab.sysinfo">Wiki Info</span></button>
                 <button class="admin-tab hidden" data-tab="reindex" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span data-i18n="admin.tab.reindex">Index Pages</span></button>
                 <button class="admin-tab hidden" data-tab="deleted" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg><span data-i18n="admin.tab.deleted">Deleted Pages</span></button>
-                <button class="admin-tab hidden" data-tab="chatpolicy" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><polyline points="12 7 12 10 14 11"/></svg><span data-i18n="admin.tab.chatpolicy">Chat Retention</span></button>
+                <button class="admin-tab hidden" data-tab="retention" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg><span data-i18n="admin.tab.retention">Retention Policies</span></button>
                 <button class="admin-tab hidden" data-tab="metadata" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg><span data-i18n="admin.tab.metadata">Page Metadata</span></button>
                 <button class="admin-tab hidden" data-tab="taxonomy" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="10" width="6" height="5" rx="1"/><rect x="15" y="17" width="6" height="5" rx="1"/><path d="M6 9v10h9"/><path d="M6 12.5h9"/></svg><span data-i18n="admin.tab.taxonomy">Taxonomy</span></button>
-                <button class="admin-tab hidden" data-tab="mentions" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg><span data-i18n="admin.tab.mentions">Mentions</span></button>
                 <button class="admin-tab hidden" data-tab="workflows" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M9 6h5a3 3 0 0 1 3 3v6"/><polyline points="14 12 17 15 20 12"/></svg><span data-i18n="admin.tab.workflows">Workflows</span></button>
             </div>
 
@@ -1397,42 +1396,19 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             </div>
 
             <!-- Index Pages pane -->
-            <!-- Chat retention pane -->
-            <div id="admin-pane-chatpolicy" class="admin-pane hidden">
+            <!-- Retention policies pane: chat, mentions, logs and run histories (built in modules/admin/retention.js) -->
+            <div id="admin-pane-retention" class="admin-pane hidden">
                 <div class="admin-scroll-area">
-                    <div class="admin-reindex-body">
-                        <p class="admin-reindex-desc" data-i18n="admin.chatpolicy.desc"></p>
-                        <div class="admin-reindex-controls">
-                            <label class="admin-reindex-label" for="admin-chat-retention" data-i18n="admin.chatpolicy.label"></label>
-                            <select id="admin-chat-retention" class="form-control admin-reindex-select"></select>
-                            <button id="admin-chat-retention-save" class="btn btn-blue" data-i18n="btn.save">Save</button>
-                        </div>
-                        <p class="pref-hint" data-i18n="admin.chatpolicy.hint"></p>
-                    </div>
+                    <div id="admin-retention-body" class="admin-reindex-body admin-retention-body"></div>
                 </div>
             </div>
 
-            <!-- Mentions pane -->
             <div id="admin-pane-skills" class="admin-pane hidden">
                 <div id="admin-skills-list" class="admin-scroll-area"></div>
             </div>
 
             <div id="admin-pane-workflows" class="admin-pane hidden">
                 <div id="admin-workflows-list" class="admin-scroll-area"></div>
-            </div>
-
-            <div id="admin-pane-mentions" class="admin-pane hidden">
-                <div class="admin-scroll-area">
-                    <div class="admin-reindex-body">
-                        <p class="admin-reindex-desc" data-i18n="admin.mentions.desc"></p>
-                        <div class="admin-reindex-controls">
-                            <label class="admin-reindex-label" for="admin-mention-days" data-i18n="admin.mentions.label"></label>
-                            <input type="number" id="admin-mention-days" class="form-control admin-reindex-select" min="0" step="1">
-                            <button id="admin-mention-save" class="btn btn-blue" data-i18n="btn.save">Save</button>
-                        </div>
-                        <p class="pref-hint" data-i18n="admin.mentions.hint"></p>
-                    </div>
-                </div>
             </div>
 
             <!-- Page metadata (front matter) pane -->

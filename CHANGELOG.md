@@ -6,6 +6,82 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.10.8] — 2026-10-28
+
+AI feedback where a page is discussed — a workflow can post an AI's review in the page's own
+chat, creating it if needed, and AI users get a tool to do the same; failed workflow runs
+announce themselves to administrators with a link to the log; one Retention Policies tab for
+chat, mentions, and the wiki's own logs and run histories; Podman support; and fixes found
+along the way.
+
+**Upgrading:** nothing to do. Every log is kept forever until an administrator sets a limit
+under Admin → Content → Retention Policies, so this release deletes no files. If a workflow's
+AI action failed with "The AI user no longer exists", it was a person sharing the AI user's
+id; it now works, though giving that person a new id is still worth doing.
+
+### Added
+- **Podman.** The published image already ran under Podman unchanged; now there is a
+  ready-made Quadlet unit, `docker/astucia-wiki.container`, that runs it as a systemd
+  service with health checks and `podman auto-update`, and a *With Podman* section in
+  `DOCKER.md`. Rootless installs with a host directory need
+  `--userns=keep-id:uid=82,gid=82 --user 0` — without it the entrypoint cannot tell your
+  directory from a fresh volume and hands it to a subuid. The entrypoint now says so in
+  its log when it sees rootless Podman.
+- **AI feedback in a page's own chat.** A workflow's AI action — and its chat action — can
+  now post in the chat of the page that triggered the run, creating that chat if nobody
+  has opened it yet: *on every save, review the page and leave the review beside it*.
+  The thread path of either action also takes `{{…}}` variables, and two new ones exist:
+  `{{page_id}}` and `{{page_chat}}`. Feedback arrives once the page has been quiet for the
+  workflow's delay and the runner has come round — a couple of minutes, not instantly.
+- **`wiki_post_chat`**, a tool for AI users: post a message in a chat thread, or in a
+  Markdown page's own chat, which is created if needed. It notifies nobody — that remains
+  `wiki_mention_users` — and is a write tool like the others: editor role, not in a
+  read-only Space, never beside a skill or a memory.
+- **An AI is told the page's id.** In a page chat it learns the page's id and the thread's
+  own, and a workflow's AI action learns the page's id, its page chat (and whether it
+  exists yet) and where its reply will be posted — so it links the page by id, and does
+  not post a reply the workflow is already posting for it.
+- **A failed workflow run tells the administrators.** Any administrator with the wiki open
+  gets a notification that stays until dismissed, naming the workflow and the error, with
+  a link that opens the run's log. Every failed run now keeps a log — before, only a run
+  with an AI action did — ending in what each action did. Failures from before the page
+  was opened are not announced again. Instant with realtime on, within a minute without.
+- **`MIRRORS` for `docker/build.sh`**: push the same build to further registries (e.g.
+  GitHub Container Registry) under the same three tags, verified to share one digest.
+
+- **Retention Policies.** Admin → Content → *Chat Retention* and *Mentions* are one tab now,
+  joined by the wiki's own log files — access, error, AI-job run, workflow run and audit
+  logs — and the AI-job and workflow run histories. Each log can be given an age limit, and
+  each row shows what the log holds and what the limit you type would delete before you
+  save. Old files are deleted once a day by the background runner — whole files only,
+  never today's — or at once with *Clean up now*. **Every log is kept forever unless you
+  set a limit, so upgrading deletes nothing**; the run histories keep their old limits
+  (7 days / 100 jobs, 14 days / 1000 workflow runs), now adjustable. Shortening the audit
+  log is itself recorded in it. Logs written by the web server, PHP or cron are not
+  managed — use logrotate for those.
+
+### Changed
+- **A workflow run's History keeps at most 1 KB of an AI reply**, ending in "..." when
+  longer. The whole reply is still posted to the thread and kept in the run's log.
+
+### Fixed
+- **A chat message no longer shows an older message's date.** Consecutive messages from
+  one author are drawn under a single name and time; a message posted weeks after the same
+  author's last one — such as a workflow's reply in a quiet page chat — sat under that old
+  header and read as written on the old date. A new header now starts after a gap of five
+  minutes, in the chat view and in the page chat panel alike.
+- **A workflow's AI action no longer fails with "The AI user no longer exists" when a
+  person has the same user id as the AI user.** Older account code could give a person and
+  an AI user the same id, and the runner took whichever came first in the user list. It now
+  looks for an AI user for an AI action and a person for the owner check and email
+  recipients — where the same mix-up could switch an administrator's workflow off, or skip
+  a recipient.
+- **The container listens on IPv6 as well.** Under rootless Podman, `http://localhost:8080`
+  resolved to `::1`, was accepted by Podman's port forwarder and then reset, because nginx
+  listened on IPv4 only — and a browser does not retry on `127.0.0.1` after a reset. The
+  entrypoint adds the IPv6 listener only when the kernel has IPv6, so a host booted with
+  `ipv6.disable=1` still starts.
+
 ## [2026.10.7] — 2026-10-27
 
 AI skills — procedures an administrator writes once for every AI user to follow; one

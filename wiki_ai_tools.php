@@ -157,6 +157,18 @@ function wiki_tool_definitions(bool $with_memory = true, bool $with_skills = fal
             ],
         ],
         [
+            'name'        => 'wiki_post_chat',
+            'description' => 'Post a message in a chat thread, as yourself. "target" is either a .chat thread, or a Markdown page (.md) — then the message goes into that page\'s own chat, where its readers discuss it, and the chat is created if nobody has started it yet. Use it to leave feedback, a review or a note on a page without changing the page itself. It notifies nobody: to reach particular people, use wiki_mention_users or write @Name in the message. Only available when the AI user has editor role.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => [
+                    'target'  => ['type' => 'string', 'description' => 'Relative path of a .md page (posts in its page chat) or a .chat thread, e.g. Reports/Q3.md or Team.chat'],
+                    'message' => ['type' => 'string', 'description' => 'The message, in Markdown.'],
+                ],
+                'required'   => ['target', 'message'],
+            ],
+        ],
+        [
             'name'        => 'wiki_remember',
             'description' => 'Store one fact in your persistent memory for this space, as an ordinary wiki page in memory/. Use it when the user tells you something worth keeping beyond this conversation — a decision, a preference, a convention, how they work. One fact per memory. The title is what you see in your memory listing later, so write it as a short sentence rather than a keyword. Calling it again with the same title replaces that memory, which is how you correct one. Do not store secrets, and do not copy what is already on a wiki page — remember where it is instead. Only available when the space keeps memories and this AI user has learning enabled.',
             'params'      => [
@@ -453,7 +465,12 @@ function parse_search_query(string $raw): array {
 // an install with SEARCH_ENGINE=sqlite and invisible on one without it.
 const WIKI_AI_SEARCH_EXTS = ['md', 'json'];
 
-const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_add_tags', 'wiki_set_tags', 'wiki_mention_users', 'wiki_rename_page', 'wiki_remember', 'wiki_forget'];
+const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_add_tags', 'wiki_set_tags', 'wiki_mention_users', 'wiki_post_chat', 'wiki_rename_page', 'wiki_remember', 'wiki_forget'];
+
+// Longer than a person's 2000-character chat limit: a review of a page is the point of
+// wiki_post_chat, and that is often longer than a chat line. Still a ceiling, since every
+// message is re-read into each later prompt's transcript.
+const WIKI_AI_CHAT_MAX_CHARS = 20000;
 
 /**
  * What an AI tool is about to touch, for the audit log. Same shape as the REST map in
@@ -475,6 +492,9 @@ const WIKI_AI_AUDIT_TOOLS = [
     // WIKI_AUDIT_ACTIONS in audit.php. Gated on the target's type below rather than
     // dropped here, so the page case stays in scope like any other page write.
     'wiki_mention_users' => ['page',       'target'],
+    // Only when it creates a page's chat, which is the create_chat action's entry in
+    // audit.php made by an AI. Posting into a thread is a chat message, out of scope.
+    'wiki_post_chat'     => ['page',       'target'],
 ];
 
 /**
@@ -597,7 +617,8 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
     if (in_array($tool_name, WIKI_AI_WRITE_TOOLS, true) && wiki_space_dir_is_readonly($space_dir)) {
         $denied = 'Error: the space "' . basename(rtrim($space_dir, '/')) . '" is read-only; nothing in it can be changed.';
         _wiki_ai_audit($tool_name, $tool_input, $ai_user, $indexer, $space_dir, $denied,
-                       is_file(rtrim($space_dir, '/') . '/' . ltrim(str_replace('..', '', (string)($tool_input['path'] ?? '')), '/')));
+                       $tool_name === 'wiki_post_chat' ? _wiki_post_chat_existed($tool_input, $space_dir)
+                           : is_file(rtrim($space_dir, '/') . '/' . ltrim(str_replace('..', '', (string)($tool_input['path'] ?? '')), '/')));
         return $denied;
     }
     // Whether the page already existed has to be sampled BEFORE the write, or a create
@@ -607,10 +628,20 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
         $existed = is_file(rtrim($space_dir, '/') . '/'
                  . ltrim(str_replace('..', '', (string)($tool_input['path'] ?? '')), '/'));
     }
+    if ($tool_name === 'wiki_post_chat') $existed = _wiki_post_chat_existed($tool_input, $space_dir);
     $result = _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, $space_dir);
     wiki_trace_add(['type' => 'tool', 'name' => $tool_name, 'input' => $tool_input, 'output' => $result]);
     _wiki_ai_audit($tool_name, $tool_input, $ai_user, $indexer, $space_dir, $result, $existed);
     return $result;
+}
+
+/**
+ * For wiki_post_chat's audit entry: whether the thread it posts into already existed.
+ * Only a page chat it would *create* is logged, so a .chat target counts as existing.
+ */
+function _wiki_post_chat_existed(array $input, string $space_dir): bool {
+    $side = wiki_page_chat_sidecar(ltrim(str_replace('..', '', (string)($input['target'] ?? '')), '/'));
+    return $side === null || is_file(rtrim($space_dir, '/') . '/' . $side);
 }
 
 // Tools report failure by returning a string that starts with "Error:" — the existing
@@ -625,6 +656,10 @@ function _wiki_ai_audit(string $tool, array $input, $ai_user, $indexer, string $
         $rel = WIKI_MEMORY_DIR . '/' . wiki_memory_slug($rel) . '.md';
     }
     if ($tool === 'wiki_mention_users' && strtolower(pathinfo($rel, PATHINFO_EXTENSION)) === 'chat') return;
+    if ($tool === 'wiki_post_chat') {
+        if ($existed !== false) return;
+        $rel = (string)wiki_page_chat_sidecar($rel);
+    }
 
     $verb = 'update';
     if ($tool === 'wiki_rename_page')                       $verb = 'rename';
@@ -632,6 +667,7 @@ function _wiki_ai_audit(string $tool, array $input, $ai_user, $indexer, string $
     elseif (in_array($tool, ['wiki_write_page', 'wiki_write_json'], true)) {
         $verb = $existed ? 'update' : 'create';
     }
+    elseif ($tool === 'wiki_post_chat') $verb = 'create';
 
     $ctx = $GLOBALS['_wiki_audit_context'] ?? [];
     wiki_audit_set_context(array_merge($ctx, [
@@ -867,6 +903,40 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             git_auto_commit($mu_abs, $mu_git_name, $mu_git_email, 'Mention ' . implode(', ', $mu_resolved) . ' in ' . basename($mu_rel), $space_dir);
             return 'Mentioned ' . implode(', ', $mu_resolved) . ' in ' . $mu_rel
                  . '. They will see it in their My Mentions list.';
+
+        case 'wiki_post_chat': {
+            if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot post in chats.';
+            $pc_text = trim((string)($tool_input['message'] ?? ''));
+            if ($pc_text === '') return 'Error: "message" is required.';
+            if (mb_strlen($pc_text) > WIKI_AI_CHAT_MAX_CHARS) {
+                return 'Error: the message is longer than ' . WIKI_AI_CHAT_MAX_CHARS . ' characters. Shorten it, or write a page and link to it.';
+            }
+            $pc_rel = ltrim(str_replace('..', '', (string)($tool_input['target'] ?? '')), '/');
+            if ($pc_rel === '') return 'Error: "target" is required — a .md page or a .chat thread.';
+            $pc_ext = strtolower(pathinfo($pc_rel, PATHINFO_EXTENSION));
+            if (!in_array($pc_ext, ['md', 'chat'], true)) return 'Error: target must be a .md page (for its page chat) or a .chat thread.';
+            // A memory is the AI's own note, not a page people read; a conversation beside
+            // it would be one nobody finds.
+            if (wiki_is_memory_path($pc_rel)) return 'Error: memory pages have no chat.';
+            try {
+                if ($pc_ext === 'md') {
+                    $pc_thread = wiki_page_chat_ensure($space_dir, $pc_rel, $indexer,
+                                                       ['uid' => $ai_user['uid'] ?? null, 'name' => $ai_user['name'] ?? 'AI']);
+                } else {
+                    $pc_abs = rtrim($space_dir, '/') . '/' . $pc_rel;
+                    if (!is_file($pc_abs)) {
+                        return 'Error: chat thread not found: ' . $pc_rel
+                             . '. To post in a page\'s chat, pass the page itself (the .md path) and the chat is created for you.';
+                    }
+                    $pc_thread = ['rel' => $pc_rel, 'abs' => $pc_abs, 'created' => false];
+                }
+                wiki_chat_append($pc_thread['abs'], $pc_thread['rel'], $pc_text,
+                                 (int)($ai_user['uid'] ?? 0), (string)($ai_user['name'] ?? 'AI'));
+            } catch (\Throwable $e) {
+                return 'Error: ' . $e->getMessage();
+            }
+            return 'Posted in ' . $pc_thread['rel'] . ($pc_thread['created'] ? ' (the page had no chat yet, so it was created).' : '.');
+        }
 
         case 'wiki_read_skill': {
             // Both switches again: an MCP client or a retried call can name a tool that

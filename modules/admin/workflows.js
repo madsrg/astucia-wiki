@@ -18,7 +18,7 @@ const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').
 const TRIGGERS = ['page_created', 'page_updated', 'page_deleted', 'page_renamed', 'tag_added', 'tag_removed', 'fm_changed'];
 const ACTIONS  = ['email', 'ai', 'chat', 'tag', 'frontmatter'];
 const TYPES    = ['md', 'list', 'chat', 'json', 'drawio', 'search'];
-const VARS     = ['page', 'path', 'space', 'url', 'actor', 'event', 'workflow', 'old_path', 'tags', 'field', 'old_value', 'new_value', 'date'];
+const VARS     = ['page', 'path', 'space', 'url', 'page_id', 'page_chat', 'actor', 'event', 'workflow', 'old_path', 'tags', 'field', 'old_value', 'new_value', 'date'];
 // Variables only some triggers fill. Every other one has a value whatever started the run.
 const VAR_TRIGGERS = {
     old_path:  ['page_renamed'],
@@ -59,7 +59,7 @@ const actionSummary = (a) => {
     switch (a.type) {
         case 'email':       return t('admin.wf.sum.email');
         case 'ai':          return t('admin.wf.sum.ai', { name: data.ai_users.find(u => u.uid === a.ai_uid)?.name || '?' });
-        case 'chat':        return t('admin.wf.sum.chat', { chat: a.chat });
+        case 'chat':        return a.page_chat ? t('admin.wf.sum.chat-page') : t('admin.wf.sum.chat', { chat: a.chat });
         case 'tag':         return [...(a.add || []).map(x => `+#${x}`), ...(a.remove || []).map(x => `−#${x}`)].join(' ');
         case 'frontmatter': return `${a.field}: ${a.value || '∅'}`;
         default:            return a.type;
@@ -214,6 +214,11 @@ const wirePathFields = (root) => {
         root.querySelector(`.wf-path-clear[data-for="${input.id}"]`)?.classList.toggle('hidden', !input.value);
     };
     root.addEventListener('input', (e) => { if (e.target.classList?.contains('wf-path-input')) syncClear(e.target); });
+    root.addEventListener('change', (e) => {
+        if (e.target.classList?.contains('wf-pagechat')) {
+            document.getElementById(e.target.dataset.box)?.classList.toggle('hidden', e.target.checked);
+        }
+    });
     root.addEventListener('click', (e) => {
         const clear = e.target.closest('.wf-path-clear');
         if (clear) {
@@ -245,6 +250,15 @@ const wirePathFields = (root) => {
     });
 };
 
+// Where a chat-posting action posts: the page's own chat, or the thread in the path box.
+// Ticking the box hides the path — the two are one choice, and a path left visible next to
+// a ticked box reads as though both apply. Toggled by the delegated listener in openForm.
+const threadChoice = (a, id, labelKey, phKey, ph) => `
+    <label class="wf-check"><input type="checkbox" id="${id('pagechat')}" class="wf-pagechat" data-box="${id('chatbox')}" ${a.page_chat ? 'checked' : ''}> ${t(labelKey)}</label>
+    <div id="${id('chatbox')}" class="${a.page_chat ? 'hidden' : ''}">
+        ${pathField(id('chat'), a.chat || '', phKey ? t(phKey) : ph, 'chat')}
+    </div>`;
+
 const opt = (value, label, selected) => `<option value="${esc(value)}" ${selected ? 'selected' : ''}>${esc(label)}</option>`;
 
 const actionFields = (a, i) => {
@@ -274,10 +288,10 @@ const actionFields = (a, i) => {
                 <label>${t('admin.wf.ai.prompt')}</label>
                 <textarea id="${id('prompt')}" class="form-control" rows="5" placeholder="${t('admin.wf.ai.prompt-ph')}">${esc(a.prompt || '')}</textarea>
                 <label>${t('admin.wf.ai.chat')}</label>
-                ${pathField(id('chat'), a.chat || '', t('admin.wf.ai.chat-ph'), 'chat')}`;
+                ${threadChoice(a, id, 'admin.wf.ai.page-chat', 'admin.wf.ai.chat-ph')}`;
         case 'chat':
             return `<label>${t('admin.wf.chat.thread')}</label>
-                ${pathField(id('chat'), a.chat || '', 'Team/General.chat', 'chat')}
+                ${threadChoice(a, id, 'admin.wf.chat.page-chat', null, 'Team/General.chat')}
                 <label>${t('admin.wf.chat.as')}</label>
                 <select id="${id('as')}" class="form-control">${opt(0, t('admin.wf.chat.as-workflow'), !a.as_uid)}${data.ai_users.map(u => opt(u.uid, u.name, u.uid === a.as_uid)).join('')}</select>
                 <label>${t('admin.wf.chat.text')}</label>
@@ -299,14 +313,20 @@ const actionFields = (a, i) => {
 const readAction = (type, i) => {
     const v = (k) => document.getElementById(`wf-a${i}-${k}`)?.value ?? '';
     const list = (k) => v(k).split(/[,\s]+/).map(s => s.replace(/^#/, '').trim()).filter(Boolean);
+    const thread = () => {
+        const page_chat = document.getElementById(`wf-a${i}-pagechat`)?.checked || false;
+        // The path is sent either way and dropped by the server when the box is ticked, so
+        // unticking it again before saving gets back what was typed.
+        return { page_chat, chat: v('chat').trim() };
+    };
     switch (type) {
         case 'email': return {
             type, to_author: document.getElementById(`wf-a${i}-author`)?.checked || false,
             to_actor: document.getElementById(`wf-a${i}-actor`)?.checked || false,
             to_users: [...document.querySelectorAll(`.wf-a${i}-user:checked`)].map(c => Number(c.value)),
             to_emails: v('emails'), subject: v('subject'), body: v('body') };
-        case 'ai':          return { type, ai_uid: Number(v('ai')), prompt: v('prompt'), chat: v('chat').trim() };
-        case 'chat':        return { type, chat: v('chat').trim(), as_uid: Number(v('as')), text: v('text') };
+        case 'ai':          return { type, ai_uid: Number(v('ai')), prompt: v('prompt'), ...thread() };
+        case 'chat':        return { type, ...thread(), as_uid: Number(v('as')), text: v('text') };
         case 'tag':         return { type, add: list('add'), remove: list('remove') };
         case 'frontmatter': return { type, field: v('field').trim(), value: v('value') };
         default:            return { type };

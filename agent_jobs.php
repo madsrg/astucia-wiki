@@ -20,6 +20,7 @@
 // jobs from overrunning the cron window; the rest wait for the next tick.
 require_once __DIR__ . '/service_auth.php';   // wiki_user_notify_email()
 require_once __DIR__ . '/realtime.php';       // wiki_chat_write() — the cron runner
+require_once __DIR__ . '/retention.php';      // how much finished-job history to keep
                                               // resolves placeholders too, and a browser
                                               // waiting on one is the whole point of push.
 
@@ -46,8 +47,8 @@ const AGENT_JOB_RUNNING_TIMEOUT_MIN = 60;
 // Per-user backpressure: how many jobs one requester may have waiting.
 const AGENT_JOB_MAX_QUEUED_PER_USER = 3;
 // Delivered jobs are kept for a while so the admin panel can show history.
-const AGENT_JOB_HISTORY_KEEP = 100;
-const AGENT_JOB_HISTORY_DAYS = 7;
+// How much finished-job history is kept is an admin setting now (Retention policies,
+// `job_history_days` / `job_history_keep`, 7 days / 100 by default) — see retention.php.
 
 // Minutes between runner ticks. Must match the crontab entry — it is what the
 // "will be processed in x minutes" estimate is built from.
@@ -71,7 +72,7 @@ function agent_job_queue_read(): array {
 // Drop delivered jobs that are old or beyond the history cap. Queued and running
 // jobs are never pruned — only finished ones.
 function _agent_job_prune(array $jobs): array {
-    $cutoff = time() - (AGENT_JOB_HISTORY_DAYS * 86400);
+    $cutoff = time() - (wiki_retention('job_history_days') * 86400);
     $live = $done = [];
     foreach ($jobs as $j) {
         if (in_array($j['state'] ?? '', ['queued', 'running'], true)) { $live[] = $j; continue; }
@@ -79,7 +80,7 @@ function _agent_job_prune(array $jobs): array {
         if ($ts >= $cutoff) $done[] = $j;
     }
     usort($done, fn($a, $b) => strcmp((string)($b['finished_at'] ?? ''), (string)($a['finished_at'] ?? '')));
-    return array_values(array_merge($live, array_slice($done, 0, AGENT_JOB_HISTORY_KEEP)));
+    return array_values(array_merge($live, array_slice($done, 0, wiki_retention('job_history_keep'))));
 }
 
 /**

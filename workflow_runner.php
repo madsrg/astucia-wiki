@@ -27,6 +27,10 @@ require_once __DIR__ . '/git_helpers.php';
 require_once __DIR__ . '/ai_core.php';
 
 const WIKI_WF_MAX_PER_TICK = 10;
+// How much of an AI reply a run keeps in its History detail. The whole reply is in the
+// run's log; History is a table, and a page-long review in one cell pushes every other run
+// off the screen — and is stored again in workflow_queue.json for every run kept.
+const WIKI_WF_DETAIL_BYTES = 1024;
 
 function wiki_wf_users(): array {
     $f = rtrim(WIKI_SYSTEM_DATA, '/') . '/users.json';
@@ -34,8 +38,19 @@ function wiki_wf_users(): array {
     return is_array($d['users'] ?? null) ? $d['users'] : [];
 }
 
-function wiki_wf_user(int $uid): ?array {
-    foreach (wiki_wf_users() as $u) if ((int)($u['uid'] ?? PHP_INT_MIN) === $uid) return $u;
+/**
+ * A user by uid, of the kind asked for: `$ai` true for an AI user, false for anyone else.
+ *
+ * The kind is not decoration. A uid is meant to be unique, but a wiki can hold a person
+ * and an AI user with the same one — older account code allocated them separately — and
+ * the first match in users.json then answered for both: an AI action reported "the AI user
+ * no longer exists" because uid 2 found a person first, and the owner check could as
+ * easily find an AI editor and switch an admin's workflow off.
+ */
+function wiki_wf_user(int $uid, bool $ai): ?array {
+    foreach (wiki_wf_users() as $u) {
+        if ((int)($u['uid'] ?? PHP_INT_MIN) === $uid && !empty($u['is_ai']) === $ai) return $u;
+    }
     return null;
 }
 
@@ -45,11 +60,14 @@ function wiki_wf_vars(array $wf, array $run): array {
     $space = (string)($run['space'] ?? '');
     $url   = '';
     $base  = (string)($run['base_url'] ?? '') ?: wiki_wf_base_url();
-    if ($base !== '' && ($run['event'] ?? '') !== 'page_deleted') {
-        // Linked by stable id, which survives a later rename; resolved now if the event
-        // did not carry one.
+    // The stable id, which survives a later rename; resolved now if the event did not
+    // carry one. A deleted page has none left to resolve.
+    $pid = '';
+    if (($run['event'] ?? '') !== 'page_deleted') {
         $pid = (string)($run['page_id'] ?? '');
         if ($pid === '' && $path !== '') $pid = (string)(wiki_wf_index_entry($space, $path)['id'] ?? '');
+    }
+    if ($base !== '' && ($run['event'] ?? '') !== 'page_deleted') {
         $url = $pid !== ''
             ? $base . '/index.php?pageid=' . rawurlencode($pid) . ($space !== '' ? '&space=' . rawurlencode($space) : '')
             : $base . '/';
@@ -62,6 +80,10 @@ function wiki_wf_vars(array $wf, array $run): array {
         'event'     => $words[$run['event'] ?? ''] ?? (string)($run['event'] ?? ''),
         'page'      => pathinfo($path, PATHINFO_FILENAME),
         'path'      => $path,
+        'page_id'   => $pid,
+        // The page's chat thread by the sidecar convention, whether or not it exists yet;
+        // empty for anything that is not a Markdown page, which has no page chat.
+        'page_chat' => (string)wiki_page_chat_sidecar($path),
         'old_path'  => (string)($run['old_path'] ?? ''),
         'space'     => $space,
         'url'       => $url,
@@ -72,6 +94,16 @@ function wiki_wf_vars(array $wf, array $run): array {
         'new_value' => (string)($run['new_value'] ?? ''),
         'date'      => date('Y-m-d H:i'),
     ];
+}
+
+/**
+ * At most WIKI_WF_DETAIL_BYTES of $text, cut on a character boundary, with "..." when
+ * anything was dropped. Bytes rather than characters because the point is the size of
+ * what is stored; mb_strcut never splits a multibyte character.
+ */
+function wiki_wf_clip(string $text): string {
+    if (strlen($text) <= WIKI_WF_DETAIL_BYTES) return $text;
+    return rtrim(mb_strcut($text, 0, WIKI_WF_DETAIL_BYTES, 'UTF-8')) . '...';
 }
 
 /** `{{name}}` → value. Unknown names are left as written, so a typo is visible. */
@@ -91,8 +123,10 @@ function wiki_wf_text_html(string $text): string {
 
 /** Who an email action reaches: [email => name], deduplicated. */
 function wiki_wf_email_recipients(array $a, array $run): array {
+    // People only, keyed by uid: an AI user sharing a uid must not shadow the person
+    // (see wiki_wf_user), and an AI user is never mailed anyway.
     $users = [];
-    foreach (wiki_wf_users() as $u) $users[(int)($u['uid'] ?? 0)] = $u;
+    foreach (wiki_wf_users() as $u) if (empty($u['is_ai'])) $users[(int)($u['uid'] ?? 0)] = $u;
     $uids = array_map('intval', $a['to_users'] ?? []);
     if (!empty($a['to_actor']) && isset($run['actor']['uid']) && $run['actor']['uid'] !== null) {
         $uids[] = (int)$run['actor']['uid'];
@@ -121,8 +155,16 @@ function wiki_wf_index_entry(string $space, string $path): ?array {
     return $id === null ? null : (($ix->getAllPages()[$id] ?? null) + ['id' => $id]);
 }
 
-/** The page's own text for an AI instruction — bounded, and the body only unless exposed. */
-function wiki_wf_page_context(array $run): string {
+/**
+ * The page's own text for an AI instruction — bounded, and the body only unless exposed —
+ * plus its id, its page chat, and where the reply is going to be posted.
+ *
+ * The id is there so the model can write a `?pageid=` link, which survives a rename. The
+ * page chat is named whether or not it exists, because the model cannot know the sidecar
+ * convention; and when the action already posts the reply, the model is told so, or a
+ * capable one also posts it itself with wiki_post_chat and the thread gets it twice.
+ */
+function wiki_wf_page_context(array $run, array $action = []): string {
     $space = (string)($run['space'] ?? '');
     $path  = (string)($run['path'] ?? '');
     $vars  = wiki_wf_vars(['name' => $run['workflow_name'] ?? ''], $run);
@@ -135,6 +177,20 @@ function wiki_wf_page_context(array $run): string {
         $out .= " Its front-matter field \"{$vars['field']}\" changed from \"{$vars['old_value']}\" to \"{$vars['new_value']}\".";
     }
     if (!empty($run['tags'])) $out .= " Tags involved: {$vars['tags']}.";
+    if ($vars['page_id'] !== '') $out .= " Its page id is {$vars['page_id']}.";
+    if ($vars['page_chat'] !== '' && ($run['event'] ?? '') !== 'page_deleted') {
+        $chat_abs = wiki_wf_space_dir($space) . '/' . $vars['page_chat'];
+        $out .= is_file($chat_abs)
+            ? " The page's chat thread is \"{$vars['page_chat']}\"."
+            : " The page has no chat thread yet; wiki_post_chat would create \"{$vars['page_chat']}\".";
+    }
+    if (!empty($action['page_chat']) && $vars['page_chat'] !== '') {
+        $out .= " Your final reply will be posted in the page's chat thread \"{$vars['page_chat']}\" for you"
+              . " (created if needed), so write it as that message and do not post it there yourself.";
+    } elseif ((string)($action['chat'] ?? '') !== '') {
+        $to = _wiki_wf_rel(wiki_wf_render((string)$action['chat'], $vars));
+        $out .= " Your final reply will be posted in the chat thread \"{$to}\" for you, so do not post it there yourself.";
+    }
     $abs = wiki_wf_space_dir($space) . '/' . $path;
     if (($run['event'] ?? '') !== 'page_deleted' && is_file($abs)
         && in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['md', 'json', 'list'], true)) {
@@ -148,26 +204,32 @@ function wiki_wf_page_context(array $run): string {
     return $out . "\n\n";
 }
 
-/** Append a message to a .chat thread, the way agent_job_deliver_to_chat() writes one. */
-function wiki_wf_post_chat(string $space, string $chat, string $text, int $uid, string $name): void {
-    $abs = wiki_wf_space_dir($space) . '/' . $chat;
-    if (!is_file($abs)) throw new Exception("The chat \"{$chat}\" does not exist.");
-    $lock = @fopen($abs . '.joblock', 'c');
-    if ($lock) flock($lock, LOCK_EX);
-    try {
-        $data = json_decode((string)file_get_contents($abs), true);
-        if (!is_array($data) || !is_array($data['messages'] ?? null)) throw new Exception("\"{$chat}\" is not a chat thread.");
-        $next = (int)($data['nextMessageId'] ?? 0);
-        foreach ($data['messages'] as $m) $next = max($next, (int)($m['id'] ?? 0) + 1);
-        $data['messages'][] = ['id' => $next, 'uid' => $uid, 'name' => $name,
-                               'timestamp' => date('c'), 'text' => $text, 'workflow' => true];
-        $data['nextMessageId'] = $next + 1;
-        if (!wiki_chat_write($abs, $data)) throw new Exception("Could not write \"{$chat}\".");
-    } finally {
-        if ($lock) { flock($lock, LOCK_UN); fclose($lock); }
-        @unlink($abs . '.joblock');
+/**
+ * The thread an action posts into: the page's own chat, created if nobody has opened it
+ * yet, or the named thread with its `{{…}}` filled in. Returns null — with the reason in
+ * `$why` — when the page has no chat to post in: it is not Markdown, or it is gone.
+ *
+ * @return array{rel: string, abs: string, created: bool}|null
+ */
+function wiki_wf_thread(array $a, array $run, array $vars, ?array $as, ?string &$why = null): ?array {
+    $space = (string)($run['space'] ?? '');
+    $sd    = wiki_wf_space_dir($space);
+    if (!empty($a['page_chat'])) {
+        $path = (string)($run['path'] ?? '');
+        if (wiki_page_chat_sidecar($path) === null) { $why = 'The page is not a Markdown page, so it has no page chat.'; return null; }
+        if (($run['event'] ?? '') === 'page_deleted' || !is_file($sd . '/' . $path)) { $why = 'The page no longer exists.'; return null; }
+        return wiki_page_chat_ensure($sd, $path, new PageIndexer($sd), $as);
     }
-    wiki_mention_announce($text);
+    // Rendered, then cleaned again: a value such as {{old_path}} is the page's own text
+    // and could carry anything _wiki_wf_rel strips from a stored path.
+    $rel = _wiki_wf_rel(wiki_wf_render((string)($a['chat'] ?? ''), $vars));
+    if (strtolower(pathinfo($rel, PATHINFO_EXTENSION)) !== 'chat') throw new Exception("\"{$rel}\" is not a .chat thread.");
+    return ['rel' => $rel, 'abs' => $sd . '/' . $rel, 'created' => false];
+}
+
+/** Append a message to a .chat thread, the way agent_job_deliver_to_chat() writes one. */
+function wiki_wf_post_chat(array $thread, string $text, int $uid, string $name): void {
+    wiki_chat_append($thread['abs'], $thread['rel'], $text, $uid, $name, ['workflow' => true]);
 }
 
 /**
@@ -201,14 +263,14 @@ function wiki_wf_do_action(array $a, array $ctx, string &$log): array {
         }
 
         case 'ai': {
-            $ai = wiki_wf_user((int)$a['ai_uid']);
-            if (!$ai || empty($ai['is_ai'])) throw new Exception('The AI user no longer exists.');
+            $ai = wiki_wf_user((int)$a['ai_uid'], true);
+            if (!$ai) throw new Exception('The AI user no longer exists.');
             $owner = $ctx['wf']['created_by'] ?? [];
             $job = [
                 'id'           => $run['id'],
                 'prompt'       => wiki_wf_render((string)$a['prompt'], $vars),
                 'space'        => $space,
-                'page_context' => wiki_wf_page_context($run),
+                'page_context' => wiki_wf_page_context($run, $a),
                 // Who the run is on behalf of, in the prompt and in the audit log.
                 'requested_by' => ['uid' => $owner['uid'] ?? null, 'name' => 'Workflow "' . $wf_name . '"'],
             ];
@@ -220,19 +282,29 @@ function wiki_wf_do_action(array $a, array $ctx, string &$log): array {
                   . (!empty($res['debug']) ? "\n" . $res['debug'] . "\n" : '');
             if (!empty($res['error'])) throw new Exception((string)$res['error']);
             $reply = trim((string)($res['reply'] ?? ''));
-            if (($a['chat'] ?? '') !== '' && $reply !== '') {
-                wiki_wf_post_chat($space, (string)$a['chat'], $reply, (int)$ai['uid'], (string)($ai['name'] ?? 'AI'));
+            $detail = wiki_wf_clip($reply !== '' ? $reply : '(no reply)');
+            // The thread is resolved only now, once there is something to post, so a run
+            // that produced nothing does not leave an empty page chat behind.
+            if ((($a['chat'] ?? '') !== '' || !empty($a['page_chat'])) && $reply !== '') {
+                $as = ['uid' => (int)$ai['uid'], 'name' => (string)($ai['name'] ?? 'AI')];
+                $why = null;
+                $thread = wiki_wf_thread($a, $run, $vars, $as, $why);
+                if ($thread === null) return ['status' => 'ok', 'detail' => 'Reply not posted: ' . $why . "\n\n" . $detail];
+                wiki_wf_post_chat($thread, $reply, $as['uid'], $as['name']);
             }
-            return ['status' => 'ok', 'detail' => mb_substr($reply !== '' ? $reply : '(no reply)', 0, 2000)];
+            return ['status' => 'ok', 'detail' => $detail];
         }
 
         case 'chat': {
             $text = wiki_wf_render((string)$a['text'], $vars);
             $as = (int)($a['as_uid'] ?? 0);
-            $ai = $as !== 0 ? wiki_wf_user($as) : null;
-            wiki_wf_post_chat($space, (string)$a['chat'], $text,
-                              $ai ? (int)$ai['uid'] : 0, $ai ? (string)($ai['name'] ?? 'AI') : $wf_name);
-            return ['status' => 'ok', 'detail' => 'Posted in ' . $a['chat'] . '.'];
+            $ai = $as !== 0 ? wiki_wf_user($as, true) : null;
+            $who = ['uid' => $ai ? (int)$ai['uid'] : 0, 'name' => $ai ? (string)($ai['name'] ?? 'AI') : $wf_name];
+            $why = null;
+            $thread = wiki_wf_thread($a, $run, $vars, $ai ? $who : null, $why);
+            if ($thread === null) return ['status' => 'skipped', 'detail' => $why];
+            wiki_wf_post_chat($thread, $text, $who['uid'], $who['name']);
+            return ['status' => 'ok', 'detail' => 'Posted in ' . $thread['rel'] . ($thread['created'] ? ' (created it).' : '.')];
         }
 
         case 'tag': {
@@ -289,7 +361,7 @@ function wiki_wf_owner_problem(array $wf): string {
     if (!defined('AUTHENTICATION_ENABLED') || !AUTHENTICATION_ENABLED) return '';
     $uid = $wf['created_by']['uid'] ?? null;
     if ($uid === null) return '';
-    $u = wiki_wf_user((int)$uid);
+    $u = wiki_wf_user((int)$uid, false);
     if (!$u) return 'Its owner no longer exists.';
     if (($u['role'] ?? '') !== 'admin') return 'Its owner is no longer an administrator.';
     return '';
@@ -334,6 +406,22 @@ function wiki_workflow_run_due(int $max = WIKI_WF_MAX_PER_TICK): array {
         $lines[] = wiki_workflow_execute($run);
     }
     return $lines;
+}
+
+/**
+ * Tell every administrator that a run failed, so an open browser can say so at once
+ * (modules/workflow_watch). A hint only, like every publish: the toast's content comes
+ * from `admin_workflow_failures`, which is admin-only, and the poll there finds the
+ * failure anyway when no hub is running. Administrators, because workflows are theirs —
+ * only they can open the log or change the workflow.
+ */
+function wiki_wf_announce_failure(array $run): void {
+    if (!function_exists('wiki_realtime_publish')) return;
+    foreach (wiki_wf_users() as $u) {
+        if (($u['role'] ?? '') !== 'admin' || !empty($u['is_ai']) || !empty($u['is_system'])) continue;
+        $uid = (int)($u['uid'] ?? 0);
+        if ($uid > 0) wiki_realtime_publish(wiki_rt_topic_workflow($uid), ['type' => 'workflow', 'id' => (string)($run['id'] ?? '')]);
+    }
 }
 
 /** Run one claimed queue entry to completion and record the outcome. */
@@ -404,6 +492,19 @@ function wiki_workflow_execute(array $run): string {
         }
     }
 
+    // A failed run always gets a log, because the failure toast links to it — and most
+    // actions write nothing to $log, so without this an email or chat action that failed
+    // would have only the one-line error to show. The per-action outcome goes last, after
+    // whatever the AI action recorded, since that is what the reader came for.
+    if ($state === 'error') {
+        $log .= "\n--- Outcome\n";
+        foreach ($results as $i => $r) {
+            $log .= 'Action ' . ($i + 1) . ' (' . $r['type'] . '): ' . $r['status']
+                  . (($r['detail'] ?? '') !== '' ? ' — ' . $r['detail'] : '') . "\n";
+        }
+        $log .= 'ERROR: ' . $error . "\n";
+    }
+
     $log_file = null;
     if ($log !== '' && defined('LOG_DIR') && LOG_DIR) {
         $dir = rtrim(LOG_DIR, '/') . '/workflows/' . preg_replace('/[^a-zA-Z0-9_-]/', '-', (string)$run['workflow_id']) . '/';
@@ -427,6 +528,7 @@ function wiki_workflow_execute(array $run): string {
         }
         unset($r);
     });
+    if ($state === 'error') wiki_wf_announce_failure($run);
 
     // A manual run is a test: it must not push a workflow toward its automatic switch-off.
     if ($wf && $state !== 'skipped' && empty($run['manual'])) {
@@ -529,6 +631,24 @@ function wiki_workflow_run_now(array $wf, string $space, string $path, array $ac
     return $run;
 }
 
+/**
+ * Which thread an action would post into for the Test preview, and what to warn about —
+ * resolved as wiki_wf_thread() resolves it, but never creating anything.
+ *
+ * @return array{0: string, 1: string[]} the thread's path ('' for none) and warning codes
+ */
+function wiki_wf_preview_thread(array $a, string $space, string $path, array $vars): array {
+    $sd = wiki_wf_space_dir($space);
+    if (!empty($a['page_chat'])) {
+        $rel = wiki_page_chat_sidecar($path);
+        if ($rel === null) return ['', ['no_page_chat']];
+        return [$rel, is_file($sd . '/' . $rel) ? [] : ['page_chat_new']];
+    }
+    if ((string)($a['chat'] ?? '') === '') return ['', []];
+    $rel = _wiki_wf_rel(wiki_wf_render((string)$a['chat'], $vars));
+    return [$rel, is_file($sd . '/' . $rel) ? [] : ['chat_missing']];
+}
+
 function wiki_workflow_preview(array $wf, string $space, string $path, array $actor): array {
     $path  = _wiki_wf_rel($path);
     $abs   = wiki_wf_space_dir($space) . '/' . $path;
@@ -552,17 +672,16 @@ function wiki_workflow_preview(array $wf, string $space, string $path, array $ac
                 if (!$p['to']) $p['warnings'][] = 'no_recipients';
                 break;
             case 'ai':
-                $ai = wiki_wf_user((int)($a['ai_uid'] ?? 0));
+                $ai = wiki_wf_user((int)($a['ai_uid'] ?? 0), true);
                 $p['ai_user'] = $ai['name'] ?? '';
                 $p['prompt'] = wiki_wf_render((string)($a['prompt'] ?? ''), $vars);
-                $p['chat'] = $a['chat'] ?? '';
                 if (!$ai) $p['warnings'][] = 'ai_missing';
-                if (($a['chat'] ?? '') !== '' && !is_file(wiki_wf_space_dir($space) . '/' . $a['chat'])) $p['warnings'][] = 'chat_missing';
+                [$p['chat'], $tw] = wiki_wf_preview_thread($a, $space, $path, $vars);
+                $p['warnings'] = array_merge($p['warnings'], $tw);
                 break;
             case 'chat':
-                $p['chat'] = $a['chat'] ?? '';
+                [$p['chat'], $p['warnings']] = wiki_wf_preview_thread($a, $space, $path, $vars);
                 $p['text'] = wiki_wf_render((string)($a['text'] ?? ''), $vars);
-                if (!is_file(wiki_wf_space_dir($space) . '/' . ($a['chat'] ?? ''))) $p['warnings'][] = 'chat_missing';
                 break;
             case 'tag':
                 $p['add'] = $a['add'] ?? [];

@@ -482,7 +482,7 @@ if (isset($_REQUEST['action'])) {
         // path (an AI set to always run in the background) gets exactly the same block;
         // kept in its own variable so /debug can price it separately, since it is
         // unbounded and frequently the largest thing in the payload.
-        $page_ctx = wiki_page_context_prompt($chat_file, $space_dir);
+        $page_ctx = wiki_page_context_prompt($chat_file, $space_dir, $indexer);
 
         $full_system = $wiki_ctx . $page_ctx . $system_prompt;
         // `/skill <name>` in the message being answered puts that skill in front of the
@@ -1021,7 +1021,8 @@ if (isset($_REQUEST['action'])) {
                       'admin_reindex',
                       'admin_get_mcp_servers', 'admin_save_mcp_server', 'admin_delete_mcp_server', 'admin_test_mcp_server',
                       'admin_get_workflows', 'admin_save_workflow', 'admin_delete_workflow', 'admin_toggle_workflow',
-                      'admin_get_workflow_runs', 'admin_test_workflow', 'admin_run_workflow',
+                      'admin_get_workflow_runs', 'admin_test_workflow', 'admin_run_workflow', 'admin_workflow_failures',
+                      'admin_retention_settings',
                       'admin_realtime_status', 'admin_realtime_test',
                       'admin_audit_config', 'admin_set_audit_enabled', 'admin_get_audit_entries',
                       'admin_ai_builtin_instructions', 'admin_space_settings', 'admin_set_space_readonly', 'admin_merge_space_preflight', 'admin_merge_space', 'admin_delete_space',
@@ -1813,7 +1814,7 @@ if (isset($_REQUEST['action'])) {
                     $_bg_id    = 'oneoff_' . date('Ymd-His') . '_' . bin2hex(random_bytes(3));
                     $_bg_rel   = ltrim(str_replace(rtrim($space_dir, '/'), '', $file_path), '/');
                     $_bg_actor = get_current_actor();
-                    $_bg_page_ctx = wiki_page_context_prompt($file_path, $space_dir);
+                    $_bg_page_ctx = wiki_page_context_prompt($file_path, $space_dir, $indexer);
 
                     // A job is handed only its prompt, while an inline reply sees the
                     // recent thread. Without the transcript, switching this on would make
@@ -2214,6 +2215,29 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true, 'enabled' => (bool)wiki_setting('ai_memory_default', false)]);
                 break;
 
+            // Admin → Content → Retention policies: the logs and run histories (retention.php).
+            // GET returns the settings plus, per log, what it holds and what its limit would
+            // remove — computed from the values in the query when given, so the tab can show
+            // the effect of a change before it is saved. POST saves; POST run=1 sweeps now.
+            case 'admin_retention_settings':
+                require_once __DIR__ . '/retention.php';
+                $rt_deleted = null;
+                if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                    if (($_POST['run'] ?? '') === '1') $rt_deleted = wiki_retention_sweep();
+                    else wiki_retention_save($_POST);
+                }
+                $rt_cfg  = wiki_retention_all();
+                $rt_scan = [];
+                foreach (array_keys(WIKI_RETENTION_LOGS) as $rt_item) {
+                    $rt_days = isset($_GET[$rt_item . '_days']) && is_numeric($_GET[$rt_item . '_days'])
+                        ? max(0, (int)$_GET[$rt_item . '_days']) : $rt_cfg[$rt_item . '_days'];
+                    $rt_scan[$rt_item] = wiki_retention_scan($rt_item, $rt_days);
+                }
+                echo json_encode(['success' => true, 'settings' => $rt_cfg, 'fields' => WIKI_RETENTION_FIELDS,
+                    'scan' => $rt_scan, 'log_dir' => wiki_retention_log_root() !== null,
+                    'deleted' => $rt_deleted]);
+                break;
+
             case 'admin_mention_settings':
                 // How far back My Mentions looks. A mention is not a record the wiki
                 // stores — it is found by reading content — so this is a cutoff on the
@@ -2329,7 +2353,7 @@ if (isset($_REQUEST['action'])) {
                 // The same two things the background chat path gives a job, because a job
                 // queued from a thread is about that thread whichever way it was asked
                 // for. The typed prompt still comes last, so it remains the instruction.
-                $qj_page_ctx = wiki_page_context_prompt($qj_path, $space_dir);
+                $qj_page_ctx = wiki_page_context_prompt($qj_path, $space_dir, $indexer);
                 $qj_history  = [];
                 $qj_now      = time();
                 foreach (wiki_chat_context_slice($qj_chat['messages'] ?? [],
@@ -6558,6 +6582,34 @@ if (isset($_REQUEST['action'])) {
                     break;
                 }
                 echo json_encode(['success' => true, 'runs' => $wf_list]);
+                break;
+
+            // Recent failed runs of every workflow, for the failure toast (modules/workflow_watch).
+            // A week back, so a browser opened on Monday still has the baseline it compares
+            // against; the toast itself only announces what fails after the page loaded.
+            case 'admin_workflow_failures':
+                $wf_since = time() - 7 * 86400;
+                $wf_names = [];
+                foreach (wiki_workflows_all() as $_w) $wf_names[$_w['id'] ?? ''] = (string)($_w['name'] ?? '');
+                $wf_fail = [];
+                foreach (wiki_wf_queue_read() as $_r) {
+                    if (($_r['state'] ?? '') !== 'error') continue;
+                    if ((strtotime((string)($_r['finished_at'] ?? '')) ?: 0) < $wf_since) continue;
+                    $wf_fail[] = [
+                        'id'            => (string)($_r['id'] ?? ''),
+                        'workflow_id'   => (string)($_r['workflow_id'] ?? ''),
+                        // The current name when the workflow still exists: it may have been
+                        // renamed since, and the toast should name what the admin will find.
+                        'workflow_name' => $wf_names[$_r['workflow_id'] ?? ''] ?? (string)($_r['workflow_name'] ?? ''),
+                        'space'         => (string)($_r['space'] ?? ''),
+                        'path'          => (string)($_r['path'] ?? ''),
+                        'error'         => (string)($_r['error'] ?? ''),
+                        'finished_at'   => (string)($_r['finished_at'] ?? ''),
+                        'has_log'       => !empty($_r['log_file']) && is_file($_r['log_file']),
+                    ];
+                }
+                usort($wf_fail, fn($a, $b) => strcmp($b['finished_at'], $a['finished_at']));
+                echo json_encode(['success' => true, 'runs' => array_slice($wf_fail, 0, 50)]);
                 break;
 
             case 'admin_test_workflow':

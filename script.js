@@ -42,6 +42,7 @@ import { initSpaces, switchSpaceSilently, getAllSpaces } from './modules/spaces/
 import { init as initMentions } from './modules/mentions/index.js';
 import { init as initAttention } from './modules/attention/index.js';
 import { init as initJobWatch } from './modules/job_watch/index.js';
+import { init as initWorkflowWatch } from './modules/workflow_watch/index.js';
 import { init as initSession } from './modules/session/index.js';
 import { init as initGit, checkSpaceGit } from './modules/git/index.js';
 import { init as initNav, removeStaleRecentEntry } from './modules/nav/index.js';
@@ -195,6 +196,7 @@ const init = async () => {
     initAttention();
     initMentions();
     initJobWatch();
+    initWorkflowWatch();
     initSession();
     initToc();
     initPageChat();

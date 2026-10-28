@@ -37,6 +37,16 @@ if [ -z "${PUID:-}" ] || [ -z "${PGID:-}" ]; then
             PUID="${PUID:-$owner_uid}"
             PGID="${PGID:-$owner_gid}"
             log "adopting the owner of $probe (uid $PUID, gid $PGID) so the host keeps write access"
+        elif [ "$(awk '$1 == 0 { print $2 }' /proc/self/uid_map 2>/dev/null)" != "0" ]; then
+            # Root in here is not root on the host: a rootless container. Rootless Podman
+            # maps the invoking user to uid 0 in here, so a directory they own looks
+            # exactly like a fresh named volume, and the chown below would hand it to a
+            # subuid on the host. Which of the two it is cannot be told from inside, so
+            # say how to avoid it rather than guess. (Not /run/.containerenv: Podman
+            # leaves that empty unless the container is --privileged.)
+            log "rootless container: if $probe is a host directory of yours, then with Podman run"
+            log "  --userns=keep-id:uid=82,gid=82 --user 0   (Quadlet: UserNS=… and User=0)"
+            log "  or its files will end up owned by a subuid on the host. See DOCKER.md, 'With Podman'."
         fi
     fi
 fi
@@ -168,6 +178,22 @@ else
     export MERCURE_JWT_KEY=""
 fi
 export ENABLE_REALTIME
+
+# ---------------------------------------------------------------------------
+# 2d. IPv6 listener
+#
+# Rootless Podman's port forwarder accepts IPv6 connections and passes them on as IPv6,
+# so with nginx on IPv4 alone, http://localhost:8080 — ::1 first on most hosts — is
+# accepted and then reset, and the browser does not fall back to 127.0.0.1. Listening on
+# [::] fixes that, and works with IPv6 merely switched off by sysctl; only a kernel booted
+# with ipv6.disable=1 refuses it, and that kernel has no /proc/net/if_inet6.
+# ---------------------------------------------------------------------------
+if [ -e /proc/net/if_inet6 ]; then
+    echo 'listen [::]:80;' > /etc/nginx/listen-ipv6.conf
+else
+    rm -f /etc/nginx/listen-ipv6.conf
+    log "no IPv6 in this kernel — nginx listens on IPv4 only"
+fi
 
 # ---------------------------------------------------------------------------
 # 3. config.php

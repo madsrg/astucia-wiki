@@ -283,6 +283,10 @@ function wiki_rt_topic_users(): string {
 function wiki_rt_topic_job(int $uid): string {
     return 'wiki/user/' . $uid . '/job';
 }
+/** A workflow run failed — told to each administrator, who are the ones who can fix it. */
+function wiki_rt_topic_workflow(int $uid): string {
+    return 'wiki/user/' . $uid . '/workflow';
+}
 function wiki_rt_topic_mention(int $uid): string {
     return 'wiki/user/' . $uid . '/mention';
 }

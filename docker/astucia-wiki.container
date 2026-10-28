@@ -1,0 +1,70 @@
+# Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
+# Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
+# or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
+#
+# Astucia Wiki as a Podman Quadlet: a systemd service that runs the published image.
+# Podman runs the Docker Hub image unchanged — this file is the Podman equivalent of
+# docker/create_container.sh, not a different build. Needs Podman 4.4 or later.
+#
+# Rootless (as your own user):
+#   mkdir -p ~/astucia-wiki/data ~/.config/containers/systemd
+#   curl -o ~/astucia-wiki/wiki.env \
+#     https://raw.githubusercontent.com/madsrg/astucia-wiki/main/docker/wiki.env.example
+#   cp docker/astucia-wiki.container ~/.config/containers/systemd/
+#   systemctl --user daemon-reload
+#   systemctl --user start astucia-wiki
+#   loginctl enable-linger "$USER"      # keep it running when you are logged out
+#
+# Rootful: put this file in /etc/containers/systemd/, change the two %h paths to
+# /srv/astucia-wiki/…, delete the UserNS= and User= lines, and use plain `systemctl`.
+#
+# Changes to this file take effect after `systemctl --user daemon-reload` and a restart.
+
+[Unit]
+Description=Astucia Wiki
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+ContainerName=astucia-wiki
+# Fully qualified on purpose: Podman does not assume docker.io for a short name, and
+# depending on registries.conf either prompts or refuses.
+Image=docker.io/madsrotwitt/astucia-wiki:2026.10.7
+PublishPort=8080:80
+# pages/, system/ and logs/ live here, on the host. :Z relabels the directory for
+# SELinux (Fedora, RHEL); on a host without SELinux it does nothing.
+Volume=%h/astucia-wiki/data:/data:Z
+EnvironmentFile=%h/astucia-wiki/wiki.env
+PodmanArgs=--memory=1g
+
+# Rootless only. In a rootless container your own uid appears as root, so the entrypoint
+# would take your directory for a fresh named volume and hand it to www-data — a subuid
+# on the host, locking you out of your own pages. keep-id maps your uid onto the
+# container's www-data (82) instead: your files stay yours, inside and out.
+# keep-id also switches the container's default user to that uid, and the entrypoint
+# needs root to start nginx, PHP-FPM and cron — hence User=0, which is root inside the
+# container's user namespace only.
+UserNS=keep-id:uid=82,gid=82
+User=0
+
+# The image's own HEALTHCHECK, restated: an OCI-format image may not carry it to Podman.
+# Written without a `$` — systemd expands those in the command line Quadlet generates —
+# and `.` in the pattern stands for the double quote, to keep the quoting to one level.
+HealthCmd=sh -c 'wget -qO- http://127.0.0.1/api.php?action=list_spaces | grep -q success.:true'
+HealthInterval=30s
+HealthTimeout=5s
+HealthStartPeriod=15s
+HealthRetries=3
+
+# `podman auto-update` (or its systemd timer, podman-auto-update.timer) pulls the tag
+# above again and restarts the wiki when it points at a new image. Only useful with a
+# tag that moves — :latest or :<version> — so remove this line if you pin :sha-<commit>.
+AutoUpdate=registry
+
+[Service]
+Restart=always
+# The first start pulls the image, which can outlast systemd's default 90 seconds.
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

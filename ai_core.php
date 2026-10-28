@@ -237,8 +237,12 @@ function wiki_markdown_features_prompt(): string {
  *
  * Unbounded by design — the page is as long as it is — so callers keep it in its own
  * variable and `/debug` prices it separately.
+ *
+ * With `$indexer`, the page's id and the thread's own are stated too: the id is what a
+ * `?pageid=` link needs, and without it a model asked to link the page it is reading had
+ * to go looking with wiki_list_pages first, or wrote a path link that a rename breaks.
  */
-function wiki_page_context_prompt(string $chat_file, string $space_dir): string {
+function wiki_page_context_prompt(string $chat_file, string $space_dir, $indexer = null): string {
     $chat_name = basename($chat_file, '.chat');
     $linked_md = dirname($chat_file) . '/' . $chat_name . '.md';
     $pages_root = realpath(rtrim(PAGES_DIR, '/'));
@@ -248,8 +252,16 @@ function wiki_page_context_prompt(string $chat_file, string $space_dir): string 
     $real = realpath($linked_md);
     if ($real === false || strpos($real, $pages_root) !== 0) return '';
     $rel = ltrim(str_replace(rtrim($space_dir, '/') . '/', '', $linked_md), '/');
+    $ids = '';
+    if ($indexer) {
+        $page_id = $indexer->getId($rel);
+        $chat_id = $indexer->getId((string)wiki_page_chat_sidecar($rel));
+        if ($page_id !== null) $ids .= "Its page id is {$page_id}. ";
+        if ($chat_id !== null) $ids .= "This chat thread is \"" . wiki_page_chat_sidecar($rel) . "\", page id {$chat_id}. ";
+    }
     return "The following is the current content of the wiki page \"{$chat_name}\" that this chat is attached to. "
          . "Its full path (use this exact value when calling wiki_write_page to update it) is: \"{$rel}\". "
+         . $ids
          . "Use it as context when answering questions:\n\n```markdown\n"
          . (wiki_fm_expose_to_ai() ? (string)file_get_contents($linked_md)
                                    : wiki_fm_body((string)file_get_contents($linked_md)))

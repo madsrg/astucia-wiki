@@ -1690,6 +1690,14 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 
 /* User table */
 .admin-table { width: 100%; border-collapse: collapse; }
+/* Admin → Content → Retention policies (modules/admin/retention.js) */
+.admin-retention-h { margin: 1.4rem 0 0.3rem; font-size: 0.95rem; }
+.admin-retention-h:first-of-type { margin-top: 0.8rem; }
+.admin-retention-table { margin: 0.4rem 0 0.6rem; }
+.admin-retention-table td { padding: 0.45rem 0.75rem; vertical-align: top; font-size: 0.85rem; }
+.admin-retention-num { width: 7rem; }
+.admin-retention-warn { color: #c05621; font-weight: 600; margin-top: 0.15rem; }
+.admin-retention-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin: 1rem 0 0.5rem; }
 .admin-table thead th { padding: 0.4rem 0.75rem; text-align: left; border-bottom: 2px solid var(--border-color); font-size: 0.75rem; font-weight: 600; color: var(--accent-gray); text-transform: uppercase; letter-spacing: 0.04em; position: sticky; top: 0; background: white; }
 .admin-table tbody tr { transition: background 0.1s; }
 .admin-table tbody tr:hover { background: #f7fafc; }

@@ -6,6 +6,9 @@
 #   PLATFORMS=linux/amd64,linux/arm64 \
 #     IMAGE_NAME=you/astucia-wiki ./docker/build.sh     multi-arch, pushed to a registry
 #   ./docker/build.sh --no-cache                       extra args go to docker build
+#   MIRRORS=ghcr.io/you/astucia-wiki \
+#     PLATFORMS=… IMAGE_NAME=you/astucia-wiki ./docker/build.sh
+#                                                      same build, also pushed to GHCR
 #
 # Three tags, with different mutability, because only one of them is safe to deploy:
 #
@@ -19,12 +22,18 @@
 #
 # The pinned tag is written to docker/.image-tag, which create_container.sh reads, so the
 # deployed container records what it actually runs instead of a moving target.
+#
+# MIRRORS names further repositories (space-separated) that receive the same three tags
+# from the same build — one digest in every registry, not a second build that merely
+# claims to be the same. Log in to each registry first.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 IMAGE_NAME="${IMAGE_NAME:-astucia-wiki}"
 PLATFORMS="${PLATFORMS:-}"
+read -r -a MIRROR_NAMES <<< "${MIRRORS:-}"
+NAMES=("$IMAGE_NAME" "${MIRROR_NAMES[@]}")
 VERSION="$(tr -d '[:space:]' < VERSION)"
 
 # Revision, with a "-dirty" suffix when the working tree has uncommitted changes: an
@@ -42,10 +51,13 @@ else
     CLEAN=no
 fi
 
-TAGS=(-t "${IMAGE_NAME}:latest" -t "${IMAGE_NAME}:${VERSION}")
+TAGS=()
+for n in "${NAMES[@]}"; do
+    TAGS+=(-t "${n}:latest" -t "${n}:${VERSION}")
+    [ "$CLEAN" = yes ] && TAGS+=(-t "${n}:sha-${REVISION}")
+done
 if [ "$CLEAN" = yes ]; then
     SHA_TAG="${IMAGE_NAME}:sha-${REVISION}"
-    TAGS+=(-t "$SHA_TAG")
     PINNED="$SHA_TAG"
 else
     SHA_TAG=""
@@ -53,6 +65,7 @@ else
 fi
 
 echo "Building ${IMAGE_NAME}"
+for m in "${MIRROR_NAMES[@]}"; do echo "  mirror    ${m}"; done
 echo "  version   ${VERSION}"
 echo "  revision  ${REVISION}"
 echo "  platforms ${PLATFORMS:-$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}')}"
@@ -140,15 +153,17 @@ EOF
     REF_TAG="${SHA_TAG:-${IMAGE_NAME}:${VERSION}}"
     REF_DIGEST="$(digest_of "$REF_TAG")"
     [ -n "$REF_DIGEST" ] || { echo "ERROR: ${REF_TAG} is not in the registry" >&2; exit 1; }
-    for t in latest "${VERSION}" ${SHA_TAG:+"sha-${REVISION}"}; do
-        d="$(digest_of "${IMAGE_NAME}:${t}")"
-        [ -n "$d" ] || { echo "ERROR: ${IMAGE_NAME}:${t} is not in the registry" >&2; exit 1; }
-        if [ "$d" != "$REF_DIGEST" ]; then
-            echo "ERROR: ${IMAGE_NAME}:${t} points at ${d}" >&2
-            echo "       but this build is ${REF_DIGEST} (${REF_TAG})" >&2
-            exit 1
-        fi
-        echo "  ${IMAGE_NAME}:${t}  ->  ${d}"
+    for n in "${NAMES[@]}"; do
+        for t in latest "${VERSION}" ${SHA_TAG:+"sha-${REVISION}"}; do
+            d="$(digest_of "${n}:${t}")"
+            [ -n "$d" ] || { echo "ERROR: ${n}:${t} is not in the registry" >&2; exit 1; }
+            if [ "$d" != "$REF_DIGEST" ]; then
+                echo "ERROR: ${n}:${t} points at ${d}" >&2
+                echo "       but this build is ${REF_DIGEST} (${REF_TAG})" >&2
+                exit 1
+            fi
+            echo "  ${n}:${t}  ->  ${d}"
+        done
     done
     echo
     docker buildx imagetools inspect "$PINNED" | awk '/Platform:/{print "  "$0}' | sort -u
@@ -171,9 +186,11 @@ docker build \
 # not exist is discovered at `docker push`, or worse, not at all.
 CHECK=(latest "${VERSION}")
 [ -n "$SHA_TAG" ] && CHECK+=("sha-${REVISION}")
-for t in "${CHECK[@]}"; do
-    docker image inspect "${IMAGE_NAME}:${t}" >/dev/null 2>&1 \
-        || { echo "ERROR: ${IMAGE_NAME}:${t} was not created" >&2; exit 1; }
+for n in "${NAMES[@]}"; do
+    for t in "${CHECK[@]}"; do
+        docker image inspect "${n}:${t}" >/dev/null 2>&1 \
+            || { echo "ERROR: ${n}:${t} was not created" >&2; exit 1; }
+    done
 done
 
 # Read by create_container.sh so a deploy pins the exact build rather than a moving tag.
@@ -191,10 +208,12 @@ fi
 if [ "$IMAGE_NAME" != "astucia-wiki" ]; then
     echo
     echo "Push:"
-    [ -n "$SHA_TAG" ] && echo "  docker push ${SHA_TAG}"
-    echo "  docker push ${IMAGE_NAME}:${VERSION}"
-    echo "  docker push ${IMAGE_NAME}:latest"
+    for n in "${NAMES[@]}"; do
+        [ -n "$SHA_TAG" ] && echo "  docker push ${n}:sha-${REVISION}"
+        echo "  docker push ${n}:${VERSION}"
+        echo "  docker push ${n}:latest"
+    done
     echo
     echo "For a multi-architecture image, build straight to the registry instead:"
-    echo "  PLATFORMS=linux/amd64,linux/arm64 IMAGE_NAME=${IMAGE_NAME} $0"
+    echo "  ${MIRRORS:+MIRRORS=\"${MIRRORS}\" }PLATFORMS=linux/amd64,linux/arm64 IMAGE_NAME=${IMAGE_NAME} $0"
 fi

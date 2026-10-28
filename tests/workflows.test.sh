@@ -24,9 +24,12 @@ fixture_space Other
 cat > "$WIKI_APP/__test_llm.php" <<'PHP'
 <?php
 file_put_contents(dirname(__DIR__) . '/llm-request.json', file_get_contents('php://input'));
+// llm-reply.txt, when present, is the reply — for the one test that needs a long one.
+$reply_file = dirname(__DIR__) . '/llm-reply.txt';
+$reply = is_file($reply_file) ? file_get_contents($reply_file) : 'Summary: all good.';
 header('Content-Type: application/json');
 echo json_encode(['choices' => [['finish_reason' => 'stop',
-    'message' => ['role' => 'assistant', 'content' => 'Summary: all good.']]]]);
+    'message' => ['role' => 'assistant', 'content' => $reply]]]]);
 PHP
 
 fixture_users "{\"users\":[
@@ -236,6 +239,43 @@ save_page "$EDIT" Main Docs/a.md 'A person again' > /dev/null
 assert_eq "…while a person's still queues (control)" "1" "$(queue "$AIWF" queued)"
 post_as "$ADMIN" 'api.php?action=admin_delete_workflow' "id=$AIWF" > /dev/null
 assert_eq "deleting it drops its queued run"  "0" "$(queue "$AIWF" queued)"
+
+section "a person sharing the AI user's uid does not hide it"
+# Older account code could give a person and an AI user the same uid. The runner took the
+# first match in users.json, so with the person first an AI action failed with "the AI
+# user no longer exists" — reported from a real wiki where uid 2 was both.
+fixture_users "{\"users\":[
+ {\"uid\":1,\"name\":\"Admin\",\"role\":\"admin\",\"auth\":\"otp\",\"email\":\"admin@example.com\"},
+ {\"uid\":2,\"name\":\"Eddie\",\"role\":\"editor\",\"auth\":\"otp\",\"email\":\"eddie@example.com\"},
+ {\"uid\":-7,\"name\":\"Twin\",\"role\":\"editor\",\"auth\":\"otp\",\"email\":\"twin@example.com\"},
+ {\"uid\":-7,\"name\":\"Bot\",\"role\":\"editor\",\"is_ai\":true,
+  \"ai_config\":{\"provider\":\"openai\",\"api_url\":\"$WIKI_URL/__test_llm.php\",\"api_key\":\"k\",\"model\":\"m\"}}]}"
+TWIN=$(new_wf '{"name":"Twin","enabled":true,"space":"Main","debounce":0,"trigger":{"types":["page_created","page_updated"]},
+  "filters":{"folder":"Docs"},"actions":[{"type":"ai","ai_uid":-7,"prompt":"Hello {{page}}","chat":"Team.chat"}]}' | wf_id)
+before=$(chat_text | grep -c '^Bot: ')
+save_page "$EDIT" Main Docs/a.md 'Twin check' > /dev/null
+runner > /dev/null
+assert_eq "the AI action finds the AI user, not the person" "ok" \
+    "$(queue "$TWIN" last | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state"))')"
+assert_eq "  …and its reply is posted as the AI user" "$((before + 1))" "$(chat_text | grep -c '^Bot: ')"
+post_as "$ADMIN" 'api.php?action=admin_delete_workflow' "id=$TWIN" > /dev/null
+
+section 'a long AI reply is clipped in History, kept whole in the log and the thread'
+python3 -c 'print("word " * 600 + "THE-END", end="")' > "$WIKI_ROOT/llm-reply.txt"
+LONG=$(new_wf '{"name":"Long","enabled":true,"space":"Main","debounce":0,"trigger":{"types":["page_created","page_updated"]},
+  "filters":{"folder":"Docs"},"actions":[{"type":"ai","ai_uid":-7,"prompt":"Go on at length.","chat":"Team.chat"}]}' | wf_id)
+save_page "$EDIT" Main Docs/a.md 'Long check' > /dev/null
+runner > /dev/null
+rm -f "$WIKI_ROOT/llm-reply.txt"
+detail=$(queue "$LONG" last | python3 -c 'import json,sys;r=json.load(sys.stdin);print((r.get("results") or [{}])[0].get("detail",""),end="")')
+assert_eq "History keeps 1024 bytes and the ellipsis" "1027" "$(printf '%s' "$detail" | wc -c | tr -d ' ')"
+assert_contains "  …ending in ..." '...' "${detail: -3}"
+assert_not_contains "  …so the end of the reply is not in it" 'THE-END' "$detail"
+RID=$(queue "$LONG" last | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')
+log=$(get_as "$ADMIN" "api.php?action=admin_get_workflow_runs&id=$LONG&log=$RID" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("log",""))')
+assert_contains "the log has the whole reply"    'THE-END' "$log"
+assert_contains "the thread has the whole reply" 'THE-END' "$(chat_text | tail -1)"
+post_as "$ADMIN" 'api.php?action=admin_delete_workflow' "id=$LONG" > /dev/null
 
 section 'rate limit and automatic switch-off'
 LIM=$(new_wf '{"name":"Limited","enabled":true,"space":"Main","debounce":0,"max_per_hour":1,

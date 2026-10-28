@@ -5,7 +5,7 @@ import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { watch, rtTopic } from '../realtime/index.js';
 import { paintAvatar, repaintAvatars } from '../core/avatars.js';
-import { showToast, confirmModal, highlightMentions, externalizeLinks } from '../core/utils.js';
+import { showToast, confirmModal, highlightMentions, externalizeLinks, continuesChatRun } from '../core/utils.js';
 import { getUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
 import { skillTypeahead } from '../core/skills.js';
@@ -472,10 +472,10 @@ const _loadOlderMessages = async () => {
     const insertRef = container.firstChild;
     if (res.has_more) container.insertBefore(_buildLoadMoreBtn(), insertRef);
 
-    let prevUid = null;
+    let prev = null;
     msgs.forEach((msg, i) => {
-        container.insertBefore(buildRow(msg, i > 0 && msg.uid === prevUid), insertRef);
-        prevUid = msg.uid;
+        container.insertBefore(buildRow(msg, i > 0 && continuesChatRun(prev, msg)), insertRef);
+        prev = msg;
     });
 
     container.scrollTop = container.scrollHeight - savedScrollHeight;
@@ -510,17 +510,17 @@ export const renderChatView = (data, hasMore = false, scrollToBottom = true) => 
         return;
     }
 
-    let prevUid = null;
+    let prev = null;
     messages.forEach(msg => {
-        container.appendChild(buildRow(msg, msg.uid === prevUid));
-        prevUid = msg.uid;
+        container.appendChild(buildRow(msg, continuesChatRun(prev, msg)));
+        prev = msg;
     });
     if (scrollToBottom) container.scrollTop = container.scrollHeight;
 };
 
 // ── Append new messages only ──────────────────────────────────────────────────
 
-const appendNewMessages = (newMsgs, prevUid) => {
+const appendNewMessages = (newMsgs, prev) => {
     const container = document.getElementById('chat-messages');
     if (!container) return;
 
@@ -530,8 +530,8 @@ const appendNewMessages = (newMsgs, prevUid) => {
     const shouldScroll = isNearBottom(container);
 
     newMsgs.forEach(msg => {
-        container.appendChild(buildRow(msg, msg.uid === prevUid));
-        prevUid = msg.uid;
+        container.appendChild(buildRow(msg, continuesChatRun(prev, msg)));
+        prev = msg;
     });
 
     if (shouldScroll) container.scrollTop = container.scrollHeight;
@@ -576,9 +576,9 @@ export const startPolling = (path, initialMtime = 0) => {
 
         if (newMsgs.length && !awaitingReply) {
             _lastMtime = mtime;
-            const prevUid = current.length ? current[current.length - 1].uid : null;
+            const prev = current.length ? current[current.length - 1] : null;
             state.currentChatData = { ...state.currentChatData, messages: [...current, ...newMsgs] };
-            appendNewMessages(newMsgs, prevUid);
+            appendNewMessages(newMsgs, prev);
             return;
         }
 

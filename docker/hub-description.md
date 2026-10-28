@@ -106,6 +106,14 @@ Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE
 `APP_TITLE="My Wiki"`), and there are no inline comments — everything after the first `=` is the
 value. Back the file up separately from the data volume; it may hold mail credentials.
 
+## Podman
+
+The same image runs under Podman — name the registry in full,
+`docker.io/madsrotwitt/astucia-wiki:2026.10.7`. For a rootless install with a host
+directory, add `--userns=keep-id:uid=82,gid=82 --user 0` so your files stay yours. The
+repository ships a ready-made Quadlet unit, `docker/astucia-wiki.container`, for running it
+as a systemd service with `podman auto-update`; see *With Podman* in `DOCKER.md`.
+
 ## Tags
 
 | Tag | Mutability |

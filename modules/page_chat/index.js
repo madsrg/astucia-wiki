@@ -5,7 +5,7 @@ import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { watch, rtTopic } from '../realtime/index.js';
 import { paintAvatar, repaintAvatars } from '../core/avatars.js';
-import { showToast, confirmModal, highlightMentions, externalizeLinks } from '../core/utils.js';
+import { showToast, confirmModal, highlightMentions, externalizeLinks, continuesChatRun } from '../core/utils.js';
 import { getUsers, getAiMentionables, getPeopleMentionables } from '../core/users.js';
 import { getMcpServers } from '../core/mcp_servers.js';
 import { skillTypeahead } from '../core/skills.js';
@@ -228,23 +228,23 @@ const renderMessages = (messages, scrollToBottom = true) => {
         container.innerHTML = `<p class="chat-empty">${t('chat.empty')}</p>`;
         return;
     }
-    let prevUid = null;
+    let prev = null;
     messages.forEach(msg => {
-        container.appendChild(buildRow(msg, msg.uid === prevUid));
-        prevUid = msg.uid;
+        container.appendChild(buildRow(msg, continuesChatRun(prev, msg)));
+        prev = msg;
     });
     if (scrollToBottom) container.scrollTop = container.scrollHeight;
 };
 
-const appendMessages = (newMsgs, prevUid) => {
+const appendMessages = (newMsgs, prev) => {
     const container = document.getElementById('pc-messages');
     if (!container) return;
     const placeholder = container.querySelector('.chat-empty');
     if (placeholder) placeholder.remove();
     const shouldScroll = isNearBottom(container);
     newMsgs.forEach(msg => {
-        container.appendChild(buildRow(msg, msg.uid === prevUid));
-        prevUid = msg.uid;
+        container.appendChild(buildRow(msg, continuesChatRun(prev, msg)));
+        prev = msg;
     });
     if (shouldScroll) container.scrollTop = container.scrollHeight;
     checkAiModal(_pcData?.messages || []);
@@ -274,9 +274,9 @@ const startPoll = (path, initialMtime = 0) => {
         const newMsgs = res.messages || [];
         if (newMsgs.length && !awaitingReply) {
             _lastMtime = res.mtime || _lastMtime;
-            const prevUid = msgs.length ? msgs[msgs.length - 1].uid : null;
+            const prev = msgs.length ? msgs[msgs.length - 1] : null;
             _pcData = { ..._pcData, messages: [...msgs, ...newMsgs] };
-            appendMessages(newMsgs, prevUid);
+            appendMessages(newMsgs, prev);
         } else if ((res.mtime || 0) > _lastMtime || (newMsgs.length && awaitingReply)) {
             _lastMtime = res.mtime;
             const full = await api.call('get', { file: path });

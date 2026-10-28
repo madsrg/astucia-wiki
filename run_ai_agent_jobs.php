@@ -322,6 +322,19 @@ foreach ($oneoff_batch as $oj) {
 agent_job_touch_heartbeat();
 foreach (wiki_workflow_run_due() as $_wf_line) echo $_wf_line . "\n";
 
+// =============================================================================
+// Retention — old log files, once a day (see retention.php). The scheduler slot only, so
+// two runners never sweep at once; it is the slot that is always running.
+// =============================================================================
+if ($is_scheduler) {
+    $_ret = wiki_retention_sweep_if_due();
+    if ($_ret !== null) {
+        echo date('c') . ' [agent-jobs] Retention sweep: '
+           . ($_ret ? implode(', ', array_map(fn($k, $v) => "{$k} {$v}", array_keys($_ret), $_ret)) . ' file(s) deleted.'
+                    : 'nothing to delete.') . "\n";
+    }
+}
+
 flock($lock_fh, LOCK_UN);
 fclose($lock_fh);
 echo date('c') . " [agent-jobs] Done.\n";

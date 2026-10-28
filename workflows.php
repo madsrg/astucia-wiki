@@ -30,6 +30,7 @@
 // =================================================================
 
 require_once __DIR__ . '/frontmatter.php';
+require_once __DIR__ . '/retention.php';   // how much run history to keep
 
 const WIKI_WF_TRIGGERS = ['page_created', 'page_updated', 'page_deleted', 'page_renamed',
                           'tag_added', 'tag_removed', 'fm_changed'];
@@ -43,8 +44,6 @@ const WIKI_WF_DEFAULT_PER_HOUR = 20;
 const WIKI_WF_MAX_PER_HOUR     = 500;
 const WIKI_WF_MAX_ACTIONS      = 10;
 const WIKI_WF_FAIL_DISABLE     = 5;     // consecutive failed runs before it switches off
-const WIKI_WF_HISTORY_DAYS     = 14;
-const WIKI_WF_HISTORY_KEEP     = 1000;
 const WIKI_WF_RUNNING_TIMEOUT_MIN = 60;
 
 /**
@@ -123,14 +122,15 @@ function wiki_wf_queue_read(): array {
 
 /** Finished runs older than the history window, or past the cap, are dropped. */
 function _wiki_wf_prune(array $runs): array {
-    $cutoff = time() - WIKI_WF_HISTORY_DAYS * 86400;
+    // An admin setting (Retention policies; 14 days / 1000 runs by default).
+    $cutoff = time() - wiki_retention('workflow_history_days') * 86400;
     $live = $done = [];
     foreach ($runs as $r) {
         if (in_array($r['state'] ?? '', ['queued', 'running'], true)) { $live[] = $r; continue; }
         if ((strtotime((string)($r['finished_at'] ?? '')) ?: 0) >= $cutoff) $done[] = $r;
     }
     usort($done, fn($a, $b) => strcmp((string)($b['finished_at'] ?? ''), (string)($a['finished_at'] ?? '')));
-    return array_values(array_merge($live, array_slice($done, 0, WIKI_WF_HISTORY_KEEP)));
+    return array_values(array_merge($live, array_slice($done, 0, wiki_retention('workflow_history_keep'))));
 }
 
 function wiki_wf_queue_mutate(callable $fn) {
@@ -578,21 +578,25 @@ function wiki_workflow_normalize(array $in, array $ai_uids, array $user_uids): a
                 if (!in_array($uid, $ai_uids, true)) throw new Exception("Action {$n}: choose an AI user.");
                 $prompt = mb_substr(trim((string)($a['prompt'] ?? '')), 0, 20000);
                 if ($prompt === '') throw new Exception("Action {$n}: the AI user needs an instruction.");
-                $chat = _wiki_wf_rel($a['chat'] ?? '');
+                // The page's own chat, or a named thread — one choice, so a ticked box drops
+                // whatever path was left in the box beside it.
+                $page_chat = !empty($a['page_chat']);
+                $chat = $page_chat ? '' : _wiki_wf_rel($a['chat'] ?? '');
                 if ($chat !== '' && strtolower(pathinfo($chat, PATHINFO_EXTENSION)) !== 'chat') {
                     throw new Exception("Action {$n}: the reply thread must be a .chat page.");
                 }
-                $act = ['type' => 'ai', 'ai_uid' => $uid, 'prompt' => $prompt, 'chat' => $chat];
+                $act = ['type' => 'ai', 'ai_uid' => $uid, 'prompt' => $prompt, 'chat' => $chat, 'page_chat' => $page_chat];
                 break;
             case 'chat':
-                $chat = _wiki_wf_rel($a['chat'] ?? '');
-                if ($chat === '' || strtolower(pathinfo($chat, PATHINFO_EXTENSION)) !== 'chat') {
+                $page_chat = !empty($a['page_chat']);
+                $chat = $page_chat ? '' : _wiki_wf_rel($a['chat'] ?? '');
+                if (!$page_chat && ($chat === '' || strtolower(pathinfo($chat, PATHINFO_EXTENSION)) !== 'chat')) {
                     throw new Exception("Action {$n}: choose a .chat page to post in.");
                 }
                 $text = mb_substr(trim((string)($a['text'] ?? '')), 0, 10000);
                 if ($text === '') throw new Exception("Action {$n}: the chat message is empty.");
                 $as = (int)($a['as_uid'] ?? 0);
-                $act = ['type' => 'chat', 'chat' => $chat, 'text' => $text,
+                $act = ['type' => 'chat', 'chat' => $chat, 'page_chat' => $page_chat, 'text' => $text,
                         'as_uid' => in_array($as, $ai_uids, true) ? $as : 0];
                 break;
             case 'tag':

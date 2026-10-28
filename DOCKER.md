@@ -70,6 +70,11 @@ server, an Apple Silicon Mac or a Raspberry Pi — Docker selects the right vari
 it yourself** if you want to modify the wiki, target another architecture, or would rather
 not depend on a registry.
 
+The image is a standard OCI image, so **Podman runs it unchanged** — there is no separate
+Podman build. Write the registry out in full (`docker.io/madsrotwitt/astucia-wiki`), since
+Podman does not assume Docker Hub for a short name; for a rootless setup see
+[With Podman](#with-podman).
+
 ## Build
 
 ```bash
@@ -226,6 +231,28 @@ its `revision` label should equal `git rev-parse --short HEAD`, and it should co
 once). `docker/hub-description.md` is the text for the registry's repository description;
 Docker Hub does not read a repository's README on its own.
 
+#### Mirroring to GitHub Container Registry
+
+`MIRRORS` gives the same build further repositories. Each gets the same three tags, and
+the script checks that every tag in every registry resolves to one digest — a mirror is
+the identical image, not a second build that claims to be:
+
+```bash
+echo "$GITHUB_PAT" | docker login ghcr.io -u youruser --password-stdin   # write:packages
+docker login
+MIRRORS=ghcr.io/youruser/astucia-wiki \
+PLATFORMS=linux/amd64,linux/arm64 IMAGE_NAME=youruser/astucia-wiki ./docker/build.sh
+```
+
+A second registry is useful because Docker Hub rate-limits anonymous pulls, and GHCR sits
+next to the source repository. Two one-time steps on GitHub's side:
+
+- **A new GHCR package is private.** Make it public under the package's *Settings →
+  Danger Zone → Change visibility*, or every pull without a login fails with
+  `unauthorized`.
+- The image's `org.opencontainers.image.source` label links the package to the repository
+  automatically, so its page shows the README and the releases.
+
 ## Run
 
 ### With a script (recommended for a single host)
@@ -281,6 +308,76 @@ services:
     env_file: /srv/astucia-wiki/wiki.env
     restart: always
 ```
+
+### With Podman
+
+The same image, run by Podman instead of Docker. Plain `podman run` takes the same flags as
+`docker run`, and `podman compose` reads the repository's `docker-compose.yml`. The
+idiomatic long-running setup, though, is a **Quadlet** — a systemd unit that Podman
+generates the container from. `docker/astucia-wiki.container` is one, ready to edit
+(Podman 4.4 or later):
+
+```bash
+mkdir -p ~/astucia-wiki/data ~/.config/containers/systemd
+cp docker/wiki.env.example ~/astucia-wiki/wiki.env
+$EDITOR ~/astucia-wiki/wiki.env
+cp docker/astucia-wiki.container ~/.config/containers/systemd/
+systemctl --user daemon-reload
+systemctl --user start astucia-wiki
+loginctl enable-linger "$USER"     # keep running after you log out
+```
+
+systemd now owns the container: it starts it at boot, restarts it on failure, and
+`journalctl --user -u astucia-wiki` has its logs. `podman auto-update` replaces Watchtower
+— the unit carries `AutoUpdate=registry`, so a moving tag is re-pulled and the wiki
+restarted when the tag points somewhere new (enable `podman-auto-update.timer` to do it
+daily).
+
+**Rootless bind mounts need one extra setting**, and the unit already carries it. In a
+rootless container your own uid appears as `0`, so the entrypoint cannot tell your
+directory from a fresh named volume — it would chown it to `www-data`, which on the host is
+a subuid, and you would lose write access to your own pages. Mapping your uid onto the
+container's `www-data` avoids that:
+
+```bash
+podman run -d --name astucia-wiki \
+    --userns=keep-id:uid=82,gid=82 --user 0 \
+    -p 8080:80 -v ~/astucia-wiki/data:/data:Z \
+    --env-file ~/astucia-wiki/wiki.env \
+    docker.io/madsrotwitt/astucia-wiki:2026.10.7
+```
+
+- **`--userns=keep-id:uid=82,gid=82`** makes your files appear owned by `www-data` inside
+  and leaves them owned by you outside. Needs Podman 4.3 or later.
+- **`--user 0`**, because `keep-id` otherwise starts the container *as* that uid, and the
+  entrypoint needs root (inside the user namespace only) to start nginx, PHP-FPM and cron.
+- **`:Z`** relabels the directory for SELinux on Fedora and RHEL; elsewhere it is a no-op.
+- A **named volume** (`-v astucia-wiki-data:/data`) needs none of this. Rootful Podman
+  behaves like Docker and needs none of it either.
+
+When the entrypoint sees rootless Podman and a root-owned data directory it logs the flags
+above, since it cannot tell from inside whether that directory is yours.
+
+Verified rootless on Podman 5.7 (Ubuntu 26.04), against the published image:
+
+- **Without the two flags**, the host directory's contents became uid `100081` and the
+  host user could no longer write to `pages/`. The `podman unshare chown` in
+  [Troubleshooting](#troubleshooting) gave them back.
+- **With the flags**, the entrypoint adopted uid 82. Pages saved by the wiki, the search
+  index and cron's heartbeat were all owned by the host user, an edit made on the host was
+  served by the wiki, and nginx, PHP-FPM, cron and the hub all ran.
+- **The Quadlet unit** came up `healthy` with its health-check timer, was listed by
+  `podman auto-update --dry-run`, and was restarted by systemd within seconds after its
+  main process was killed. Both negative controls for the health check (an API error,
+  nothing listening) failed as they should.
+- **The published image carries no health check as far as Podman is concerned** — it is
+  OCI-format, and `podman image inspect` shows `HealthCheck` as nil — which is why the unit
+  states it again.
+- **`localhost` needs IPv6 inside the container.** Rootless Podman forwards a published
+  port over IPv6 as well, and an image whose nginx listened on IPv4 only accepted
+  `http://localhost:8080` (`::1` first) and then reset it; browsers do not fall back to
+  `127.0.0.1` after that. The entrypoint now has nginx listen on `[::]` too whenever the
+  kernel has IPv6, so on an older image use `http://127.0.0.1:8080`.
 
 ## Configuration
 
@@ -523,6 +620,9 @@ Page IDs are preserved, so links and bookmarks keep working. Take a backup first
 | Container `unhealthy` | `docker logs astucia-wiki` — usually a bad value in `wiki.env`. The entrypoint refuses to start on invalid PHP in `config.php` |
 | Blank page, browser console shows module errors | A proxy in front is not passing `.js` through with `Content-Type: application/javascript`. The container itself sets it correctly |
 | Saving a page fails | Ownership of the mounted directory. Check `docker logs` for the `adopting the owner` line, or set `PUID`/`PGID` explicitly |
+| Rootless Podman: host files now owned by a uid like `100081` | The container was started without `--userns=keep-id:uid=82,gid=82 --user 0`. Fix the ownership with `podman unshare chown -R 0:0 ~/astucia-wiki/data`, then start it with those flags — see [With Podman](#with-podman) |
+| Podman: `http://localhost:8080` resets, `127.0.0.1` works | An image older than the IPv6 listener — use `127.0.0.1`, or a newer image |
+| Podman: `short-name resolution` prompt or error | Name the registry: `docker.io/madsrotwitt/astucia-wiki` |
 | Scheduled jobs never run | Is `ENABLE_CRON=true`? Is the crontab root-owned (see above)? Check `/data/logs/cron-agent-jobs.log` |
 | Jobs run at the wrong time | `TZ` is unset, so everything is UTC |
 | AI replies time out after ~60s | A reverse proxy's read timeout. Raise it to 900s — an AI tool-calling loop or an `/aiJob` legitimately takes minutes |
