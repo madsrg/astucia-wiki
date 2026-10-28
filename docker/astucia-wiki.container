@@ -29,7 +29,7 @@ After=network-online.target
 ContainerName=astucia-wiki
 # Fully qualified on purpose: Podman does not assume docker.io for a short name, and
 # depending on registries.conf either prompts or refuses.
-Image=docker.io/madsrotwitt/astucia-wiki:2026.10.7
+Image=docker.io/madsrotwitt/astucia-wiki:2026.10.8
 PublishPort=8080:80
 # pages/, system/ and logs/ live here, on the host. :Z relabels the directory for
 # SELinux (Fedora, RHEL); on a host without SELinux it does nothing.

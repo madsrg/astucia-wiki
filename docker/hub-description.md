@@ -45,11 +45,14 @@ so your AI users can use theirs.
 **Workflows** — "when this happens to a page, do that", set up by administrators: when a
 page is created, updated, renamed, deleted or tagged, or a front-matter field such as
 `status` changes, send an email, give an AI user an instruction, post in a chat, or update
-tags and fields. One workflow can listen for several of these at once. Test one without
-acting, or run it for real on a chosen page first.
+tags and fields. One workflow can listen for several of these at once — and an AI's reply
+can go straight into the **page's own chat**, so every page gets its review where it is
+discussed. Test one without acting, or run it for real on a chosen page first; a run that
+fails tells the administrators at once, with a link to its log.
 
 **Teams** — Spaces with per-user access control, including read-only Spaces · OIDC login,
-email codes with **Keep me signed in**, or both on one account · mentions, page comments and a daily digest email · an optional audit log · a REST API
+email codes with **Keep me signed in**, or both on one account · mentions, page comments and a daily digest email · an optional audit log · **retention
+policies** for chat, mentions and every log the wiki writes · a REST API
 with service tokens, stored only as a hash · UI in nine languages.
 
 **Live updates** — a **Mercure** hub ships inside the image and is **on by default**, so
@@ -73,7 +76,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.10.7
+    madsrotwitt/astucia-wiki:2026.10.8
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -99,7 +102,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.10.7
+    madsrotwitt/astucia-wiki:2026.10.8
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -109,7 +112,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 ## Podman
 
 The same image runs under Podman — name the registry in full,
-`docker.io/madsrotwitt/astucia-wiki:2026.10.7`. For a rootless install with a host
+`docker.io/madsrotwitt/astucia-wiki:2026.10.8`. For a rootless install with a host
 directory, add `--userns=keep-id:uid=82,gid=82 --user 0` so your files stay yours. The
 repository ships a ready-made Quadlet unit, `docker/astucia-wiki.container`, for running it
 as a systemd service with `podman auto-update`; see *With Podman* in `DOCKER.md`.
@@ -119,7 +122,7 @@ as a systemd service with `podman auto-update`; see *With Podman* in `DOCKER.md`
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.10.7` | moves only if that release is rebuilt |
+| `2026.10.8` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
