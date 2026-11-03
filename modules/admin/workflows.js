@@ -259,6 +259,10 @@ const threadChoice = (a, id, labelKey, phKey, ph) => `
         ${pathField(id('chat'), a.chat || '', phKey ? t(phKey) : ph, 'chat')}
     </div>`;
 
+// A switched-off AI user stays choosable — an existing workflow must not lose its choice —
+// but says so, since its actions are skipped until it is switched back on.
+const aiLabel = (u) => u.disabled ? `${u.name} (${t('ai.disabled-badge')})` : u.name;
+
 const opt = (value, label, selected) => `<option value="${esc(value)}" ${selected ? 'selected' : ''}>${esc(label)}</option>`;
 
 const actionFields = (a, i) => {
@@ -283,7 +287,7 @@ const actionFields = (a, i) => {
         case 'ai':
             return `<label>${t('admin.wf.ai.user')}</label>
                 <select id="${id('ai')}" class="form-control">${data.ai_users.length
-                    ? data.ai_users.map(u => opt(u.uid, u.name, u.uid === a.ai_uid)).join('')
+                    ? data.ai_users.map(u => opt(u.uid, aiLabel(u), u.uid === a.ai_uid)).join('')
                     : `<option value="">${t('admin.wf.ai.none')}</option>`}</select>
                 <label>${t('admin.wf.ai.prompt')}</label>
                 <textarea id="${id('prompt')}" class="form-control" rows="5" placeholder="${t('admin.wf.ai.prompt-ph')}">${esc(a.prompt || '')}</textarea>
@@ -293,7 +297,7 @@ const actionFields = (a, i) => {
             return `<label>${t('admin.wf.chat.thread')}</label>
                 ${threadChoice(a, id, 'admin.wf.chat.page-chat', null, 'Team/General.chat')}
                 <label>${t('admin.wf.chat.as')}</label>
-                <select id="${id('as')}" class="form-control">${opt(0, t('admin.wf.chat.as-workflow'), !a.as_uid)}${data.ai_users.map(u => opt(u.uid, u.name, u.uid === a.as_uid)).join('')}</select>
+                <select id="${id('as')}" class="form-control">${opt(0, t('admin.wf.chat.as-workflow'), !a.as_uid)}${data.ai_users.map(u => opt(u.uid, aiLabel(u), u.uid === a.as_uid)).join('')}</select>
                 <label>${t('admin.wf.chat.text')}</label>
                 <textarea id="${id('text')}" class="form-control" rows="3">${esc(a.text ?? t('admin.wf.chat.text-default'))}</textarea>`;
         case 'tag':

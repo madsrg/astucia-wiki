@@ -98,6 +98,12 @@ foreach (($is_scheduler ? $jobs : []) as $idx => &$job) {
         echo date('c') . " [agent-jobs] AI user not found for job '{$job_name}'. Skipping.\n";
         continue;
     }
+    // A switched-off AI user's schedule is left as it is — switching it back on resumes
+    // it — and it is skipped quietly rather than failed, so nothing piles up meanwhile.
+    if (wiki_ai_disabled($ai_user)) {
+        echo date('c') . " [agent-jobs] AI user '" . ($ai_user['name'] ?? '?') . "' is switched off; skipping job '{$job_name}'.\n";
+        continue;
+    }
 
     // Resolve space_dir
     $safe_space = basename($job['space'] ?? basename(PAGES_DIR));
@@ -243,6 +249,10 @@ foreach ($oneoff_batch as $oj) {
     $oj_space_dir = agent_job_space_dir((string)($oj['space'] ?? ''));
     if (!$oj_ai) {
         $oj_error = 'The AI user for this job no longer exists.';
+    } elseif (wiki_ai_disabled($oj_ai)) {
+        // Queued before it was switched off. Failing resolves the chat placeholder with a
+        // reason; leaving it queued would spin until somebody switched the AI back on.
+        $oj_error = 'The AI user "' . ($oj_ai['name'] ?? '') . '" was switched off before this job ran.';
     } elseif (wiki_space_dir_is_readonly($oj_space_dir)) {
         // Fail the job rather than run it: it could not save its result. The error
         // still travels back into the thread, which resolves the pending placeholder

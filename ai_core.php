@@ -970,7 +970,9 @@ function wiki_ai_truncated_error(int $max_tokens, bool $is_thinking = false): st
  */
 function wiki_chat_context_slice(array $messages, int $limit): array {
     $msgs = array_values(array_filter($messages,
-        fn($m) => empty($m['pending']) && empty($m['is_debug'])));
+        // A `notice` (e.g. "AI User X is currently disabled") is the wiki speaking under an
+        // AI's name; shown to a model it would read as something the AI itself once said.
+        fn($m) => empty($m['pending']) && empty($m['is_debug']) && empty($m['notice'])));
     $sentinel = null;
     $pos      = -1;
     foreach ($msgs as $i => $m) {

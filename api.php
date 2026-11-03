@@ -329,6 +329,9 @@ if (isset($_REQUEST['action'])) {
             'name'      => $u['name'] ?? '',
             'is_ai'     => !empty($u['is_ai']),
             'is_system' => !empty($u['is_system']),
+            // A switched-off AI user stays in the list — its old messages still need its name
+            // and avatar — but the composers leave it out of the # type-ahead and focus.
+            'disabled'  => wiki_ai_disabled($u),
             // The composer needs this before it sends: a background AI gets an
             // ETA toast, not the waiting modal.
             'always_background' => !empty($u['ai_config']['always_background']),
@@ -1010,7 +1013,7 @@ if (isset($_REQUEST['action'])) {
                       'admin_get_logs', 'admin_get_log_content',
                       'admin_get_error_logs', 'admin_get_error_log_content',
                       'admin_send_test_email', 'admin_get_diag_log',
-                      'admin_get_ai_users', 'admin_save_ai_user',
+                      'admin_get_ai_users', 'admin_save_ai_user', 'admin_toggle_ai_user',
                       'admin_get_llm_connections', 'admin_save_llm_connection', 'admin_delete_llm_connection', 'admin_test_llm_connection',
                       'admin_delete_ai_user', 'admin_regenerate_ai_token',
                       'admin_get_api_accounts', 'admin_save_api_account',
@@ -1526,8 +1529,11 @@ if (isset($_REQUEST['action'])) {
                     }
                     // "size" lets a client baseline exactly the bytes it rendered, which
                     // mtime alone cannot do at 1-second resolution (see file_mtime).
+                    // `rev` is what an editor sends back as `base` on save, so a write over
+                    // a change it never saw is refused instead of silently winning.
                     echo json_encode(['success' => true, 'data' => $content, 'lastUpdated' => $last_updated,
                                       'size' => $fm_disk_size, 'git_commit' => $git_commit,
+                                      'rev' => wiki_content_rev($ext_get, $fm_raw_get),
                                       'frontmatter' => $fm_meta ?: null,
                                       'frontmatter_nested' => $fm_locked_get ?: null,
                                       'frontmatter_managed' => $fm_managed_get ?: null]);
@@ -1782,6 +1788,7 @@ if (isset($_REQUEST['action'])) {
                 // client sees a spinner immediately in the initial response.
                 $_pending_ai_user       = null;
                 $_pending_placeholder_id = null;
+                $_ai_disabled_name      = null;
                 if (!$ai_auth_user && !$is_action && defined('WIKI_SYSTEM_DATA') && file_exists(WIKI_SYSTEM_DATA . 'users.json')) {
                     // wiki_match_ai_mention() rather than a loop of its own: which AI a
                     // message addresses has to be answered the same way here and in the
@@ -1789,6 +1796,25 @@ if (isset($_REQUEST['action'])) {
                     // prefix of the mentioned one ("gpt120" for "#gpt120-think") claim it.
                     $_aiu = wiki_match_ai_mention($text,
                         json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? []);
+                    // A switched-off AI is still *matched* — so "#Atlas Pro" cannot fall
+                    // through to an enabled "Atlas" — and answered with a notice in the
+                    // thread, where everyone reading it sees why no reply is coming. Stored
+                    // with `notice` so the client words it in the reader's language (the
+                    // text is the fallback) and wiki_chat_context_slice() keeps it out of
+                    // what an AI is shown — it is the wiki speaking, not the AI.
+                    if (wiki_ai_disabled($_aiu)) {
+                        $_ai_disabled_name = (string)$_aiu['name'];
+                        $chat_data['messages'][] = [
+                            'id'        => $chat_data['nextMessageId'],
+                            'uid'       => (int)($_aiu['uid'] ?? 0),
+                            'name'      => $_ai_disabled_name,
+                            'timestamp' => date('c'),
+                            'text'      => 'AI User ' . $_ai_disabled_name . ' is currently disabled.',
+                            'notice'    => 'ai_disabled',
+                        ];
+                        $chat_data['nextMessageId']++;
+                        $_aiu = null;
+                    }
                     if ($_aiu !== null) {
                         $_pending_placeholder_id = $chat_data['nextMessageId'];
                         $chat_data['messages'][] = [
@@ -1911,7 +1937,8 @@ if (isset($_REQUEST['action'])) {
                 // "before" text: a new message is new in its entirety.
                 wiki_mention_announce($stored_text, '', (int)($actor['uid'] ?? 0));
                 echo json_encode(['success' => true, 'data' => $chat_data,
-                                  'async_ai' => $_pending_ai_user !== null, 'queued_job' => $_bg_job]);
+                                  'async_ai' => $_pending_ai_user !== null, 'queued_job' => $_bg_job,
+                                  'ai_disabled' => $_ai_disabled_name]);
 
                 if ($_pending_ai_user !== null) {
                     // Release session lock immediately so chat-poll requests are not blocked
@@ -2323,6 +2350,7 @@ if (isset($_REQUEST['action'])) {
                     if (mb_strtolower((string)($_qu['name'] ?? '')) === mb_strtolower($qj_ai_name)) { $qj_ai = $_qu; break; }
                 }
                 if (!$qj_ai) throw new Exception('No AI user named "' . $qj_ai_name . '".');
+                if (wiki_ai_disabled($qj_ai)) throw new Exception('The AI user "' . ($qj_ai['name'] ?? $qj_ai_name) . '" is switched off.');
 
                 // The job runs later, outside this session — so the AI user's own space
                 // grant is what authorises it, checked here while we still can.
@@ -2447,7 +2475,7 @@ if (isset($_REQUEST['action'])) {
                 $ex_space = basename(trim($_REQUEST['space'] ?? ''));
                 $ex_ai = null;
                 foreach ($ex_users as $_eu) {
-                    if (empty($_eu['is_ai'])) continue;
+                    if (empty($_eu['is_ai']) || wiki_ai_disabled($_eu)) continue;
                     if ($ex_uid !== null) { if ((int)($_eu['uid'] ?? -1) === $ex_uid) { $ex_ai = $_eu; break; } continue; }
                     $_esp = $_eu['spaces'] ?? null;
                     if ($_esp === null || $ex_space === '' || in_array($ex_space, (array)$_esp, true)) { $ex_ai = $_eu; break; }
@@ -2669,6 +2697,7 @@ if (isset($_REQUEST['action'])) {
                     }
                     $aio_out[] = [
                         'name'        => $u['name'] ?? '',
+                        'disabled'    => wiki_ai_disabled($u),
                         'provider'    => $cfg['provider'] ?? '',
                         'model'       => $cfg['model'] ?? '',
                         'mcp_servers' => $servers,
@@ -3406,6 +3435,55 @@ if (isset($_REQUEST['action'])) {
                 $ext_save   = pathinfo($rel_save, PATHINFO_EXTENSION);
                 $content    = file_get_contents('php://input');
                 $fm_body_changed = true;
+                // Refuse a write over a change the writer never saw. An editor sends the
+                // `rev` its `get` returned as `base`; if the page has moved on since —
+                // another person, an AI user, a workflow, an rsync — the save answers 409
+                // with what is on disk now and writes nothing. No `base` keeps the old
+                // last-write-wins behaviour, which is what every non-editor caller (AI
+                // tools, MCP, saved searches) relies on; `force=1` is the dialog's
+                // deliberate "overwrite anyway".
+                //
+                // The lock spans compare *and* write, or two saves from the same base
+                // would both pass the check and the second would still win silently.
+                // Every save takes it, not only checked ones, so a check never runs
+                // while another save is half-written. Advisory, on the file itself:
+                // nothing to clean up, and the inode survives file_put_contents.
+                $save_base = (string)($_GET['base'] ?? '');
+                $save_lock = is_file($file_path) ? @fopen($file_path, 'r') : false;
+                if ($save_lock) flock($save_lock, LOCK_EX);
+                if ($save_base !== '' && empty($_GET['force']) && $save_lock) {
+                    $cur_raw = (string)file_get_contents($file_path);
+                    $cur_rev = wiki_content_rev($ext_save, $cur_raw);
+                    if (!hash_equals($cur_rev, $save_base)) {
+                        clearstatcache(true, $file_path);
+                        $cur_mtime = (int)filemtime($file_path);
+                        // Who changed it, when the index can vouch for that. A write made
+                        // outside the wiki (an editor, a git pull) leaves the index's
+                        // `updated` older than the file, and naming the last wiki author
+                        // for it would blame the wrong person.
+                        $cur_entry = $indexer->getAllPages()[$indexer->getId($rel_save)] ?? null;
+                        $cur_by    = ($cur_entry && (int)($cur_entry['updated'] ?? 0) >= $cur_mtime - 1)
+                            ? ($cur_entry['updatedBy']['name'] ?? null) : null;
+                        flock($save_lock, LOCK_UN);
+                        fclose($save_lock);
+                        wiki_audit_finish($_audit, 'failure', 'conflict', null, $_audit_space);
+                        $_audit = null;
+                        http_response_code(409);
+                        echo json_encode([
+                            'success'     => false,
+                            'conflict'    => true,
+                            'message'     => 'This page was changed by someone else since you opened it.',
+                            // What the editor would have been handed by `get` — the body
+                            // for Markdown — so the client can diff like against like.
+                            'data'        => $ext_save === 'md' ? wiki_fm_body($cur_raw) : $cur_raw,
+                            'rev'         => $cur_rev,
+                            'lastUpdated' => $cur_mtime,
+                            'size'        => strlen($cur_raw),
+                            'modifiedBy'  => $cur_by,
+                        ]);
+                        break;
+                    }
+                }
                 if ($ext_save === 'md') {
                     // The editor is handed the body without its front matter, so the save
                     // comes back without it too. Re-attach what the file already had, or
@@ -3470,6 +3548,8 @@ if (isset($_REQUEST['action'])) {
                         if ($fm_stamped !== null) $fm_size = $fm_stamped;
                     }
                     clearstatcache(true, $file_path);
+                    // Written and stamped: the next save may compare now.
+                    if ($save_lock) { flock($save_lock, LOCK_UN); fclose($save_lock); $save_lock = false; }
                     // The block as it stands *after* stamping, so the client's cached copy
                     // is replaced rather than left holding what it read before the save.
                     // Without this the four stamped fields are in the file but the Metadata
@@ -3487,6 +3567,9 @@ if (isset($_REQUEST['action'])) {
                         'message'     => 'File saved successfully.',
                         'lastUpdated' => filemtime($file_path),
                         'size'        => $fm_size,
+                        // The base for this writer's next save. Stamping only rewrites the
+                        // block, which a Markdown rev does not cover, so $content suffices.
+                        'rev'         => wiki_content_rev($ext_save, $content),
                         'frontmatter' => $fm_meta_out,
                         'frontmatter_nested' => $fm_nest_out,
                         'frontmatter_managed' => $ext_save === 'md' ? (wiki_fm_managed_keys($space_dir) ?: null) : null,
@@ -5765,6 +5848,26 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(space_delete_execute($ds_name, $search_idx, $ds_actor));
                 break;
 
+            // Switch an AI user on or off from its row in the list, without opening the form.
+            case 'admin_toggle_ai_user':
+                $tg_uid = (int)($_POST['uid'] ?? 0);
+                $tg_off = ($_POST['enabled'] ?? '1') !== '1';
+                $tg_name = null;
+                wiki_users_mutate(function (array &$doc) use ($tg_uid, $tg_off, &$tg_name) {
+                    foreach ($doc['users'] as &$u) {
+                        if (empty($u['is_ai']) || (int)($u['uid'] ?? PHP_INT_MIN) !== $tg_uid) continue;
+                        if ($tg_off) $u['disabled'] = true; else unset($u['disabled']);
+                        $tg_name = (string)($u['name'] ?? '');
+                        break;
+                    }
+                    unset($u);
+                });
+                if ($tg_name === null) throw new Exception('AI user not found.');
+                wiki_audit_log('update', 'success', ['object' => $tg_name, 'object_type' => 'ai_user',
+                    'object_id' => (string)$tg_uid, 'change_type' => $tg_off ? 'ai_user_disabled' : 'ai_user_enabled']);
+                echo json_encode(['success' => true, 'uid' => $tg_uid, 'disabled' => $tg_off]);
+                break;
+
             case 'admin_get_ai_users':
                 $uf_ai = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? []) : [];
                 $ai_users_out = [];
@@ -5782,6 +5885,7 @@ if (isset($_REQUEST['action'])) {
                         // Never the token: only its hint. It is shown once, when made.
                         'token_hint'    => $u['service_token_hint'] ?? '',
                         'spaces'        => array_key_exists('spaces', $u) ? $u['spaces'] : null,
+                        'disabled'      => wiki_ai_disabled($u),
                         'ai_config'     => array_merge($cfg, ['api_key_set' => $has_key]),
                     ];
                 }
@@ -5797,6 +5901,9 @@ if (isset($_REQUEST['action'])) {
                 $ai_cfg_in    = json_decode($_POST['ai_config'] ?? '{}', true) ?? [];
                 $ai_spaces_raw = json_decode($_POST['spaces'] ?? 'null', true);
                 $ai_spaces_in  = is_array($ai_spaces_raw) ? array_values(array_filter(array_map('strval', $ai_spaces_raw))) : null;
+                // null = not sent (keep what is stored), so a client that predates the switch
+                // cannot switch an AI back on by saving its form.
+                $ai_disabled_in = isset($_POST['disabled']) ? ($_POST['disabled'] === '1') : null;
                 if (!$ai_name) throw new Exception('AI user name is required.');
                 // Every AI user reaches its model through a connection. Refused rather
                 // than stored dangling: a record naming nothing fails on its first call.
@@ -5817,6 +5924,11 @@ if (isset($_REQUEST['action'])) {
                         $u['name']   = $ai_name;
                         $u['role']   = $ai_role;
                         $u['spaces'] = $ai_spaces_in;
+                        if ($ai_disabled_in !== null && $ai_disabled_in !== wiki_ai_disabled($u)) {
+                            if ($ai_disabled_in) $u['disabled'] = true; else unset($u['disabled']);
+                            wiki_audit_log('update', 'success', ['object' => $ai_name, 'object_type' => 'ai_user',
+                                'object_id' => (string)$ai_uid, 'change_type' => $ai_disabled_in ? 'ai_user_disabled' : 'ai_user_enabled']);
+                        }
                         $ec = $u['ai_config'] ?? [];
                         // Built fresh rather than merged into $ec, so the inline provider /
                         // URL / key / headers of a pre-connection record are dropped on the
@@ -5861,7 +5973,7 @@ if (isset($_REQUEST['action'])) {
                     foreach ($uf_sai['users'] as $eu) { if (isset($eu['uid']) && $eu['uid'] > $max_uid_ai) $max_uid_ai = $eu['uid']; }
                     $new_ai_token = generate_ai_service_token();
                     $new_ai_uid   = $max_uid_ai + 1;
-                    $uf_sai['users'][] = wiki_service_token_set([
+                    $uf_sai['users'][] = ($ai_disabled_in ? ['disabled' => true] : []) + wiki_service_token_set([
                         'uid'           => $new_ai_uid,
                         'name'          => $ai_name,
                         'role'          => $ai_role,
@@ -6080,8 +6192,10 @@ if (isset($_REQUEST['action'])) {
                 $aj_data = file_exists($aj_file) ? (json_decode(file_get_contents($aj_file), true) ?? ['jobs' => []]) : ['jobs' => []];
                 $uf_aj = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? []) : [];
                 $ai_map = [];
+                $ai_off = [];   // switched off: still choosable, so a job is not orphaned, but marked
                 foreach ($uf_aj['users'] ?? [] as $u) {
                     if (!empty($u['is_ai'])) $ai_map[(int)$u['uid']] = $u['name'] ?? 'AI';
+                    if (wiki_ai_disabled($u)) $ai_off[] = (int)$u['uid'];
                 }
                 $sp_list = [];
                 foreach (scandir(PAGES_DIR) as $_sf) {
@@ -6102,6 +6216,7 @@ if (isset($_REQUEST['action'])) {
                     'success'          => true,
                     'jobs'             => $aj_jobs,
                     'ai_users'         => $ai_map,
+                    'ai_users_off'     => $ai_off,
                     'spaces'           => $sp_list,
                     'server_time'      => date('Y-m-d H:i:s'),
                     'server_timezone'  => date_default_timezone_get(),
@@ -6204,6 +6319,7 @@ if (isset($_REQUEST['action'])) {
                     if (!empty($_ru['is_ai']) && (int)($_ru['uid'] ?? -1) === (int)($run_job['ai_user_uid'] ?? 0)) { $run_ai_user = $_ru; break; }
                 }
                 if (!$run_ai_user) throw new Exception('AI user not found.');
+                if (wiki_ai_disabled($run_ai_user)) throw new Exception('The AI user "' . ($run_ai_user['name'] ?? '') . '" is switched off. Switch it on in AI Users to run this job.');
                 $run_safe_space = basename($run_job['space'] ?? basename(PAGES_DIR));
                 $run_space_dir2 = rtrim(PAGES_DIR, '/') . '/' . $run_safe_space;
                 if (!is_dir($run_space_dir2)) $run_space_dir2 = rtrim(PAGES_DIR, '/');
@@ -6464,7 +6580,8 @@ if (isset($_REQUEST['action'])) {
                 }
                 $wf_users = $wf_ai = [];
                 foreach ((json_decode((string)@file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? []) as $_u) {
-                    if (!empty($_u['is_ai'])) $wf_ai[] = ['uid' => (int)$_u['uid'], 'name' => (string)($_u['name'] ?? '')];
+                    if (!empty($_u['is_ai'])) $wf_ai[] = ['uid' => (int)$_u['uid'], 'name' => (string)($_u['name'] ?? ''),
+                                                          'disabled' => wiki_ai_disabled($_u)];
                     else $wf_users[] = ['uid' => (int)$_u['uid'], 'name' => (string)($_u['name'] ?? ''),
                                         'has_email' => wiki_user_notify_email($_u) !== ''];
                 }

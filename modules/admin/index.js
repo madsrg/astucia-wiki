@@ -1456,12 +1456,35 @@ const renderAiUserList = () => {
 
     const table = document.createElement('table');
     table.className = 'admin-table';
-    table.innerHTML = `<thead><tr><th>${t('admin.ai.name')}</th><th>${t('admin.ai.role')}</th><th>${t('admin.col.spaces')}</th><th>${t('admin.ai.model')}</th><th>${t('admin.ai.connection')}</th><th></th></tr></thead>`;
+    table.innerHTML = `<thead><tr><th></th><th>${t('admin.ai.name')}</th><th>${t('admin.ai.role')}</th><th>${t('admin.col.spaces')}</th><th>${t('admin.ai.model')}</th><th>${t('admin.ai.connection')}</th><th></th></tr></thead>`;
     const tbody = document.createElement('tbody');
 
     aiUsers.forEach(u => {
         const tr = document.createElement('tr');
         const cfg = u.ai_config || {};
+        if (u.disabled) tr.className = 'ai-row-off';
+
+        // On/off from the row, the same switch Workflows use. Switching off stops every way
+        // this AI is run or reached (see wiki_ai_disabled) and keeps its settings and token.
+        const tdOn = document.createElement('td');
+        tdOn.innerHTML = `<label class="toggle-switch" title="${escHtml(t('admin.ai.toggle-title'))}">
+            <input type="checkbox" class="ai-toggle" ${u.disabled ? '' : 'checked'}>
+            <span class="toggle-switch-track"></span><span class="toggle-switch-thumb"></span></label>`;
+        tdOn.querySelector('.ai-toggle').addEventListener('change', async (e) => {
+            const on = e.target.checked;
+            e.target.disabled = true;
+            const res = await api.call('admin_toggle_ai_user', { uid: String(u.uid), enabled: on ? '1' : '0' }, 'POST');
+            e.target.disabled = false;
+            if (!res.success) {
+                e.target.checked = !on;
+                showToast(res.message || t('admin.ai.toggle-failed'), 'error');
+                return;
+            }
+            u.disabled = !on;
+            tr.classList.toggle('ai-row-off', !on);
+            invalidateUsers();   // the # type-ahead and chat focus read this list
+            showToast(t(on ? 'admin.ai.switched-on' : 'admin.ai.switched-off', { name: u.name }), 'success');
+        });
 
         const tdName = document.createElement('td');
         tdName.className = 'admin-td-name';
@@ -1502,7 +1525,7 @@ const renderAiUserList = () => {
         delBtn.addEventListener('click', () => deleteAiUser(u));
 
         tdActions.append(editBtn, delBtn);
-        tr.append(tdName, tdRole, tdSpaces, tdModel, tdUrl, tdActions);
+        tr.append(tdOn, tdName, tdRole, tdSpaces, tdModel, tdUrl, tdActions);
         tbody.appendChild(tr);
     });
 
@@ -1565,6 +1588,10 @@ const openAiUserForm = async (u) => {
                     <div class="form-group">
                         <label>${t('admin.ai.name')}</label>
                         <input type="text" id="ai-f-name" class="form-control" value="${escHtml(u?.name || '')}" placeholder="${t('admin.ai.name-ph')}">
+                        <label class="admin-ai-switch-row" style="margin-top:0.4rem">
+                            <input type="checkbox" id="ai-f-enabled" class="space-settings-switch" ${u?.disabled ? '' : 'checked'}>
+                            <span>${t('admin.ai.enabled')}</span>
+                        </label>
                     </div>
                     <div class="form-group">
                         <label>${t('admin.ai.role')}</label>
@@ -1850,6 +1877,7 @@ const saveAiUser = async (uid) => {
     const temperature      = parseFloat(document.getElementById('ai-f-temperature')?.value || '0.7');
     const max_tokens       = parseInt(document.getElementById('ai-f-tokens')?.value || '4096', 10);
     const always_background = !!document.getElementById('ai-f-background')?.checked;
+    const enabledBox        = document.getElementById('ai-f-enabled');
     const reasoning_effort  = document.getElementById('ai-f-effort')?.value || '';
     const memory            = document.getElementById('ai-f-memory')?.value || '';
     const skills            = document.getElementById('ai-f-skills')?.value || '';
@@ -1871,6 +1899,8 @@ const saveAiUser = async (uid) => {
     const result = await api.call('admin_save_ai_user', {
         uid: uid !== null ? String(uid) : '',
         name, role,
+        // Only when the form drew the switch, so the server keeps what it has otherwise.
+        ...(enabledBox ? { disabled: enabledBox.checked ? '0' : '1' } : {}),
         spaces: JSON.stringify(spaces),
         ai_config: JSON.stringify({ connection_id, avatar, model, system_prompt, system_prompt_space, system_prompt_page, context_messages, temperature, max_tokens, always_background, reasoning_effort, memory, skills, mcp_server_ids, mcp_instructions }),
     }, 'POST');
@@ -2155,6 +2185,7 @@ const regenerateApiToken = async (uid, name) => {
 
 let agentJobs       = [];
 let agentJobAiUsers = {};
+let agentJobAiOff = new Set();   // switched-off AI users: their jobs are skipped
 let agentJobSpaces  = [];
 let agentServerTime = '';
 let agentServerTz   = '';
@@ -2239,6 +2270,7 @@ const loadAgentJobs = async () => {
     }
     agentJobs       = result.jobs     || [];
     agentJobAiUsers = result.ai_users || {};
+    agentJobAiOff = new Set((result.ai_users_off || []).map(String));
     agentJobSpaces  = result.spaces   || [];
     agentServerTime = result.server_time     || '';
     agentServerTz   = result.server_timezone || '';
@@ -2277,7 +2309,8 @@ const renderAgentJobList = () => {
     const tbody = document.createElement('tbody');
     agentJobs.forEach(job => {
         const tr = document.createElement('tr');
-        const aiName    = agentJobAiUsers[job.ai_user_uid] || `uid:${job.ai_user_uid}`;
+        const aiName    = (agentJobAiUsers[job.ai_user_uid] || `uid:${job.ai_user_uid}`)
+            + (agentJobAiOff.has(String(job.ai_user_uid)) ? ` (${t('ai.disabled-badge')})` : '');
         const lastRun   = job.last_run ? new Date(job.last_run).toLocaleString() : '—';
         const nextRun   = job.next_run ? serverTimeString(job.next_run) : '—';
         const statusBadge = job.last_status
@@ -2437,7 +2470,7 @@ const openJobForm = (job) => {
     const isNew  = !job;
     const sched  = (!isNew && job.schedule) ? job.schedule : { type: 'daily', time: '08:00' };
     const aiOptions = Object.entries(agentJobAiUsers)
-        .map(([uid, name]) => `<option value="${uid}" ${(!isNew && job.ai_user_uid == uid) ? 'selected' : ''}>${escHtml(name)}</option>`)
+        .map(([uid, name]) => `<option value="${uid}" ${(!isNew && job.ai_user_uid == uid) ? 'selected' : ''}>${escHtml(name)}${agentJobAiOff.has(String(uid)) ? ` (${escHtml(t('ai.disabled-badge'))})` : ''}</option>`)
         .join('');
     const spaceOptions = agentJobSpaces
         .map(s => `<option value="${s}" ${(!isNew && job.space === s) ? 'selected' : ''}>${escHtml(s)}</option>`)

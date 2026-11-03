@@ -141,6 +141,10 @@ const snapshotOutgoing = (nextPath) => {
         text:     editor.value,
         selStart: editor.selectionStart ?? 0,
         selEnd:   editor.selectionEnd ?? 0,
+        // The rev the edit started from. Coming back reloads the page, which hands out the
+        // *current* rev — restoring the draft under that would let it overwrite whatever
+        // changed while the tab was in the background, without a conflict.
+        rev:      state.currentPageRev,
     };
     // An edited page is no longer a throwaway peek.
     tab.isPreview = false;
@@ -160,6 +164,7 @@ const resumeTab = async (tab) => {
             } catch { /* value shorter than the stored offsets */ }
         }
         state.hasUnsavedChanges = true;
+        if (tab.draft.rev) state.currentPageRev = tab.draft.rev;
         const saveBtn = document.getElementById('save-btn');
         if (saveBtn) saveBtn.disabled = false;
         // The draft has been handed back to the editor, so the editor owns it again.

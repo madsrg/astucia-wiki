@@ -6,6 +6,28 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+### Added
+- **Switch an AI user off.** Admin → AI → AI Users has an on/off switch on each row and in
+  the form. A switched-off AI user does not answer mentions — the thread gets the reply "AI User
+  <name> is currently disabled" instead — is
+  not offered in the `#` type-ahead or as a chat's focus, takes no `/aiJob`, skips its
+  scheduled jobs and its workflow actions (skipped, not failed), ends any job already
+  queued for it with a reason, and its token is refused over REST and MCP. Nothing is
+  deleted: switching it back on restores everything. Each switch is audited.
+- **Saving no longer overwrites somebody else's change.** If a page was changed while you
+  were editing it — by another person, an AI user, a workflow or a sync — saving no longer
+  silently replaces their version. A dialog shows what differs and asks: keep editing, load
+  their version (your text is copied to the clipboard first), or overwrite. Changes to the
+  page's front matter alone never count as a conflict. Data pages get the same dialog; a list
+  shows the current rows and says your last change was not saved; a diagram asks before
+  overwriting. A draft held in a background tab keeps the version it started from. Saves
+  through the API, MCP and AI tools are unchanged unless they opt in with `base`.
+
+### Fixed
+- **The editor's emoji picker has its background again.** Its box collapsed to nothing,
+  leaving the emojis floating over the page with no panel behind them: two equally specific
+  style rules pinned it to its button from above and below at once.
+
 ## [2026.10.8] — 2026-10-28
 
 AI feedback where a page is discussed — a workflow can post an AI's review in the page's own

@@ -53,13 +53,28 @@ export const init = () => {
         // User saved (or Save & Exit) inside the editor.
         if (msg.event === 'save' && msg.xml && isEditor) {
             try {
-                const spaceQs = state.currentSpace ? `&space=${encodeURIComponent(state.currentSpace)}` : '';
-                const response = await fetch(
-                    `api.php?action=save&file=${encodeURIComponent(state.currentPagePath)}${spaceQs}`,
-                    { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: msg.xml }
-                );
-                const result = await response.json();
-                if (result.success) {
+                const { postPageSave } = await import('../core/save_conflict.js');
+                const path = state.currentPagePath;
+                let { ok, conflict, data: result } = await postPageSave(path, msg.xml);
+                if (conflict) {
+                    // There is no meaningful text diff of draw.io XML, so this is a plain
+                    // question. Declining leaves the editor open with the drawing intact;
+                    // the next save asks again, since the base is unchanged.
+                    const { confirmModal } = await import('../core/utils.js');
+                    const { icons } = await import('../core/icons.js');
+                    const { t } = await import('../i18n/index.js');
+                    const yes = await confirmModal(t('conflict.title'), {
+                        message: result.modifiedBy
+                            ? t('conflict.diagram-by', { name: result.modifiedBy })
+                            : t('conflict.diagram'),
+                        confirmLabel: t('conflict.overwrite'), cancelLabel: t('conflict.keep'),
+                        dangerous: true, icon: icons.warning,
+                    });
+                    if (!yes || state.currentPagePath !== path) return;
+                    ({ ok, data: result } = await postPageSave(path, msg.xml, { force: true }));
+                }
+                if (ok && result.rev) state.currentPageRev = result.rev;
+                if (ok) {
                     showToast('Diagram saved!', 'success');
                     state.initialContent = msg.xml;
 

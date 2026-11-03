@@ -335,6 +335,7 @@ export const refreshPageContent = async () => {
     state.initialContent = result.data;
     state.currentPageLastUpdated = result.lastUpdated;
     state.currentPageSize = result.size ?? null;
+    state.currentPageRev = result.rev ?? null;
     // `data` is the body with any front matter removed, so the dirty-check and both
     // editors compare bodies. `size` is still the size on disk — see the get action.
     state.currentPageFrontmatter = result.frontmatter ?? null;
@@ -408,6 +409,7 @@ const reloadWatchedPage = async (path) => {
     if (!result.success) return false;
     state.currentPageLastUpdated = result.lastUpdated;
     state.currentPageSize = result.size ?? null;
+    state.currentPageRev = result.rev ?? null;
     state.currentPageFrontmatter = result.frontmatter ?? null;
     state.currentPageFrontmatterNested = result.frontmatter_nested ?? null;
     state.currentPageFrontmatterManaged = result.frontmatter_managed ?? null;
@@ -442,8 +444,13 @@ const reloadWatchedPage = async (path) => {
  * `path` is checked because a save can resolve after the user has already navigated on,
  * and the page they are looking at now has its own baseline that must not be clobbered.
  */
-export const rebaselineFileWatch = (path, mtime, size) => {
-    if (!path || _watchPath !== path || state.currentPagePath !== path) return;
+export const rebaselineFileWatch = (path, mtime, size, rev) => {
+    if (!path || state.currentPagePath !== path) return;
+    // The rev is not the watcher's, but it has the same lifetime: whatever this client
+    // just wrote, or chose to accept, is what its next save is based on. Set before the
+    // watcher check, since a diagram is not watched and still saves with a base.
+    if (rev) state.currentPageRev = rev;
+    if (_watchPath !== path) return;
     if (mtime) { _watchMtime = mtime; state.currentPageLastUpdated = mtime; }
     if (size !== undefined && size !== null) { _watchSize = size; state.currentPageSize = size; }
     _watchWarned = 0;
@@ -470,10 +477,10 @@ const startFileWatch = (path, mtime, size) => {
         const changed = res.mtime > _watchMtime || (res.size ?? 0) !== _watchSize;
         if (!changed) return;
 
-        // Never discard unsaved work. Saving does not detect a concurrent change, so
-        // without this notice an edit in progress would silently overwrite whatever
-        // changed on disk. _watchMtime is deliberately left as it was, so the reload
-        // happens as soon as the edit is saved or cancelled.
+        // Never discard unsaved work. The save itself now refuses to overwrite a change
+        // it never saw (see modules/core/save_conflict.js); this notice is the early
+        // warning. _watchMtime is deliberately left as it was, so the reload happens as
+        // soon as the edit is saved or cancelled.
         if (state.isEditing || state.hasUnsavedChanges) {
             if (_watchWarned !== res.mtime) {
                 _watchWarned = res.mtime;
@@ -634,6 +641,9 @@ export const loadPage = async (path, id, tags, opts = {}) => {
 
     state.currentPagePath = path;
     state.currentPageId = id;
+    // Cleared here and set by the branch below that loads an editable type, so a page
+    // type that never sets it cannot save under the previous page's rev.
+    state.currentPageRev = null;
     // The tree is the freshest copy of a page's tags: it is re-read whenever the index
     // changes, while a caller's `tags` can be a snapshot — a tab restored from localStorage,
     // or a link followed long after the tags were edited in another browser. The caller's
@@ -705,6 +715,7 @@ export const loadPage = async (path, id, tags, opts = {}) => {
         state.initialContent = result.data;
         state.currentPageLastUpdated = result.lastUpdated;   // baseline for the on-disk watcher
         state.currentPageSize = result.size ?? null;
+        state.currentPageRev = result.rev ?? null;
         const { renderJsonView } = await import('../json_view/index.js');
         await renderJsonView(result.data, path);
         renderTags();
@@ -764,6 +775,7 @@ export const loadPage = async (path, id, tags, opts = {}) => {
         loadedGitCommit = result.git_commit ?? false;
         state.currentPageLastUpdated = result.lastUpdated;   // baseline for the on-disk watcher
         state.currentPageSize = result.size ?? null;
+        state.currentPageRev = result.rev ?? null;
         try {
             state.currentListData = JSON.parse(result.data);
             state.activeListView = null;
@@ -796,6 +808,7 @@ export const loadPage = async (path, id, tags, opts = {}) => {
             state.initialContent = result.data;
             state.currentPageLastUpdated = result.lastUpdated;
             state.currentPageSize = result.size ?? null;   // baseline for the on-disk watcher
+            state.currentPageRev = result.rev ?? null;
             document.getElementById('editor-container').value = state.initialContent;
 
             // Wikilinks first: a `![[Page]]` embed becomes an `{include:ID}` tag, which the next
@@ -829,6 +842,7 @@ export const loadPage = async (path, id, tags, opts = {}) => {
             diagramViewer.innerHTML = `<iframe src="about:blank" frameborder="0"></iframe>`;
             loadedGitCommit = result.git_commit ?? true;
             state.initialContent = result.data; // diagram module reads this on init/edit
+            state.currentPageRev = result.rev ?? null;
             {
                 const iframe = diagramViewer.querySelector('iframe');
                 iframe.style.opacity = '0';

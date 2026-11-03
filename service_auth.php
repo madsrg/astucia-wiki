@@ -52,10 +52,26 @@ function resolve_service_token_auth(): ?array {
     $token = substr($hdr, 7);
     foreach ((json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? []) as $u) {
         if ((!empty($u['is_ai']) || !empty($u['is_system'])) && wiki_service_token_matches($u, $token)) {
-            return $u;
+            // A disabled AI user's token is refused like an unknown one: switching it off
+            // in Admin has to stop an outside agent borrowing it too, not just the wiki's
+            // own calls. The token itself is kept, so switching it back on restores access.
+            return wiki_ai_disabled($u) ? null : $u;
         }
     }
     return null;
+}
+
+/**
+ * Whether an AI user has been switched off in Admin → AI Users (`disabled: true` on the
+ * record; no flag means enabled, so older records need no migration).
+ *
+ * Every route that would run, reach or offer an AI user asks this — chat mentions, /aiJob,
+ * the cron runner, workflows, Explain, the token above, and the lists people pick from.
+ * Nothing is deleted by disabling: the configuration, token and history stay, so switching
+ * it back on is the whole undo.
+ */
+function wiki_ai_disabled(?array $u): bool {
+    return $u !== null && !empty($u['is_ai']) && !empty($u['disabled']);
 }
 
 /**

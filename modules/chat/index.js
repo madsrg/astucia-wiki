@@ -318,6 +318,16 @@ const buildRow = (msg, grouped) => {
     if (msg.is_debug) bubbleClass += ' chat-bubble-debug';
     bubble.className = bubbleClass;
 
+    // The wiki's reply when a switched-off AI user is mentioned: worded here, in the
+    // reader's language, rather than taken from the stored English text.
+    if (msg.notice === 'ai_disabled') {
+        bubble.classList.add('chat-bubble-notice');
+        bubble.textContent = t('chat.ai-disabled-reply', { name: msg.name });
+        col.appendChild(bubble);
+        row.appendChild(col);
+        return row;
+    }
+
     if (msg.pending && msg.job_id) {
         // A queued /aiJob waits for the cron runner — minutes to hours — so the
         // 5-minute timeout below must not apply to it (the server's stale sweep
@@ -946,9 +956,13 @@ export const init = () => {
 
         // Detect AI user mention so we can show a waiting modal
         const users       = await getUsers();
-        const aiUsers     = users.filter(u => u.is_ai);
-        const mentions    = (text.match(/[#@]([\w.-]*\w)/g) || []).map(m => m.slice(1).toLowerCase());
-        const explicitAi  = aiUsers.find(u => mentions.includes(u.name.toLowerCase()));
+        const aiUsers = users.filter(u => u.is_ai);
+        const mentions = (text.match(/[#@]([\w.-]*\w)/g) || []).map(m => m.slice(1).toLowerCase());
+        // A switched-off AI still counts as *mentioned* — otherwise the thread's focused AI
+        // would be put in front of a message addressed to somebody else — but it is never
+        // focused or awaited. The server posts the message and answers with a notice.
+        const mentionedAny = aiUsers.find(u => mentions.includes(u.name.toLowerCase()));
+        const explicitAi = mentionedAny && !mentionedAny.disabled ? mentionedAny : null;
 
         // Explicitly mentioning an AI focuses the chat on it; focus mode then
         // auto-routes later plain messages to the same AI without re-mentioning.
@@ -958,8 +972,9 @@ export const init = () => {
         // longer resolve (renamed/removed, or the user list failed to load), don't
         // silently post a plain message with no routing — tell the user instead.
         const focusName   = getFocusAi(_chatPath);
-        const focus       = applyFocus(text, { chatPath: _chatPath, aiUsers, mentionedAi: explicitAi });
-        if (focusName && !explicitAi && !text.startsWith('/') && !focus.mentionedAi) {
+        const focus = mentionedAny?.disabled ? { text, mentionedAi: null }
+            : applyFocus(text, { chatPath: _chatPath, aiUsers: aiUsers.filter(u => !u.disabled), mentionedAi: explicitAi });
+        if (focusName && !mentionedAny && !text.startsWith('/') && !focus.mentionedAi) {
             showToast(t('chat.focus.unavailable', { name: focusName }), 'error');
             return;
         }

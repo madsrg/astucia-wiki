@@ -265,6 +265,11 @@ function wiki_wf_do_action(array $a, array $ctx, string &$log): array {
         case 'ai': {
             $ai = wiki_wf_user((int)$a['ai_uid'], true);
             if (!$ai) throw new Exception('The AI user no longer exists.');
+            // Skipped, not failed: a switched-off AI is an administrator's decision, and five
+            // failures in a row would switch the workflow itself off as a side effect.
+            if (wiki_ai_disabled($ai)) {
+                return ['status' => 'skipped', 'detail' => 'The AI user "' . ($ai['name'] ?? '') . '" is switched off.'];
+            }
             $owner = $ctx['wf']['created_by'] ?? [];
             $job = [
                 'id'           => $run['id'],
@@ -299,6 +304,9 @@ function wiki_wf_do_action(array $a, array $ctx, string &$log): array {
             $text = wiki_wf_render((string)$a['text'], $vars);
             $as = (int)($a['as_uid'] ?? 0);
             $ai = $as !== 0 ? wiki_wf_user($as, true) : null;
+            // Posting *as* a switched-off AI would put words in its mouth it is not giving;
+            // the message goes out under the workflow's name instead, as for a deleted one.
+            if (wiki_ai_disabled($ai)) $ai = null;
             $who = ['uid' => $ai ? (int)$ai['uid'] : 0, 'name' => $ai ? (string)($ai['name'] ?? 'AI') : $wf_name];
             $why = null;
             $thread = wiki_wf_thread($a, $run, $vars, $ai ? $who : null, $why);
@@ -676,6 +684,7 @@ function wiki_workflow_preview(array $wf, string $space, string $path, array $ac
                 $p['ai_user'] = $ai['name'] ?? '';
                 $p['prompt'] = wiki_wf_render((string)($a['prompt'] ?? ''), $vars);
                 if (!$ai) $p['warnings'][] = 'ai_missing';
+                elseif (wiki_ai_disabled($ai)) $p['warnings'][] = 'ai_disabled';
                 [$p['chat'], $tw] = wiki_wf_preview_thread($a, $space, $path, $vars);
                 $p['warnings'] = array_merge($p['warnings'], $tw);
                 break;

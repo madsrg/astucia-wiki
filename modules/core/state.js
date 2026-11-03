@@ -23,6 +23,7 @@ export const state = {
     sortState: { colId: null, direction: 'asc' },
     currentPageLastUpdated: null,
     currentPageSize: null,          // byte size of the loaded file; baseline for the on-disk watcher
+    currentPageRev: null,           // the `rev` this page was loaded or last saved at; sent as `base` on save (see modules/core/save_conflict.js)
     // The open page's own front matter, captured from the `get` that rendered it, and the
     // subset of its fields that hold a list or a nested mapping (which the Metadata panel
     // shows but will not edit). See frontmatter.php.

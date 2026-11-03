@@ -153,59 +153,100 @@ const renderCurrentPage = async (markdown) => {
     return html;
 };
 
-export const savePage = async () => {
+const SAVE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+
+const resetSaveButton = () => {
+    const saveBtn = document.getElementById('save-btn');
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = SAVE_ICON;
+};
+
+/**
+ * The page moved on while it was being edited, and the save was refused (see
+ * modules/core/save_conflict.js). Nothing has been written; ask what to do.
+ */
+const resolveSaveConflict = async (path, mine, current) => {
+    // Somebody saved exactly this text already: nothing to choose between.
+    if (current.data === mine) return savePage({ force: true });
+
+    const { askSaveConflict, stashOnClipboard } = await import('../core/save_conflict.js');
+    const choice = await askSaveConflict({
+        mine, theirs: current.data, modifiedBy: current.modifiedBy, lastUpdated: current.lastUpdated,
+    });
+    if (state.currentPagePath !== path) return;            // navigated away meanwhile
+
+    if (choice === 'overwrite') return savePage({ force: true });
+
+    if (choice === 'theirs') {
+        // The edit is about to be dropped, so it goes to the clipboard first — and if the
+        // browser will not allow that, it stays in the editor instead of being lost.
+        if (!await stashOnClipboard(mine)) {
+            showToast(t('conflict.copy-failed'), 'error');
+            resetSaveButton();
+            return;
+        }
+        state.hasUnsavedChanges = false;
+        await setEditingMode(false);
+        const { refreshPageContent, rebaselineFileWatch } = await import('../page_view/index.js');
+        await refreshPageContent();
+        rebaselineFileWatch(path, state.currentPageLastUpdated, state.currentPageSize);
+        showToast(t('conflict.copied'), 'info');
+        return;
+    }
+
+    // Keep editing. The author has now seen the other version, so their next save is
+    // based on it and goes through — which is what "I'll merge it myself" means. The
+    // watcher's baseline is left alone, so cancelling still reloads the page from disk.
+    state.currentPageRev = current.rev;
+    showToast(t('conflict.kept'), 'info');
+    resetSaveButton();
+};
+
+export const savePage = async (opts) => {
     if (!state.currentPagePath) return;
+    // Also the save button's click handler, so `opts` may be an Event.
+    const force = opts?.force === true;
 
     const saveBtn = document.getElementById('save-btn');
     const viewerContent = document.getElementById('viewer-content');
 
     saveBtn.disabled = true;
-    saveBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span>${t('edit.saving')}</span>`;
+    saveBtn.innerHTML = `${SAVE_ICON}<span>${t('edit.saving')}</span>`;
 
     try {
+        const path = state.currentPagePath;
         const markdownContent = state.editMode === 'inline'
             ? getInlineContent()
             : document.getElementById('editor-container').value;
-        const spaceQs = state.currentSpace ? `&space=${encodeURIComponent(state.currentSpace)}` : '';
-        const saveResponse = await fetch(`api.php?action=save&file=${encodeURIComponent(state.currentPagePath)}${spaceQs}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: markdownContent,
-        });
+        const { postPageSave } = await import('../core/save_conflict.js');
+        const { ok, conflict, data: resultData } = await postPageSave(path, markdownContent, { force });
 
-        if (!saveResponse.ok) {
-            const errorData = await saveResponse.json();
-            throw new Error(errorData.message || t('edit.save-error'));
-        }
+        if (conflict) return resolveSaveConflict(path, markdownContent, resultData);
+        if (!ok) throw new Error(resultData.message || t('edit.save-error'));
 
-        const resultData = await saveResponse.json();
-        if (resultData.success) {
-            showToast(t('edit.saved'), 'success');
-            // Tell the on-disk watcher these bytes are ours, or its next poll reports
-            // this very save as an external change and reloads the page.
-            const { rebaselineFileWatch, updateFrontmatterBadge } = await import('../page_view/index.js');
-            rebaselineFileWatch(state.currentPagePath, resultData.lastUpdated, resultData.size);
-            // The save may have changed the page's own front matter — automatic stamping
-            // rewrites four fields, and can add the block to a page that had none. The
-            // cached copy came from the `get` that rendered the page, so without taking the
-            // block back off the response the Metadata panel and its indicator keep
-            // describing the state before this save.
-            if (resultData.frontmatter !== undefined) {
-                state.currentPageFrontmatter = resultData.frontmatter ?? null;
-                state.currentPageFrontmatterNested = resultData.frontmatter_nested ?? null;
-                state.currentPageFrontmatterManaged = resultData.frontmatter_managed ?? null;
-                updateFrontmatterBadge();
-            }
-            state.initialContent = markdownContent;
-            viewerContent.innerHTML = await renderCurrentPage(state.initialContent);
-            setEditingMode(false);
-        } else {
-            throw new Error(resultData.message);
+        showToast(t('edit.saved'), 'success');
+        // Tell the on-disk watcher these bytes are ours, or its next poll reports
+        // this very save as an external change and reloads the page. The rev rides
+        // along: it is the base of the next save.
+        const { rebaselineFileWatch, updateFrontmatterBadge } = await import('../page_view/index.js');
+        rebaselineFileWatch(path, resultData.lastUpdated, resultData.size, resultData.rev);
+        // The save may have changed the page's own front matter — automatic stamping
+        // rewrites four fields, and can add the block to a page that had none. The
+        // cached copy came from the `get` that rendered the page, so without taking the
+        // block back off the response the Metadata panel and its indicator keep
+        // describing the state before this save.
+        if (resultData.frontmatter !== undefined) {
+            state.currentPageFrontmatter = resultData.frontmatter ?? null;
+            state.currentPageFrontmatterNested = resultData.frontmatter_nested ?? null;
+            state.currentPageFrontmatterManaged = resultData.frontmatter_managed ?? null;
+            updateFrontmatterBadge();
         }
+        state.initialContent = markdownContent;
+        viewerContent.innerHTML = await renderCurrentPage(state.initialContent);
+        setEditingMode(false);
     } catch (error) {
         showToast(t('edit.save-failed', { error: error.message }), 'error');
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+        resetSaveButton();
     }
 };
 

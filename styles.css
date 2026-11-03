@@ -607,8 +607,12 @@ body {
     font-weight: bold;
 }
 .toolbar-icon-btn { min-width: 28px; padding: 4px 5px !important; display: inline-flex; align-items: center; justify-content: center; }
-/* The editor toolbar's emoji grid: the chat picker, opening downward from its button. */
-.toolbar-emoji-picker { top: calc(100% + 4px); bottom: auto; left: 0; }
+/* The editor toolbar's emoji grid: the chat picker, opening downward from its button.
+   Both classes, so specificity decides and not sheet order: `.chat-emoji-picker` comes later
+   in this file, and with one class its `bottom` won while this `top` still applied — a box
+   pinned at both edges below a 28px button has a negative height, so it collapsed to 0 and
+   the emojis spilled out of it with no background behind them. */
+.chat-emoji-picker.toolbar-emoji-picker { top: calc(100% + 4px); bottom: auto; left: 0; }
 .toolbar-btn-danger { color: #e53e3e !important; border-color: #fed7d7 !important; }
 .toolbar-btn-danger:hover { background: #fff5f5 !important; color: #c53030 !important; border-color: #fc8181 !important; }
 .editor-help-dropdown { min-width: 210px !important; right: 0; left: auto; }
@@ -2033,6 +2037,13 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 .git-diff-line-del  { background: #fef2f2; color: #991b1b; }
 .git-diff-line-hunk { background: #eff6ff; color: #1d4ed8; font-style: italic; }
 .git-diff-line-meta { color: var(--accent-gray); }
+/* Save conflict (modules/core/save_conflict.js): the git panel's diff lines in a dialog.
+   Both classes, so it wins over .lightbox-content by specificity (the Space settings trap). */
+#save-conflict-modal { z-index: 1100; }
+.lightbox-content.save-conflict-content { box-sizing: border-box; width: 760px; max-width: 92vw; height: auto; max-height: 85vh; }
+.save-conflict-content .save-conflict-diff { flex: 1 1 auto; min-height: 120px; max-height: 50vh; }
+.save-conflict-legend { display: flex; gap: 0.5rem; margin-bottom: 0.4rem; font-size: 0.78rem; }
+.save-conflict-key { padding: 0.1rem 0.5rem; border-radius: 4px; font-family: monospace; }
 
 /* ── AI Users admin tab ─────────────────────────────────────────────────────── */
 .admin-ai-badge  { display: inline-block; font-size: 0.65rem; font-weight: 700; background: #dbeafe; color: #1d4ed8; border-radius: 99px; padding: 1px 6px; margin-left: 4px; vertical-align: middle; letter-spacing: 0.03em; }
@@ -2116,6 +2127,12 @@ button.avatar-circle:hover, button.avatar-circle:focus-visible { border-color: v
 .admin-job-status-skip { background: #edf2f7; color: #4a5568; }
 .wf-table td { vertical-align: top; }
 .wf-row-off td:not(:first-child) { opacity: 0.55; }
+/* A switched-off AI user (Admin → AI Users, and the /aiUsers overview). */
+.ai-row-off td:not(:first-child) { opacity: 0.55; }
+.ai-off-row td { opacity: 0.6; }
+/* The wiki's own reply in a chat, e.g. "AI User X is currently disabled". */
+.chat-bubble.chat-bubble-notice { font-style: italic; color: var(--accent-gray); background: #f7fafc; border: 1px dashed var(--border-color); }
+.ai-off-badge { font-size: 0.72rem; padding: 0 0.4rem; border-radius: 999px; background: #edf2f7; color: var(--accent-gray); margin-left: 0.3rem; }
 .wf-row-btns { white-space: nowrap; display: flex; gap: 4px; }
 .wf-sub { font-size: 0.75rem; color: var(--accent-gray); margin-top: 2px; font-weight: 400; }
 .wf-err { font-size: 0.78rem; color: #c53030; margin-top: 2px; }

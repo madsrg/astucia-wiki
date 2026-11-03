@@ -79,6 +79,14 @@ setTimeout(async () => {
     btn.click();                                   await sleep(100);
     out += ' opens=' + !picker.classList.contains('hidden')
         + ' below=' + (picker.getBoundingClientRect().top >= btn.getBoundingClientRect().bottom);
+    // The box holds its grid. Opening below was asserted from the start and passed while the
+    // box had collapsed to 0px — pinned at both edges by two equally specific rules — with
+    // every emoji spilling out of it onto the editor with nothing behind them.
+    {
+      const box = picker.getBoundingClientRect(), last = picker.lastElementChild.getBoundingClientRect();
+      out += ' contains=' + (last.bottom <= box.bottom && last.right <= box.right)
+          + ' opaque=' + (getComputedStyle(picker).backgroundColor !== 'rgba(0, 0, 0, 0)');
+    }
     btn.click();                                   await sleep(100);
     out += ' toggles=' + picker.classList.contains('hidden');
 
@@ -145,6 +153,8 @@ assert_contains "  …with the shared 24-emoji grid"   'items=24'           "$PR
 assert_contains "  …hidden until asked for"          'hiddenAtRest=true'  "$PROBE"
 assert_contains "it opens"                           'opens=true'         "$PROBE"
 assert_contains "  …below the button"                'below=true'         "$PROBE"
+assert_contains "  …its box holds every emoji"       'contains=true'      "$PROBE"
+assert_contains "  …on a background of its own"      'opaque=true'        "$PROBE"
 assert_contains "  …and a second click closes it"    'toggles=true'       "$PROBE"
 assert_contains "a click elsewhere closes it"        'outsideCloses=true' "$PROBE"
 

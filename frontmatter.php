@@ -96,6 +96,19 @@ function wiki_fm_body(string $raw): string {
 }
 
 /**
+ * The revision a client edits from: `get` hands it out, `save` takes it back as `base`
+ * and refuses the write when the page has moved on since (see the save action).
+ *
+ * A Markdown page is fingerprinted by its **body** only. `save` re-attaches whatever
+ * block is on disk at the time of writing (wiki_fm_preserve), so a front-matter change
+ * made while somebody edits the body — the Metadata panel, automatic stamping, tag sync —
+ * is never lost and must not count as a conflict. Every other type is its exact bytes.
+ */
+function wiki_content_rev(string $ext, string $raw): string {
+    return substr(sha1($ext === 'md' ? wiki_fm_body($raw) : $raw), 0, 16);
+}
+
+/**
  * Put a body back behind the block it came with.
  *
  * Concatenation, deliberately: the block is never re-serialised, so a save cannot reformat

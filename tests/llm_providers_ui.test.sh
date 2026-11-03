@@ -90,7 +90,9 @@ const admin = async () => {
   // The AI user form names a provider instead of carrying the connection itself.
   click($('.admin-tab[data-tab="ai"]'));                     await sleep(1000);
   const ann = rows('admin-ai-list').find(tr => tr.textContent.includes('Ann'));
-  out += ' listconn=' + (ann?.children[4]?.textContent || 'none');
+  // The connection column, found by its class rather than its position: a column added in
+  // front of it (the on/off switch) moved it once already.
+  out += ' listconn=' + (ann?.querySelector('td.admin-td-email')?.textContent || 'none');
   click(ann.querySelector('.btn-secondary'));               await sleep(1200);
   const sel = $('#ai-f-connection');
   out += ' select=' + (sel ? sel.options.length : 'missing') + '/' + (sel && sel.value ? 'set' : 'empty');

@@ -20,7 +20,9 @@ export const buildAiUsersTableHtml = (list) => {
         const servers = (u.mcp_servers && u.mcp_servers.length) ? esc(u.mcp_servers.join(', ')) : dash;
         // provider shown as a hover title for extra context without cluttering the cell
         const modelCell = u.provider ? `<span title="${esc(u.provider)}">${model}</span>` : model;
-        return `<tr><td>#${esc(u.name)}</td><td>${modelCell}</td><td>${servers}</td></tr>`;
+        // A switched-off AI is still listed — people ask why it stopped answering — and says so.
+        const off = u.disabled ? ` <span class="ai-off-badge">${esc(t('ai.disabled-badge'))}</span>` : '';
+        return `<tr${u.disabled ? ' class="ai-off-row"' : ''}><td>#${esc(u.name)}${off}</td><td>${modelCell}</td><td>${servers}</td></tr>`;
     }).join('');
     return `<table class="ai-users-table">
         <thead><tr>

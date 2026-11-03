@@ -141,6 +141,16 @@ const buildRow = (msg, grouped) => {
     bubble.className = 'chat-bubble' + (isMe ? ' chat-bubble-mine' : '') + (isAiMsg ? ' chat-bubble-md' : '')
         + (msg.is_debug ? ' chat-bubble-debug' : ''); // /debug report — see api.php's is_debug filters
 
+    // The wiki's reply when a switched-off AI user is mentioned: worded here, in the
+    // reader's language, rather than taken from the stored English text.
+    if (msg.notice === 'ai_disabled') {
+        bubble.classList.add('chat-bubble-notice');
+        bubble.textContent = t('chat.ai-disabled-reply', { name: msg.name });
+        col.appendChild(bubble);
+        row.appendChild(col);
+        return row;
+    }
+
     if (msg.pending && msg.job_id) {
         // A queued job waits for the cron runner — minutes to hours — so the 5-minute
         // timeout below must not apply to it, exactly as in the full chat view. This
@@ -407,7 +417,11 @@ const doSend = async () => {
     const users = await getUsers();
     const aiUsers = users.filter(u => u.is_ai);
     const mentions = (text.match(/[#@]([\w.-]*\w)/g) || []).map(m => m.slice(1).toLowerCase());
-    const explicitAi = aiUsers.find(u => mentions.includes(u.name.toLowerCase()));
+    // A switched-off AI still counts as *mentioned* — otherwise the thread's focused AI
+    // would be put in front of a message addressed to somebody else — but it is never
+    // focused or awaited. The server posts the message and answers with a notice.
+    const mentionedAny = aiUsers.find(u => mentions.includes(u.name.toLowerCase()));
+    const explicitAi = mentionedAny && !mentionedAny.disabled ? mentionedAny : null;
 
     // Explicitly mentioning an AI focuses the chat on it; focus mode then
     // auto-routes later plain messages to the same AI without re-mentioning.
@@ -417,8 +431,9 @@ const doSend = async () => {
     // longer resolve (renamed/removed, or the user list failed to load), don't
     // silently post a plain message with no routing — tell the user instead.
     const focusName = getFocusAi(_pcPath);
-    const focus = applyFocus(text, { chatPath: _pcPath, aiUsers, mentionedAi: explicitAi });
-    if (focusName && !explicitAi && !text.startsWith('/') && !focus.mentionedAi) {
+    const focus = mentionedAny?.disabled ? { text, mentionedAi: null }
+        : applyFocus(text, { chatPath: _pcPath, aiUsers: aiUsers.filter(u => !u.disabled), mentionedAi: explicitAi });
+    if (focusName && !mentionedAny && !text.startsWith('/') && !focus.mentionedAi) {
         showToast(t('chat.focus.unavailable', { name: focusName }), 'error');
         return;
     }
@@ -907,7 +922,7 @@ export const quoteSelectionInChat = (text) => {
 export const askAiAboutSelection = async (text) => {
     if (!text || !text.trim()) return;
     const users = await getUsers();
-    const ais = users.filter(u => u.is_ai);
+    const ais = users.filter(u => u.is_ai && !u.disabled);
     if (!ais.length) { showToast(t('select.no-ai'), 'error'); return; }
     const chatPath = (state.currentPagePath || '').replace(/\.md$/i, '.chat');
     const focused = getFocusAi(chatPath);

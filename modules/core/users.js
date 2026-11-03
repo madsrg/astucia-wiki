@@ -69,4 +69,5 @@ export const getMentionableUsers = async () => (await getUsers()).filter(u => !u
 // offers one kind at a time and the sigil already says what the name will reach.
 // Kept here so every composer splits them the same way.
 export const getPeopleMentionables = async () => (await getMentionableUsers()).filter(u => !u.is_ai);
-export const getAiMentionables     = async () => (await getMentionableUsers()).filter(u => !!u.is_ai);
+// A switched-off AI user is not offered: it would not answer.
+export const getAiMentionables     = async () => (await getMentionableUsers()).filter(u => !!u.is_ai && !u.disabled);

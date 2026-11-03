@@ -60,25 +60,28 @@ const currentJsonText = () => {
     try { return JSON.stringify(c.json); } catch (e) { return null; }
 };
 
-const saveJson = async (saveBtn) => {
+// Pretty-printed the way the server stores it, so a diff compares structure rather than
+// one side's whitespace — the editor's own text is often a single line.
+const prettyJson = (text) => { try { return JSON.stringify(JSON.parse(text), null, 4); } catch { return text; } };
+
+const saveJson = async (saveBtn, { force = false } = {}) => {
     if (!_currentPath) return;
     const text = currentJsonText();
     if (text === null) { showToast(t('json.invalid'), 'error'); return; }
 
     saveBtn.disabled = true;
     saveBtn.textContent = t('btn.saving');
+    const path = _currentPath;
+    const restore = () => { saveBtn.textContent = t('btn.save'); saveBtn.disabled = false; };
     try {
-        const spaceQs = state.currentSpace ? `&space=${encodeURIComponent(state.currentSpace)}` : '';
-        const res = await fetch(`api.php?action=save&file=${encodeURIComponent(_currentPath)}${spaceQs}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: text,
-        });
-        const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.message || t('edit.save-error'));
-        // Our own write — re-baseline the watcher so it is not reported as external.
+        const { postPageSave } = await import('../core/save_conflict.js');
+        const { ok, conflict, data } = await postPageSave(path, text, { force });
+        if (conflict) { await resolveJsonConflict(saveBtn, path, text, data, restore); return; }
+        if (!ok) throw new Error(data.message || t('edit.save-error'));
+        // Our own write — re-baseline the watcher so it is not reported as external,
+        // and take the rev the next save is based on.
         const { rebaselineFileWatch } = await import('../page_view/index.js');
-        rebaselineFileWatch(_currentPath, data.lastUpdated, data.size);
+        rebaselineFileWatch(path, data.lastUpdated, data.size, data.rev);
         state.hasUnsavedChanges = false;
         notifyPageState();
         showToast(t('edit.saved'), 'success');
@@ -86,9 +89,33 @@ const saveJson = async (saveBtn) => {
         // leave disabled until the next edit
     } catch (e) {
         showToast(t('edit.save-failed', { error: e.message }), 'error');
-        saveBtn.textContent = t('btn.save');
-        saveBtn.disabled = false;
+        restore();
     }
+};
+
+// The data page changed on disk since it was opened; nothing was written. Same three
+// choices as a Markdown page (see modules/core/save_conflict.js).
+const resolveJsonConflict = async (saveBtn, path, text, current, restore) => {
+    const mine = prettyJson(text), theirs = prettyJson(current.data);
+    if (mine === theirs) return saveJson(saveBtn, { force: true });
+    const { askSaveConflict, stashOnClipboard } = await import('../core/save_conflict.js');
+    const choice = await askSaveConflict({ mine, theirs, modifiedBy: current.modifiedBy, lastUpdated: current.lastUpdated });
+    if (_currentPath !== path) return;
+    if (choice === 'overwrite') return saveJson(saveBtn, { force: true });
+    if (choice === 'theirs') {
+        if (!await stashOnClipboard(mine)) { showToast(t('conflict.copy-failed'), 'error'); restore(); return; }
+        state.hasUnsavedChanges = false;
+        notifyPageState();
+        const { rebaselineFileWatch } = await import('../page_view/index.js');
+        rebaselineFileWatch(path, current.lastUpdated, current.size, current.rev);
+        state.initialContent = current.data;
+        await renderJsonView(current.data, path);
+        showToast(t('conflict.copied'), 'info');
+        return;
+    }
+    state.currentPageRev = current.rev;
+    showToast(t('conflict.kept'), 'info');
+    restore();
 };
 
 // Read-only fallback used when the editor CDN can't be loaded.
