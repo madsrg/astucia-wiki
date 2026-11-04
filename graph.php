@@ -23,8 +23,10 @@ require_once __DIR__ . '/frontmatter.php';
 class WikiGraph {
     // Bumped whenever the body scanner learns a new link form, so existing caches are
     // discarded once instead of keeping their old edges until each file happens to change.
-    // v2 added `[[wikilink]]` and `![[embed]]` references.
-    private const SCAN_VERSION = 2;
+    // v2 added `[[wikilink]]` and `![[embed]]` references. v3 keeps wikilink targets
+    // unresolved, separates links into other Spaces, adds `{include:N}`, skips code, and
+    // records what content health needs (body length, owner / review_by / reviewed).
+    private const SCAN_VERSION = 3;
 
     private $spaceDir;
     private $indexer;
@@ -74,17 +76,95 @@ class WikiGraph {
             || str_starts_with(strtolower($rel), 'skills/');
     }
 
-    // ---------------------------------------------------------------
-    // Refresh the outbound-link cache incrementally against index.json,
-    // returning [pageId => [outTargetId, ...]] for currently-existing pages.
-    // ---------------------------------------------------------------
-    private function refreshLinks(array $pages): array {
+    /** This Space's name as a `?space=` link would carry it; '' for PAGES_DIR itself. */
+    public function spaceName(): string {
+        $root = realpath(PAGES_DIR);
+        $me   = realpath($this->spaceDir);
+        if ($root === false || $me === false || rtrim($me, '/') === rtrim($root, '/')) return '';
+        return basename($me);
+    }
+
+    /**
+     * What one file says about its links, as cached in graph.json.
+     *
+     *  - `pid`   ids this page links to in its own Space: `?pageid=N` with no `space=` (or
+     *            this Space's own name), and `{include:N}` transclusions
+     *  - `xs`    `[space, id]` pairs for `?pageid=N&space=Other` — a link into another Space,
+     *            which is not an edge in this graph and is checked by content health alone
+     *  - `wl`    raw `[[wikilink]]` / `![[embed]]` targets, resolved at build time
+     *  - `chars` Markdown only: visible length of the body (headings' `#` and whitespace
+     *            excluded), for the empty-page check
+     *  - `fm`    Markdown only: the `owner`, `review_by` and `reviewed` front matter keys
+     *
+     * Code blocks and spans are skipped for every form, as wikilink_walk() always did for
+     * `[[…]]`: a page documenting the link syntax is not linking to anything.
+     */
+    private function scanFile(string $path, string $raw, string $self): array {
+        $is_md = substr($path, -3) === '.md';
+        $meta  = [];
+        if ($is_md) {
+            // Without stripping, an Obsidian `related: "[[Some Page]]"` in front matter
+            // becomes a real graph edge and a backlink on the target.
+            $split = wiki_fm_split($raw);
+            $body  = $split['body'];
+            $meta  = $split['meta'];
+        } else {
+            $body = $raw;
+        }
+        $text = wikilink_strip_code($body);
+
+        $pid = [];
+        $xs  = [];
+        // A link's query string: everything around `pageid=` up to a delimiter that cannot
+        // be part of a URL in Markdown or HTML. The Space may come before or after the id.
+        if (preg_match_all('/[^\s()\[\]<>"\'`]*pageid=\d+[^\s()\[\]<>"\'`]*/', $text, $m)) {
+            foreach ($m[0] as $url) {
+                $q = str_replace('&amp;', '&', $url);
+                $q = ($p = strpos($q, '?')) !== false ? substr($q, $p + 1) : $q;
+                $q = strtok($q, '#');
+                parse_str((string)$q, $params);
+                $id = (string)($params['pageid'] ?? '');
+                if (!ctype_digit($id)) {
+                    // A bare "pageid=12" in prose, with no parsable query around it.
+                    if (preg_match('/pageid=(\d+)/', $url, $mm)) $id = $mm[1]; else continue;
+                }
+                $sp = isset($params['space']) && is_string($params['space']) ? $params['space'] : null;
+                if ($sp === null || $sp === $self) $pid[$id] = true;
+                else $xs[$sp . "\0" . $id] = [$sp, $id];
+            }
+        }
+        if (preg_match_all('/\{include:(\d+)/', $text, $m)) {
+            foreach ($m[1] as $id) $pid[$id] = true;
+        }
+
+        $entry = [
+            'pid' => array_map('strval', array_keys($pid)),
+            'xs'  => array_values($xs),
+            'wl'  => wikilink_targets($body),
+        ];
+        if ($is_md) {
+            $visible = preg_replace('/^[ \t]{0,3}#{1,6}[ \t]*/m', '', $body);
+            $entry['chars'] = mb_strlen(preg_replace('/\s+/u', '', (string)$visible));
+            $fm = [];
+            foreach (['owner', 'review_by', 'reviewed'] as $k) {
+                if (isset($meta[$k]) && is_string($meta[$k]) && trim($meta[$k]) !== '') $fm[$k] = trim($meta[$k]);
+            }
+            if ($fm) $entry['fm'] = $fm;
+        }
+        return $entry;
+    }
+
+    /**
+     * Refresh the per-file cache incrementally against index.json and return it:
+     * [pageId => scanFile() entry + 'mtime'] for every page that exists on disk and is not a
+     * template, memory or skills page. Only files whose mtime changed are read.
+     */
+    public function scan(?array $pages = null): array {
+        $pages   = $pages ?? $this->indexer->getAllPages();
         $cache   = $this->loadCache();
         $fresh   = [];
         $changed = false;
-        // Built once for the whole space rather than per file: a wikilink names its target, so
-        // resolving one needs the index of every page.
-        $resolve = wikilink_resolver($pages);
+        $self    = $this->spaceName();
 
         foreach ($pages as $id => $data) {
             $id = (string)$id;
@@ -98,25 +178,37 @@ class WikiGraph {
                 $fresh[$id] = $cache[$id];               // unchanged — reuse
                 continue;
             }
-
-            // Changed / new — re-scan the body for both link forms: explicit ?pageid=<n>
-            // links and `[[wikilinks]]` / `![[embeds]]`, which name their target instead.
-            $body = file_get_contents($abs);
-            // Without stripping, an Obsidian `related: "[[Some Page]]"` in front matter
-            // becomes a real graph edge and a backlink on the target.
-            if (substr($data['path'], -3) === '.md') $body = wiki_fm_body($body);
-            $out  = [];
-            if (preg_match_all('/pageid=(\d+)/', $body, $m)) {
-                $out = $m[1];
-            }
-            $out = array_values(array_unique(array_merge($out, wikilink_ids($body, $resolve))));
-            $fresh[$id] = ['mtime' => (int)$mtime, 'out' => $out];
+            $fresh[$id] = ['mtime' => (int)$mtime]
+                        + $this->scanFile($data['path'], (string)file_get_contents($abs), $self);
             $changed    = true;
         }
 
         // Persist if anything moved (or entries were dropped).
         if ($changed || count($fresh) !== count($cache)) $this->saveCache($fresh);
-        return array_map(fn($e) => $e['out'] ?? [], $fresh);
+        return $fresh;
+    }
+
+    // ---------------------------------------------------------------
+    // Outbound reference targets per page: [pageId => [outTargetId, ...]].
+    // Wikilinks are resolved here rather than at scan time — a target is a *name*, and the
+    // page it names may have been created, renamed or deleted since the linking file was
+    // last read. Resolving once at scan time is how a link to a page created later used to
+    // stay missing from the graph until the linking page itself was edited.
+    // ---------------------------------------------------------------
+    private function refreshLinks(array $pages): array {
+        // Built once for the whole space rather than per file: a wikilink names its target, so
+        // resolving one needs the index of every page.
+        $resolve = wikilink_resolver($pages);
+        $out = [];
+        foreach ($this->scan($pages) as $id => $e) {
+            $ids = $e['pid'] ?? [];
+            foreach (($e['wl'] ?? []) as $target) {
+                $rid = $resolve($target);
+                if ($rid !== null) $ids[] = (string)$rid;
+            }
+            $out[$id] = array_values(array_unique(array_map('strval', $ids)));
+        }
+        return $out;
     }
 
     // ---------------------------------------------------------------

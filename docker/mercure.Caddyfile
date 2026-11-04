@@ -17,18 +17,9 @@
 	auto_https off
 	persist_config off
 	admin off
-	# Mercure 1.0.4's advice for any Caddyfile on Caddy 2.11.7: the new write_idle timeout
-	# (1 minute by default) overrides the hub's dispatch_timeout, so one subscriber that
-	# stops reading can hold a dispatch for a minute instead of a few seconds. It bounds a
-	# write that is *stuck*, not quiet time between writes — an idle stream with a pause of
-	# 70 s still received its next event, verified against 1.0.4 to 1.1.4 — so it costs
-	# nothing. Drop it once the hub is built on a Caddy release that includes
-	# caddyserver/caddy#8145 (merged, but 1.1.5 is still on 2.11.7).
-	servers {
-		timeouts {
-			write_idle 5s
-		}
-	}
+	# No `servers { timeouts { write_idle 5s } }` any more: that was Mercure 1.0.4's
+	# workaround for Caddy 2.11.7, whose write_idle overrode the hub's dispatch_timeout.
+	# Caddy 2.11.8 fixed it (caddyserver/caddy#8145) and Mercure 1.1.6 is built on it.
 }
 
 # 'bind' is what restricts the interface — a site address alone does not. Without it the

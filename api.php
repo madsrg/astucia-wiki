@@ -63,6 +63,7 @@ if (AUTHENTICATION_ENABLED && !$_anonymous_reader && !isset($_SESSION['user']) &
 
 require_once 'indexer.php';
 require_once 'graph.php';
+require_once 'content_health.php';
 require_once 'search_index.php';
 require_once 'index_sync.php';
 
@@ -2884,6 +2885,19 @@ if (isset($_REQUEST['action'])) {
                 if ($rel_root === '') { echo json_encode(['success' => true, 'related' => []]); break; }
                 $rel_graph = new WikiGraph($space_dir, $indexer);
                 echo json_encode(['success' => true, 'related' => $rel_graph->related($rel_root, $rel_hops)]);
+                break;
+
+            case 'content_health':
+                // Broken links, orphans, stale and empty pages in the current Space (see
+                // content_health.php). Read-only, so it is in neither guard list: a reader may
+                // see it, they simply have no button for it — the report only names pages they
+                // can already read. Links into another Space are checked against the same
+                // allowlist the ?space= gate used, so nothing is said about a Space they cannot see.
+                $ch_allowed = AUTHENTICATION_ENABLED ? actor_spaces_filter(get_current_role(), $ai_auth_user) : null;
+                $ch_report  = wiki_content_health($space_dir, $indexer, $ch_allowed, [
+                    'stale_days' => intval($_GET['stale_days'] ?? WIKI_HEALTH_STALE_DAYS),
+                ]);
+                echo json_encode(['success' => true] + $ch_report);
                 break;
 
             case 'get_pages_by_tag':

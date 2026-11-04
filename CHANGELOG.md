@@ -6,6 +6,13 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.11.1] — 2026-11-04
+
+Saving no longer overwrites somebody else's change; Content Health lists the broken links,
+orphans, stale and empty pages of a Space; AI users can be switched off; one realtime
+connection per browser instead of one per tab, which stops many open tabs from hanging the
+wiki; and the Docker image can serve HTTPS with HTTP/2 itself and bundles Mercure 1.1.6.
+
 ### Added
 - **Switch an AI user off.** Admin → AI → AI Users has an on/off switch on each row and in
   the form. A switched-off AI user does not answer mentions — the thread gets the reply "AI User
@@ -22,11 +29,36 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   shows the current rows and says your last change was not saved; a diagram asks before
   overwriting. A draft held in a background tab keeps the version it started from. Saves
   through the API, MCP and AI tools are unchanged unless they opt in with `base`.
+- **Content Health.** A new sidebar button for editors and administrators lists what in the
+  current Space needs attention: broken links (to pages that no longer exist, `[[wikilinks]]`
+  no page answers to, embedded attachments that are missing), orphans no other page links
+  to, stale pages (a front matter `review_by:` date has passed, or nothing changed for a
+  chosen period, with the `owner:` shown), and empty pages. Click a row to open the page.
+  Links into a Space you cannot read are left out. AI users and MCP clients get the same
+  report as the `wiki_content_health` tool.
+- **The Docker image serves HTTPS with HTTP/2 when it has a certificate.** Put `cert.pem`
+  and `key.pem` in `/data/tls/`, or set `TLS_SELF_SIGNED=true` to have a pair generated,
+  and publish port 443. Port 80 is unchanged, so a container behind a reverse proxy needs
+  nothing new — enable HTTP/2 on the proxy. The startup log says which mode it is in.
+
+### Changed
+- **Mercure 1.1.6** in the Docker image and as `install-mercure.sh`'s recommendation. It is
+  built on Caddy 2.11.8, which fixes the idle write timeout the image's hub config worked
+  around, so that workaround is gone (the installer still writes it for an older hub).
 
 ### Fixed
+- **Many open tabs no longer hang the wiki.** Each tab used to hold its own realtime
+  connection, and over HTTP/1.1 a browser allows only about six per site — so with six tabs
+  open, every other request from that browser waited forever. Now one tab, the one you are
+  using, holds the connection and passes updates to the others; switching tabs moves it
+  without losing an update. Serving the wiki over HTTP/2 is still recommended.
 - **The editor's emoji picker has its background again.** Its box collapsed to nothing,
   leaving the emojis floating over the page with no panel behind them: two equally specific
   style rules pinned it to its button from above and below at once.
+- **The knowledge graph sees a wikilink to a page created after the page that names it**
+  at once, rather than once the linking page is next edited. A `?pageid=…&space=Other` link
+  is no longer counted as an edge to a page in this Space, `{include:…}` now counts as a
+  link, and links shown as examples inside code no longer count at all.
 
 ## [2026.10.8] — 2026-10-28
 

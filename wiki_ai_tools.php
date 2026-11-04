@@ -18,6 +18,7 @@ require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/service_auth.php';   // actor_spaces_filter(), wiki_path_space()
 require_once __DIR__ . '/search_index.php';
 require_once __DIR__ . '/graph.php';
+require_once __DIR__ . '/content_health.php';
 require_once __DIR__ . '/llm_providers.php';
 require_once __DIR__ . '/realtime.php';      // wiki_chat_write(), wiki_realtime_publish()
 require_once __DIR__ . '/page_chat.php';    // a page's .chat thread moves with it
@@ -107,6 +108,17 @@ function wiki_tool_definitions(bool $with_memory = true, bool $with_skills = fal
                     'hops' => ['type' => 'integer', 'description' => 'How many relationship hops to traverse (1-4, default 1). 1 = direct neighbours only.'],
                 ],
                 'required'   => ['path'],
+            ],
+        ],
+        [
+            'name'        => 'wiki_content_health',
+            'description' => 'Report what needs attention in the current Space: broken links (pageid links to pages that no longer exist, [[wikilinks]] no page answers to, embedded attachments that are missing), orphans (pages no other page links to), stale pages (front matter review_by date passed, or not updated for stale_days), and empty or stub pages. Read-only. Returns plain text with page paths and ids, each list capped at 50 rows with the true totals stated. Use it for a periodic content review, or before tidying a Space.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => [
+                    'stale_days' => ['type' => 'integer', 'description' => 'A page not updated for this many days counts as stale (default 180). Pages with a future review_by date are never stale.'],
+                ],
+                'required'   => [],
             ],
         ],
         [
@@ -1089,6 +1101,15 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             $space_name_rp = basename($space_dir);
             foreach ($related as &$_r) { $_r['space'] = $space_name_rp; $_r['id'] = (string)$_r['id']; }
             return json_encode($related);
+
+        case 'wiki_content_health':
+            // The space gate above has already run on $space_dir; links into other Spaces are
+            // checked against the same allowlist, so the report says nothing about a Space this
+            // actor cannot read.
+            $ch = wiki_content_health($space_dir, $indexer,
+                actor_spaces_filter($ai_user['role'] ?? 'reader', $ai_user),
+                ['stale_days' => (int)($tool_input['stale_days'] ?? WIKI_HEALTH_STALE_DAYS)]);
+            return wiki_content_health_text($ch);
 
         case 'wiki_get_taxonomy':
             $tx_mode = wiki_tax_mode();

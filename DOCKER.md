@@ -407,6 +407,9 @@ The ones worth setting on any real deployment:
 | `MERCURE_ISSUER` | `https://astucia.invalid/wiki` | The `iss` the wiki signs its hub tokens with. The entrypoint writes the same value into the hub's config |
 | `MERCURE_RESOURCE_ID` | `https://astucia.invalid/.well-known/mercure` | The `aud` those tokens target. Must end in `/.well-known/mercure` |
 | `MERCURE_COOKIE_NAME` | `mercure_access_token` | Cookie a browser's ticket travels in. On an HTTPS-only install you may set `__Secure-mercure_access_token` |
+| `TLS_CERT_FILE` | `/data/tls/cert.pem` | Certificate (full chain, PEM) for HTTPS on port 443. HTTPS with HTTP/2 is on whenever this and the key exist |
+| `TLS_KEY_FILE` | `/data/tls/key.pem` | Its private key |
+| `TLS_SELF_SIGNED` | `false` | `true` generates a self-signed pair at those paths if there is none — for a LAN or a test. Never overwritten |
 
 The last three exist because Mercure 1.0 tokens are OAuth 2.0 access tokens: the wiki and
 the hub must agree on the issuer, the audience and the cookie name. The entrypoint defaults
@@ -423,10 +426,30 @@ per origin and each tab's stream takes one, so a few tabs exhaust the budget and
 requests start queueing behind them. Over HTTP/2 the streams are multiplexed onto one
 connection and it is a non-issue.
 
-It works over plain HTTP — it is just the case where a handful of tabs will bite. If you
-terminate TLS at a reverse proxy (the normal deployment), enable HTTP/2 there and there is
-nothing to think about. If you cannot, set `ENABLE_REALTIME=false` and the wiki polls exactly
-as every release before this one did.
+Since 2026.11.1 the tabs of one browser share **one** stream — the tab you are using holds
+it and passes updates to the others — so even over HTTP/1.1 realtime costs one connection,
+not one per tab. HTTP/2 is still worth having for everything else the page loads.
+
+Browsers speak HTTP/2 only over TLS, so it lives wherever TLS is terminated:
+
+- **Behind a reverse proxy** (the normal deployment): enable HTTP/2 there — `http2 on;` in
+  nginx, as in [the proxy config below](#nginx-as-a-reverse-proxy-with-lets-encrypt).
+  Caddy and Traefik do it by default. Nothing to set in the container.
+- **Without a proxy**, the container serves **HTTPS with HTTP/2 on port 443** itself when it
+  has a certificate. Put a full-chain `cert.pem` and `key.pem` in `/data/tls/` (or point
+  `TLS_CERT_FILE` / `TLS_KEY_FILE` elsewhere), or set `TLS_SELF_SIGNED=true` to have one
+  generated for `APP_BASE_URL`'s host, and publish the port:
+
+  ```bash
+  docker run -d -p 8080:80 -p 8443:443 -e TLS_SELF_SIGNED=true \
+      -v wiki-data:/data madsrotwitt/astucia-wiki:latest
+  ```
+
+  Port 80 keeps serving plain HTTP. The startup log says which it is doing:
+  `HTTPS with HTTP/2 on port 443` or `plain HTTP on port 80 only`.
+
+If neither is possible, realtime still works; `ENABLE_REALTIME=false` makes the wiki poll
+exactly as every release before realtime did.
 
 The bundled hub is the [Mercure](https://mercure.rocks) reference implementation, **AGPL-3.0**
 and shipped unmodified; its licence and copyright notice are in the image at

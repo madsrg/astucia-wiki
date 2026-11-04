@@ -129,7 +129,7 @@ if [ "$ENABLE_REALTIME" = "true" ]; then
     if [ -z "${MERCURE_JWT_KEY:-}" ]; then
         if [ ! -s "$KEY_FILE" ]; then
             log "generating a realtime hub key in $KEY_FILE"
-            # No openssl in the image; PHP is already here and random_bytes is a CSPRNG.
+            # PHP's random_bytes is a CSPRNG, and keeps this independent of openssl.
             php -r 'echo bin2hex(random_bytes(32));' > "$KEY_FILE"
             chmod 600 "$KEY_FILE"
         fi
@@ -193,6 +193,62 @@ if [ -e /proc/net/if_inet6 ]; then
 else
     rm -f /etc/nginx/listen-ipv6.conf
     log "no IPv6 in this kernel — nginx listens on IPv4 only"
+fi
+
+# ---------------------------------------------------------------------------
+# 2e. HTTPS with HTTP/2
+#
+# Browsers speak HTTP/2 only over TLS, and realtime wants it: over HTTP/1.1 a browser
+# allows ~6 connections per host and each realtime stream holds one. Behind a reverse
+# proxy that terminates TLS, HTTP/2 belongs on the proxy and none of this is needed —
+# port 80 is unchanged either way.
+#
+# Served on 443 when a certificate and key are present: TLS_CERT_FILE / TLS_KEY_FILE,
+# by default /data/tls/cert.pem and key.pem (a full chain, PEM). TLS_SELF_SIGNED=true
+# creates a self-signed pair there if there is none — for a LAN or a test, where a
+# browser warning once is acceptable. It is never overwritten, so replacing it with a
+# real certificate is just copying two files in and restarting.
+# ---------------------------------------------------------------------------
+TLS_CERT_FILE="${TLS_CERT_FILE:-/data/tls/cert.pem}"
+TLS_KEY_FILE="${TLS_KEY_FILE:-/data/tls/key.pem}"
+rm -f /etc/nginx/https.conf
+if [ "${TLS_SELF_SIGNED:-false}" = "true" ] && { [ ! -s "$TLS_CERT_FILE" ] || [ ! -s "$TLS_KEY_FILE" ]; }; then
+    # The name a browser will be asked to trust: APP_BASE_URL's host, else localhost.
+    tls_host=$(printf '%s' "${APP_BASE_URL:-}" | sed -E 's#^[a-zA-Z]+://##; s#[/:].*$##')
+    [ -n "$tls_host" ] || tls_host=localhost
+    case "$tls_host" in
+        *[!0-9.]*) tls_san="DNS:$tls_host" ;;
+        *)         tls_san="IP:$tls_host" ;;
+    esac
+    [ "$tls_host" = localhost ] || tls_san="$tls_san,DNS:localhost"
+    mkdir -p "$(dirname "$TLS_CERT_FILE")" "$(dirname "$TLS_KEY_FILE")"
+    log "generating a self-signed certificate for $tls_host in $(dirname "$TLS_CERT_FILE")"
+    if ! openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+            -days 825 -subj "/CN=$tls_host" -addext "subjectAltName=$tls_san,IP:127.0.0.1" \
+            -keyout "$TLS_KEY_FILE" -out "$TLS_CERT_FILE" > /tmp/tls-gen.log 2>&1; then
+        log "could not generate a certificate — HTTPS stays off"
+        sed 's/^/    /' /tmp/tls-gen.log
+    fi
+    chmod 600 "$TLS_KEY_FILE" 2>/dev/null || true
+fi
+if [ -s "$TLS_CERT_FILE" ] && [ -s "$TLS_KEY_FILE" ]; then
+    {
+        echo 'server {'
+        echo '    listen 443 ssl;'
+        [ -e /proc/net/if_inet6 ] && echo '    listen [::]:443 ssl;'
+        echo '    http2 on;'
+        echo '    server_name _;'
+        echo "    ssl_certificate     $TLS_CERT_FILE;"
+        echo "    ssl_certificate_key $TLS_KEY_FILE;"
+        echo '    ssl_protocols       TLSv1.2 TLSv1.3;'
+        echo '    ssl_session_cache   shared:SSL:10m;'
+        echo '    ssl_session_timeout 1d;'
+        echo '    include /etc/nginx/astucia-site.conf;'
+        echo '}'
+    } > /etc/nginx/https.conf
+    log "HTTPS with HTTP/2 on port 443 ($TLS_CERT_FILE)"
+else
+    log "plain HTTP on port 80 only — for HTTP/2, terminate TLS at your proxy or see TLS_* in DOCKER.md"
 fi
 
 # ---------------------------------------------------------------------------

@@ -116,6 +116,49 @@ function wikilink_resolver(array $pages): callable {
 }
 
 /**
+ * `$text` with every fenced block and inline code span removed, so a scan for `pageid=` or
+ * `{include:…}` sees only real links — the same rule wikilink_walk() applies to `[[…]]`. A page
+ * documenting the link syntax would otherwise show up as full of broken links.
+ */
+function wikilink_strip_code(string $text): string {
+    if (strpos($text, '`') === false && strpos($text, '~~~') === false) return $text;
+    $out = preg_replace_callback(WIKILINK_SCAN_RE, function (array $m) {
+        if (($m['fence'] ?? '') !== '' || ($m['code'] ?? '') !== '') return '';
+        return $m[0];
+    }, $text);
+    return $out ?? $text;
+}
+
+/**
+ * The raw target of every wikilink and embed in `$text`, de-duplicated, target-less
+ * `[[#Heading]]` links left out. Kept unresolved, so a caller resolves them against today's
+ * index — a cached resolution goes stale the moment the target page is created or renamed.
+ *
+ * @return string[]
+ */
+function wikilink_targets(string $text): array {
+    $targets = [];
+    wikilink_walk($text, function (array $m) use (&$targets) {
+        $target = trim((string)($m[2] ?? ''));
+        if ($target !== '') $targets[$target] = true;
+        return $m[0];
+    });
+    return array_map('strval', array_keys($targets));
+}
+
+/**
+ * Whether an unresolved wikilink target names an attachment rather than a page: it carries
+ * a file extension (letters and digits, at least one letter) that is not a page type. The
+ * client resolves such a target inside the page's own `.uploads/` folder — `![[photo.png]]`.
+ * Only asked after page resolution failed, so `[[Minutes 2026.01.05]]` is never mistaken for one.
+ */
+function wikilink_is_attachment(string $target): bool {
+    $ext = strtolower(pathinfo($target, PATHINFO_EXTENSION));
+    return $ext !== '' && strlen($ext) <= 5 && preg_match('/^[a-z0-9]*[a-z][a-z0-9]*$/', $ext)
+        && !in_array($ext, WIKILINK_STRIP_EXTS, true);
+}
+
+/**
  * Every page id referenced by a wikilink or embed in `$text`, de-duplicated.
  * Targets that do not resolve are dropped — a broken link is not a graph edge.
  */

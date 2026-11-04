@@ -2523,6 +2523,31 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 .mcp-save-label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 0.3rem; }
 
 /* --- Knowledge graph overlay --- */
+/* Content Health (modules/content_health). Both classes, so the size wins over
+   .lightbox-content by specificity rather than sheet order (the Space settings trap). */
+.lightbox-content.content-health-content { box-sizing: border-box; width: 760px; max-width: 92vw; height: 80vh; max-height: 80vh; }
+.content-health-summary { font-size: 0.82rem; color: var(--accent-gray); margin: -0.5rem 0 0.75rem; min-height: 1em; }
+.content-health-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border-color); margin-bottom: 0.6rem; flex-wrap: wrap; }
+.content-health-tab { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.75rem; border: none; border-bottom: 2px solid transparent; background: none; cursor: pointer; font-size: 0.88rem; color: var(--accent-gray); margin-bottom: -1px; }
+.content-health-tab:hover { color: var(--text-color); }
+.content-health-tab.active { color: var(--text-color); border-bottom-color: var(--accent-blue); font-weight: 600; }
+.content-health-count { font-size: 0.72rem; font-weight: 700; padding: 0 6px; border-radius: 99px; background: #e2e8f0; color: #4a5568; }
+.content-health-count.nonzero { background: #feebc8; color: #9c4221; }
+.content-health-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; }
+.content-health-hint { font-size: 0.82rem; color: var(--accent-gray); margin: 0; }
+.content-health-stale { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; white-space: nowrap; }
+.content-health-stale.hidden { display: none; }
+.content-health-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.content-health-row { display: block; padding: 0.45rem 0.5rem; border-radius: 4px; color: var(--text-color); text-decoration: none; font-size: 0.88rem; }
+.content-health-row:hover { background: #f0f4f8; }
+.content-health-row-head { display: flex; align-items: center; gap: 0.5rem; }
+.content-health-row-head svg { flex-shrink: 0; opacity: 0.55; }
+.content-health-row-title { font-weight: 500; }
+.content-health-row-path { font-size: 0.78rem; color: var(--accent-gray); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.content-health-row-details { margin: 0.2rem 0 0 1.75rem; padding: 0; list-style: none; font-size: 0.8rem; color: var(--accent-gray); }
+.content-health-row-details li { overflow-wrap: anywhere; }
+.content-health-empty { font-size: 0.88rem; color: var(--accent-gray); padding: 0.5rem 0; margin: 0; }
+
 .graph-overlay { position: fixed; inset: 0; z-index: 1000; background: #0f172a; display: flex; flex-direction: column; }
 .graph-overlay.hidden { display: none; }
 .graph-toolbar { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.9rem; background: #1e293b; border-bottom: 1px solid #334155; color: #e2e8f0; flex-wrap: wrap; }

@@ -61,8 +61,9 @@ chats, pages, the file tree, mentions and job results arrive by push instead of 
 never broken. **Admin → Monitoring → Mercure** tells you whether it is working, and
 **Wiki Info** lists every version this install is running.
 
-> **This image bundles Mercure 1.1.5**, the current release, and runs on **PHP 8.5.12**, the
-> security release of 21 October 2026. 1.1.5 is built with a Go release that stops trusting
+> **This image bundles Mercure 1.1.6**, the current release, and runs on **PHP 8.5.12**, the
+> security release of 21 October 2026. 1.1.6 is built on Caddy 2.11.8, which fixes its idle
+> write timeouts; 1.1.5 is built with a Go release that stops trusting
 > compromised intermediate certificates; 1.1.4 closed two authorization gaps in the hub; 1.1.0 fixed a request any signed-in user could send to make the hub
 > allocate about 1 GiB of memory, on top of the earlier fixes in 1.0.2 (ten
 > vulnerabilities, four high) and 1.0.3 (hardening against slow-connection attacks). The hub runs inside the image, so updating the image is the
@@ -151,6 +152,8 @@ Everything is an environment variable; the container writes its own config on fi
 | `ENABLE_CRON` | `true` | `false` to run the two PHP cron scripts from the host |
 | `ENABLE_REALTIME` | `true` | The built-in Mercure hub. `false` falls back to polling — slower, never broken |
 | `REALTIME_TICKET_TTL` | `3600` | Seconds a subscriber ticket lives; revoking a Space takes effect within one TTL |
+| `TLS_SELF_SIGNED` | `false` | `true` serves **HTTPS with HTTP/2 on port 443** with a generated certificate. Or put your own `cert.pem` / `key.pem` in `/data/tls/` |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | `/data/tls/cert.pem` / `key.pem` | Certificate (full chain) and key for port 443; HTTPS is on whenever both exist |
 
 AI provider API keys are **not** set here — they are entered once in
 **Admin → LLM Providers**, shared by every AI user, and stored in the data volume.

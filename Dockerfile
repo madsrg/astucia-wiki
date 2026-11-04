@@ -26,6 +26,7 @@ FROM php:8.5-fpm-alpine
 
 # nginx: static files + FastCGI. supervisor: three processes in one container.
 # crond: the two wiki cron jobs. git: optional page version history.
+# openssl generates a self-signed certificate when TLS_SELF_SIGNED=true asks for one.
 # shadow provides usermod/groupmod, which the entrypoint uses to match the
 # container user to a bind-mounted host directory's owner (PUID/PGID).
 # nginx workers run as www-data (see nginx.conf) and need their own temp dirs to
@@ -34,7 +35,7 @@ FROM php:8.5-fpm-alpine
 # the headers and a toolchain are installed as a virtual package and removed again
 # — only sqlite-libs is needed at runtime. zip is built the same way, against libzip,
 # for importing AI skills from a zip file (Admin → Skills); libzip stays for runtime.
-RUN apk add --no-cache nginx supervisor git tzdata shadow sqlite-libs libzip \
+RUN apk add --no-cache nginx supervisor git tzdata shadow sqlite-libs libzip openssl \
  && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS sqlite-dev libzip-dev \
  && docker-php-ext-install -j"$(nproc)" pdo_sqlite zip \
  && apk del --no-network .build-deps \
@@ -49,7 +50,7 @@ RUN apk add --no-cache nginx supervisor git tzdata shadow sqlite-libs libzip \
 # oblige everyone who runs this image to publish those changes to their own users. The
 # wiki itself is unaffected either way: upstream states the licence "applies only to the
 # hub server itself, not to software using this hub", and it runs as a separate process.
-ARG MERCURE_VERSION=1.1.5
+ARG MERCURE_VERSION=1.1.6
 ARG TARGETARCH
 RUN set -eux; \
     case "$TARGETARCH" in \
@@ -103,6 +104,7 @@ COPY --from=vendor /app/vendor /var/www/html/vendor
 
 # Container plumbing
 COPY docker/nginx.conf        /etc/nginx/nginx.conf
+COPY docker/nginx-site.conf   /etc/nginx/astucia-site.conf
 COPY docker/mercure.Caddyfile /etc/caddy/mercure.Caddyfile
 COPY docker/php-overrides.ini /usr/local/etc/php/conf.d/zz-astucia.ini
 COPY docker/www.conf          /usr/local/etc/php-fpm.d/zz-astucia.conf
@@ -134,7 +136,8 @@ ENV PAGES_DIR=/data/pages/ \
     TZ=UTC
 
 VOLUME ["/data"]
-EXPOSE 80
+# 443 only answers when a certificate is present — see TLS_* in DOCKER.md.
+EXPOSE 80 443
 
 # Hits the app through nginx and PHP, so a broken FPM socket or a fatal error in
 # config.php is reported as unhealthy rather than as a running container.

@@ -19,6 +19,9 @@ services:
     restart: unless-stopped
     ports:
       - "8080:80"
+      # HTTPS with HTTP/2, when there is no TLS-terminating proxy in front: needs a
+      # certificate in /data/tls/ or TLS_SELF_SIGNED below. See DOCKER.md.
+      # - "8443:443"
     volumes:
       # One volume for everything that must survive an upgrade:
       #   /data/pages   — your content (PAGES_DIR)
@@ -64,6 +67,9 @@ services:
       # One SSE channel instead of polling. "false" falls back to the old behaviour.
       # Wants HTTP/2 at whatever terminates TLS in front of this.
       ENABLE_REALTIME: "true"
+      # HTTPS + HTTP/2 on 443 with a generated certificate (or put cert.pem/key.pem in
+      # /data/tls/ yourself). Not needed behind a proxy that terminates TLS.
+      # TLS_SELF_SIGNED: "true"
       DAILY_DIGEST_HOUR: "7"
 
       # Only to override the ownership the container would infer from a bind mount.

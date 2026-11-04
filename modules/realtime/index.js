@@ -19,6 +19,17 @@
 //      does. Every handler is therefore called once on (re)connect.
 //   3. **The ticket is short-lived and lives in a cookie.** It is never handed to
 //      JavaScript, so an XSS on the page cannot walk off with a subscribe credential.
+//   4. **One stream per browser, held by the active tab.** Over HTTP/1.1 a browser allows
+//      about six connections per host, and an SSE stream holds one for as long as it
+//      lives — so six open tabs used to leave no connection for anything else, and the
+//      whole wiki hung in that browser. Now the tabs elect a leader over a
+//      BroadcastChannel: the leader holds the one EventSource and relays every event to
+//      the others. The tab you switch to claims it; a tab that is hidden keeps it only
+//      until another tab becomes visible, so with the browser in the background the
+//      last-active tab still delivers (modules/attention depends on that). Relaying is
+//      safe because every tab of a browser shares one session cookie, so every tab's
+//      ticket would have received exactly the same events. See *One stream per browser*
+//      in .claude/rules/realtime.md.
 import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 
@@ -61,6 +72,23 @@ let retryTimer  = null;
 const handlers  = new Map();   // topic -> Set<fn>
 const pending   = new Map();   // topic -> timeout id
 
+// Rule 4 — the election. Every message carries the sender's tab id; a claim also carries
+// the time it was made, and **the latest claim wins**, ties broken by tab id, so two tabs
+// that claim at the same moment agree on the winner without another round trip.
+const CHANNEL           = 'astucia-wiki-realtime';
+const BEAT_MS           = 10_000;   // the leader says it is alive this often
+const LEADER_TIMEOUT_MS = 35_000;   // silence this long and a visible tab takes over
+const tabId   = Math.random().toString(36).slice(2) + Date.now().toString(36);
+let bc        = null;      // the BroadcastChannel, or null where there is none (one stream per tab, as before)
+let role      = 'none';    // 'leader' | 'follower' | 'none' (nothing has subscribed yet)
+let myClaim   = 0;         // when this tab last claimed the stream
+let leader    = null;      // { id, ts, seen, visible } as last heard
+let started   = false;
+let beatTimer = null;
+let draining  = null;      // timeout id while an ex-leader keeps its stream for the handoff
+let openTimer = null;      // a new leader's deadline for its stream to open
+const HANDOFF_MS = 15_000;
+
 export const isLive = () => live;
 
 /**
@@ -79,7 +107,18 @@ const setLive = (v) => {
     if (live === v) return;
     live = v;
     announce();
+    if (role === 'leader') beat();
 };
+
+const post = (msg) => {
+    if (!bc) return;
+    try { bc.postMessage({ ...msg, from: tabId }); } catch { /* channel closed with the page */ }
+};
+
+/** The leader's heartbeat: alive, connected or not, and whether anyone is looking at it. */
+const beat = () => post({ type: 'beat', ts: myClaim, live, visible: !document.hidden });
+
+const leaderFresh = () => !!leader && Date.now() - leader.seen < LEADER_TIMEOUT_MS;
 
 /** Run a topic's handlers, coalescing a burst into one call. */
 const fire = (topic) => {
@@ -123,6 +162,7 @@ const close = () => {
  */
 const connect = async () => {
     if (es || available === false) return;
+    if (bc && role !== 'leader') return;       // a follower is fed by the leader
     let res;
     try {
         // background(), or the realtime layer would hold every session open for as long as
@@ -133,7 +173,9 @@ const connect = async () => {
         return;
     }
     if (!res || res.success === false) { noteFailure(); return; }
-    if (!res.enabled) { available = false; setLive(false); return; }
+    if (!res.enabled) { available = false; setLive(false); post({ type: 'off' }); return; }
+    // Lost the stream to another tab while the ticket was being fetched.
+    if (bc && role !== 'leader') return;
 
     available = true;
     ticketUrl = res.url || ticketUrl;
@@ -154,15 +196,27 @@ const connect = async () => {
 
     es.onopen = () => {
         failures = [];
+        if (openTimer) { clearTimeout(openTimer); openTimer = null; }
+        // Rule 2, except across a handoff: the tab that held the stream keeps it until this
+        // one is open (see follow()), so a claim from a live leader leaves no gap to repair
+        // and nobody needs to re-read. Without that, every tab switch would make every tab
+        // refetch everything it watches.
+        const gapless = live;
         setLive(true);
-        resyncAll();
+        if (!gapless) resyncAll();
+        post({ type: 'open', gapless });
     };
     es.onmessage = (ev) => {
         let data;
         try { data = JSON.parse(ev.data); } catch { return; }
-        if (data && data.topic) fire(data.topic);
+        if (data && data.topic) {
+            fire(data.topic);
+            post({ type: 'event', topic: data.topic });
+        }
     };
     es.onerror = () => {
+        // An ex-leader draining for a handoff just lets go: the new leader owns recovery.
+        if (bc && role !== 'leader') { close(); return; }
         // EventSource reconnects on its own while the connection is merely interrupted;
         // a CLOSED stream is the browser giving up, and only that counts as a failure.
         if (!es || es.readyState === EventSource.CLOSED) {
@@ -172,6 +226,127 @@ const connect = async () => {
             if (failures.length < FAIL_LIMIT) setTimeout(connect, 2000);
         }
     };
+};
+
+/** Take the stream: this tab becomes the leader, and whoever held it lets go. */
+const claim = () => {
+    if (!bc) { connect(); return; }
+    if (role === 'leader') return;
+    role    = 'leader';
+    myClaim = Date.now();
+    leader  = { id: tabId, ts: myClaim, seen: myClaim, visible: !document.hidden };
+    if (draining) { clearTimeout(draining); draining = null; }
+    // `live` is carried over from the leader being replaced, which keeps streaming until
+    // this tab's stream opens. If it never does, stop claiming to be live.
+    if (openTimer) clearTimeout(openTimer);
+    openTimer = setTimeout(() => { openTimer = null; if (role === 'leader' && !es?.readyState) setLive(false); }, HANDOFF_MS);
+    post({ type: 'claim', ts: myClaim });
+    beat();
+    connect();
+};
+
+/**
+ * Another tab holds the stream now; its events arrive over the channel. An ex-leader keeps
+ * its own stream open — still relaying — until the new one reports it is open, so no event
+ * falls into the gap between one stream closing and the next opening. `isLive` is passed
+ * only by a heartbeat; a claim leaves `live` as it was, for the same reason.
+ */
+const follow = (from, ts, visible = true, isLive) => {
+    const wasLeader = role === 'leader';
+    role   = 'follower';
+    leader = { id: from, ts, seen: Date.now(), visible };
+    if (wasLeader) {
+        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+        if (openTimer)  { clearTimeout(openTimer);  openTimer  = null; }
+        if (es && !draining) draining = setTimeout(endDrain, HANDOFF_MS);
+        else if (!es) endDrain();
+    }
+    if (isLive !== undefined) setLive(isLive);
+};
+
+const endDrain = () => {
+    if (draining) { clearTimeout(draining); draining = null; }
+    if (role !== 'leader') close();
+};
+
+const outranks = (ts, from) => ts > myClaim || (ts === myClaim && from > tabId);
+
+const onChannel = ({ data: m }) => {
+    if (!m || !m.from || m.from === tabId) return;
+    switch (m.type) {
+        case 'claim':
+            // Latest claim wins. A claim older than ours is the other half of a crossing:
+            // that tab receives ours too, and yields by the same rule.
+            if (role === 'leader') { if (outranks(m.ts, m.from)) follow(m.from, m.ts); }
+            else if (!leader || m.ts >= leader.ts || leader.id === m.from) follow(m.from, m.ts);
+            break;
+        case 'beat':
+            if (role === 'leader') {
+                // Two leaders (a claim lost while a tab was frozen): the same rule settles it.
+                if (outranks(m.ts, m.from)) follow(m.from, m.ts, m.visible, m.live);
+                else beat();
+                break;
+            }
+            follow(m.from, m.ts, m.visible, m.live);
+            // The leader was hidden and this tab is the one being looked at: take over.
+            if (!m.visible && !document.hidden && handlers.size) claim();
+            break;
+        case 'event':
+            // From the leader — or, during a handoff, from the ex-leader still draining,
+            // which is what covers the new leader until its own stream is open. A duplicate
+            // from the overlap is harmless: events are hints, and fire() coalesces them.
+            fire(m.topic);
+            break;
+        case 'open':
+            if (role === 'leader') break;
+            if (draining) endDrain();
+            if (!m.gapless || !live) resyncAll();
+            setLive(true);
+            break;
+        case 'off':
+            available = false;
+            setLive(false);
+            break;
+        case 'hello':
+            if (role === 'leader') beat();
+            break;
+        case 'resign':
+            if (leader && leader.id === m.from) {
+                leader = null;
+                setLive(false);                 // pollers speed up until someone holds it
+                if (!document.hidden && handlers.size) claim();
+            }
+            break;
+    }
+};
+
+/**
+ * The first subscription starts realtime in this tab. A visible tab claims the stream
+ * straight away — it is the one being used. A tab opened in the background asks who holds
+ * it and listens; it claims only when it is shown.
+ */
+const start = () => {
+    started = true;
+    if (typeof BroadcastChannel === 'undefined') { connect(); return; }
+    try { bc = new BroadcastChannel(CHANNEL); } catch { bc = null; connect(); return; }
+    bc.onmessage = onChannel;
+    // The watchdog. A leader that crashed or was frozen says nothing at all; a visible tab
+    // that has not heard from it in LEADER_TIMEOUT_MS takes over. Hidden tabs never do —
+    // their pollers cover them, and that is what keeps the stream with the active tab.
+    beatTimer = setInterval(() => {
+        if (role === 'leader') beat();
+        else if (handlers.size && !document.hidden && !leaderFresh()) claim();
+    }, BEAT_MS);
+    // A tab closing hands the stream on rather than leaving the others waiting out the
+    // watchdog.
+    window.addEventListener('pagehide', () => {
+        if (role !== 'leader') return;
+        post({ type: 'resign' });
+        close();
+        role = 'none';
+    });
+    if (!document.hidden) claim();
+    else { role = 'follower'; post({ type: 'hello' }); }
 };
 
 /**
@@ -184,7 +359,7 @@ export function subscribe(topic, fn) {
     if (!topic || typeof fn !== 'function') return () => {};
     if (!handlers.has(topic)) handlers.set(topic, new Set());
     handlers.get(topic).add(fn);
-    if (available === null) connect();
+    if (!started) start();
     return () => {
         const set = handlers.get(topic);
         if (!set) return;
@@ -239,10 +414,24 @@ export function initRealtime() {
     // Nothing connects until something subscribes: a wiki nobody has opened a chat or a
     // page in has no reason to hold a stream open.
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState !== 'visible') return;
+        if (!started) return;
+        if (document.visibilityState !== 'visible') {
+            // Tell the others this leader is no longer being looked at, so the tab that
+            // is can take the stream at once rather than after the watchdog.
+            if (role === 'leader') beat();
+            return;
+        }
+        if (bc && role !== 'leader') {
+            // Rule 4: the tab being looked at holds the stream — unless another visible
+            // tab (a second window beside this one) already does.
+            if (available !== false && !(leaderFresh() && leader.visible)) { claim(); return; }
+            if (live) resyncAll();
+            return;
+        }
         // A backgrounded tab's stream is often dropped by the browser or an intermediary.
         // Coming back is the moment to find out, and to re-read whatever was missed.
         if (available !== false && !es) { failures = []; connect(); }
         else if (live) resyncAll();
+        if (role === 'leader') beat();
     });
 }

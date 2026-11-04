@@ -31,6 +31,8 @@ ContainerName=astucia-wiki
 # depending on registries.conf either prompts or refuses.
 Image=docker.io/madsrotwitt/astucia-wiki:2026.10.8
 PublishPort=8080:80
+# HTTPS with HTTP/2 when there is no proxy in front — see TLS_* in wiki.env.
+#PublishPort=8443:443
 # pages/, system/ and logs/ live here, on the host. :Z relabels the directory for
 # SELinux (Fedora, RHEL); on a host without SELinux it does nothing.
 Volume=%h/astucia-wiki/data:/data:Z
