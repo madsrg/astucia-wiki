@@ -14,7 +14,8 @@ every page is a file on disk, so a backup is an archive of one directory.
 JSON data pages · **YAML front matter** · page and diagram templates · attachments and file
 libraries · **paste a screenshot straight into a page** · copy buttons on code
 blocks · wikilinks and transclusion · full-text search with saved searches · a knowledge
-graph · optional git version history · static site export.
+graph · **Content Health**, listing each Space's broken links, orphans, stale and empty
+pages · optional git version history · static site export.
 
 **Tags with a taxonomy** — one tree of tags for the whole wiki: folders group, items are the
 tags pages carry (`Department/Finance`). A tree editor to rename, move and merge — every page
@@ -58,8 +59,13 @@ with service tokens, stored only as a hash · UI in nine languages.
 **Live updates** — a **Mercure** hub ships inside the image and is **on by default**, so
 chats, pages, the file tree, mentions and job results arrive by push instead of polling.
 `ENABLE_REALTIME=false` turns it off and every view falls back to its own timer — slower,
-never broken. **Admin → Monitoring → Mercure** tells you whether it is working, and
-**Wiki Info** lists every version this install is running.
+never broken. All tabs of a browser share **one** connection, held by the tab you are
+using, so a dozen open tabs cost what one does. **Admin → Monitoring → Mercure** tells you
+whether it is working, and **Wiki Info** lists every version this install is running.
+
+**HTTPS with HTTP/2, built in** — behind a reverse proxy, enable HTTP/2 there and port 80 is
+all you need. Without one, put `cert.pem` and `key.pem` in `/data/tls/` (or set
+`TLS_SELF_SIGNED=true`) and publish port 443: the image serves HTTPS with HTTP/2 itself.
 
 > **This image bundles Mercure 1.1.6**, the current release, and runs on **PHP 8.5.12**, the
 > security release of 21 October 2026. 1.1.6 is built on Caddy 2.11.8, which fixes its idle
@@ -77,7 +83,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.10.8
+    madsrotwitt/astucia-wiki:2026.11.1
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -103,7 +109,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.10.8
+    madsrotwitt/astucia-wiki:2026.11.1
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -113,7 +119,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 ## Podman
 
 The same image runs under Podman — name the registry in full,
-`docker.io/madsrotwitt/astucia-wiki:2026.10.8`. For a rootless install with a host
+`docker.io/madsrotwitt/astucia-wiki:2026.11.1`. For a rootless install with a host
 directory, add `--userns=keep-id:uid=82,gid=82 --user 0` so your files stay yours. The
 repository ships a ready-made Quadlet unit, `docker/astucia-wiki.container`, for running it
 as a systemd service with `podman auto-update`; see *With Podman* in `DOCKER.md`.
@@ -123,7 +129,7 @@ as a systemd service with `podman auto-update`; see *With Podman* in `DOCKER.md`
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.10.8` | moves only if that release is rebuilt |
+| `2026.11.1` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
