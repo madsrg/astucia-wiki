@@ -304,6 +304,7 @@ class SearchIndex {
             $full = $dir . '/' . $item;
             if (is_dir($full)) {
                 if (str_ends_with($item, '.uploads') || $item === 'templates') continue;
+                if (file_exists($full . '/.filesfolder')) continue;   // a files library: stored files, not pages
                 $count += $this->scanAndInsert($space, $full, $base, $stmt);
                 continue;
             }

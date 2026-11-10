@@ -35,6 +35,9 @@ class PageIndexer {
      *    the graph cache. Essential now that `.json` is indexed, or the index would
      *    contain an entry for itself.
      *  - `*.uploads` directories (per-page attachments, not pages)
+ *  - files libraries (a directory carrying `.filesfolder`): they hold arbitrary uploaded
+ *    files, and a `.md` or `.json` among them is a file somebody stored, not a page — the
+ *    tree never shows it, so an id would only make it surface in search and the graph
      * `templates/` is deliberately NOT excluded: template pages have always had ids,
      * and the search layers filter them out separately via wiki_is_template_path().
      *
@@ -59,7 +62,7 @@ class PageIndexer {
                 $abs = $dir . '/' . $e;
                 $rel = $prefix === '' ? $e : $prefix . '/' . $e;
                 if (is_dir($abs)) {
-                    if ($descend && substr($e, -8) !== '.uploads') $walk($abs, $rel, true);
+                    if ($descend && substr($e, -8) !== '.uploads' && !file_exists($abs . '/.filesfolder')) $walk($abs, $rel, true);
                     continue;
                 }
                 if (!in_array(strtolower(pathinfo($e, PATHINFO_EXTENSION)), self::CONTENT_EXTS, true)) continue;

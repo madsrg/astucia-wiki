@@ -112,7 +112,7 @@ function wiki_tool_definitions(bool $with_memory = true, bool $with_skills = fal
         ],
         [
             'name'        => 'wiki_content_health',
-            'description' => 'Report what needs attention in the current Space: broken links (pageid links to pages that no longer exist, [[wikilinks]] no page answers to, embedded attachments that are missing), orphans (pages no other page links to), stale pages (front matter review_by date passed, or not updated for stale_days), and empty or stub pages. Read-only. Returns plain text with page paths and ids, each list capped at 50 rows with the true totals stated. Use it for a periodic content review, or before tidying a Space.',
+            'description' => 'Report what needs attention in the current Space: broken links (pageid links to pages that no longer exist, [[wikilinks]] no page answers to, embedded attachments that are missing), stale pages (front matter review_by date passed, or not updated for stale_days), and empty or stub pages. Read-only. Returns plain text with page paths and ids, each list capped at 50 rows with the true totals stated. Use it for a periodic content review, or before tidying a Space.',
             'params'      => [
                 'type'       => 'object',
                 'properties' => [

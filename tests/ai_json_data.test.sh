@@ -124,6 +124,7 @@ echo wiki_markdown_features_prompt();' 2>/dev/null)
 assert_contains "xychart is named"   'xychart' "$prompt"
 assert_contains "pie is named"       'pie'     "$prompt"
 assert_contains "points at .json"    '.json'   "$prompt"
+assert_contains "warns that ; is mermaid syntax" '#59;' "$prompt"
 
 printf '\n'
 exit $(( ASSERT_FAIL > 0 ))

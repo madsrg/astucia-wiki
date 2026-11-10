@@ -3,7 +3,7 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 /**
  * Content Health — one dialog listing what in the current Space needs attention:
- * broken links, orphans, stale pages and empty pages (see content_health.php).
+ * broken links, stale pages and empty pages (see content_health.php).
  *
  * Opened from the sidebar by editors and administrators; readers get no button, since
  * they cannot fix anything it reports. The report is built on request rather than kept
@@ -18,7 +18,7 @@ import { state } from '../core/state.js';
 import { icons } from '../core/icons.js';
 import { t } from '../i18n/index.js';
 
-const TABS = ['broken', 'orphans', 'stale', 'empty'];
+const TABS = ['broken', 'stale', 'empty'];
 const STALE_CHOICES = [30, 90, 180, 365, 730];
 
 let _onNavigate = null;
@@ -176,7 +176,7 @@ const render = () => {
     const c = r.counts;
     _overlay.querySelector('.content-health-summary').textContent = t('health.summary', { pages: c.pages });
 
-    const totals = { broken: c.broken, orphans: c.orphans, stale: c.stale, empty: c.empty };
+    const totals = { broken: c.broken, stale: c.stale, empty: c.empty };
     _overlay.querySelectorAll('.content-health-tab').forEach(b => {
         const name = b.dataset.tab;
         b.replaceChildren(el('span', '', t(`health.tab-${name}`)),

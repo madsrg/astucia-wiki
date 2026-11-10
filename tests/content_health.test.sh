@@ -3,13 +3,12 @@
 # Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 # or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 #
-# Content health (content_health.php): the four lists, and what they must not say.
+# Content health (content_health.php): the three lists, and what they must not say.
 #
 #   - broken: a ?pageid= to a missing page, one into another Space, an unresolved
 #     [[wikilink]], a missing ![[attachment]] — and none of the working ones, nor a link
 #     shown as an example inside code;
-#   - orphans: pages no other page links to, with the start page exempt and a link from a
-#     wikilink, a pageid link or an {include:} all counting as inbound;
+#   - no orphans list: every page is reachable from the tree, so it was removed;
 #   - stale: a passed review_by, an old update, and a future review_by overriding age;
 #   - empty: a page that is only a heading;
 #   - isolation: a link into a Space the actor may not read is neither broken nor fine —
@@ -46,7 +45,7 @@ fixture_page 'Main/Main.md'        '# Welcome
 This is the start page of the wiki, and nothing links to it.'
 fixture_page 'Main/Target.md'      '# Target
 
-A page that the hub links to by its id, which is enough to not be an orphan.'
+A page that the hub links to by its id, so its link is a working one.'
 fixture_page 'Main/Named.md'       '# Named
 
 A page that the hub links to with a wikilink, by its name alone.'
@@ -55,7 +54,7 @@ fixture_page 'Main/Included.md'    '# Included
 A fragment that the hub transcludes with an include tag, which counts as a link.'
 fixture_page 'Main/Lonely.md'      '# Lonely
 
-Nobody links here. It has enough text to not be a stub, so it is only an orphan.'
+Nobody links here. It has enough text to not be a stub.'
 fixture_page 'Main/Stub.md'        '# Stub'
 fixture_page 'Main/Old.md'         '# Old
 
@@ -113,7 +112,6 @@ field() { printf '%s' "$1" | python3 -c 'import json,sys; r=json.load(sys.stdin)
 R=$(get_as "$RIA" 'api.php?action=content_health&space=Main')
 # The broken links on Hub, as "kind:target[@space]" — one string to assert against.
 HUB=$(field "$R" '" ".join(sorted(l["kind"]+":"+l["target"]+("@"+l["space"] if "space" in l else "") for b in r["broken"] if b["path"]=="Hub.md" for l in b["links"]))')
-ORPH=$(field "$R" '" ".join(o["path"] for o in r["orphans"])')
 
 section 'broken links'
 assert_eq 'the request succeeds'                         True "$(field "$R" 'r["success"]')"
@@ -142,14 +140,9 @@ assert_not_contains '…and not the working one'           "$H"                 
 assert_contains 'Ria cannot open Secret itself'          'false' \
   "$(get_as "$RIA" 'api.php?action=content_health&space=Secret' | tr -d ' ')"
 
-section 'orphans'
-for p in Lonely.md Stub.md Old.md Overdue.md Cared.md Hub.md; do
-    assert_contains "$p is an orphan" "$p" "$ORPH"
-done
-assert_not_contains 'the start page is never an orphan'   'Main.md'     "$ORPH"
-assert_not_contains 'linked by pageid'                     'Target.md'   "$ORPH"
-assert_not_contains 'linked by wikilink'                   'Named.md'    "$ORPH"
-assert_not_contains 'transcluded with {include:}'          'Included.md' "$ORPH"
+section 'no orphans list'
+assert_eq 'the report has no orphans list'                False "$(field "$R" '"orphans" in r')"
+assert_eq '…and no orphans count'                          False "$(field "$R" '"orphans" in r["counts"]')"
 
 section 'stale'
 STALE=$(field "$R" '" ".join(s["path"]+"="+s["reason"] for s in r["stale"])')
@@ -196,7 +189,8 @@ M=$(curl -s -X POST -H 'Authorization: Bearer wk_ai_health' -H 'Content-Type: ap
   "$WIKI_URL/mcp.php?space=Main")
 assert_contains 'the tool answers'                        'Content health for Space' "$M"
 assert_contains 'with the broken links'                   'Nowhere'                  "$M"
-assert_contains 'with the orphans'                        'Lonely.md'                "$M"
+assert_contains 'with the stale pages'                    'Overdue.md'               "$M"
+assert_not_contains 'and no orphans section'              'Orphan'                   "$M"
 assert_not_contains 'nor a Space the AI cannot read'      'Secret'                   "$M"
 
 printf '\n'

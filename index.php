@@ -378,7 +378,29 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                             <span data-i18n="files.upload-btn">Upload</span>
                         </button>
+                        <button id="ff-newfolder-btn" class="btn btn-secondary btn-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path><line x1="12" y1="10" x2="12" y2="16"/><line x1="9" y1="13" x2="15" y2="13"/></svg>
+                            <span data-i18n="files.new-folder">New folder</span>
+                        </button>
                         <input type="file" id="ff-upload-input" class="hidden" multiple>
+                        <?php /* Files library only: what to do with the marked files. A click on a file marks it;
+                               the action is chosen here. Disabled until something is marked (see syncSelection). */ ?>
+                        <div id="ff-selection" class="ff-selection" role="toolbar">
+                            <button id="ff-open-btn" class="btn btn-secondary btn-sm" disabled data-i18n-title="files.open-title" title="Open in a new tab — the browser shows what it can and downloads the rest">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                <span data-i18n="files.open">Open</span>
+                            </button>
+                            <button id="ff-download-btn" class="btn btn-secondary btn-sm" disabled data-i18n-title="files.download-title" title="Save to this computer">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                <span data-i18n="files.download">Download</span>
+                            </button>
+                            <button id="ff-delete-sel-btn" class="btn btn-secondary btn-sm ff-delete-sel" disabled>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                <span data-i18n="btn.delete">Delete</span>
+                            </button>
+                            <span id="ff-sel-count" class="ff-sel-count" aria-live="polite"></span>
+                            <button id="ff-sel-clear" class="btn btn-sm ff-sel-clear hidden" data-i18n-title="files.clear-selection" title="Clear selection">&times;</button>
+                        </div>
                         <div class="ff-actions-right">
                         <?php /* Folder-listing only. Both of these hand off to the sidebar's own
                                controls rather than reimplementing them: the search box writes into

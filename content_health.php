@@ -5,15 +5,17 @@
 // =================================================================
 // CONTENT HEALTH — what in a Space needs attention
 //
-// Four lists, each a question an editor would otherwise answer by reading every page:
+// Three lists, each a question an editor would otherwise answer by reading every page:
 //
 //   broken   links that go nowhere: `?pageid=N` to a page that no longer exists (in this
 //            Space or the one the link names), `[[wikilinks]]` no page answers to, and
 //            `![[photo.png]]` embeds whose file is not in the page's `.uploads/`
-//   orphans  pages no other page links to — reachable only through the tree
 //   stale    pages whose front matter `review_by:` date has passed, and pages nobody has
 //            changed for `stale_days`
 //   empty    Markdown pages with (almost) nothing in the body
+//
+// There is deliberately no "orphans" list: every page is reachable from the tree, so a
+// page nothing links to is not lost and not a problem in this wiki.
 //
 // **No file is read here that the graph has not already read.** Everything comes from
 // WikiGraph::scan(), the per-file cache in graph.json keyed by mtime, so a report on an
@@ -102,14 +104,14 @@ function wiki_content_health(string $space_dir, PageIndexer $indexer, ?array $al
     $exists = fn(string $t): bool => isset($scan[$t])
         || (!empty($pages[$t]['path']) && is_file($space_dir . '/' . ltrim($pages[$t]['path'], '/')));
 
-    $broken = []; $inbound = [];
+    $broken = [];
     foreach ($scan as $id => $e) {
         $id    = (string)$id;
         $path  = (string)($pages[$id]['path'] ?? '');
         $links = [];
         foreach (($e['pid'] ?? []) as $t) {
             $t = (string)$t;
-            if ($exists($t)) { if ($t !== $id) $inbound[$t] = true; continue; }
+            if ($exists($t)) continue;
             $links[] = ['kind' => 'page', 'target' => $t];
         }
         foreach (($e['xs'] ?? []) as [$sp, $t]) {
@@ -119,10 +121,7 @@ function wiki_content_health(string $space_dir, PageIndexer $indexer, ?array $al
         }
         foreach (($e['wl'] ?? []) as $target) {
             $rid = $resolve((string)$target);
-            if ($rid !== null && $exists((string)$rid)) {
-                if ((string)$rid !== $id) $inbound[(string)$rid] = true;
-                continue;
-            }
+            if ($rid !== null && $exists((string)$rid)) continue;
             if (wikilink_is_attachment((string)$target)) {
                 // Where modules/wikilinks looks for it: beside the page, in <page>.uploads/.
                 if (is_file($space_dir . '/' . $path . '.uploads/' . $target)) continue;
@@ -134,18 +133,13 @@ function wiki_content_health(string $space_dir, PageIndexer $indexer, ?array $al
         if ($links) $broken[] = $row($id) + ['links' => $links];
     }
 
-    // The start page is reached from the logo on every screen; it is nobody's orphan.
-    $start_id = (string)($indexer->getId('Main.md') ?? '');
-
-    $orphans = []; $stale = []; $empty = [];
+    $stale = []; $empty = [];
     foreach ($scan as $id => $e) {
         $id   = (string)$id;
         $data = $pages[$id] ?? [];
         $path = (string)($data['path'] ?? '');
         $type = $type_of($path);
         if (!in_array($type, WIKI_HEALTH_TYPES, true)) continue;
-
-        if (!isset($inbound[$id]) && $id !== $start_id) $orphans[] = $row($id);
 
         $updated = (int)($data['updated'] ?? $data['created'] ?? $e['mtime'] ?? 0);
         $fm      = $e['fm'] ?? [];
@@ -172,7 +166,6 @@ function wiki_content_health(string $space_dir, PageIndexer $indexer, ?array $al
 
     $by_path = fn($a, $b) => strnatcasecmp($a['path'], $b['path']);
     usort($broken, $by_path);
-    usort($orphans, $by_path);
     usort($empty, $by_path);
     // Overdue reviews first (most overdue on top), then the longest-untouched pages.
     usort($stale, fn($a, $b) => [$a['reason'] !== 'review_overdue', -$a['days'], $a['path']]
@@ -186,12 +179,10 @@ function wiki_content_health(string $space_dir, PageIndexer $indexer, ?array $al
             'pages'   => count(array_filter($scan, fn($e, $id) => in_array($type_of((string)($pages[$id]['path'] ?? '')), WIKI_HEALTH_TYPES, true), ARRAY_FILTER_USE_BOTH)),
             'broken'  => count($broken),
             'links'   => array_sum(array_map(fn($r) => count($r['links']), $broken)),
-            'orphans' => count($orphans),
             'stale'   => count($stale),
             'empty'   => count($empty),
         ],
         'broken'  => $cap($broken),
-        'orphans' => $cap($orphans),
         'stale'   => $cap($stale),
         'empty'   => $cap($empty),
     ];
@@ -210,7 +201,7 @@ function wiki_content_health_text(array $r, int $per_list = 50): string {
     $c   = $r['counts'];
     $out = ['Content health for Space "' . ($r['space'] === '' ? '(root)' : $r['space']) . '": '
           . $c['pages'] . ' pages; ' . $c['links'] . ' broken link(s) on ' . $c['broken'] . ' page(s), '
-          . $c['orphans'] . ' orphan(s), ' . $c['stale'] . ' stale, ' . $c['empty'] . ' empty.'];
+          . $c['stale'] . ' stale, ' . $c['empty'] . ' empty.'];
 
     $section = function (string $title, array $rows, int $total, callable $line) use (&$out, $per_list) {
         if (!$rows) return;
@@ -230,8 +221,6 @@ function wiki_content_health_text(array $r, int $per_list = 50): string {
         }, $row['links']);
         return $row['path'] . ' (id ' . $row['id'] . '): ' . implode('; ', $what);
     });
-    $section('Orphans — no other page links to these', $r['orphans'], $c['orphans'],
-        fn($row) => $row['path'] . ' (id ' . $row['id'] . ')');
     $section('Stale', $r['stale'], $c['stale'], function ($row) use ($r) {
         $why = $row['reason'] === 'review_overdue'
             ? 'review was due ' . $row['review_by'] . ' (' . $row['days'] . ' days ago)'

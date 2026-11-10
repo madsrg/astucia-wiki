@@ -145,9 +145,10 @@ const rt = (name) => frames[name].contentWindow.eval("import('./modules/realtime
 
 const run = async () => {
   let out = '';
-  await open('A', false);                                   await sleep(2500);
+  await open('A', false);                                   await until(() => holders() === 'A' && H.live.A === true);
   out += ' first=' + holders();
-  await open('B', true);                                    await sleep(2500);
+  await open('B', true);                                    await until(() => H.live.B === true);
+  await sleep(500);   // long enough for a wrongly opened second stream to show up
   out += ' second=' + holders() + ' total=' + H.streams.length;
   out += ' Blive=' + H.live.B;
 
@@ -159,13 +160,16 @@ const run = async () => {
 
   // Switch tabs: A goes to the background, B comes forward. The new stream opens slowly,
   // and an event arrives on the old one meanwhile — it must still be delivered.
-  H.openDelay = 600;
+  H.openDelay = 1500;
   const before = { A: H.lists.A || 0, B: H.lists.B || 0 };
   const mA = await rt('A');
   let gotA = 0; mA.subscribe('wiki/Main/page/Y.md', () => gotA++);
   let gotBy = 0; mB.subscribe('wiki/Main/page/Y.md', () => gotBy++);
   const oldA = openStreams().find(s => s.tab === 'A');
-  setHidden('A', true); setHidden('B', false);              await sleep(200);
+  setHidden('A', true); setHidden('B', false);
+  // B's stream exists once its ticket is fetched, which on a slow runner takes longer than
+  // any fixed wait would allow; the fake keeps it opening for openDelay after that.
+  await until(() => H.streams.some(st => st.tab === 'B' && !st.closed));
   out += ' during=' + holders();
   // Coming back into view re-reads once (rule 2 — a frozen tab misses channel messages),
   // so count only from here: an event on the old stream while the new one is still opening.

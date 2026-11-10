@@ -14,7 +14,7 @@ every page is a file on disk, so a backup is an archive of one directory.
 JSON data pages · **YAML front matter** · page and diagram templates · attachments and file
 libraries · **paste a screenshot straight into a page** · copy buttons on code
 blocks · wikilinks and transclusion · full-text search with saved searches · a knowledge
-graph · **Content Health**, listing each Space's broken links, orphans, stale and empty
+graph · **Content Health**, listing each Space's broken links, stale and empty
 pages · optional git version history · static site export.
 
 **Tags with a taxonomy** — one tree of tags for the whole wiki: folders group, items are the

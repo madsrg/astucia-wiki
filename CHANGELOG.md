@@ -6,6 +6,54 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.11.2] — 2026-11-10
+
+Files libraries grow up: subfolders, drag and drop of files and whole folders, a scrollbar
+when they are long, and a mark-then-act toolbar with Open, Download and Delete. Content
+Health drops its Orphans list. Three security fixes in the same area: deleting a library
+file could reach any Space, uploads could overwrite or plant dot-files, and an uploaded HTML
+or SVG file opened inline ran with the reader's session.
+
+### Added
+- **Files libraries have subfolders.** *New folder* in the library toolbar; a folder opens on
+  click, a `..` row leads back out, and the title shows where you are. Folders can be deleted
+  with everything in them (after a confirmation).
+- **Open or Download, chosen in the toolbar.** In a files library a click marks a file
+  (several can be marked) instead of following a link; the toolbar then offers **Open** (one
+  file, in a new tab — the browser shows what it can and downloads the rest), **Download**
+  (always saves) and **Delete**. Double-click or Enter opens a file directly.
+- **Drag and drop into a files library.** Drop files — or whole folders, which keep their
+  structure — anywhere on the library to upload them into the folder being shown.
+
+### Fixed
+- A long files library had no scrollbar: the list grew past its clipping pane.
+- A `.md` or `.json` stored in a files library was given a page id and showed up in search
+  and the knowledge graph, though never in the tree. Libraries are now skipped by the page
+  index and the search index; ids left by older versions are dropped on the next sync.
+- `upload_to_folder` no longer overwrites a file of the same name (it becomes `name (1).ext`,
+  as for dropped pages) and refuses dot-names such as `.htaccess` or the library's marker.
+
+### Security
+- `getfile.php` served uploaded HTML, SVG and XML inline on the wiki's own origin, so
+  opening one ran its scripts with the reader's session. These types are now served with
+  `Content-Security-Policy: sandbox` when opened inline, every file gets
+  `X-Content-Type-Options: nosniff`, and the file name in `Content-Disposition` is escaped
+  (a `"` in a name used to end the header).
+- `delete_folder_file` took a `PAGES_DIR`-relative path and deleted it with no Space or
+  library check, so any editor could delete any file in any Space — another Space's pages
+  and `index.json` included. It now takes the library and a path inside it, resolved through
+  `sanitize_path()`, and refuses anything outside a library.
+
+### Changed
+- **AI users are told that `;` and `#` are Mermaid syntax.** Prose written into a diagram
+  message or label used to break the whole diagram; the built-in instructions now say to
+  write a comma or `#59;` / `#35;`, and to quote a flowchart label holding brackets.
+
+### Removed
+- Content Health no longer has an **Orphans** list (dialog tab, `content_health` response and
+  `wiki_content_health` text). Every page is reachable from the tree, so a page nothing links
+  to is not a problem in this wiki.
+
 ## [2026.11.1] — 2026-11-04
 
 Saving no longer overwrites somebody else's change; Content Health lists the broken links,

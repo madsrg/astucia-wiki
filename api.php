@@ -256,6 +256,42 @@ if (isset($_REQUEST['action'])) {
         return $abs;
     }
 
+    // ── Files libraries ─────────────────────────────────────────────────────────────
+    // A files library is a directory carrying a `.filesfolder` marker. It holds arbitrary
+    // files and, below it, plain subfolders (no marker of their own). Every path into one
+    // comes through these two helpers, so the library check, the dot-name rule and the
+    // Space guard in sanitize_path() are applied once.
+
+    /** A name of one path segment inside a library: no separators, control characters or dot-prefix. */
+    function ff_clean_name(string $name): string {
+        $name = trim(preg_replace('/[\x00-\x1F\x7F]/u', '', str_replace(['/', '\\'], '', $name)));
+        if ($name === '' || $name[0] === '.') throw new Exception('Invalid name.');
+        return $name;
+    }
+
+    /**
+     * [library abs, target dir abs, normalised sub] for `$sub` (a library-relative folder
+     * path, '' for the library itself). Each segment is cleaned, so `..`, `.git` and the
+     * marker itself are refused rather than resolved.
+     */
+    function ff_library_dir(string $library_rel, string $sub = ''): array {
+        $lib = rtrim(sanitize_path($library_rel), '/');
+        if (!is_dir($lib) || !file_exists($lib . '/.filesfolder')) throw new Exception('Not a files library.');
+        $parts = array_values(array_filter(explode('/', str_replace('\\', '/', $sub)), fn($p) => $p !== ''));
+        $parts = array_map('ff_clean_name', $parts);
+        return [$lib, $parts ? $lib . '/' . implode('/', $parts) : $lib, implode('/', $parts)];
+    }
+
+    /** Remove a file, or a directory and everything in it. */
+    function ff_remove(string $abs): bool {
+        if (is_link($abs) || is_file($abs)) return unlink($abs);
+        if (!is_dir($abs)) return false;
+        foreach (array_diff(scandir($abs), ['.', '..']) as $e) {
+            if (!ff_remove($abs . '/' . $e)) return false;
+        }
+        return rmdir($abs);
+    }
+
     // Returns [abs_path, rel_path, PageIndexer] for a destination that may be in another space.
     // Throws Exception if the space doesn't exist or the user lacks access.
     function resolve_target($new_path_raw, $target_space_name = '') {
@@ -1002,7 +1038,7 @@ if (isset($_REQUEST['action'])) {
     $edit_actions  = ['save', 'create_file', 'save_message_page', 'create_folder', 'create_diagram', 'create_list', 'create_chat', 'create_search',
                       'post_chat_message', 'queue_agent_job', 'toggle_chat_debug', 'delete_chat_message', 'cancel_pending_chat_message', 'update_chat_topic', 'purge_chat_messages', 'set_chat_retention', 'toggle_sticky',
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
-                      'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'update_tags', 'sync_fm_tags',
+                      'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'create_library_folder', 'update_tags', 'sync_fm_tags',
                       'save_diagram_svg', 'upload_page', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
                       'retarget_wikilinks', 'set_frontmatter'];
     $admin_actions = ['admin_chat_retention', 'admin_frontmatter_settings', 'admin_mention_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
@@ -1324,6 +1360,8 @@ if (isset($_REQUEST['action'])) {
 ".md pages are Markdown with these wiki extensions:\n" .
 "  ```mermaid fenced block  renders as a diagram (flowchart, sequence, state, ER, gantt).\n" .
 "                           Write one instead of ASCII art or an image link.\n" .
+"                           Inside it ; and # are syntax: write a comma or #59; / #35; in a\n" .
+"                           message or label, and quote labels with brackets: A[\"Save (draft)\"].\n" .
 "  > [!note] Title          a blockquote starting with [!type] renders as a callout box. Types:\n" .
 "                           note, info, abstract, todo, tip, success, question, warning, failure,\n" .
 "                           danger, bug, important, example, quote. Suffix the type with - to\n" .
@@ -2888,7 +2926,7 @@ if (isset($_REQUEST['action'])) {
                 break;
 
             case 'content_health':
-                // Broken links, orphans, stale and empty pages in the current Space (see
+                // Broken links, stale and empty pages in the current Space (see
                 // content_health.php). Read-only, so it is in neither guard list: a reader may
                 // see it, they simply have no button for it — the report only names pages they
                 // can already read. Links into another Space are checked against the same
@@ -4160,23 +4198,46 @@ if (isset($_REQUEST['action'])) {
                 break;
 
             case 'list_folder_files':
-                $folder_path = sanitize_path($_GET['folder_path']);
-                if (!is_dir($folder_path) || !file_exists($folder_path . '/.filesfolder'))
-                    throw new Exception('Not a files library.');
-                $ff_files = [];
-                foreach (scandir($folder_path) as $entry) {
-                    if ($entry === '.' || $entry === '..' || $entry === '.filesfolder') continue;
-                    $full = $folder_path . '/' . $entry;
-                    if (!is_file($full)) continue;
-                    $ff_files[] = [
-                        'name'  => $entry,
-                        'size'  => filesize($full),
-                        'mtime' => filemtime($full),
-                        'path'  => ltrim(str_replace(PAGES_DIR, '', $full), '/'),
-                    ];
+                // A files library's contents, or a subfolder's (`sub`, library-relative).
+                // Folders first, each group A→Z; `path` is PAGES_DIR-relative, which is what
+                // getfile.php takes, and `rel` is library-relative, which is what the
+                // folder and delete actions take.
+                [, $ff_dir, $ff_sub] = ff_library_dir((string)($_GET['folder_path'] ?? ''), (string)($_GET['sub'] ?? ''));
+                if (!is_dir($ff_dir)) throw new Exception('Folder not found.');
+                $ff_dirs = []; $ff_files = [];
+                foreach (scandir($ff_dir) as $entry) {
+                    if ($entry === '.' || $entry === '..' || $entry[0] === '.') continue;
+                    $full = $ff_dir . '/' . $entry;
+                    $rel  = ($ff_sub === '' ? '' : $ff_sub . '/') . $entry;
+                    if (is_dir($full)) {
+                        $ff_dirs[] = ['type' => 'dir', 'name' => $entry, 'rel' => $rel, 'mtime' => filemtime($full)];
+                    } elseif (is_file($full)) {
+                        $ff_files[] = [
+                            'type'  => 'file',
+                            'name'  => $entry,
+                            'rel'   => $rel,
+                            'size'  => filesize($full),
+                            'mtime' => filemtime($full),
+                            'path'  => ltrim(str_replace(PAGES_DIR, '', $full), '/'),
+                        ];
+                    }
                 }
-                usort($ff_files, fn($a, $b) => strcmp($a['name'], $b['name']));
-                echo json_encode(['success' => true, 'data' => $ff_files]);
+                $ff_cmp = fn($a, $b) => strnatcasecmp($a['name'], $b['name']);
+                usort($ff_dirs, $ff_cmp);
+                usort($ff_files, $ff_cmp);
+                echo json_encode(['success' => true, 'sub' => $ff_sub, 'data' => array_merge($ff_dirs, $ff_files)]);
+                break;
+
+            case 'create_library_folder':
+                [, $ff_dir, $ff_sub] = ff_library_dir((string)($_POST['folder_path'] ?? ''), (string)($_POST['sub'] ?? ''));
+                if (!is_dir($ff_dir)) throw new Exception('Folder not found.');
+                $ff_name = ff_clean_name((string)($_POST['name'] ?? ''));
+                // `exist_ok`: a folder dropped from the desktop merges into one of the same name.
+                if (!empty($_POST['exist_ok']) && is_dir($ff_dir . '/' . $ff_name)) { echo json_encode(['success' => true, 'existed' => true]); break; }
+                if (file_exists($ff_dir . '/' . $ff_name)) throw new Exception('A file or folder with this name already exists.');
+                if (!mkdir($ff_dir . '/' . $ff_name, 0755)) throw new Exception('Failed to create folder.');
+                wiki_audit_object($_audit, rtrim((string)$_POST['folder_path'], '/') . '/' . ($ff_sub === '' ? '' : $ff_sub . '/') . $ff_name);
+                echo json_encode(['success' => true]);
                 break;
 
             case 'upload_page':
@@ -4245,23 +4306,41 @@ if (isset($_REQUEST['action'])) {
                 break;
 
             case 'upload_to_folder':
-                $folder_path = sanitize_path($_POST['folder_path']);
-                if (!is_dir($folder_path) || !file_exists($folder_path . '/.filesfolder'))
-                    throw new Exception('Not a files library.');
-                if (empty($_FILES['file'])) throw new Exception('No file uploaded.');
-                $dest = $folder_path . '/' . basename($_FILES['file']['name']);
-                if (!move_uploaded_file($_FILES['file']['tmp_name'], $dest))
+                // Into the library or one of its subfolders (`sub`). A folder dropped from
+                // the desktop arrives as files whose `sub` carries its inner path, so missing
+                // subfolders are created here — after every segment has been cleaned.
+                [, $ff_dir, $ff_sub] = ff_library_dir((string)($_POST['folder_path'] ?? ''), (string)($_POST['sub'] ?? ''));
+                if (($_FILES['file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) throw new Exception('Upload failed.');
+                if (!is_uploaded_file($_FILES['file']['tmp_name'] ?? '')) throw new Exception('Not an uploaded file.');
+                if (!is_dir($ff_dir) && !mkdir($ff_dir, 0755, true)) throw new Exception('Failed to create folder.');
+                // Dot-names are refused: they would be hidden from the listing, and would let
+                // an upload replace the library's own marker or drop an .htaccess.
+                $ff_name  = ff_clean_name(basename((string)$_FILES['file']['name']));
+                // Never overwrite — the same "name (1).ext" convention as a page drop.
+                $ff_final = $ff_name;
+                $ff_base  = pathinfo($ff_name, PATHINFO_FILENAME);
+                $ff_ext   = pathinfo($ff_name, PATHINFO_EXTENSION);
+                for ($n = 1; file_exists($ff_dir . '/' . $ff_final); $n++) {
+                    $ff_final = $ff_base . ' (' . $n . ')' . ($ff_ext !== '' ? '.' . $ff_ext : '');
+                }
+                if (!move_uploaded_file($_FILES['file']['tmp_name'], $ff_dir . '/' . $ff_final))
                     throw new Exception('Upload failed.');
-                echo json_encode(['success' => true]);
+                @chmod($ff_dir . '/' . $ff_final, 0644);
+                wiki_audit_object($_audit, rtrim((string)$_POST['folder_path'], '/') . '/' . ($ff_sub === '' ? '' : $ff_sub . '/') . $ff_final);
+                echo json_encode(['success' => true, 'name' => $ff_final, 'renamed' => $ff_final !== $ff_name]);
                 break;
 
             case 'delete_folder_file':
-                // path is PAGES_DIR-relative (includes space name), not space_dir-relative,
-                // so resolve against PAGES_DIR directly instead of sanitize_path().
-                $dff_rel  = ltrim(str_replace('..', '', $_POST['path'] ?? ''), '/');
-                $file_path = rtrim(PAGES_DIR, '/') . '/' . $dff_rel;
-                if (!is_file($file_path)) throw new Exception('File not found.');
-                unlink($file_path);
+                // A file or a subfolder (recursively) inside a files library: `folder_path` is
+                // the library, `rel` the item within it. Resolved through sanitize_path(), so
+                // the Space guard applies — this used to take a PAGES_DIR-relative path and
+                // unlink it with no Space or library check at all.
+                $ff_rel = (string)($_POST['rel'] ?? '');
+                if (trim($ff_rel, '/') === '') throw new Exception('Nothing to delete.');
+                [, $ff_target, $ff_sub] = ff_library_dir((string)($_POST['folder_path'] ?? ''), $ff_rel);
+                wiki_audit_object($_audit, rtrim((string)$_POST['folder_path'], '/') . '/' . $ff_sub);
+                if (!file_exists($ff_target) && !is_link($ff_target)) throw new Exception('File not found.');
+                if (!ff_remove($ff_target)) throw new Exception('Delete failed.');
                 echo json_encode(['success' => true]);
                 break;
 

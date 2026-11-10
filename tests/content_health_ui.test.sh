@@ -34,10 +34,8 @@ fixture_page 'Main/Main.md' '# Welcome
 See [[Nowhere]] and [[Linked]], both from the start page of this wiki.'
 fixture_page 'Main/Linked.md' '# Linked
 
-The start page links here, so this page is not an orphan at all.'
-fixture_page 'Main/Lonely.md' '# Lonely
-
-Nobody links here. Enough text that it is not a stub, only an orphan.'
+The start page links here, and it has enough text that it is not a stub.'
+fixture_page 'Main/Lonely.md' '# Lonely'
 fixture_page 'Main/Bold <em>.md' '# Bold'
 curl -s "$WIKI_URL/api.php?action=list_spaces" > /dev/null
 curl -s "$WIKI_URL/api.php?action=indexfiles&space=Main" > /dev/null
@@ -82,22 +80,21 @@ const run = async () => {
   click($('#content-health-btn'));                            await sleep(1500);
   out += ' open=' + (shown($('#content-health-modal')) ? 'yes' : 'no');
   out += ' heading=' + $('#content-health-title').textContent.replace(/ /g, '_');
-  out += ' counts=' + ['broken', 'orphans', 'stale', 'empty'].map(n => tab(n).querySelector('.content-health-count').textContent).join('/');
+  out += ' counts=' + ['broken', 'stale', 'empty'].map(n => tab(n).querySelector('.content-health-count').textContent).join('/');
   out += ' active=' + $('.content-health-tab.active').dataset.tab;
   out += ' broken=' + titles();
   out += ' detail=' + $('.content-health-row-details li').textContent.replace(/ /g, '_');
   out += ' filter1=' + (shown($('.content-health-stale')) ? 'shown' : 'hidden');
 
-  click(tab('orphans'));                                      await sleep(300);
-  out += ' orphans=' + titles();
+  out += ' tabs=' + $$('.content-health-tab').map(b => b.dataset.tab).join('|');
   click(tab('stale'));                                        await sleep(300);
   out += ' filter2=' + (shown($('.content-health-stale')) ? 'shown' : 'hidden');
   out += ' nostale=' + $('.content-health-list').textContent.replace(/ /g, '_');
   click(tab('empty'));                                        await sleep(300);
   const bold = $('.content-health-row-title');
   out += ' asText=' + (bold && bold.querySelector('em') === null && bold.textContent.includes('<em>') ? 'yes' : 'no');
+  out += ' empty=' + titles();
 
-  click(tab('orphans'));                                      await sleep(300);
   click($$('.content-health-row').find(a => a.textContent.includes('Lonely')));
   await sleep(1500);
   out += ' closed=' + (shown($('#content-health-modal')) ? 'no' : 'yes');
@@ -140,13 +137,14 @@ assert_not_contains "the probe ran without throwing" 'fatal' "$PROBE"
 section 'the dialog'
 assert_contains "the sidebar button opens it"          'open=yes'                     "$PROBE"
 assert_contains "  …named for the Space"               'heading=Content_Health_—_Main' "$PROBE"
-assert_contains "  …with a count on every tab"         'counts=1/2/0/1'               "$PROBE"
+assert_contains "  …with a count on every tab"         'counts=1/0/2'               "$PROBE"
 assert_contains "  …starting on broken links"          'active=broken'                "$PROBE"
 assert_contains "the broken tab lists the start page"  'broken=Main '                 "$PROBE"
 assert_contains "  …and says what is wrong"            'detail=[[Nowhere]]_—_no_page_by_that_name' "$PROBE"
 
 section 'tabs'
-assert_contains "orphans lists both, sorted"           'orphans=Bold <em>|Lonely '  "$PROBE"
+assert_contains "three tabs, no orphans"               'tabs=broken|stale|empty '    "$PROBE"
+assert_contains "empty lists both, sorted"             'empty=Bold <em>|Lonely '    "$PROBE"
 assert_contains "the stale filter is only on Stale"    'filter1=hidden'               "$PROBE"
 assert_contains "  …where it shows"                    'filter2=shown'                "$PROBE"
 assert_contains "an empty list says so"                'nostale=Nothing_is_stale.'    "$PROBE"

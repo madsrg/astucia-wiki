@@ -79,11 +79,28 @@ if (isset($_GET['path'])) {
         deny_403();
     }
 
-    if (file_exists($real_file_path)) {
-        // Set headers to display the file inline in the browser
-        header('Content-Type: ' . mime_content_type($real_file_path));
-        header('Content-Disposition: inline; filename="' . basename($real_file_path) . '"');
+    if (is_file($real_file_path)) {
+        $mime = mime_content_type($real_file_path) ?: 'application/octet-stream';
+        $name = basename($real_file_path);
+
+        // `download=1` is the files library's Download action: save, whatever the type.
+        // Without it the browser shows what it can and downloads the rest (Open).
+        $disposition = !empty($_GET['download']) ? 'attachment' : 'inline';
+        // The name is user-chosen, so it is never pasted into the header raw: a `"` or a
+        // line break would end the header early. An ASCII fallback, plus RFC 5987 for the
+        // real name.
+        $ascii = preg_replace('/[^\x20-\x7E]|["\\\\]/', '_', $name);
+        header('Content-Type: ' . $mime);
+        header('Content-Disposition: ' . $disposition . '; filename="' . $ascii . '"; filename*=UTF-8\'\'' . rawurlencode($name));
         header('Content-Length: ' . filesize($real_file_path));
+        header('X-Content-Type-Options: nosniff');
+        // A document the browser would *run* — HTML, SVG, XML — is opened in a sandbox, as
+        // an opaque origin with scripts off. Shown inline unsandboxed, an uploaded file
+        // would run with this wiki's session. Only these types: Chrome's PDF viewer refuses
+        // to render under `sandbox`, and an <img> embed ignores the header anyway.
+        if ($disposition === 'inline' && preg_match('#^(text/html|application/xhtml\+xml|image/svg\+xml|text/xml|application/xml)#i', $mime)) {
+            header('Content-Security-Policy: sandbox');
+        }
         
         // Output the file contents
         readfile($real_file_path);

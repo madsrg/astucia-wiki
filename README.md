@@ -130,7 +130,7 @@ AI users (and MCP clients — see below) can use the tools the wiki exposes:
 - **`wiki_read_page`** — reads the content of any `.md`, `.list`, or `.chat` file
 - **`wiki_write_page`** — creates or overwrites a `.md` page (editor role only)
 - **`wiki_related_pages`** — finds pages related to a given page via the knowledge graph (links, folder hierarchy, and shared tags)
-- **`wiki_content_health`** — reports broken links, orphans, stale and empty pages in the current Space (read-only)
+- **`wiki_content_health`** — reports broken links, stale and empty pages in the current Space (read-only)
 - **`wiki_add_tags`** — adds tags to a page without removing existing ones (editor role only)
 - **`wiki_set_tags`** — sets or clears the tags on any page (editor role only)
 
@@ -331,7 +331,6 @@ The graph is derived from the page index and cached per Space (`graph.json`); it
 Editors and administrators can open **Content Health** from the sidebar (pulse icon) to see what in the current Space needs attention:
 
 - **Broken links** — `?pageid=` links to pages that no longer exist (in this Space or the one the link names), `[[wikilinks]]` no page answers to, and `![[embeds]]` whose attachment is missing. Links shown as examples inside code are ignored.
-- **Orphans** — pages no other page links to (by id, wikilink or `{include:}`). The start page is exempt.
 - **Stale** — pages whose front matter `review_by:` date has passed, and pages not updated for a chosen period (30 days to two years). A page with a future `review_by` is never stale; `owner:` is shown beside each one.
 - **Empty** — Markdown pages with almost nothing in the body.
 

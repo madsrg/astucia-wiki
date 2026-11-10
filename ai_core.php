@@ -206,7 +206,10 @@ function ai_debug_report_text(array $blocks, array $usage, string $model, int $a
  * otherwise near-copies of each other — the features would drift if each spelled them out.
  *
  * Deliberately terse: it is part of the built-in instructions sent on *every* request, and
- * `/debug` prices it inside the "Wiki instructions" line (~108 tokens as written).
+ * `/debug` prices it inside the "Wiki instructions" line (~140 tokens as written).
+ *
+ * The mermaid sentence is there because a model writes prose into diagram text: a `;` in a
+ * sequence-diagram message ends the statement and the whole diagram fails to parse.
  *
  * The closing sentence carries as much weight as the rest. Without being told these are
  * meaningful, an AI asked to tidy a page treats a ```mermaid block or an {include:ID} as
@@ -217,7 +220,9 @@ function wiki_markdown_features_prompt(): string {
     return "This wiki's Markdown extensions: a ```mermaid block renders as a diagram (flowchart, "
          . "sequence, class, state, ER, gantt, pie, quadrant, mindmap, kanban, xychart) — prefer one "
          . "to ASCII art, and prefer an xychart or pie block to a table of numbers when the point is "
-         . "the shape of the data; wiki_read_page reads a .json data page, so figures stored in one "
+         . "the shape of the data. Inside a mermaid block ; and # are syntax, not text: write a comma "
+         . "or #59; / #35; in a message or label, and quote a flowchart label that holds brackets, "
+         . "e.g. A[\"Save (draft)\"]; wiki_read_page reads a .json data page, so figures stored in one "
          . "can be charted without restating them by hand; a blockquote starting "
          . "\"> [!warning] Title\" is a callout box (note, tip, warning, danger, info, example; add - "
          . "to start it collapsed); {include:ID} embeds a page; {toc} inserts a table of contents; "

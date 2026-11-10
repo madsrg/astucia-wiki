@@ -5,7 +5,7 @@ import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { hidePageControls } from '../core/page_chrome.js';
 import { icons } from '../core/icons.js';
-import { showToast, confirmModal, canUpload } from '../core/utils.js';
+import { showToast, confirmModal, promptModal, canUpload } from '../core/utils.js';
 import { t } from '../i18n/index.js';
 import { updateBreadcrumb, updateFavoriteBtn } from '../nav/index.js';
 
@@ -95,6 +95,8 @@ const showListingPane = (mode) => {
     // does take is new content, which is what the rail hides the sidebar's New button for.
     document.getElementById('move-btn').classList.toggle('hidden', mode !== 'folder');
     document.getElementById('ff-upload-btn').classList.toggle('hidden', mode === 'folder');
+    document.getElementById('ff-newfolder-btn')?.classList.toggle('hidden', mode === 'folder');
+    document.getElementById('ff-selection')?.classList.toggle('hidden', mode === 'folder');
     document.getElementById('ff-new')?.classList.toggle('hidden', mode !== 'folder');
     document.getElementById('ff-new-dropdown')?.classList.add('hidden');
     document.getElementById('ff-search')?.classList.toggle('hidden', mode !== 'folder');
@@ -114,44 +116,178 @@ const showListingPane = (mode) => {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 
-const renderFiles = (files) => {
+// A files library holds files and plain subfolders. `libPath` is the library (the wiki
+// path that carries the `.filesfolder` marker, and what state.currentPagePath stays at, so
+// the breadcrumb, the tree selection and everything keyed on the open item are unchanged
+// by browsing inside it); `libSub` is the subfolder being shown, library-relative.
+let libPath = '';
+let libSub  = '';
+
+const parentOf = (sub) => sub.includes('/') ? sub.slice(0, sub.lastIndexOf('/')) : '';
+
+// ── Selection and the file actions ────────────────────────────────────────────
+//
+// A file row is not a link: a click marks or unmarks it, and what happens to the marked
+// files is chosen in the toolbar — Open, Download, Delete. Double-click (or Enter) is the
+// shortcut for Open. Folders are not selectable; a click opens them, as before.
+//
+// "Open" hands the file to the browser inline, which shows what it can (PDF, images, text,
+// audio, video) and downloads the rest — a web page cannot launch a desktop application,
+// so for a .docx that download is how it reaches the associated app. "Download" always
+// saves, whatever the type, through getfile.php's `download=1`.
+
+const selected = new Set();      // rel paths of the marked files in the folder shown
+let shownFiles = new Map();      // rel → entry, for the files currently listed
+
+const fileUrl = (entry, download = false) =>
+    `getfile.php?path=${encodeURIComponent(entry.path)}${download ? '&download=1' : ''}`;
+
+const selectedEntries = () => [...selected].map(rel => shownFiles.get(rel)).filter(Boolean);
+
+const openFile = (entry) => window.open(fileUrl(entry), '_blank', 'noopener');
+
+const downloadFiles = (entries) => {
+    // One hidden <a download> per file. Browsers may ask once before allowing several
+    // downloads from one page; that prompt is theirs to show.
+    entries.forEach((entry, i) => setTimeout(() => {
+        const a = document.createElement('a');
+        a.href = fileUrl(entry, true);
+        a.download = entry.name;
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    }, i * 250));
+};
+
+/** Reflect the selection in the rows and the toolbar. */
+const syncSelection = () => {
+    document.querySelectorAll('#ff-file-list [data-rel]').forEach(el => {
+        const on = selected.has(el.dataset.rel);
+        el.classList.toggle('ff-selected', on);
+        el.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    const n = selected.size;
+    const count = document.getElementById('ff-sel-count');
+    if (count) count.textContent = n ? t('files.selected', { n }) : '';
+    document.getElementById('ff-sel-clear')?.classList.toggle('hidden', !n);
+    const set = (id, enabled) => { const b = document.getElementById(id); if (b) b.disabled = !enabled; };
+    set('ff-open-btn', n === 1);
+    set('ff-download-btn', n > 0);
+    set('ff-delete-sel-btn', n > 0 && canUpload());
+};
+
+const toggleSelected = (rel) => {
+    if (selected.has(rel)) selected.delete(rel); else selected.add(rel);
+    syncSelection();
+};
+
+const clearSelection = () => { selected.clear(); syncSelection(); };
+
+const deleteSelected = async () => {
+    const entries = selectedEntries();
+    if (!entries.length) return;
+    const title = entries.length === 1
+        ? t('fileops.delete-confirm', { name: entries[0].name })
+        : t('files.delete-selected-confirm', { n: entries.length });
+    if (!await confirmModal(title, { confirmLabel: t('btn.delete'), dangerous: true, icon: icons.trash })) return;
+    const lib = libPath, sub = libSub;
+    let failed = 0;
+    for (const entry of entries) {
+        const res = await api.call('delete_folder_file', { folder_path: lib, rel: entry.rel }, 'POST');
+        if (!res.success) failed++;
+    }
+    showToast(failed ? t('files.delete-failed') : t('files.deleted-n', { n: entries.length }), failed ? 'error' : 'success');
+    selected.clear();
+    if (libPath === lib && libSub === sub) loadFilesFolder(lib, sub);
+};
+
+const renderFiles = (entries) => {
     const container = document.getElementById('ff-file-list');
     container.innerHTML = '';
 
-    if (!files.length) {
-        container.innerHTML = `<p class="ff-empty">${t('files.empty')}</p>`;
-        return;
-    }
+    // Keep the marks that still name a listed file — an upload or a delete reloads the
+    // listing, and losing the selection to that would be a surprise.
+    shownFiles = new Map(entries.filter(e => e.type !== 'dir').map(e => [e.rel, e]));
+    [...selected].forEach(rel => { if (!shownFiles.has(rel)) selected.delete(rel); });
 
-    const reload = () => loadFilesFolder(state.currentPagePath);
+    const reload = () => loadFilesFolder(libPath, libSub);
 
-    const deleteFile = async (path, name) => {
-        if (!await confirmModal(t('fileops.delete-confirm', { name }), { confirmLabel: t('btn.delete'), dangerous: true, icon: icons.trash })) return;
-        const res = await api.call('delete_folder_file', { path }, 'POST');
-        if (res.success) { showToast(t('files.deleted'), 'success'); reload(); }
+    const deleteEntry = async (entry) => {
+        const isFolder = entry.type === 'dir';
+        const title = isFolder ? t('files.folder-delete-confirm', { name: entry.name })
+                               : t('fileops.delete-confirm', { name: entry.name });
+        if (!await confirmModal(title, { confirmLabel: t('btn.delete'), dangerous: true, icon: icons.trash })) return;
+        const res = await api.call('delete_folder_file', { folder_path: libPath, rel: entry.rel }, 'POST');
+        if (res.success) { showToast(t(isFolder ? 'files.folder-deleted' : 'files.deleted'), 'success'); reload(); }
         else showToast(res.message || t('files.delete-failed'), 'error');
+    };
+
+    // The ".." row leads out of a subfolder; it is not offered at the library's own top,
+    // where the way out is the breadcrumb, as it always was.
+    const rows = libSub ? [{ up: true, type: 'dir', name: '..', rel: parentOf(libSub) }, ...entries] : entries;
+
+    const open = (entry) => loadFilesFolder(libPath, entry.rel);
+
+    /** The row's name. Not a link for either kind: the row decides what a click does. */
+    const nameEl = (entry, cls, label = entry.name) => {
+        const span = document.createElement('span');
+        span.className = [cls, entry.type === 'dir' ? 'ff-dir-link' : 'ff-file-name'].filter(Boolean).join(' ');
+        span.textContent = label;
+        return span;
+    };
+    const iconEl = (entry, cls, large = false) => {
+        const span = document.createElement('span');
+        span.className = cls + (entry.type === 'dir' && !entry.up ? ' ff-folder-icon' : '');
+        span.innerHTML = entry.up ? icons.up : entry.type === 'dir' ? icons.folder : fileIcon(entry.name, large);
+        return span;
+    };
+    const delBtn = (entry, cls, text = '✕') => {
+        const del = document.createElement('button');
+        del.className = cls;
+        del.title = t('btn.delete');
+        del.textContent = text;
+        del.addEventListener('click', (e) => { e.stopPropagation(); deleteEntry(entry); });
+        return del;
+    };
+    /**
+     * A folder row opens on click. A file row is marked or unmarked on click and opened on
+     * double-click; from the keyboard, Space marks and Enter opens.
+     */
+    const wireRow = (el, entry) => {
+        if (entry.type === 'dir') {
+            el.classList.add('fv-row');
+            el.title = entry.up ? t('folder.up') : entry.name;
+            el.addEventListener('click', () => open(entry));
+            return;
+        }
+        el.classList.add('ff-file-row');
+        el.dataset.rel = entry.rel;
+        el.title = entry.name;
+        el.tabIndex = 0;
+        el.setAttribute('role', 'option');
+        el.addEventListener('click', () => toggleSelected(entry.rel));
+        el.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            // The two clicks before it toggled the mark twice; leave this file marked.
+            selected.add(entry.rel); syncSelection();
+            openFile(entry);
+        });
+        el.addEventListener('keydown', (e) => {
+            if (e.key === ' ')     { e.preventDefault(); toggleSelected(entry.rel); }
+            if (e.key === 'Enter') { e.preventDefault(); openFile(entry); }
+        });
     };
 
     if (currentViewMode === 'simple') {
         const ul = document.createElement('ul');
         ul.className = 'ff-simple-list';
-        files.forEach(f => {
+        rows.forEach(entry => {
             const li = document.createElement('li');
             li.className = 'ff-simple-item';
-            const icon = document.createElement('span');
-            icon.className = 'ff-icon-sm';
-            icon.innerHTML = fileIcon(f.name);
-            const link = document.createElement('a');
-            link.href = `getfile.php?path=${encodeURIComponent(f.path)}`;
-            link.target = '_blank';
-            link.className = 'ff-filename';
-            link.textContent = f.name;
-            const del = document.createElement('button');
-            del.className = 'btn ff-del-btn';
-            del.title = t('btn.delete');
-            del.textContent = '✕';
-            del.addEventListener('click', () => deleteFile(f.path, f.name));
-            li.append(icon, link, del);
+            li.append(iconEl(entry, 'ff-icon-sm'), nameEl(entry, 'ff-filename'));
+            if (!entry.up) li.appendChild(delBtn(entry, 'btn ff-del-btn'));
+            wireRow(li, entry);
             ul.appendChild(li);
         });
         container.appendChild(ul);
@@ -164,32 +300,21 @@ const renderFiles = (files) => {
         const thead = document.createElement('thead');
         thead.innerHTML = `<tr><th>${t('files.col-name')}</th><th>${t('files.col-size')}</th><th>${t('files.col-modified')}</th><th></th></tr>`;
         const tbody = document.createElement('tbody');
-        files.forEach(f => {
+        rows.forEach(entry => {
             const tr = document.createElement('tr');
             const tdName = document.createElement('td');
             tdName.className = 'ff-detail-name';
-            const icon = document.createElement('span');
-            icon.className = 'ff-icon-sm';
-            icon.innerHTML = fileIcon(f.name);
-            const link = document.createElement('a');
-            link.href = `getfile.php?path=${encodeURIComponent(f.path)}`;
-            link.target = '_blank';
-            link.textContent = f.name;
-            tdName.append(icon, link);
+            tdName.append(iconEl(entry, 'ff-icon-sm'), nameEl(entry, ''));
             const tdSize = document.createElement('td');
             tdSize.className = 'ff-detail-meta';
-            tdSize.textContent = fmtSize(f.size);
+            tdSize.textContent = entry.type === 'dir' ? '' : fmtSize(entry.size);
             const tdDate = document.createElement('td');
             tdDate.className = 'ff-detail-meta';
-            tdDate.textContent = fmtDate(f.mtime);
+            tdDate.textContent = entry.up ? '' : fmtDate(entry.mtime);
             const tdDel = document.createElement('td');
-            const del = document.createElement('button');
-            del.className = 'btn ff-del-btn';
-            del.title = t('btn.delete');
-            del.textContent = '✕';
-            del.addEventListener('click', () => deleteFile(f.path, f.name));
-            tdDel.appendChild(del);
+            if (!entry.up) tdDel.appendChild(delBtn(entry, 'btn ff-del-btn'));
             tr.append(tdName, tdSize, tdDate, tdDel);
+            wireRow(tr, entry);
             tbody.appendChild(tr);
         });
         table.append(thead, tbody);
@@ -199,31 +324,34 @@ const renderFiles = (files) => {
     } else { // icons
         const grid = document.createElement('div');
         grid.className = 'ff-icons-grid';
-        files.forEach(f => {
+        rows.forEach(entry => {
             const item = document.createElement('div');
             item.className = 'ff-icon-item';
-            const link = document.createElement('a');
-            link.href = `getfile.php?path=${encodeURIComponent(f.path)}`;
-            link.target = '_blank';
+            const label = entry.name.length > 18 ? entry.name.slice(0, 17) + '…' : entry.name;
+            const link = document.createElement('span');
             link.className = 'ff-icon-link';
-            link.title = f.name;
-            const iconEl = document.createElement('span');
-            iconEl.className = 'ff-icon-lg';
-            iconEl.innerHTML = fileIcon(f.name, true);
-            const nameEl = document.createElement('span');
-            nameEl.className = 'ff-icon-name';
-            nameEl.textContent = f.name.length > 18 ? f.name.slice(0, 17) + '…' : f.name;
-            link.append(iconEl, nameEl);
-            const del = document.createElement('button');
-            del.className = 'ff-icon-del';
-            del.title = t('btn.delete');
-            del.textContent = '✕';
-            del.addEventListener('click', () => deleteFile(f.path, f.name));
-            item.append(link, del);
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'ff-icon-name';
+            nameSpan.textContent = label;
+            link.append(iconEl(entry, entry.type === 'dir' ? 'ff-icon-lg fv-icon-lg' : 'ff-icon-lg', true), nameSpan);
+            item.appendChild(link);
+            if (!entry.up) item.appendChild(delBtn(entry, 'ff-icon-del'));
+            wireRow(item, entry);
             grid.appendChild(item);
         });
         container.appendChild(grid);
     }
+
+    container.querySelector('.ff-simple-list, .ff-detail-table, .ff-icons-grid')
+        ?.setAttribute('aria-multiselectable', 'true');
+
+    if (!entries.length) {
+        const note = document.createElement('p');
+        note.className = 'ff-empty';
+        note.textContent = t('files.empty');
+        container.appendChild(note);
+    }
+    syncSelection();
 };
 
 // ── Wiki folder listing ───────────────────────────────────────────────────────
@@ -300,7 +428,7 @@ const renderFolder = (items, path) => {
     const activate = (entry) => entry.up ? loadFolderView(entry.path) : openEntry(entry);
     const iconFor  = (entry, cls) => {
         const span = document.createElement('span');
-        span.className = cls;
+        span.className = cls + (!entry.up && kindOf(entry) === 'folder' ? ' ff-folder-icon' : '');
         span.innerHTML = entry.up ? icons.up : icons[KINDS[kindOf(entry)].icon];
         return span;
     };
@@ -436,8 +564,11 @@ export const loadFolderView = async (path) => {
 
 // ── Public: load a files folder ───────────────────────────────────────────────
 
-export const loadFilesFolder = async (path) => {
+export const loadFilesFolder = async (path, sub = '') => {
+    if (path !== libPath || sub !== libSub) selected.clear();   // a mark belongs to one folder
     paneMode = 'library';
+    libPath  = path;
+    libSub   = sub;
     state.currentPagePath = path;
     state.currentPageType = 'filesfolder';
 
@@ -446,14 +577,89 @@ export const loadFilesFolder = async (path) => {
     updateBreadcrumb(path, state.currentSpace, { folder: true });
     updateFavoriteBtn(null);
 
-    const folderName = path.split('/').pop();
-    document.getElementById('current-page-title').innerHTML = `${icons.filesFolder} <span>${folderName}</span>`;
+    // The breadcrumb names the library; the title adds where inside it you are.
+    const title = [path.split('/').pop(), ...(sub ? sub.split('/') : [])].join(' / ');
+    const titleEl = document.getElementById('current-page-title');
+    titleEl.innerHTML = `${icons.filesFolder} <span></span>`;
+    titleEl.querySelector('span').textContent = title;
 
     setActiveViewBtn();
 
-    const result = await api.call('list_folder_files', { folder_path: path });
+    const result = await api.call('list_folder_files', { folder_path: path, sub });
+    // A slow answer for a folder the reader has already left must not repaint the pane.
+    if (libPath !== path || libSub !== sub || state.currentPageType !== 'filesfolder') return;
     if (result.success) renderFiles(result.data);
+    else if (sub) loadFilesFolder(path, parentOf(sub));   // deleted under us: step out
     else showToast(t('files.load-failed'), 'error');
+};
+
+// ── Uploading into a files library ────────────────────────────────────────────
+//
+// Button and drop share one path. A drop may carry folders: they are walked with the
+// File System entries API and each file is sent with the subfolder it sits in, which the
+// server creates on the way. One request per file, as for pages — each stays inside
+// upload_max_filesize, and one failure does not take the rest with it. Nothing is
+// overwritten: a colliding name comes back as "name (1).ext".
+
+/** [{ file, dir }] for everything under a dropped entry; `dir` is relative to the drop. */
+const walkEntry = (entry, dir, out) => new Promise(resolve => {
+    if (entry.isFile) {
+        entry.file(f => { out.push({ file: f, dir }); resolve(); }, () => resolve());
+    } else if (entry.isDirectory) {
+        const sub = dir ? `${dir}/${entry.name}` : entry.name;
+        out.push({ dir: sub, folder: true });
+        const reader = entry.createReader();
+        const children = [];
+        // readEntries returns at most 100 at a time; keep asking until it returns none.
+        const next = () => reader.readEntries(async batch => {
+            if (!batch.length) {
+                for (const c of children) await walkEntry(c, sub, out);
+                resolve();
+            } else { children.push(...batch); next(); }
+        }, () => resolve());
+        next();
+    } else resolve();
+});
+
+const uploadToLibrary = async (items) => {
+    const files = items.filter(i => i.file);
+    const folders = items.filter(i => i.folder);
+    if (!files.length && !folders.length) return;
+    const lib = libPath, base = libSub;
+    const join = (d) => [base, d].filter(Boolean).join('/');
+    if (files.length) showToast(t('files.uploading', { n: files.length }), 'info');
+
+    // Empty dropped folders would be lost by a files-only upload, so folders are made first.
+    // One that already exists is fine: the drop merges into it.
+    for (const f of folders) {
+        const at = f.dir.includes('/') ? f.dir.slice(0, f.dir.lastIndexOf('/')) : '';
+        await api.call('create_library_folder',
+            { folder_path: lib, sub: join(at), name: f.dir.split('/').pop(), exist_ok: 1 }, 'POST');
+    }
+
+    let done = 0, renamed = 0, failed = 0;
+    for (const { file, dir } of files) {
+        const res = await api.call('upload_to_folder', { file, folder_path: lib, sub: join(dir) }, 'POST');
+        if (res?.success) { done++; if (res.renamed) renamed++; }
+        else failed++;
+    }
+
+    const parts = [];
+    if (done)    parts.push(t('files.uploaded', { n: done }));
+    if (renamed) parts.push(t('files.upload-renamed', { n: renamed }));
+    if (failed)  parts.push(t('files.upload-failed', { n: failed }));
+    if (!parts.length && folders.length) parts.push(t('files.folder-created'));
+    showToast(parts.join(' · '), failed ? 'error' : 'success');
+    if (state.currentPageType === 'filesfolder' && libPath === lib) loadFilesFolder(lib, libSub);
+};
+
+const newLibraryFolder = async () => {
+    if (state.currentPageType !== 'filesfolder') return;
+    const name = (await promptModal(t('files.new-folder-prompt'), '', '', icons.folder))?.trim();
+    if (!name) return;
+    const res = await api.call('create_library_folder', { folder_path: libPath, sub: libSub, name }, 'POST');
+    if (res.success) { showToast(t('files.folder-created'), 'success'); loadFilesFolder(libPath, libSub); }
+    else showToast(res.message || t('files.folder-create-failed'), 'error');
 };
 
 // ── "New …" in the folder listing ─────────────────────────────────────────────
@@ -556,11 +762,13 @@ const wirePageUpload = () => {
         await uploadPagesTo(files);
     });
 
-    // The pane is shared with the files library, which takes uploads of its own kind
-    // through its own button — so the drop zone is live only while a wiki folder is up.
-    const active = () => paneMode === 'folder' && canUpload();
+    // The pane is shared by both listings, and so is the drop zone: a wiki folder takes
+    // Markdown pages, a files library takes any file — and whole folders.
+    const active = () => (paneMode === 'folder' || paneMode === 'library') && canUpload()
+        && !pane.classList.contains('hidden');
+    const isFileDrag = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
     pane.addEventListener('dragover', (e) => {
-        if (!active() || ![...(e.dataTransfer?.types || [])].includes('Files')) return;
+        if (!active() || !isFileDrag(e)) return;
         e.preventDefault();                   // without this the browser opens the file
         e.dataTransfer.dropEffect = 'copy';
         pane.classList.add('drop-target-root');
@@ -569,11 +777,21 @@ const wirePageUpload = () => {
         if (!pane.contains(e.relatedTarget)) pane.classList.remove('drop-target-root');
     });
     pane.addEventListener('drop', async (e) => {
-        if (![...(e.dataTransfer?.types || [])].includes('Files')) return;
+        if (!isFileDrag(e)) return;
         e.preventDefault();
         pane.classList.remove('drop-target-root');
         if (!active()) return;
-        await uploadPagesTo([...(e.dataTransfer.files || [])]);
+        if (paneMode === 'folder') return uploadPagesTo([...(e.dataTransfer.files || [])]);
+        // The entries must be taken now: the DataTransfer is emptied once the handler yields.
+        const entries = [...(e.dataTransfer.items || [])]
+            .map(i => i.webkitGetAsEntry?.()).filter(Boolean);
+        const items = [];
+        if (entries.length) {
+            for (const en of entries) await walkEntry(en, '', items);
+        } else {
+            [...(e.dataTransfer.files || [])].forEach(file => items.push({ file, dir: '' }));
+        }
+        await uploadToLibrary(items);
     });
 };
 
@@ -630,23 +848,22 @@ export const init = () => {
     const uploadInput = document.getElementById('ff-upload-input');
 
     document.getElementById('ff-upload-btn').addEventListener('click', () => uploadInput.click());
+    document.getElementById('ff-newfolder-btn')?.addEventListener('click', newLibraryFolder);
+    document.getElementById('ff-open-btn')?.addEventListener('click', () => {
+        const [entry] = selectedEntries();
+        if (entry && selected.size === 1) openFile(entry);
+    });
+    document.getElementById('ff-download-btn')?.addEventListener('click', () => downloadFiles(selectedEntries()));
+    document.getElementById('ff-delete-sel-btn')?.addEventListener('click', deleteSelected);
+    document.getElementById('ff-sel-clear')?.addEventListener('click', clearSelection);
+    // There is no data-i18n hook for aria-label, so the toolbar's name is set here.
+    document.getElementById('ff-selection')?.setAttribute('aria-label', t('files.actions'));
 
     uploadInput.addEventListener('change', async () => {
         const files = [...uploadInput.files];
+        uploadInput.value = '';               // so the same file can be picked again
         if (!files.length || state.currentPageType !== 'filesfolder') return;
-        let ok = 0;
-        for (const file of files) {
-            const fd = new FormData();
-            fd.append('file', file);
-            fd.append('folder_path', state.currentPagePath);
-            const spaceQs = state.currentSpace ? `&space=${encodeURIComponent(state.currentSpace)}` : '';
-            const resp = await fetch(`api.php?action=upload_to_folder${spaceQs}`, { method: 'POST', body: fd });
-            const r = await resp.json();
-            if (r.success) ok++;
-            else showToast(`Failed to upload ${file.name}`, 'error');
-        }
-        if (ok > 0) { showToast(`${ok} file${ok > 1 ? 's' : ''} uploaded`, 'success'); loadFilesFolder(state.currentPagePath); }
-        uploadInput.value = '';
+        await uploadToLibrary(files.map(file => ({ file, dir: '' })));
     });
 
     wireNewMenu();
@@ -660,7 +877,7 @@ export const init = () => {
             localStorage.setItem('ff_view', mode);
             setActiveViewBtn();
             if (paneMode === 'folder' && state.currentPageType === 'folder') loadFolderView(folderPath);
-            else if (state.currentPageType === 'filesfolder') loadFilesFolder(state.currentPagePath);
+            else if (state.currentPageType === 'filesfolder') loadFilesFolder(libPath, libSub);
         });
     });
 };

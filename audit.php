@@ -196,8 +196,11 @@ const WIKI_AUDIT_ACTIONS = [
     'update_tags'        => ['tag',     'tags',       null],          // identified by id, not path
     'upload_attachment'  => ['attach',  'attachment', 'page_path'],
     'delete_attachment'  => ['detach',  'attachment', 'page_path'],
-    'delete_folder_file' => ['delete',  'attachment', 'path'],
-    'upload_to_folder'   => ['attach',  'attachment', 'folder_path'],
+    // The three files-library actions are named by wiki_audit_object() in api.php: the
+    // item is the library plus a library-relative part, and an upload's name is chosen there.
+    'delete_folder_file' => ['delete',  'attachment', null],
+    'create_library_folder' => ['create', 'folder',   null],
+    'upload_to_folder'   => ['attach',  'attachment', null],
     'git_restore'        => ['restore', 'page',       'file'],
     'retarget_wikilinks' => ['update',  'page',       'new_path'],
 ];
