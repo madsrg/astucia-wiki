@@ -61,16 +61,34 @@ The minimum required settings are `PAGES_DIR` (where wiki content is stored) and
 
 ## Authentication
 
-Authentication is optional and off by default. `AUTHENTICATION` in `config.php` selects the method:
+Authentication is optional and off by default. `AUTHENTICATION` in `config.php` sets the site's **security level** — one choice for the whole wiki, strongest first:
 
 | Value | Behaviour |
 |---|---|
+| `'sso'` | Single sign-on only — any OIDC provider: Entra ID, AD FS, Google, Keycloak, Okta, Auth0 |
+| `'sso+email'` | Single sign-on for staff, one-time email codes for people without an SSO account. Each account uses **one** method: an account with SSO never signs in by email code |
+| `'email'` | One-time codes by email only; users are added in Admin → Users |
+| `'password'` | Local passwords only, never combined with anything |
 | `'off'` | No authentication — every visitor has full admin access (the default) |
-| `'oidc'` | OIDC / OAuth2 only (tested with Auth0, Keycloak, Okta) |
-| `'otp'` | One-time codes by email; users are added manually to `users.json` |
-| `'both'` | OIDC and OTP side by side; each user record carries an `auth` field |
 
-For `'oidc'` or `'both'`, also set the four OIDC constants (`OIDC_PROVIDER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`). `AUTHENTICATION_ENABLED` still exists as a legacy shim, but it is derived from `AUTHENTICATION` — don't set it by hand.
+An account is only as strong as the weakest way into it, which is why a password never sits beside SSO or email codes, and why the one mixed mode gives each account a single method. The level is set in `config.php` only, never in the admin panel, so lowering it needs server access. The old values still work: `'oidc'` = `'sso'`, `'otp'` = `'email'`, `'both'` = `'sso+email'`. An unrecognised value signs nobody in.
+
+With single sign-on, a first sign-in normally files an access request for an admin to approve. **Admin → Requests → Automatic access** can admit people straight away instead, by rules on the provider's claims — for Entra ID the tenant (`tid`), `groups` or `roles`; elsewhere a verified email domain — as Reader or Editor in chosen Spaces. People who match no rule file a request, or are turned away. Rules never grant Admin.
+
+For `'sso'` or `'sso+email'`, also set the four OIDC constants (`OIDC_PROVIDER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`). `AUTHENTICATION_ENABLED` still exists as a legacy shim, but it is derived from `AUTHENTICATION` — don't set it by hand.
+
+### Passwords
+
+With `'password'`, hashes (Argon2id where available) are kept in `WIKI_SYSTEM_DATA/credentials.json`, never in `users.json`. Sign-in failures all show the same message, take the same time for unknown addresses, and are throttled per account and per address. An administrator never types someone's password: Admin → Users offers **Send link** (the person chooses their own) or **Temporary password** (shown once, and it must be changed at the first sign-in). People change their own in My Preferences, which signs out their other sessions. "Forgot password" and the links need `APP_BASE_URL` and mail configured — links are built from `APP_BASE_URL`, never from the request. Switching the wiki away from `'password'` deletes every stored password.
+
+The first admin of a password wiki is made on the server:
+
+```bash
+php tools/set_password.php you@example.com --create "Your Name"
+# Docker: docker exec -u www-data astucia-wiki php tools/set_password.php you@example.com --create "Your Name"
+```
+
+It prints a temporary password; signing in with it asks for a new one. The same command, without `--create`, gives an existing account a new temporary password.
 
 ### Bootstrapping the first admin
 
@@ -328,7 +346,7 @@ The graph is derived from the page index and cached per Space (`graph.json`); it
 
 ## Content health
 
-Editors and administrators can open **Content Health** from the sidebar (pulse icon) to see what in the current Space needs attention:
+**Wiki Pulse** (the pulse icon in the sidebar) gathers what needs your attention in one dialog. Its first two tabs, for anyone signed in, are **Mentions** — every page and chat across the wiki that names you, with the unread count shown on the icon — and **Comments**, the pages in the current Space you commented on. For editors and administrators the next three tabs are **Content Health**, which shows what in the current Space needs attention:
 
 - **Broken links** — `?pageid=` links to pages that no longer exist (in this Space or the one the link names), `[[wikilinks]]` no page answers to, and `![[embeds]]` whose attachment is missing. Links shown as examples inside code are ignored.
 - **Stale** — pages whose front matter `review_by:` date has passed, and pages not updated for a chosen period (30 days to two years). A page with a future `review_by` is never stale; `owner:` is shown beside each one.

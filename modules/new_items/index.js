@@ -2,6 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
+import { state } from '../core/state.js';
 import { showToast, promptModal } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { refreshFileTree, revealAndSelectFile } from '../file_tree/index.js';
@@ -77,6 +78,18 @@ export const init = () => {
 
     newItemBtn.addEventListener('click', (e) => { e.stopPropagation(); newItemDropdown.classList.toggle('hidden'); });
     document.addEventListener('click', () => { if (!newItemDropdown.classList.contains('hidden')) newItemDropdown.classList.add('hidden'); });
+
+    // A files library holds uploaded files, not wiki content, so nothing can be created in
+    // or below one: while a library is the open item, New … is off and says why. Follows
+    // every way of opening something through the `wiki:pagetype` event (core/state.js).
+    const syncNewButton = (type) => {
+        const off = type === 'filesfolder';
+        newItemBtn.disabled = off;
+        newItemBtn.title = off ? t('nav.new-off-library') : '';
+        if (off) newItemDropdown.classList.add('hidden');
+    };
+    window.addEventListener('wiki:pagetype', (e) => syncNewButton(e.detail));
+    syncNewButton(state.currentPageType);
 
     // New Page lightbox with optional template selection
     const newPageLightbox     = document.getElementById('new-page-lightbox');

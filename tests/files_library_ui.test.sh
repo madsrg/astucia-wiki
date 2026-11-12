@@ -75,7 +75,10 @@ const run = async () => {
   let out = '';
   localStorage.setItem('ff_view', 'simple');
   const ff = await import('./modules/files_folder/index.js');
+  const newBtn = () => $('#new-item-btn').disabled ? 'off' : 'on';
+  out += ' new1=' + newBtn();
   await ff.loadFilesFolder('Docs');                           await sleep(500);
+  out += ' new2=' + newBtn() + '/tip:' + ($('#new-item-btn').title ? 'yes' : 'no');
   const list = $('#ff-file-list');
   out += ' rows=' + rowNames().length;
   out += ' scrolls=' + (list.scrollHeight > list.clientHeight + 10 && getComputedStyle(list).overflowY === 'auto' ? 'yes' : 'no');
@@ -142,6 +145,10 @@ const run = async () => {
   click($$('#ff-file-list .ff-simple-item').find(li => li.textContent.trim().startsWith('..')));
   await sleep(800);
   out += ' back=' + rowNames()[0];
+  // Away from the library to a wiki folder listing: a page type change with nothing to
+  // fetch from a CDN (a Markdown page would need marked.js, and a slow CDN is not this test).
+  await ff.loadFolderView('');                                await sleep(500);
+  out += ' new3=' + newBtn();
   return out;
 };
 setTimeout(async () => {
@@ -171,6 +178,11 @@ PROBE=$(grep -o '<title>PROBE.*</title>' "$WIKI_ROOT/dom.html" \
         | python3 -c 'import html,sys; sys.stdout.write(html.unescape(sys.stdin.read()))' || true)
 [ -n "$PROBE" ] || _fail "the page never reported (probe did not run)" ""
 assert_not_contains "the probe ran without throwing" 'fatal' "$PROBE"
+
+section 'New … is off on a files library'
+assert_contains "on a page it is on"                    'new1=on '          "$PROBE"
+assert_contains "on a library it is off, and says why"  'new2=off/tip:yes'  "$PROBE"
+assert_contains "and back on when you leave it"         'new3=on'           "$PROBE"
 
 section 'scrolling'
 assert_contains "the long library is listed"            'rows=81 '          "$PROBE"

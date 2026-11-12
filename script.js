@@ -52,7 +52,8 @@ import { init as initShare } from './modules/share/index.js';
 import { init as initAdvancedSearch } from './modules/advanced_search/index.js';
 import { init as initMcpExplorer } from './modules/mcp_explorer/index.js';
 import { init as initGraph } from './modules/graph/index.js';
-import { init as initContentHealth } from './modules/content_health/index.js';
+import { init as initPulse } from './modules/pulse/index.js';
+import { init as initHelp } from './modules/help/index.js';
 import { init as initSelectionActions } from './modules/selection_actions/index.js';
 import { init as initTabs, onSpaceChange as tabsOnSpaceChange, resumeTarget as tabsResumeTarget } from './modules/tabs/index.js';
 import { initRealtime } from './modules/realtime/index.js';
@@ -206,7 +207,8 @@ const init = async () => {
     initMcpExplorer();
     initSelectionActions();
     initGraph({ onNavigate: navigateToPageId });
-    initContentHealth({ onNavigate: navigateToPageId });
+    initPulse({ onNavigate: navigateToPageId });
+    initHelp();   // the ? icon and Alt+H: keyboard shortcuts and a way to the online docs   // Wiki Pulse: mentions, comments, content health
     initNav({
         onNavigate: async (id, space, path) => {
             const spaceIsValid = !space || getAllSpaces().includes(space);

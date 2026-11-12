@@ -11,9 +11,12 @@ const FONTS      = ['sans', 'serif', 'mono'];
 const FONT_SIZES = ['10pt', '11pt', '12pt', '14pt', '16pt'];
 
 // ── Sign-in methods ─────────────────────────────────────────────────────────────
-// One account may sign in with SSO, an email code, or both. Adding one needs this session
-// to complete it — an SSO round trip, or a code sent to the new address — which is what
-// stops anyone from attaching a way in to an account that is not theirs.
+// The site has one security level (auth_modes.php) and an account uses ONE method. Here a
+// person can only move up: in sso+email an email-code account may add SSO (which it then
+// signs in with), and an SSO account may drop a leftover email address — never the other
+// way, which is an administrator's decision. Adding SSO needs this session to complete
+// the round trip, which stops anyone attaching a way in to an account that is not theirs.
+// In the password mode the section is the change-password form instead.
 
 const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -25,6 +28,7 @@ const renderSignin = (signin, reload) => {
     const box   = document.getElementById('pref-signin');
     if (!group || !box || !signin) return;
     const both = signin.sso && !!signin.otpEmail;
+    if (signin.method === 'password') { renderPasswordChange(group, box); return; }
     group.classList.toggle('hidden', !signin.linkable && !both);
     if (group.classList.contains('hidden')) return;
 
@@ -34,8 +38,10 @@ const renderSignin = (signin, reload) => {
             <span class="pref-signin-detail${detail ? '' : ' pref-signin-none'}">${esc(detail || t('prefs.signin-none'))}</span>
             ${action}
         </div>`;
-    const removeBtn = (m) => both ? `<button type="button" class="btn btn-sm btn-secondary" data-signin-remove="${m}">${esc(t('prefs.signin-remove'))}</button>` : '';
-    const addBtn    = (m) => signin.linkable ? `<button type="button" class="btn btn-sm btn-blue" data-signin-add="${m}">${esc(t('prefs.signin-add'))}</button>` : '';
+    // Only the leftover email address of an SSO account can be removed, and only an account
+    // without SSO can add anything (SSO, or a new address of its own).
+    const removeBtn = (m) => both && m === 'otp' ? `<button type="button" class="btn btn-sm btn-secondary" data-signin-remove="${m}">${esc(t('prefs.signin-remove'))}</button>` : '';
+    const addBtn    = (m) => signin.linkable && !signin.sso ? `<button type="button" class="btn btn-sm btn-blue" data-signin-add="${m}">${esc(t('prefs.signin-add'))}</button>` : '';
     box.innerHTML =
         row('sso', t('prefs.signin-sso'), signin.sso ? (signin.ssoEmail || t('prefs.signin-on')) : '', signin.sso ? removeBtn('sso') : addBtn('sso')) +
         row('otp', t('prefs.signin-otp'), signin.otpEmail, signin.otpEmail ? removeBtn('otp') : addBtn('otp')) +
@@ -99,6 +105,33 @@ const renderSignin = (signin, reload) => {
         showToast(t('account.notice.removed', { method: label }), 'success');
         reload();
     }));
+};
+
+/** Password mode: change your own password. The current one is required and checked server-side. */
+const renderPasswordChange = (group, box) => {
+    group.classList.remove('hidden');
+    // The section's label and hint are about several methods; here there is one.
+    const label = group.querySelector('label');
+    if (label) { label.removeAttribute('data-i18n'); label.textContent = t('prefs.pw-label'); }
+    group.querySelector('[data-i18n="prefs.signin-hint"]')?.classList.add('hidden');
+    box.innerHTML = `
+        <div class="pref-pw-form">
+            <input type="password" class="form-control" id="pref-pw-current" autocomplete="current-password" placeholder="${esc(t('prefs.pw-current'))}">
+            <input type="password" class="form-control" id="pref-pw-new" autocomplete="new-password" minlength="12" placeholder="${esc(t('prefs.pw-new'))}">
+            <input type="password" class="form-control" id="pref-pw-new2" autocomplete="new-password" minlength="12" placeholder="${esc(t('prefs.pw-repeat'))}">
+            <button type="button" class="btn btn-sm btn-blue" id="pref-pw-save">${esc(t('prefs.pw-change'))}</button>
+            <p class="pref-hint pref-hint-flush">${esc(t('prefs.pw-hint'))}</p>
+        </div>`;
+    box.querySelector('#pref-pw-save').addEventListener('click', async (e) => {
+        const val = (id) => box.querySelector(id).value;
+        e.target.disabled = true;
+        const res = await api.call('account_password_change',
+            { current: val('#pref-pw-current'), password: val('#pref-pw-new'), password2: val('#pref-pw-new2') }, 'POST');
+        e.target.disabled = false;
+        if (!res.success) { showToast(accountError(res), 'error'); return; }
+        box.querySelectorAll('input').forEach(i => { i.value = ''; });
+        showToast(t('prefs.pw-changed'), 'success');
+    });
 };
 
 const applyFont     = (f) => document.documentElement.setAttribute('data-font', f);

@@ -267,7 +267,7 @@ function renderHtmlPage(string $pageTitle, string $content, string $navHtml, str
 <div class="app-container">
   <aside class="sidebar">
     <div class="sidebar-header">
-      <div class="logo-wrapper"><img src="{$assetBase}logo.png" class="sidebar-logo" alt="Logo"></div>
+      <div class="logo-wrapper"><img src="{$assetBase}logo3.svg" class="sidebar-logo" alt="Logo"></div>
       <h1 style="font-size:1.1rem;text-align:center">{$appTitle}</h1>
     </div>
     <div class="sidebar-panes">
@@ -405,7 +405,7 @@ $navHtml = renderNavTree($tree, 0); // placeholder; replaced per page
 
 echo "Copying assets…\n";
 copy(__DIR__ . '/styles.css', "$destDir/assets/styles.css");
-copy(__DIR__ . '/logo.png',   "$destDir/assets/logo.png");
+copy(__DIR__ . '/logo3.svg',  "$destDir/assets/logo3.svg");
 
 echo "Copying attachments…\n";
 $dirIter = new RecursiveIteratorIterator(

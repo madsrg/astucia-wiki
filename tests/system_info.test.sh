@@ -45,7 +45,7 @@ assert_contains "the wiki version is the VERSION file" \
                 "\"wiki\":\"$(tr -d '\n' < "$WIKI_APP/VERSION")\"" "$r"
 assert_contains "PHP's own version"        "\"php\":\"$(php -r 'echo PHP_VERSION;')\"" "$r"
 assert_contains "the search engine in force" '"search":"' "$r"
-assert_contains "and the authentication mode" '"auth":"otp"' "$r"
+assert_contains "and the authentication mode, in the current vocabulary" '"auth":"email"' "$r"
 
 section 'every composer package, straight from the lock file'
 # The lock file is the truth for these; a hand-maintained list would rot on the first

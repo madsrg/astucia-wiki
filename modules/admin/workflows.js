@@ -16,7 +16,7 @@ import { openPagePicker } from './page_picker.js';
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 const TRIGGERS = ['page_created', 'page_updated', 'page_deleted', 'page_renamed', 'tag_added', 'tag_removed', 'fm_changed'];
-const ACTIONS  = ['email', 'ai', 'chat', 'tag', 'frontmatter'];
+const ACTIONS  = ['email', 'ai', 'chat', 'tag', 'frontmatter', 'webhook'];
 const TYPES    = ['md', 'list', 'chat', 'json', 'drawio', 'search'];
 const VARS     = ['page', 'path', 'space', 'url', 'page_id', 'page_chat', 'actor', 'event', 'workflow', 'old_path', 'tags', 'field', 'old_value', 'new_value', 'date'];
 // Variables only some triggers fill. Every other one has a value whatever started the run.
@@ -62,6 +62,7 @@ const actionSummary = (a) => {
         case 'chat':        return a.page_chat ? t('admin.wf.sum.chat-page') : t('admin.wf.sum.chat', { chat: a.chat });
         case 'tag':         return [...(a.add || []).map(x => `+#${x}`), ...(a.remove || []).map(x => `−#${x}`)].join(' ');
         case 'frontmatter': return `${a.field}: ${a.value || '∅'}`;
+        case 'webhook':     return `${a.method || 'POST'} ${(String(a.url || '').match(/^https?:\/\/([^/?#]+)/i) || [])[1] || '?'}`;
         default:            return a.type;
     }
 };
@@ -310,6 +311,27 @@ const actionFields = (a, i) => {
                 <input type="text" id="${id('field')}" class="form-control" value="${esc(a.field || '')}" placeholder="status">
                 <label>${t('admin.wf.fm.value')}</label>
                 <input type="text" id="${id('value')}" class="form-control" value="${esc(a.value || '')}" placeholder="${t('admin.wf.fm.value-ph')}">`;
+        case 'webhook': {
+            // The server part of the address is fixed (checked on save); values go in the
+            // path, the query, the headers and the body, each encoded for where it lands.
+            const method = a.method || 'POST';
+            const btype = a.body_type || 'json';
+            // Label/control pairs, like every action card (.job-form-grid: 160px | rest).
+            return `<div class="wf-note">${t('admin.wf.web.note')}</div>
+                <label>${t('admin.wf.web.url')}</label>
+                <div class="wf-web-line">
+                    <select id="${id('method')}" class="form-control wf-web-method">${['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => opt(m, m, m === method)).join('')}</select>
+                    <input type="text" id="${id('url')}" class="form-control" value="${esc(a.url || '')}" placeholder="https://example.com/hooks/wiki?page={{page}}">
+                </div>
+                <label>${t('admin.wf.web.headers')}</label>
+                <textarea id="${id('headers')}" class="form-control wf-mono" rows="2" placeholder="Authorization: Bearer …">${esc(a.headers || '')}</textarea>
+                <label>${t('admin.wf.web.body')}</label>
+                <div>
+                    <select id="${id('btype')}" class="form-control wf-web-btype">${['json', 'form', 'text'].map(b => opt(b, t(`admin.wf.web.body-${b}`), b === btype)).join('')}</select>
+                    <textarea id="${id('body')}" class="form-control wf-mono" rows="8">${esc(a.body ?? t('admin.wf.web.body-default'))}</textarea>
+                    <div class="wf-sub">${t('admin.wf.web.get-note')}</div>
+                </div>`;
+        }
         default: return '';
     }
 };
@@ -333,6 +355,8 @@ const readAction = (type, i) => {
         case 'chat':        return { type, ...thread(), as_uid: Number(v('as')), text: v('text') };
         case 'tag':         return { type, add: list('add'), remove: list('remove') };
         case 'frontmatter': return { type, field: v('field').trim(), value: v('value') };
+        case 'webhook':     return { type, method: v('method') || 'POST', url: v('url').trim(), headers: v('headers'),
+                                     body_type: v('btype') || 'json', body: v('body') };
         default:            return { type };
     }
 };
@@ -579,6 +603,10 @@ const runTest = async (wf) => {
             case 'chat': body = `<div><b>${t('admin.wf.chat.thread')}</b> ${esc(a.chat)}</div><pre class="wf-pre">${esc(a.text)}</pre>`; break;
             case 'tag': body = `<div>${esc([...a.add.map(x => `+#${x}`), ...a.remove.map(x => `−#${x}`)].join(' '))}</div>`; break;
             case 'frontmatter': body = `<div><code>${esc(a.field)}: ${esc(a.value)}</code></div>`; break;
+            case 'webhook': body = `<div><code>${esc(a.method)} ${esc(a.url)}</code></div>`
+                + (Object.keys(a.headers || {}).length ? `<pre class="wf-pre">${esc(Object.entries(a.headers).map(([k, v]) => `${k}: ${v}`).join('\n'))}</pre>` : '')
+                + (a.body ? `<pre class="wf-pre">${esc(a.body)}</pre>` : '')
+                + (a.blocked ? `<div class="wf-err">${esc(a.blocked)}</div>` : ''); break;
         }
         return `<div class="wf-action-card"><div class="wf-action-head"><span class="wf-action-n">${i + 1}</span>
             <strong>${esc(t(`admin.wf.action.${a.type}`))}</strong></div>${body}${(a.warnings || []).map(warn).join('')}</div>`;

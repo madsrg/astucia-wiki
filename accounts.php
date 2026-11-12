@@ -28,6 +28,7 @@
 // =================================================================
 
 require_once __DIR__ . '/service_auth.php';
+require_once __DIR__ . '/auth_modes.php';
 require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/logger.php';
 
@@ -55,6 +56,24 @@ function wiki_user_otp_email(array $u): string {
     if (array_key_exists('otpEmail', $u)) return trim((string)$u['otpEmail']);
     $auth = $u['auth'] ?? (empty($u['sub']) ? 'otp' : 'oidc');
     return $auth === 'otp' ? trim((string)($u['email'] ?? '')) : '';
+}
+
+/**
+ * The ONE way this account signs in under the site's mode, or '' when it cannot sign in.
+ * An account is only as strong as the weakest way into it, so even an account holding both
+ * an SSO identity and an email address uses only the stronger one the site offers. The
+ * address is also the login of a password account (see passwords.php).
+ */
+function wiki_user_signin_method(array $u): string {
+    $sso  = wiki_user_sso_sub($u) !== '';
+    $addr = wiki_user_otp_email($u) !== '';
+    switch (wiki_auth_mode()) {
+        case 'sso':       return $sso ? 'sso' : '';
+        case 'sso+email': return $sso ? 'sso' : ($addr ? 'email' : '');
+        case 'email':     return $addr ? 'email' : '';
+        case 'password':  return $addr ? 'password' : '';
+    }
+    return '';
 }
 
 function wiki_user_auth(array $u): string {
@@ -170,7 +189,8 @@ function wiki_requests_mutate(callable $fn): mixed {
 
 /**
  * $_SESSION['user'] for a person, whichever way they signed in. `via` is how this session
- * was established ('sso' | 'otp'); `auth` is the same thing in the older vocabulary.
+ * was established ('sso' | 'otp' | 'password'); `auth` is the same thing in the older
+ * vocabulary. `signed_in_at` is what wiki_session_guard() compares a credential change to.
  */
 function wiki_session_user(array $u, string $via, array $extra = []): array {
     $s = [
@@ -181,23 +201,64 @@ function wiki_session_user(array $u, string $via, array $extra = []): array {
         'spaces'     => $u['spaces']     ?? null,
         'fontFamily' => $u['fontFamily'] ?? 'sans',
         'fontSize'   => $u['fontSize']   ?? 'normal',
-        'auth'       => $via === 'sso' ? 'oidc' : 'otp',
+        'auth'       => $via === 'sso' ? 'oidc' : ($via === 'password' ? 'password' : 'otp'),
         'via'        => $via,
+        'signed_in_at' => time(),
     ];
     $sub = wiki_user_sso_sub($u);
     if ($sub !== '') $s['sub'] = $sub;
     return array_merge($s, $extra);
 }
 
-/** Rebuild the signed-in user's session after their record changed, keeping how they came in. */
-function wiki_session_refresh(): void {
+/**
+ * Rebuild the signed-in user's session after their record changed, keeping how they came
+ * in — unless $via says otherwise: a session that has just completed an SSO round trip to
+ * link SSO *is* an SSO session from then on, and must be one, or wiki_session_guard()
+ * would end it (an account with SSO uses only SSO).
+ */
+function wiki_session_refresh(?string $via_now = null): void {
     $uid = (int)($_SESSION['user']['uid'] ?? 0);
     $users = wiki_users_list();
     $i = wiki_find_user_index($users, $uid);
     if ($i === null) return;
-    $via = $_SESSION['user']['via'] ?? (($_SESSION['user']['auth'] ?? '') === 'oidc' ? 'sso' : 'otp');
+    $via = $via_now ?? $_SESSION['user']['via'] ?? (($_SESSION['user']['auth'] ?? '') === 'oidc' ? 'sso' : 'otp');
     $extra = isset($_SESSION['user']['locale']) ? ['locale' => $_SESSION['user']['locale']] : [];
+    // The same sign-in, rebuilt: a refresh must not make the session look newer than a
+    // credential change it predates.
+    if (isset($_SESSION['user']['signed_in_at'])) $extra['signed_in_at'] = (int)$_SESSION['user']['signed_in_at'];
     $_SESSION['user'] = wiki_session_user($users[$i], $via, $extra);
+}
+
+/**
+ * End a session the account no longer allows. Run on every browser request (from
+ * wiki_remember_restore(), which every entry point calls straight after session_start()):
+ *   - the session came in by a method this account may not use under the current mode —
+ *     the site's level was raised, or an admin removed that method;
+ *   - the account's credentials changed after this session signed in — a password was
+ *     changed or reset, which must end every other session.
+ * A session without `via` predates it (or is a test fixture's) and is left to the idle
+ * timeout. A removed account is left as it always was.
+ */
+function wiki_session_guard(): void {
+    if (!AUTHENTICATION_ENABLED || empty($_SESSION['user']['uid'])) return;
+    $uid = (int)$_SESSION['user']['uid'];
+    $users = wiki_users_list();
+    $i = wiki_find_user_index($users, $uid);
+    if ($i === null) return;
+    $u   = $users[$i];
+    $via = (string)($_SESSION['user']['via'] ?? '');
+    $ok  = true;
+    if ($via !== '') {
+        $method = wiki_user_signin_method($u);
+        $ok = $method !== '' && $method === ($via === 'otp' ? 'email' : $via);
+    }
+    $changed = (int)($u['credentialsChangedAt'] ?? 0);
+    if ($changed > 0 && (int)($_SESSION['user']['signed_in_at'] ?? 0) < $changed) $ok = false;
+    if (!$ok) {
+        write_access_log('SESSION_ENDED', (string)$uid, (string)($u['name'] ?? '-'), 'via ' . ($via ?: '?'));
+        $_SESSION = [];
+        session_regenerate_id(true);
+    }
 }
 
 // Stamp the moment a user signed in. Read by the My Mentions badge, which needs a line
@@ -277,6 +338,8 @@ function wiki_account_error_text(string $key): string {
         'account.err.last-method'  => 'This is the only way left to sign in to the account, so it cannot be removed.',
         'account.err.link-expired' => 'The link request expired. Please start again.',
         'account.err.not-offered'  => 'This wiki does not offer both ways of signing in.',
+        'account.err.pw-current'   => 'The current password is not correct.',
+        'account.err.downgrade'    => 'An account that signs in with single sign-on cannot switch to email codes. Ask an administrator.',
         'account.err.wait'         => 'Please wait a moment before asking for another code.',
         'account.err.no-mail'      => 'This wiki cannot send email, so codes cannot be sent.',
         'login.err.invalid-email'  => 'Please enter a valid email address.',
@@ -416,7 +479,8 @@ function wiki_request_matches(array $users, string $email): array {
 // --- Finishing an SSO sign-in ----------------------------------------------------
 
 /**
- * Everything after the provider has vouched for $claims (sub, email, name, locale).
+ * Everything after the provider has vouched for $claims (sub, email, name, locale, and
+ * `claims` — every claim from the ID token and userinfo, for automatic access rules).
  * Returns where to send the browser. Kept out of auth.php's OIDC round trip so the
  * decisions — sign in, link, ask for a code, file a request — can be tested without a
  * provider.
@@ -426,6 +490,7 @@ function wiki_oidc_complete(array $claims, ?string $id_token = null): string {
     $email  = trim((string)($claims['email'] ?? ''));
     $name   = trim((string)($claims['name'] ?? '')) ?: 'Unknown User';
     $locale = (string)($claims['locale'] ?? 'en_US');
+    $all    = is_array($claims['claims'] ?? null) ? $claims['claims'] : [];
     if ($sub === '') throw new Exception('OAuth token missing required `sub` claim.');
 
     // 1. A signed-in user adding SSO from My Preferences.
@@ -438,7 +503,8 @@ function wiki_oidc_complete(array $claims, ?string $id_token = null): string {
         }
         $err = wiki_account_link_sso($me, $sub, $email, $name);
         if ($err !== null) return 'index.php?account_error=' . $err;
-        wiki_session_refresh();
+        wiki_session_refresh('sso');   // this session just proved the SSO identity
+        if ($id_token) $_SESSION['id_token'] = $id_token;
         return 'index.php?account_notice=account.notice.sso-linked';
     }
 
@@ -476,14 +542,71 @@ function wiki_oidc_complete(array $claims, ?string $id_token = null): string {
     unset($_SESSION['user'], $_SESSION['id_token']);
     session_regenerate_id(true);
 
-    // 3. An admin chose to link this identity to an existing account: the person proves
+    $users = wiki_users_list();
+
+    // 3. Automatic access (provisioning.php): a first sign-in whose claims match a rule
+    //    gets an account now. Not for an identity an admin already decided about (denied,
+    //    or chosen to link), and not when its address matches an existing account — that
+    //    stays a request so the admin can link it rather than split the person in two.
+    require_once __DIR__ . '/provisioning.php';
+    $prov    = wiki_prov_config();
+    $decided = null;
+    $had_request = false;
+    foreach ((json_decode((string)@file_get_contents(WIKI_SYSTEM_DATA . 'user_requests.json'), true)['requests'] ?? []) as $r) {
+        if (($r['sub'] ?? '') === $sub) { $decided = in_array($r['status'] ?? '', ['denied', 'link'], true) ? $r['status'] : null; $had_request = true; break; }
+    }
+    if ($decided === null && ($prov['rules'] || $prov['unmatched'] === 'deny')) {
+        $rule = wiki_prov_match($all, $prov['rules']);
+        // Never Admin, even from a hand-edited settings.json: the save validates it, and so
+        // does the one place it takes effect.
+        if ($rule && !in_array($rule['role'] ?? '', WIKI_PROV_ROLES, true)) $rule = null;
+        $clash = $email !== '' && wiki_request_matches($users, $email);
+        if ($rule && !$clash) {
+            $created = wiki_users_mutate(function (array &$doc) use ($sub, $email, $name, $rule) {
+                if (wiki_find_user_index_by_sub($doc['users'], $sub) !== null) return null;   // a race: someone else made it
+                $max = 0;
+                foreach ($doc['users'] as $eu) $max = max($max, (int)($eu['uid'] ?? 0));
+                $u = wiki_user_with_methods([
+                    'uid' => $max + 1, 'name' => $name, 'email' => $email, 'role' => $rule['role'],
+                    'spaces' => $rule['spaces'], 'lastLogin' => time(), 'provisionedBy' => 'rule ' . $rule['n'],
+                ], $sub, '');
+                $doc['users'][] = $u;
+                return $u;
+            });
+            if ($created) {
+                wiki_requests_mutate(function (array &$requests) use ($sub) {
+                    $requests = array_values(array_filter($requests, fn($r) => ($r['sub'] ?? '') !== $sub));
+                });
+                session_regenerate_id(true);
+                $_SESSION['user'] = wiki_session_user($created, 'sso', ['locale' => $locale]);
+                $_SESSION['last_activity'] = time();
+                if ($id_token) $_SESSION['id_token'] = $id_token;
+                unset($_SESSION['login_redirect']);
+                write_access_log('USER_AUTO_CREATED', $sub, $name, $rule['role'] . ' by rule ' . $rule['n']);
+                require_once __DIR__ . '/audit.php';
+                wiki_audit_log('account_created', 'success', ['user' => $name, 'object' => $name,
+                    'object_id' => (string)$created['uid'], 'object_category' => 'account',
+                    'detail' => $rule['role'] . ' by rule ' . $rule['n'] . ' (' . $rule['claim'] . ')']);
+                return $redirect;
+            }
+        }
+        if (!$rule && $prov['unmatched'] === 'deny' && !$had_request) {
+            // Turned away with no request: nothing for the admin to review, by their choice.
+            write_access_log('LOGIN_DENIED', $sub, $name, 'no automatic-access rule matched');
+            return 'not_registered.php';
+        }
+    }
+
+    // 4. An admin chose to link this identity to an existing account: the person proves
     //    they own it with a code sent to *that account's* address — never the request's,
     //    which may have been typed by whoever filed it.
-    $users = wiki_users_list();
-    $request = wiki_requests_mutate(function (array &$requests) use ($sub, $name, $email, $users) {
+    // What the provider sends, kept with the request so the admin can write rules on it.
+    $snapshot = $all ? wiki_prov_claims_snapshot($all) : null;
+    $request = wiki_requests_mutate(function (array &$requests) use ($sub, $name, $email, $users, $snapshot) {
         foreach ($requests as $k => $r) {
             if (($r['sub'] ?? '') !== $sub) continue;
             $requests[$k]['name'] = $name;
+            if ($snapshot) $requests[$k]['claims'] = $snapshot;
             if (($r['status'] ?? '') === 'link') {
                 $ti = wiki_find_user_index($users, (int)($r['link_uid'] ?? 0));
                 $t  = $ti === null ? null : $users[$ti];
@@ -504,7 +627,7 @@ function wiki_oidc_complete(array $claims, ?string $id_token = null): string {
             'email_source' => $email !== '' ? 'claim' : 'typed',
             'requested_at' => date('c'),
             'status'       => 'pending',
-        ];
+        ] + ($snapshot ? ['claims' => $snapshot] : []);
         return $new + ['_new' => true];
     });
 

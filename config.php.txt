@@ -34,12 +34,20 @@ define('ENVIRONMENT', 'production');
 define('PAGES_DIR', '/var/www/wiki-pages/');
 
 // --- Authentication ---
-// AUTHENTICATION: which auth method(s) are active. Required in every
-// configuration — the app reads it even when authentication is off.
-//   'off'  — no authentication, everyone has full admin access
-//   'oidc' — OIDC/OAuth2 only (Auth0 etc.); configure the OIDC constants below
-//   'otp'  — OTP email codes only; users added manually to users.json
-//   'both' — OIDC and OTP active simultaneously; each user has an 'auth' field
+// AUTHENTICATION: the site's one security level. Required in every configuration —
+// the app reads it even when authentication is off. Strongest first:
+//   'sso'       — single sign-on only (Entra ID, AD FS, Google, Keycloak … any OIDC
+//                 provider); configure the OIDC constants below
+//   'sso+email' — single sign-on for staff, email codes for people without an SSO
+//                 account. Each account uses ONE method: an account with SSO never
+//                 signs in by email code
+//   'email'     — email codes only (needs mail configured); users added in Admin → Users
+//   'password'  — local passwords only; never combined with anything. Set APP_BASE_URL
+//                 and mail for "forgot password" and set-password links
+//   'off'       — no authentication, everyone has full admin access
+// The old names still work: 'oidc' = 'sso', 'otp' = 'email', 'both' = 'sso+email'.
+// An unknown value signs nobody in. Leaving the password mode deletes every stored
+// password, so switching back later means everyone sets a new one.
 define('AUTHENTICATION', 'off');
 
 // Legacy shim — every existing AUTHENTICATION_ENABLED check continues to work.
@@ -155,6 +163,13 @@ define('SYSTEM_PROMPT_GALLERY_URL', 'https://astucia.wiki/system_prompts.json');
 // higher costs less. One scan stats the indexable files of one space; results are
 // cached in WIKI_SYSTEM_DATA/index-sync/ between passes. Set to 0 to use the default.
 define('INDEX_SYNC_INTERVAL_SECONDS', 30);
+
+// --- Workflow web requests ---
+// The workflow "Web request" action refuses addresses inside the server's own network —
+// loopback, private ranges, link-local (the cloud metadata service at 169.254.169.254),
+// CGNAT — so a workflow cannot be used to reach what only the server can see. Set true to
+// allow them, e.g. to call a service on the same LAN or in the same Docker network.
+define('WEB_REQUEST_ALLOW_PRIVATE', false);
 
 // --- Realtime push (optional) ---
 // Replaces the client's polling loops with one SSE channel served by a Mercure hub. The

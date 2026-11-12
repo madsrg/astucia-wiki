@@ -176,17 +176,19 @@ assert_contains "the section is shown"                         'shown=true' "$PR
 assert_contains "SSO can be added, the code address is listed" 'rows=sso:Not set up:add|otp:olga@example.com:none' "$PROBE"
 
 section "My Preferences, SSO account"
+# One method per account: an SSO account cannot take an email code (a downgrade).
 login "uid=1&sub=s-admin&name=Admin&role=admin"
 probe "probe=prefs"
-assert_contains "an email code can be added"                   'otp:Not set up:add' "$PROBE"
-assert_contains "and Add opens the address form"               'form=true' "$PROBE"
+assert_contains "no email code is offered"                     'otp:Not set up:none' "$PROBE"
+assert_not_contains "so there is no address form to open"      'form=' "$PROBE"
+assert_contains "positive control: the section is shown"       'shown=true' "$PROBE"
 
 section "My Preferences, account with both"
 login "uid=3&sub=s-sam&name=Sam&role=editor"
 probe "probe=prefs"
-assert_contains "both can be removed"                          'rows=sso:sam@example.com:remove|otp:sam.code@example.com:remove' "$PROBE"
+assert_contains "only the leftover address can be removed, not SSO" 'rows=sso:sam@example.com:none|otp:sam.code@example.com:remove' "$PROBE"
 assert_contains "Remove asks first"                            'confirm=true' "$PROBE"
-assert_contains "and then the section redraws without it"      'after=sso:sam@example.com:none|otp:Not set up:add' "$PROBE"
+assert_contains "and then the section redraws without it, offering nothing" 'after=sso:sam@example.com:none|otp:Not set up:none' "$PROBE"
 assert_eq       "the account lost its code address"            oidc "$(u 3 auth)"
 
 section "back from the provider"
@@ -204,7 +206,7 @@ json.dump(d,open(sys.argv[1],'w'))
 PY
 login "uid=1&sub=s-admin&name=Admin&role=admin"
 probe "probe=admin"
-assert_contains "an SSO account shows one badge, and can be given a code" 'admin=SSO/canadd' "$PROBE"
+assert_contains "an SSO account shows one badge, with no + OTP" 'admin=SSO ' "$PROBE"
 assert_contains "an email-code account shows its badge"        'olga=OTP ' "$PROBE"
 assert_contains "an account with both shows both, removable"   'sam=SSO×+OTP×' "$PROBE"
 assert_contains "with its code address editable"               'samotp=sam.code@example.com' "$PROBE"

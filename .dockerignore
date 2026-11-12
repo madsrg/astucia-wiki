@@ -20,6 +20,9 @@ agent_jobs_queue.json
 agent_jobs_heartbeat.json
 mcp_servers.json
 llm_connections.json
+credentials.json
+password_tokens.json
+login_throttle.json
 spaces.json
 settings.json
 

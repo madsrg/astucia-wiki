@@ -30,7 +30,9 @@ fixture_space Main; fixture_space Secret
 fixture_users '{"users":[
   {"uid":1,"name":"Admin","role":"admin","auth":"otp","email":"admin@example.com"},
   {"uid":2,"name":"Ria","role":"editor","auth":"otp","email":"ria@example.com","spaces":["Main"]},
-  {"uid":4,"name":"Rex","role":"reader","auth":"otp","email":"rex@example.com"}
+  {"uid":4,"name":"Rex","role":"reader","auth":"otp","email":"rex@example.com"},
+  {"uid":9,"name":"Bot","role":"editor","is_ai":true,"service_token":"wk_ai_libtest","spaces":["Main"],
+   "ai_config":{"provider":"openai","model":"gpt-4o"}}
 ]}'
 ADMIN=$WIKI_ROOT/jar-admin; RIA=$WIKI_ROOT/jar-ria; REX=$WIKI_ROOT/jar-rex
 fixture_login "$ADMIN" "uid=1&name=Admin&role=admin"
@@ -169,6 +171,34 @@ H=$(hdr "$RIA" 'getfile.php?path=Main%2FDocs%2Fpage.html')
 assert_contains 'HTML opened inline runs sandboxed'      'Content-Security-Policy: sandbox' "$H"
 H=$(hdr "$RIA" 'getfile.php?path=Main%2FDocs%2Fwe%22ird.txt')
 assert_contains 'a quote in the name cannot end the header' 'filename="we_ird.txt"; filename*=UTF-8'"''"'we%22ird.txt' "$H"
+
+section 'nothing is created inside a library'
+# Wiki content never goes in or below a files library: every route that creates, saves,
+# moves or copies is refused there, with a positive control beside the library.
+lib_refused() { printf '%s' "$1" | grep -q 'files library' && echo refused || echo "allowed: $1"; }
+assert_eq 'a page in the library'                       refused "$(lib_refused "$(post_as "$RIA" 'api.php?action=create_file&space=Main' 'path=Docs/page.md')")"
+assert_file_missing '…is not written'                   "$LIB/page.md"
+assert_eq 'a page deeper inside it'                     refused "$(lib_refused "$(post_as "$RIA" 'api.php?action=create_file&space=Main' 'path=Docs/Reports/deep.md')")"
+assert_eq 'a wiki folder in it'                         refused "$(lib_refused "$(post_as "$RIA" 'api.php?action=create_folder&space=Main' 'path=Docs/Sub')")"
+assert_eq 'a list in it'                                refused "$(lib_refused "$(post_as "$RIA" 'api.php?action=create_list&space=Main' 'path=Docs/l.list')")"
+assert_eq 'another library in it'                       refused "$(lib_refused "$(post_as "$RIA" 'api.php?action=create_filesfolder&space=Main' 'path=Docs/Inner')")"
+assert_eq 'saving a page into it'                       refused "$(lib_refused "$(curl -s -b "$RIA" -X POST --data-binary '# x' "$WIKI_URL/api.php?action=save&space=Main&file=Docs/saved.md")")"
+assert_file_missing '…is not written'                   "$LIB/saved.md"
+assert_eq 'moving a page into it'                       refused "$(lib_refused "$(post_as "$RIA" 'api.php?action=move&space=Main' 'old_path=Main.md&new_path=Docs/Main.md')")"
+assert_file_exists '…leaves the page where it was'      "$WIKI_PAGES/Main/Main.md"
+assert_eq 'copying a page into it'                      refused "$(lib_refused "$(post_as "$RIA" 'api.php?action=copy_page&space=Main' 'source_path=Main.md&new_path=Docs/Copy.md')")"
+printf '# up\n' > "$TMP/up.md"
+assert_eq 'dropping a Markdown page on it'              refused "$(lib_refused "$(curl -s -b "$RIA" -F folder=Docs -F "file=@$TMP/up.md" "$WIKI_URL/api.php?action=upload_page&space=Main")")"
+assert_contains 'positive control: a page beside it'    '"success":true' "$(post_as "$RIA" 'api.php?action=create_file&space=Main' 'path=Beside.md')"
+assert_file_exists '…is written'                        "$WIKI_PAGES/Main/Beside.md"
+assert_contains 'and the library still takes its own folders' '"success":true' "$(post_as "$RIA" 'api.php?action=create_library_folder&space=Main' 'folder_path=Docs&name=Allowed')"
+mcp_call() { curl -s -X POST -H 'Authorization: Bearer wk_ai_libtest' -H 'Content-Type: application/json' \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$1\",\"arguments\":$2}}" "$WIKI_URL/mcp.php?space=Main"; }
+assert_contains 'an AI user cannot write a page into it'     'inside a files library' "$(mcp_call wiki_write_page '{"path":"Docs/ai.md","content":"# AI"}')"
+assert_file_missing '…nothing is written'               "$LIB/ai.md"
+assert_contains 'nor rename a page into it'              'inside a files library' "$(mcp_call wiki_rename_page '{"path":"Beside.md","new_path":"Docs/Beside.md"}')"
+assert_contains 'positive control: an AI page beside it' 'Page created' "$(mcp_call wiki_write_page '{"path":"AiBeside.md","content":"# AI"}')"
+assert_file_exists '…is written'                        "$WIKI_PAGES/Main/AiBeside.md"
 
 section 'readers'
 R=$(post_as "$REX" 'api.php?action=create_library_folder&space=Main' 'folder_path=Docs&name=ByReader')

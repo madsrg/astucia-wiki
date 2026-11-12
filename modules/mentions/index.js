@@ -3,13 +3,11 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { api } from '../core/api.js';
 import { watch, rtTopic } from '../realtime/index.js';
-import { buildResultCard, openResult } from '../search/index.js';
-import { confirmModal } from '../core/utils.js';
 import { showToast } from '../core/utils.js';
 import { setUnread } from '../attention/index.js';
 import { t } from '../i18n/index.js';
 
-// The unread count on the My Mentions button.
+// The unread count on the Wiki Pulse button (modules/pulse), whose first tab is My Mentions.
 //
 // "New" is measured from the moment the user last opened the panel (see mentions.php),
 // not from login — a badge that cannot be cleared by reading the thing it points at
@@ -49,7 +47,7 @@ let _timer = null;
 const badgeEl = () => document.getElementById('mentions-badge');
 
 const renderBadge = (count) => {
-    const btn = document.getElementById('mentions-btn');
+    const btn = document.getElementById('pulse-btn');
     if (!btn) return;
     let badge = badgeEl();
     if (!count) { badge?.remove(); return; }
@@ -90,6 +88,9 @@ export const refreshMentionCount = async (announce = false) => {
     _known = count;
 };
 
+/** The unread count as last fetched (null before the first fetch) — the Pulse dialog's default tab. */
+export const unreadCount = () => _known;
+
 const startPolling = () => {
     if (_timer) return;
     // No visibility test: a backgrounded tab is the case modules/attention exists for,
@@ -111,94 +112,35 @@ const startPolling = () => {
 };
 
 /**
- * The list, in a lightbox rather than in the main area.
- *
- * It used to go through displaySearchResults(), which replaces the page you are reading
- * — so glancing at who had named you cost you your place, and getting back meant
- * navigating to the page again. A mention list is something you check and dismiss, not
- * somewhere you go. Closing the dialog leaves the page exactly as it was.
- *
- * It also removes a whole class of bug rather than patching it: taking over the main
- * area means putting away every control belonging to the page underneath, and the
- * results view's list of those was three short (see modules/core/page_chrome).
- * A dialog covers the page instead of replacing it, so there is nothing to put away.
- *
- * Rows are the search module's own cards, and clicking one goes through its own
- * openResult() — which is more than a loadPage() call, since a mention can be in
- * another Space.
- *
- * No pagination, for the reason the jobs dialog has none: what bounds this list is the
- * age cutoff (Admin → Content → Mentions), not a display limit. The body scrolls.
+ * My Mentions, for the Pulse dialog. Opening the list is reading it, so the badge is
+ * cleared and the server told before the rows are drawn: the list about to be shown is
+ * what was just seen, and a failed write should not leave a count contradicting it.
+ * Mentions span every Space the user can read, so the rows say which one.
  */
-const showResultsDialog = async (title, rows, showSpace, cutoffDays = 0) => {
-    const host = document.getElementById('confirm-modal-message');
-    const body = rows.length
-        ? rows.map(r => buildResultCard(r, showSpace)).join('')
-        : `<div class="sr-empty">${t('mentions.none')}</div>`;
-    // Say what window is being shown, or an empty list reads as "nobody has ever named
-    // me" when it means "not in the last 90 days". Only when a limit is actually in
-    // force — with none, there is nothing to explain.
-    const note = cutoffDays > 0
-        ? `<p class="mentions-cutoff">${t('mentions.cutoff-note', { days: cutoffDays })}</p>` : '';
-    const html = `<div class="mentions-view">${note}<div class="search-results">${body}</div></div>`;
+export const fetchMentions = async () => {
+    const { name, uid } = me();
+    if (!name && !uid) return null;
+    const result = await api.call('get_mentions', { name, uid });
+    if (!result.success) return null;
+    renderBadge(0);
+    setUnread(0);
+    _known = 0;   // the next arrival is a rise again
+    if (uid) api.call('mark_mentions_seen', { uid }, 'POST');
+    return { rows: result.data || [], cutoffDays: result.cutoff_days || 0 };
+};
 
-    // Delegated on the host, which is the element confirmModal reuses, and removed in
-    // the `finally` so a second open does not stack a second listener on it.
-    const onClick = async (e) => {
-        const link = e.target.closest('.search-result-link');
-        if (!link) return;
-        e.preventDefault();
-        // Close first: openResult() navigates, and a dialog still up over the page it
-        // just opened is the thing this change exists to avoid.
-        document.getElementById('confirm-modal-ok')?.click();
-        await openResult(link.dataset.id, link.dataset.space || null);
-    };
-    host?.addEventListener('click', onClick);
-    try {
-        await confirmModal(`${title} (${rows.length})`, {
-            messageHtml: html,
-            confirmLabel: t('btn.close'),
-            hideCancel: true,
-        });
-    } finally {
-        host?.removeEventListener('click', onClick);
-    }
+/** My Comments, for the Pulse dialog: pages in the current Space I commented on. */
+export const fetchComments = async () => {
+    const uid = window.WIKI_USER_UID || 0;
+    if (!uid) return null;
+    const result = await api.call('get_my_comments', { uid });
+    return result.success ? { rows: result.data || [] } : null;
 };
 
 export const init = () => {
-    const mentionsBtn  = document.getElementById('mentions-btn');
-    const commentsBtn  = document.getElementById('my-comments-btn');
-
-    if (mentionsBtn) {
-        mentionsBtn.addEventListener('click', async () => {
-            const { name, uid } = me();
-            if (!name && !uid) return;
-            const result = await api.call('get_mentions', { name, uid });
-            if (!result.success) return;
-            // Clear the badge first, then persist: the list about to be shown is what
-            // was just seen, and a failed write should not leave a count contradicting
-            // it. Before the await on the dialog, too — it does not resolve until the
-            // reader closes it, and the badge must not sit there unread-looking
-            // meanwhile.
-            renderBadge(0);
-            setUnread(0);
-            _known = 0;   // the next arrival is a rise again
-            if (uid) api.call('mark_mentions_seen', { uid }, 'POST');
-            // Mentions span every space the user can read, so the rows say which one.
-            await showResultsDialog(t('mentions.my'), result.data || [], true,
-                                    result.cutoff_days || 0);
-        });
-        refreshMentionCount();
-        startPolling();
-    }
-
-    if (commentsBtn) {
-        commentsBtn.addEventListener('click', async () => {
-            const uid = window.WIKI_USER_UID || 0;
-            if (!uid) return;
-            const result = await api.call('get_my_comments', { uid });
-            // The sibling of My Mentions, and it took over the main area the same way.
-            if (result.success) await showResultsDialog(t('comments.my'), result.data || [], false);
-        });
-    }
+    // The badge and its polling belong to whoever has mentions: a signed-in person. The
+    // Pulse button says so (data-mine); an editor on a wiki without sign-in has none.
+    if (document.getElementById('pulse-btn')?.dataset.mine !== '1') return;
+    refreshMentionCount();
+    startPolling();
 };

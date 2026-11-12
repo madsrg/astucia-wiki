@@ -511,7 +511,7 @@ export const createEditorToolbar = () => {
         ['Alt+T', t('hk.table')],
         ['Alt+N', t('tb.meta-filename')],
         ['Alt+K', t('hk.comment')],
-        ['Alt+A', t('hk.menu')],
+        ['Alt+H', t('help.key-help')],
     ].forEach(([key, label]) => {
         const row = document.createElement('div');
         row.className = 'editor-help-row';

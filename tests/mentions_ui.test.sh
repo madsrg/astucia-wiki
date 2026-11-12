@@ -99,9 +99,10 @@ const shown = (id) => {
   return el.classList.contains('hidden') ? 'hidden' : 'shown';
 };
 const title  = () => (document.getElementById('current-page-title')?.textContent || '').trim();
-const dialog = () => document.getElementById('confirm-modal')?.classList.contains('hidden')
+const dialog = () => document.getElementById('pulse-modal')?.classList.contains('hidden')
   ? 'shut' : 'open';
-const rows   = () => document.querySelectorAll('#confirm-modal-message .sr-card').length;
+const rows   = () => document.querySelectorAll('#pulse-modal .pulse-list .sr-card').length;
+const scope  = () => (document.querySelector('#pulse-modal .pulse-scope')?.textContent || '').replace(/ /g, '_');
 
 window.addEventListener('error', e => {
   document.documentElement.setAttribute('data-probe', 'fatal=' + e.message); });
@@ -117,14 +118,25 @@ setTimeout(async () => {
     if (mode === 'dialog') {
       // On a page, reading it. The dialog must not cost you that.
       out += ' page=' + title() + '/viewer:' + shown('viewer-container');
-      document.getElementById('mentions-btn').click();
+      out += ' icons=' + ['pulse-btn', 'mentions-btn', 'my-comments-btn', 'content-health-btn']
+           .map(id => id + ':' + (document.getElementById(id) ? 'yes' : 'no')).join(',');
+      document.getElementById('pulse-btn').click();
       await sleep(1200);
       out += ' open=' + dialog() + '/rows:' + rows()
-           + '/view:' + (document.querySelector('#confirm-modal-message .mentions-view')
+           + '/view:' + (document.querySelector('#pulse-modal .pulse-list .mentions-view')
                           ? 'yes' : 'no');
+      out += ' tabs=' + [...document.querySelectorAll('#pulse-modal .pulse-tab')].map(b => b.dataset.tab).join('|');
+      out += ' active=' + document.querySelector('#pulse-modal .pulse-tab.active')?.dataset.tab;
+      out += ' scope1=' + scope();
       // The whole point: the page is still underneath, by name.
       out += ' behind=' + title() + '/viewer:' + shown('viewer-container');
-      document.getElementById('confirm-modal-ok').click();
+      document.querySelector('#pulse-modal .pulse-tab[data-tab="comments"]').click();
+      await sleep(600);
+      out += ' scope2=' + scope();
+      document.querySelector('#pulse-modal .pulse-tab[data-tab="broken"]').click();
+      await sleep(900);
+      out += ' scope3=' + scope() + '/health:' + (document.querySelector('#pulse-modal .content-health-hint')?.textContent ? 'yes' : 'no');
+      document.querySelector('#pulse-modal .lightbox-footer [data-act="close"]').click();
       await sleep(400);
       out += ' closed=' + dialog() + '/still=' + title()
            + '/viewer:' + shown('viewer-container');
@@ -186,6 +198,14 @@ visit() {
 }
 
 visit Report.md dialog
+
+section 'one icon instead of three'
+assert_contains "the Wiki Pulse icon replaces the three" 'icons=pulse-btn:yes,mentions-btn:no,my-comments-btn:no,content-health-btn:no' "$PROBE"
+assert_contains "an editor gets all five tabs, in order"  'tabs=mentions|comments|broken|stale|empty' "$PROBE"
+assert_contains "it opens on Mentions"                    'active=mentions' "$PROBE"
+assert_contains "Mentions say they span the wiki"         'scope1=Across_the_whole_wiki' "$PROBE"
+assert_contains "Comments say which Space"                'scope2=In_the_Space_Main' "$PROBE"
+assert_contains "and so do the health tabs"               'scope3=In_the_Space_Main/health:yes' "$PROBE"
 
 section 'the list opens over the page, not instead of it'
 assert_contains "a page is open to begin with"  'page=Report/viewer:shown' "$PROBE"

@@ -198,3 +198,6 @@ assert_eq "the button goes away"  'hidden' "$(field more)"
 was=$(printf '%s' "$PROBE" | sed -n 's/.* wasActive="\([^"]*\)".*/\1/p')
 kept=$(printf '%s' "$PROBE" | sed -n 's/.* kept="\([^"]*\)".*/\1/p')
 assert_eq "and it is the one that was active" "$was" "$kept"
+
+printf '\n'
+exit $(( ASSERT_FAIL > 0 ))

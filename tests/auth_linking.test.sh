@@ -141,8 +141,12 @@ assert_eq       "mail keeps going where it went before"            olga@example.
 X2=$WIKI_ROOT/jar-olga-sso2; rm -f "$X2"
 assert_eq       "afterwards SSO signs straight in"                 index.php "$(sso "$X2" 'sub=s-olga&email=olga@corp.example&name=Olga+K')"
 assert_eq       "as the same uid"                                  2 "$(whoami "$X2")"
+# One method per account (auth_modes.php): with SSO linked, the account no longer takes
+# email codes — its owner is told by mail, and the old code session ends.
 O2=$WIKI_ROOT/jar-olga2; otp_login "$O2" olga@example.com
-assert_eq       "and the email code still works"                   2 "$(whoami "$O2")"
+assert_eq       "an email code no longer signs it in"              "" "$(whoami "$O2")"
+assert_contains "the owner is told to use single sign-on instead"  'with single sign-on' "$(command grep olga@example.com "$MAIL" | tail -1)"
+assert_eq       "the email-code session from before has ended"     "" "$(whoami "$O")"
 assert_eq       "the claim never moved the code address"           olga@example.com "$(u 2 otpEmail)"
 
 section "approving a duplicate is guarded"
@@ -155,21 +159,31 @@ assert_contains "an identity that already has an account is not approved again" 
 assert_contains "positive control: a new identity is approved"     '"success":true' "$(post_as "$ADM" 'api.php?action=admin_approve_request' 'sub=s-new&role=editor')"
 assert_eq       "as an SSO account"                                oidc "$(u 7 auth)"
 
-section "My Preferences: adding an email code to an SSO account"
+section "My Preferences: an SSO account cannot add an email code"
+# It would make the account an email account — a downgrade, which is an admin's call.
 assert_contains "GET is refused"                                   'POST required' "$(get_as "$S" 'api.php?action=account_otp_add_send&email=a@example.com')"
-assert_contains "another account's address is refused"            'account.err.otp-taken' "$(post_as "$S" 'api.php?action=account_otp_add_send' 'email=TESS@example.com')"
-assert_contains "positive control: a free address gets a code"    '"success":true' "$(post_as "$S" 'api.php?action=account_otp_add_send' 'email=sam.code@example.com')"
-assert_contains "a second code within seconds is refused"          'account.err.wait' "$(post_as "$S" 'api.php?action=account_otp_add_send' 'email=sam.other@example.com')"
-assert_contains "a wrong code is refused"                          'login.err.invalid-code' "$(post_as "$S" 'api.php?action=account_otp_add_verify' 'code=000000')"
-assert_eq       "and adds nothing"                                 - "$(u 3 otpEmail)"
-assert_contains "the right code adds it"                           '"success":true' "$(post_as "$S" 'api.php?action=account_otp_add_verify' "code=$(last_code sam.code@example.com)")"
-assert_eq       "the account has both"                             both "$(u 3 auth)"
-S2=$WIKI_ROOT/jar-sam2; otp_login "$S2" sam.code@example.com
-assert_eq       "and signs in with the code"                       3 "$(whoami "$S2")"
+assert_contains "asking for a code is refused"                     'account.err.downgrade' "$(post_as "$S" 'api.php?action=account_otp_add_send' 'email=sam.code@example.com')"
+assert_eq       "no code was sent"                                 0 "$(mails_to sam.code@example.com)"
+assert_contains "nor can one be verified"                          'account.err.downgrade' "$(post_as "$S" 'api.php?action=account_otp_add_verify' 'code=000000')"
+assert_eq       "the account is unchanged"                         oidc "$(u 3 auth)"
+
+section "My Preferences: an email-code account changes its own address"
+UM=$WIKI_ROOT/jar-uma-addr; otp_login "$UM" uma@example.com
+assert_eq       "(Uma is signed in)"                               5 "$(whoami "$UM")"
+assert_contains "another account's address is refused"            'account.err.otp-taken' "$(post_as "$UM" 'api.php?action=account_otp_add_send' 'email=TESS@example.com')"
+assert_contains "positive control: a free address gets a code"    '"success":true' "$(post_as "$UM" 'api.php?action=account_otp_add_send' 'email=uma.new@example.com')"
+assert_contains "a second code within seconds is refused"          'account.err.wait' "$(post_as "$UM" 'api.php?action=account_otp_add_send' 'email=uma.other@example.com')"
+assert_contains "a wrong code is refused"                          'login.err.invalid-code' "$(post_as "$UM" 'api.php?action=account_otp_add_verify' 'code=000000')"
+# A legacy record: its login is still `email`, with no `otpEmail` written yet.
+assert_eq       "and changes nothing"                              uma@example.com/- "$(u 5 email)/$(u 5 otpEmail)"
+assert_contains "the right code changes it"                        '"success":true' "$(post_as "$UM" 'api.php?action=account_otp_add_verify' "code=$(last_code uma.new@example.com)")"
+assert_eq       "to the new address"                               uma.new@example.com "$(u 5 otpEmail)"
+U3=$WIKI_ROOT/jar-uma3; otp_login "$U3" uma.new@example.com
+assert_eq       "which signs in"                                   5 "$(whoami "$U3")"
 assert_contains "a code issued to sign in cannot add an address"   'login.err.session-expired' "$(
-    J=$WIKI_ROOT/jar-mixed; rm -f "$J"; otp_login "$J" uma@example.com
-    post_as "$J" 'auth.php?action=otp_send' 'email=uma@example.com' > /dev/null
-    post_as "$J" 'api.php?action=account_otp_add_verify' "code=$(last_code uma@example.com)")"
+    J=$WIKI_ROOT/jar-mixed; rm -f "$J"; otp_login "$J" uma.new@example.com
+    post_as "$J" 'auth.php?action=otp_send' 'email=uma.new@example.com' > /dev/null
+    post_as "$J" 'api.php?action=account_otp_add_verify' "code=$(last_code uma.new@example.com)")"
 
 section "My Preferences: adding SSO to an email-code account"
 T=$WIKI_ROOT/jar-tess; otp_login "$T" tess@example.com
@@ -191,7 +205,7 @@ assert_not_contains "the right nonce passes the check"            'link-expired'
 assert_contains "the callback links it"                           'account.notice.sso-linked' "$(sso "$T" 'sub=s-tess&email=tess@corp.example&name=Tess')"
 assert_eq       "the account has the identity"                     s-tess "$(u 4 sub)"
 assert_eq       "Tess is still signed in as herself"               4 "$(whoami "$T")"
-U=$WIKI_ROOT/jar-uma; otp_login "$U" uma@example.com
+U=$WIKI_ROOT/jar-uma; otp_login "$U" uma.new@example.com
 post_as "$U" 'api.php?action=account_sso_link_start' '' > /dev/null
 NONCE=$(post_as "$U" 'api.php?action=account_sso_link_start' '' | python3 -c 'import json,sys;print(json.load(sys.stdin)["url"].split("&n=")[1])')
 location "$U" "auth.php?action=link_sso&n=$NONCE" > /dev/null
@@ -200,11 +214,12 @@ assert_eq       "and Uma's account is unchanged"                   otp "$(u 5 au
 assert_contains "an account that has SSO cannot start another"    'account.err.has-sso' "$(post_as "$T" 'api.php?action=account_sso_link_start' '')"
 
 section "removing a method"
-assert_contains "removing SSO from an account with both works"    '"success":true' "$(post_as "$T" 'api.php?action=account_unlink' 'method=sso')"
-assert_eq       "the identity is gone"                             - "$(u 4 sub)"
-assert_eq       "email shows the login address again"              tess@example.com "$(u 4 email)"
-assert_contains "the last method cannot be removed"                'account.err.last-method' "$(post_as "$T" 'api.php?action=account_unlink' 'method=otp')"
-assert_eq       "and is still there"                               tess@example.com "$(u 4 otpEmail)"
+# Tess now signs in with SSO; her email address is left over and unused.
+assert_contains "dropping her own SSO is refused — a downgrade"   'account.err.downgrade' "$(post_as "$T" 'api.php?action=account_unlink' 'method=sso')"
+assert_eq       "the identity stays"                               s-tess "$(u 4 sub)"
+assert_contains "positive control: the leftover address can go"   '"success":true' "$(post_as "$T" 'api.php?action=account_unlink' 'method=otp')"
+assert_eq       "and is gone"                                      - "$(u 4 otpEmail)"
+assert_eq       "Tess is still signed in"                          4 "$(whoami "$T")"
 
 section "Admin → Users"
 LIST=$(get_as "$ADM" 'api.php?action=admin_get_users' | python3 -c 'import json,sys;print(json.dumps(json.load(sys.stdin)["data"]))')

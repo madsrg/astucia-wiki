@@ -267,3 +267,6 @@ load Snippets.md refresh
 assert_eq "the blocks really were re-rendered" '0' "$(field stale)"
 assert_eq "still one button per block"        '2' "$(field buttons)"
 assert_eq "  and one wrapper each"            '2' "$(field wrappers)"
+
+printf '\n'
+exit $(( ASSERT_FAIL > 0 ))

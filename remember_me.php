@@ -30,8 +30,9 @@ function wiki_remember_days(): int {
 }
 
 function wiki_remember_enabled(): bool {
+    // For the two methods the wiki checks itself. An SSO session is the provider's to keep.
     return AUTHENTICATION_ENABLED
-        && in_array(AUTHENTICATION, ['otp', 'both'], true)
+        && (wiki_auth_offers('email') || wiki_auth_offers('password'))
         && wiki_remember_days() > 0;
 }
 
@@ -119,6 +120,9 @@ function wiki_remember_forget_user(int $uid): void {
  * otherwise log a remembered user out. Returns true when it signed someone in.
  */
 function wiki_remember_restore(): bool {
+    // Every browser entry point calls this straight after session_start(), which makes it
+    // the one place a live session is re-checked against its account on each request.
+    wiki_session_guard();
     if (!wiki_remember_enabled()) return false;
     $cookie = $_COOKIE[WIKI_REMEMBER_COOKIE] ?? '';
     if ($cookie === '' || !str_contains($cookie, '.')) return false;
@@ -142,9 +146,10 @@ function wiki_remember_restore(): bool {
     if ($uid) {
         $users = json_decode(@file_get_contents(WIKI_SYSTEM_DATA . 'users.json') ?: '', true)['users'] ?? [];
         foreach ($users as $u) {
-            // Only while the account still signs in with a code: a token outlives neither
-            // the account nor its OTP address.
-            if ((int)($u['uid'] ?? -1) === $uid && wiki_user_is_person($u) && wiki_user_otp_email($u) !== '') { $user = $u; break; }
+            // Only while the account's one method is one the wiki checks itself: a token
+            // outlives neither the account, nor its address, nor a raised security level.
+            if ((int)($u['uid'] ?? -1) === $uid && wiki_user_is_person($u)
+                && in_array(wiki_user_signin_method($u), ['email', 'password'], true)) { $user = $u; break; }
         }
     }
     if (!$user) {
@@ -153,7 +158,8 @@ function wiki_remember_restore(): bool {
     }
 
     session_regenerate_id(true);
-    $_SESSION['user']          = wiki_otp_session_user($user);
+    $_SESSION['user']          = wiki_user_signin_method($user) === 'password'
+                                 ? wiki_session_user($user, 'password') : wiki_otp_session_user($user);
     $_SESSION['last_activity'] = time();
     $_SESSION['remembered']    = true;
     write_access_log('LOGIN_REMEMBERED', wiki_user_otp_email($user) ?: '-', $user['name'] ?? '', $user['role'] ?? 'editor');

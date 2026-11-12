@@ -633,6 +633,17 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
                            : is_file(rtrim($space_dir, '/') . '/' . ltrim(str_replace('..', '', (string)($tool_input['path'] ?? '')), '/')));
         return $denied;
     }
+    // A files library holds uploaded files, not wiki content — the same rule api.php
+    // applies to its create/save/move actions, here for the tools that write a page.
+    $lib_key = ['wiki_write_page' => 'path', 'wiki_write_json' => 'path', 'wiki_rename_page' => 'new_path'][$tool_name] ?? null;
+    if ($lib_key !== null) {
+        $lib_rel = ltrim(str_replace('..', '', (string)($tool_input[$lib_key] ?? '')), '/');
+        if ($lib_rel !== '' && wiki_inside_files_library(rtrim($space_dir, '/') . '/' . $lib_rel)) {
+            $denied = 'Error: "' . $lib_rel . '" is inside a files library, which holds uploaded files only — wiki pages cannot be written there.';
+            _wiki_ai_audit($tool_name, $tool_input, $ai_user, $indexer, $space_dir, $denied, false);
+            return $denied;
+        }
+    }
     // Whether the page already existed has to be sampled BEFORE the write, or a create
     // is indistinguishable from an update by the time the result comes back.
     $existed = null;

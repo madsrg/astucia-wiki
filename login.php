@@ -4,8 +4,10 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 require_once 'config.php';
 require_once 'remember_me.php';
+require_once 'passwords.php';
 session_start();
 wiki_remember_restore();
+wiki_credentials_retire();   // a site that left the password mode keeps no passwords
 
 if (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) {
     header('Location: index.php');
@@ -16,9 +18,9 @@ if (!AUTHENTICATION_ENABLED) {
     exit;
 }
 
-// Cancel OTP flow
+// Cancel OTP flow (and an unfinished forced password change)
 if (($_GET['action'] ?? '') === 'otp_cancel') {
-    unset($_SESSION['otp_pending'], $_SESSION['login_notice']);
+    unset($_SESSION['otp_pending'], $_SESSION['login_notice'], $_SESSION['pw_change']);
     header('Location: login.php');
     exit;
 }
@@ -46,6 +48,15 @@ $LOGIN_MSGS = [
     'login.err.invalid-code'     => 'Invalid code. Please try again.',
     'login.err.no-account'       => 'Account not found.',
     'login.err.otp-account'      => 'This account uses email code (OTP) login. Please use the email field below.',
+    'login.err.use-sso'          => 'This account signs in with single sign-on. Please use the single sign-on button.',
+    'login.err.bad-password'     => 'The email address or password is incorrect.',
+    'login.err.throttled'        => 'Too many attempts. Please wait up to 15 minutes and try again.',
+    'login.err.pw-short'         => 'Use at least 12 characters.',
+    'login.err.pw-long'          => 'That password is too long.',
+    'login.err.pw-mismatch'      => 'The two passwords do not match.',
+    'login.err.link-invalid'     => 'This link is invalid or has expired. Please ask for a new one.',
+    'login.notice.reset-sent'    => 'If that address has an account, a link to reset its password is on its way.',
+    'login.err.config'           => 'Sign-in is not configured correctly on this wiki. Please contact the administrator.',
 ];
 // What finishing a link can refuse with; the English lives with the account model.
 foreach (['account.err.no-account', 'account.err.has-sso', 'account.err.sso-taken'] as $k) {
@@ -58,8 +69,18 @@ $msgText = function (?string $msg) use ($LOGIN_MSGS): string {
     return htmlspecialchars($LOGIN_MSGS[$msg] ?? (string) $msg);
 };
 
-$showOidc = in_array(AUTHENTICATION, ['oidc', 'both']);
-$showOtp  = in_array(AUTHENTICATION, ['otp', 'both']);
+$showOidc = wiki_auth_offers('sso');
+$showOtp  = wiki_auth_offers('email');
+$showPw   = wiki_auth_offers('password');
+$badMode  = wiki_auth_mode() === 'invalid';
+
+// The password mode's steps. `set` is a link from an email (invite or reset), `change` the
+// forced change after a temporary password, `forgot` asks for a reset link.
+$pwStep  = $showPw ? (string)($_GET['step'] ?? '') : '';
+$pwToken = $pwStep === 'set' ? (string)($_GET['t'] ?? '') : '';
+$pwTokenOk = $pwToken !== '' && wiki_pw_token_peek($pwToken) !== null;
+$pwChange  = $pwStep === 'change' && !empty($_SESSION['pw_change']) && time() <= (int)($_SESSION['pw_change']['expires'] ?? 0);
+if ($pwStep === 'set' && !$pwTokenOk && !$error) $error = 'login.err.link-invalid';
 
 // Mask email for display: a••••@example.com
 function mask_email(string $email): string {
@@ -90,7 +111,10 @@ function mask_email(string $email): string {
             text-align: center;
             box-shadow: 0 4px 24px rgba(0,0,0,0.07);
         }
-        .login-logo { width: 64px; height: 64px; object-fit: contain; margin-bottom: 1rem; }
+        /* The logo is white, drawn for the dark sidebar; on this white card it sits on a tile
+           of the sidebar's colour so it stays visible. */
+        .login-logo { width: 64px; height: 64px; object-fit: contain; margin-bottom: 1rem;
+                      box-sizing: border-box; padding: 8px; border-radius: 14px; background: var(--sidebar-bg); }
         .login-title { font-size: 1.3rem; font-weight: 700; color: #2d3748; margin: 0 0 0.25rem; }
         .login-subtitle { font-size: 0.85rem; color: #718096; margin: 0 0 1.75rem; }
         .login-msg {
@@ -151,7 +175,7 @@ function mask_email(string $email): string {
     <?php endif; ?>
     <div class="login-center">
     <div class="login-card<?php echo ($showOidc && $showOtp && !$otpStep) ? ' login-card-wide' : ''; ?>">
-        <img src="logo.png" alt="Logo" class="login-logo">
+        <img src="logo3.svg" alt="Logo" class="login-logo">
         <h1 class="login-title"><?php echo htmlspecialchars(APP_TITLE); ?></h1>
         <p class="login-subtitle" data-i18n="login.subtitle">Sign in to continue</p>
 
@@ -165,6 +189,75 @@ function mask_email(string $email): string {
 
         <?php if ($notice && !$error): ?>
         <div class="login-msg login-msg-success"<?php echo $msgAttr($notice); ?>><?php echo $msgText($notice); ?></div>
+        <?php endif; ?>
+
+        <?php if ($badMode): ?>
+        <div class="login-msg login-msg-error"<?php echo $msgAttr('login.err.config'); ?>><?php echo $msgText('login.err.config'); ?></div>
+        <?php endif; ?>
+
+        <?php if ($showPw && $pwStep === 'set'): ?>
+            <?php if ($pwTokenOk): ?>
+            <p class="login-otp-target" data-i18n="login.pw-choose">Choose a password for your account.</p>
+            <form method="POST" action="auth.php?action=password_set">
+                <input type="hidden" name="t" value="<?php echo htmlspecialchars($pwToken); ?>">
+                <div class="login-form-group">
+                    <label class="login-label" for="pw-new" data-i18n="login.pw-new">New password</label>
+                    <input class="login-input" type="password" id="pw-new" name="password" required autofocus minlength="12" autocomplete="new-password">
+                </div>
+                <div class="login-form-group">
+                    <label class="login-label" for="pw-new2" data-i18n="login.pw-repeat">Repeat the password</label>
+                    <input class="login-input" type="password" id="pw-new2" name="password2" required minlength="12" autocomplete="new-password">
+                </div>
+                <p class="login-hint" data-i18n="login.pw-rule">At least 12 characters. A few unrelated words make a strong password that is easy to remember.</p>
+                <button type="submit" class="btn-login" data-i18n="login.pw-save">Save password and sign in</button>
+            </form>
+            <?php endif; ?>
+            <a href="login.php" class="login-back" data-i18n="login.pw-back">← Back to sign in</a>
+        <?php elseif ($showPw && $pwChange): ?>
+            <p class="login-otp-target" data-i18n="login.pw-temporary">Your password is temporary. Choose your own to continue.</p>
+            <form method="POST" action="auth.php?action=password_change">
+                <div class="login-form-group">
+                    <label class="login-label" for="pw-new" data-i18n="login.pw-new">New password</label>
+                    <input class="login-input" type="password" id="pw-new" name="password" required autofocus minlength="12" autocomplete="new-password">
+                </div>
+                <div class="login-form-group">
+                    <label class="login-label" for="pw-new2" data-i18n="login.pw-repeat">Repeat the password</label>
+                    <input class="login-input" type="password" id="pw-new2" name="password2" required minlength="12" autocomplete="new-password">
+                </div>
+                <p class="login-hint" data-i18n="login.pw-rule">At least 12 characters. A few unrelated words make a strong password that is easy to remember.</p>
+                <button type="submit" class="btn-login" data-i18n="login.pw-save">Save password and sign in</button>
+            </form>
+            <a href="login.php?action=otp_cancel" class="login-back" data-i18n="login.pw-back">← Back to sign in</a>
+        <?php elseif ($showPw && $pwStep === 'forgot' && wiki_pw_links_possible()): ?>
+            <p class="login-otp-target" data-i18n="login.pw-forgot-intro">Enter your email address and we will send you a link to choose a new password.</p>
+            <form method="POST" action="auth.php?action=password_forgot">
+                <div class="login-form-group">
+                    <label class="login-label" for="pw-email" data-i18n="login.email-address">Email address</label>
+                    <input class="login-input" type="email" id="pw-email" name="email" required autofocus autocomplete="username" placeholder="you@example.com" data-i18n-placeholder="login.email-ph">
+                </div>
+                <button type="submit" class="btn-login" data-i18n="login.pw-send-link">Send link</button>
+            </form>
+            <a href="login.php" class="login-back" data-i18n="login.pw-back">← Back to sign in</a>
+        <?php elseif ($showPw): ?>
+            <form method="POST" action="auth.php?action=password_login">
+                <div class="login-form-group">
+                    <label class="login-label" for="pw-email" data-i18n="login.email-address">Email address</label>
+                    <input class="login-input" type="email" id="pw-email" name="email" required autofocus autocomplete="username" placeholder="you@example.com" data-i18n-placeholder="login.email-ph">
+                </div>
+                <div class="login-form-group">
+                    <label class="login-label" for="pw-password" data-i18n="login.password">Password</label>
+                    <input class="login-input" type="password" id="pw-password" name="password" required autocomplete="current-password">
+                </div>
+                <?php if (wiki_remember_enabled()): ?>
+                <label class="login-remember"><input type="checkbox" name="remember" value="1"> <span data-i18n="login.remember">Keep me signed in on this device</span></label>
+                <?php endif; ?>
+                <button type="submit" class="btn-login" data-i18n="login.signin">Sign in</button>
+            </form>
+            <?php if (wiki_pw_links_possible()): ?>
+            <a href="login.php?step=forgot" class="login-back" data-i18n="login.pw-forgot">Forgot your password?</a>
+            <?php else: ?>
+            <p class="login-hint" data-i18n="login.pw-ask-admin">Forgot your password? Ask an administrator for a new one.</p>
+            <?php endif; ?>
         <?php endif; ?>
 
         <?php if ($showOidc && $showOtp && !$otpStep): ?>

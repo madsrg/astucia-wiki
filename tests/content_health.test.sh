@@ -180,8 +180,11 @@ assert_eq 'a cross-Space link is not an edge here' 0 \
   "$(field "$G" 'sum(1 for e in r["edges"] if e["type"]=="reference" and e["target"]=="'"$X"'")')"
 
 section 'who gets the button'
-assert_contains 'an editor has it'                        'id="content-health-btn"' "$(get_as "$RIA" 'index.php')"
-assert_not_contains 'a reader does not'                   'id="content-health-btn"' "$(get_as "$REX" 'index.php')"
+# Content Health is the health tabs of the Wiki Pulse dialog. A signed-in reader still has
+# the Pulse icon — for their mentions — but no health tabs, since they cannot fix anything.
+assert_contains 'an editor has the health tabs'          'data-health="1"' "$(get_as "$RIA" 'index.php' | grep -o 'id="pulse-btn"[^>]*')"
+assert_contains 'a reader has the Pulse icon'            'id="pulse-btn"'  "$(get_as "$REX" 'index.php')"
+assert_contains '…without the health tabs'               'data-health="0"' "$(get_as "$REX" 'index.php' | grep -o 'id="pulse-btn"[^>]*')"
 
 section 'AI tool over MCP'
 M=$(curl -s -X POST -H 'Authorization: Bearer wk_ai_health' -H 'Content-Type: application/json' \

@@ -11,6 +11,7 @@ import { invalidateMcpServers } from '../core/mcp_servers.js';
 import { t, getLanguage } from '../i18n/index.js';
 import { isLive, subscribe, rtTopic } from '../realtime/index.js';
 import { loadWorkflows, initWorkflows } from './workflows.js';
+import { loadProvisioning, setKnownClaims } from './provisioning.js';
 import { openPagePicker } from './page_picker.js';
 import { loadTaxonomyPane } from './taxonomy.js';
 import { loadSkills, initSkills } from './skills.js';
@@ -19,6 +20,8 @@ import { loadRetentionPane } from './retention.js';
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let users        = [];
+let adminPwLinks = false;
+let provLoaded   = false;   // the automatic-access editor, loaded with the first request list   // can this wiki email set-password links (APP_BASE_URL + mail)?
 let requests     = [];
 let aiUsers      = [];
 let apiAccounts  = [];
@@ -62,8 +65,10 @@ const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 
 const switchGroup = (groupName) => {
     document.querySelectorAll('.admin-group').forEach(g =>
         g.classList.toggle('active', g.dataset.group === groupName));
+    // A tab marked unavailable (the Requests tab on a wiki without SSO) stays hidden: this
+    // used to show every tab of the group, undoing the mode's hide on the first switch.
     document.querySelectorAll('.admin-tab').forEach(tab =>
-        tab.classList.toggle('hidden', tab.dataset.group !== groupName));
+        tab.classList.toggle('hidden', tab.dataset.group !== groupName || tab.dataset.unavailable === '1'));
     switchTab(lastTabInGroup[groupName] || TAB_GROUPS[groupName][0]);
 };
 
@@ -604,12 +609,42 @@ const renderUsers = () => {
             tdAuth.appendChild(b);
         };
         const both = u.sso && hasOtp;
-        if (u.sso) methodBadge('oidc', 'SSO', both ? () => { users[i] = { ...users[i], sso: false }; } : null);
-        if (hasOtp) methodBadge('otp', 'OTP', both ? () => {
+        const pwMode = window.WIKI_AUTH_MODE === 'password';
+        if (u.sso && !pwMode) methodBadge('oidc', 'SSO', both ? () => { users[i] = { ...users[i], sso: false }; } : null);
+        if (pwMode) {
+            // The login is the address; the password itself is never seen here — only
+            // whether one is set, and two ways to give the person one.
+            const st = u.password?.mustChange ? 'temp' : u.password?.set ? 'set' : 'none';
+            methodBadge('password', t(`admin.users.pw-state-${st}`), null);
+            if (u.uid && hasOtp) {
+                const row = document.createElement('div');
+                row.className = 'admin-pw-actions';
+                if (adminPwLinks) {
+                    const link = document.createElement('button');
+                    link.type = 'button';
+                    link.className = 'admin-auth-add';
+                    link.textContent = t('admin.users.pw-send-link');
+                    link.title = t('admin.users.pw-send-link-title');
+                    link.addEventListener('click', () => adminPasswordAction('admin_password_link', u));
+                    row.appendChild(link);
+                }
+                const temp = document.createElement('button');
+                temp.type = 'button';
+                temp.className = 'admin-auth-add';
+                temp.textContent = t('admin.users.pw-temp');
+                temp.title = t('admin.users.pw-temp-title');
+                temp.addEventListener('click', () => adminPasswordAction('admin_password_temp', u));
+                row.appendChild(temp);
+                tdAuth.appendChild(row);
+            }
+        }
+        if (hasOtp && !pwMode) methodBadge('otp', 'OTP', both ? () => {
             const { otpEmail, ...rest } = users[i];
             users[i] = { ...rest, _dropOtp: true };
         } : null);
-        if (u.sso && !hasOtp && window.WIKI_AUTH_MODE === 'both') {
+        // Never in the current modes: in sso+email an SSO account uses SSO only, so an email
+        // code beside it would be a method that cannot be used. Kept for the shape of the row.
+        if (false && u.sso && !hasOtp) {
             const add = document.createElement('button');
             add.type = 'button';
             add.className = 'admin-auth-add';
@@ -678,10 +713,52 @@ const loadUsers = async () => {
     allSpaces = spacesResult.data || [];
     if (usersResult.success) {
         users = usersResult.data || [];
+        adminPwLinks = !!usersResult.pwLinks;
         renderUsers();
     } else {
         if (container) container.innerHTML = `<p class="admin-empty">${t('admin.users.failed')}</p>`;
     }
+};
+
+/** Show a value exactly once — the server keeps only its hash. Only the button closes it. */
+const showOnce = (title, warn, value) => new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'lightbox-overlay admin-token-once';
+    overlay.innerHTML = `
+        <div class="lightbox-content" style="max-width:560px;height:auto">
+            <h3 style="margin:0 0 0.6rem">${escHtml(title)}</h3>
+            <p class="admin-token-once-warn">${escHtml(warn)}</p>
+            <div class="admin-ai-token-row">
+                <input type="text" class="form-control admin-token-once-value" readonly value="${escHtml(value)}">
+                <button type="button" class="btn btn-sm btn-blue admin-token-once-copy">${t('admin.ai.copy-btn')}</button>
+            </div>
+            <div class="lightbox-footer">
+                <button type="button" class="btn btn-green admin-token-once-done">${t('admin.token.done')}</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('.admin-token-once-value');
+    input.addEventListener('focus', () => input.select());
+    overlay.querySelector('.admin-token-once-copy').addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(value); showToast(t('admin.users.pw-copied'), 'success'); }
+        catch { input.select(); showToast(t('select.copy-failed'), 'error'); }
+    });
+    overlay.querySelector('.admin-token-once-done').addEventListener('click', () => { overlay.remove(); resolve(); });
+    input.focus();
+});
+
+/** Send a set-password link, or make a temporary password — both for a saved account. */
+const adminPasswordAction = async (action, u) => {
+    if (isDirty) { showToast(t('admin.users.pw-save-first'), 'error'); return; }
+    const temp = action === 'admin_password_temp';
+    const ok = await confirmModal(t(temp ? 'admin.users.pw-temp-confirm' : 'admin.users.pw-link-confirm', { name: u.name || u.otpEmail }),
+        { confirmLabel: t(temp ? 'admin.users.pw-temp' : 'admin.users.pw-send-link') });
+    if (!ok) return;
+    const res = await api.call(action, { uid: u.uid }, 'POST');
+    if (!res.success) { showToast(res.message || t('admin.users.pw-failed'), 'error'); return; }
+    if (temp) await showOnce(t('admin.users.pw-temp-title-once'), t('admin.users.pw-temp-warn', { name: u.name || u.otpEmail }), res.password);
+    else showToast(t('admin.users.pw-link-sent', { email: u.otpEmail }), 'success');
+    loadUsers();
 };
 
 const saveUsers = async () => {
@@ -765,6 +842,22 @@ const renderRequests = () => {
             note.className = 'admin-req-match';
             note.textContent = t('admin.req.link-waiting-to', { name: r.link_name || '?' });
             tdEmail.appendChild(note);
+        }
+        // An automatic-access rule that would admit this person at their next sign-in.
+        if (isPending && r.rule) {
+            tdEmail.appendChild(Object.assign(document.createElement('span'),
+                { className: 'admin-req-match admin-req-rule', textContent: t('admin.req.would-admit', { n: r.rule }) }));
+        }
+        // What the provider sent, for writing those rules.
+        if (r.claims && Object.keys(r.claims).length) {
+            const det = document.createElement('details');
+            det.className = 'admin-req-claims';
+            det.appendChild(Object.assign(document.createElement('summary'), { textContent: t('admin.req.claims') }));
+            const pre = document.createElement('pre');
+            pre.textContent = Object.entries(r.claims)
+                .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`).join('\n');
+            det.appendChild(pre);
+            tdEmail.appendChild(det);
         }
 
         const tdDate = document.createElement('td');
@@ -912,6 +1005,9 @@ const loadRequests = async () => {
         requests = result.data || [];
         updateRequestsBadge();
         renderRequests();
+        setKnownClaims(requests.flatMap(r => Object.keys(r.claims || {})));
+        // Once per opening: a later reload of the list must not throw away unsaved rules.
+        if (!provLoaded) { provLoaded = true; loadProvisioning(() => loadRequests()); }
     } else {
         if (container) container.innerHTML = `<p class="admin-empty">${t('admin.users.failed')}</p>`;
     }
@@ -3547,10 +3643,12 @@ export const init = () => {
     document.getElementById('admin-llm-add-btn')?.addEventListener('click', () => openLlmConnectionForm(null));
 
     // OTP-specific UI
-    if (window.WIKI_AUTH_MODE === 'otp') {
-        document.querySelector('.admin-tab[data-tab="requests"]')?.classList.add('hidden');
+    // Access requests come from SSO sign-ins; without SSO there are none to review.
+    if (window.WIKI_AUTH_MODE === 'email' || window.WIKI_AUTH_MODE === 'password') {
+        const reqTab = document.querySelector('.admin-tab[data-tab="requests"]');
+        if (reqTab) { reqTab.dataset.unavailable = '1'; reqTab.classList.add('hidden'); }
     }
-    if (window.WIKI_AUTH_MODE === 'otp' || window.WIKI_AUTH_MODE === 'both') {
+    if (['email', 'sso+email', 'password'].includes(window.WIKI_AUTH_MODE)) {
         document.getElementById('admin-otp-add-btn')?.classList.remove('hidden');
     }
     document.getElementById('admin-otp-add-btn')?.addEventListener('click', () => {

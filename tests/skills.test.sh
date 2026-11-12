@@ -381,3 +381,6 @@ r=$(curl -s -b "$ADMIN" -X POST "$WIKI_URL/api.php?action=queue_agent_job&space=
 assert_contains "the job is queued" '"success":true' "$r"
 assert_contains "carrying the skill's name" '"skill": "weekly-report"' \
     "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["jobs"][-1]))' "$WIKI_SYS/agent_jobs_queue.json")"
+
+printf '\n'
+exit $(( ASSERT_FAIL > 0 ))

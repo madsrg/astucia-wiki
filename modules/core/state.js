@@ -8,7 +8,7 @@ export const state = {
     currentPagePath: null,
     currentPageId: null,
     currentPageTags: [],
-    currentPageType: null,
+    // currentPageType is an accessor, defined below the object: setting it announces itself.
     hasUnsavedChanges: false,
     initialContent: '',
     isEditing: false,
@@ -55,3 +55,21 @@ export const state = {
 export const notifyPageState = () => {
     document.dispatchEvent(new CustomEvent('wiki:pagestate'));
 };
+
+// `currentPageType` announces its changes as `wiki:pagetype` (detail: the new type), so a
+// control that depends on what kind of thing is open — the sidebar's New button is disabled
+// on a files library — follows every way of opening something without each of the places
+// that set it having to remember to tell it. It is still read and assigned as a plain
+// property everywhere; only an actual change fires the event.
+let _currentPageType = null;
+Object.defineProperty(state, 'currentPageType', {
+    enumerable: true,
+    get: () => _currentPageType,
+    set: (v) => {
+        if (v === _currentPageType) return;
+        _currentPageType = v;
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('wiki:pagetype', { detail: v }));
+        }
+    },
+});

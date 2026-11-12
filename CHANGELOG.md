@@ -6,6 +6,83 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.11.3] — 2026-11-12
+
+Sign-in becomes one security level per site — single sign-on, single sign-on plus email
+codes, email codes, or the new username/password mode — with one method per account, and
+single sign-on can admit people automatically by rules on their claims. Wiki Pulse gathers
+mentions, comments and content health behind one icon; a Help dialog (Alt+H) lists the
+keyboard shortcuts; workflows can make web requests; and nothing can be created inside a
+files library any more.
+
+### Added
+- **Username/password sign-in** (`AUTHENTICATION=password`). Hashes live in
+  `credentials.json`, never `users.json`; one message for every failure and equal timing
+  for unknown addresses; throttling per account and per address; set-password and reset
+  links that work once and expire, built from `APP_BASE_URL` only; admins send a link or
+  make a temporary password shown once; people change their own in My Preferences, which
+  signs out their other sessions. `tools/set_password.php` makes the first admin.
+- **Automatic access for single sign-on** (Admin → Requests). Rules on the provider's
+  claims — for Entra ID typically the tenant (`tid`), `groups` or `roles`, or a verified
+  email domain — give a first-time sign-in an account straight away as Reader or Editor in
+  chosen Spaces, without an access request. People who match no rule file a request as
+  before, or can be turned away with none. Rules never grant Admin, never change an
+  existing account, and never admit someone whose address matches an existing account —
+  that stays a request so it can be linked. Requests now show the claims the provider sent,
+  and which rule would admit them. SSO sign-in reads claims from the ID token as well as
+  userinfo, which AD FS needs, and falls back to the sign-in name when Entra sends no email.
+
+- **Workflows can make a web request.** A new action sends GET, POST, PUT, PATCH or DELETE
+  to an address, with headers and a JSON, form or text body. Values like `{{page}}` can be
+  used in the path, query, headers and body, each encoded for where it lands, so a page
+  name cannot change the request around it. The server part of the address is fixed when
+  the workflow is saved. Addresses inside the server's own network — loopback, private
+  ranges, link-local such as the cloud metadata service — are refused unless
+  `WEB_REQUEST_ALLOW_PRIVATE` is set; redirects are not followed, and a non-2xx answer is a
+  failure like any other. The query string and header values are kept out of the run
+  history and logs.
+### Changed
+- **Nothing is created inside a files library.** The sidebar's *New …* is off while a
+  library is open (its tooltip says why), and the server refuses creating, saving, moving,
+  copying or dropping wiki content in or below a library — for AI users too. A library's
+  own folders and files are unaffected.
+- **Help: a ? icon in the sidebar, and Alt+H from anywhere.** It opens a dialog with the
+  keyboard shortcuts in two groups — reading (S for the sidebar, E to edit, the tab keys)
+  and editing Markdown (Alt+S to save, headings, links, find and replace, indentation…) —
+  and a button to the online documentation at astucia.wiki/docs, in a new tab. Alt+H
+  replaces the editor's Alt+A shortcut list, and works while reading too.
+- **Wiki Pulse replaces three sidebar icons.** My Mentions, My Comments and Content Health
+  are now the tabs of one dialog behind one pulse icon — Mentions · Comments · Broken links
+  · Stale · Empty — and the unread-mentions count sits on that icon. Each tab says whether
+  it covers the whole wiki (Mentions) or the current Space. It opens on Mentions when there
+  are unread ones, otherwise on the tab you used last. Readers see only their own two
+  tabs; with authentication off there are only the Content Health tabs.
+- **`AUTHENTICATION` is now the site's one security level**: `sso`, `sso+email`, `email`,
+  `password` or `off`. The old values still work (`oidc`, `otp`, `both`). In `sso+email`
+  each account uses **one** method: an account with single sign-on no longer accepts email
+  codes (a request for one mails "use single sign-on" instead), and people can only move
+  their own account up to SSO — taking an email code or dropping SSO is an admin's call.
+  Raising the level, or an admin removing a method, ends the sessions that came in the
+  weaker way. Leaving `password` deletes every stored password.
+- **New logo** (`logo3.svg`) in the sidebar, on the login page and in the static site export.
+  It is white, drawn for the dark sidebar; the login page shows it on a tile of the
+  sidebar's colour so it stays visible on the white card.
+
+### Fixed
+- **Retention Policies used a narrow column**, so the Log files table wrapped its last two
+  columns. The tab now uses the full width of the admin area.
+- **Three test suites could not fail** (`skills`, `code_copy_ui`, `tabs_ui`): they never
+  returned a failing exit code, so the runner counted their failures as passes.
+- **Admin → Users said "Add OTP User" in the password mode**, and its hint said new users
+  arrive through the Requests tab on wikis that have none. The button and the hint now
+  follow the sign-in mode. The Requests tab, hidden on wikis without single sign-on,
+  also stays hidden now — switching to the Users group used to bring it back.
+
+### Security
+- **An unrecognised `AUTHENTICATION` in the Docker image opened the wiki.** Any value the
+  image's config did not know became `off`, giving every visitor admin rights — a typo was
+  enough. It now signs nobody in.
+
 ## [2026.11.2] — 2026-11-10
 
 Files libraries grow up: subfolders, drag and drop of files and whole folders, a scrollbar

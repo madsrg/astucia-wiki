@@ -34,11 +34,16 @@ define('WIKI_SYSTEM_DATA',  $dir('WIKI_SYSTEM_DATA', '/data/system'));
 define('LOG_DIR',           $dir('LOG_DIR', '/data/logs'));
 
 // --- Authentication -----------------------------------------------------------
-// 'off' | 'oidc' | 'otp' | 'both'. Read unconditionally by index.php and auth.php,
-// so it must always be defined. AUTHENTICATION_ENABLED is derived, never set by hand.
-$auth = strtolower((string)$env('AUTHENTICATION', 'off'));
-if (!in_array($auth, ['off', 'oidc', 'otp', 'both'], true)) $auth = 'off';
-define('AUTHENTICATION', $auth);
+// The site's one security level: 'off' | 'sso' | 'sso+email' | 'email' | 'password'
+// (the old names 'oidc' | 'otp' | 'both' still work). See auth_modes.php. Read
+// unconditionally by index.php and auth.php, so it must always be defined.
+// AUTHENTICATION_ENABLED is derived, never set by hand.
+//
+// An unrecognised value is passed through, NOT turned into 'off': auth_modes.php reads it
+// as 'invalid', which keeps authentication on and signs nobody in. A typo must fail
+// closed — mapping it to 'off' handed every visitor admin rights.
+$auth = strtolower(trim((string)$env('AUTHENTICATION', 'off')));
+define('AUTHENTICATION', $auth === '' ? 'off' : $auth);
 define('AUTHENTICATION_ENABLED', AUTHENTICATION !== 'off');
 define('ANONYMOUS_ACCESS_ENABLED', $bool('ANONYMOUS_ACCESS_ENABLED', false));
 define('SESSION_TIMEOUT', (int)$env('SESSION_TIMEOUT', '3600'));
@@ -80,6 +85,8 @@ define('MERCURE_COOKIE_NAME', $env('MERCURE_COOKIE_NAME', 'mercure_access_token'
 // Relevant in a container: a bind-mounted PAGES_DIR is exactly the case where
 // files arrive without the wiki being involved.
 define('INDEX_SYNC_INTERVAL_SECONDS', (int)$env('INDEX_SYNC_INTERVAL_SECONDS', '30'));
+// Workflow web requests to the server's own network (loopback, private, link-local): off.
+define('WEB_REQUEST_ALLOW_PRIVATE', $bool('WEB_REQUEST_ALLOW_PRIVATE', false));
 
 // --- AI agent jobs ------------------------------------------------------------
 // Must match the crontab interval; the entrypoint writes the crontab from this

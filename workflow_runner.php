@@ -106,12 +106,57 @@ function wiki_wf_clip(string $text): string {
     return rtrim(mb_strcut($text, 0, WIKI_WF_DETAIL_BYTES, 'UTF-8')) . '...';
 }
 
-/** `{{name}}` → value. Unknown names are left as written, so a typo is visible. */
-function wiki_wf_render(string $tpl, array $vars): string {
-    return preg_replace_callback('/\{\{\s*([a-z_]+)\s*\}\}/i', function ($m) use ($vars) {
+/**
+ * `{{name}}` → value. Unknown names are left as written, so a typo is visible. $encode,
+ * when given, is applied to each *value* — never to the template — so a value lands in a
+ * URL, a JSON string or a form field as data and cannot change the structure around it.
+ */
+function wiki_wf_render(string $tpl, array $vars, ?callable $encode = null): string {
+    return preg_replace_callback('/\{\{\s*([a-z_]+)\s*\}\}/i', function ($m) use ($vars, $encode) {
         $k = strtolower($m[1]);
-        return array_key_exists($k, $vars) ? (string)$vars[$k] : $m[0];
+        if (!array_key_exists($k, $vars)) return $m[0];
+        return $encode ? $encode((string)$vars[$k]) : (string)$vars[$k];
     }, $tpl);
+}
+
+/**
+ * The web request an action describes, with the values filled in and each one encoded for
+ * where it lands: URL-encoded in the address, JSON-escaped in a JSON body, form-encoded in
+ * a form body, and stripped of line breaks in a header (or it could add a header of its
+ * own). Returns [method, url, headers, body|null, content_type].
+ */
+function wiki_wf_webhook_request(array $a, array $vars): array {
+    $method = strtoupper((string)($a['method'] ?? 'POST'));
+    $url = wiki_wf_render((string)($a['url'] ?? ''), $vars, 'rawurlencode');
+    $headers = [];
+    foreach (preg_split('/\r?\n/', (string)($a['headers'] ?? '')) as $line) {
+        if (!str_contains($line, ':')) continue;
+        [$name, $value] = array_map('trim', explode(':', $line, 2));
+        if ($name === '') continue;
+        $headers[$name] = wiki_wf_render($value, $vars, fn($v) => str_replace(["\r", "\n"], ' ', $v));
+    }
+    $body = null;
+    $ctype = '';
+    if ($method !== 'GET' && (string)($a['body'] ?? '') !== '') {
+        switch ($a['body_type'] ?? 'json') {
+            case 'form':
+                $body = wiki_wf_render((string)$a['body'], $vars, 'urlencode');
+                $ctype = 'application/x-www-form-urlencoded';
+                break;
+            case 'text':
+                $body = wiki_wf_render((string)$a['body'], $vars);
+                $ctype = 'text/plain; charset=utf-8';
+                break;
+            default:
+                $body = wiki_wf_render((string)$a['body'], $vars,
+                    fn($v) => substr(json_encode($v, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 1, -1));
+                $ctype = 'application/json';
+        }
+        $has = false;
+        foreach (array_keys($headers) as $h) if (strcasecmp($h, 'Content-Type') === 0) $has = true;
+        if (!$has) $headers['Content-Type'] = $ctype;
+    }
+    return [$method, $url, $headers, $body, $ctype];
 }
 
 /** Plain text to email HTML: escaped, line breaks kept, bare URLs made links. */
@@ -260,6 +305,26 @@ function wiki_wf_do_action(array $a, array $ctx, string &$log): array {
             }
             if ($failed) throw new Exception('Sending failed for ' . implode(', ', $failed) . '.');
             return ['status' => 'ok', 'detail' => 'Sent to ' . implode(', ', array_column($to, 0)) . '.'];
+        }
+
+        case 'webhook': {
+            // Not a write to the wiki, so it runs in a read-only space too.
+            require_once __DIR__ . '/outbound_http.php';
+            [$method, $url, $headers, $body, $ctype] = wiki_wf_webhook_request($a, $vars);
+            if ($ctype === 'application/json' && $body !== null && json_decode($body) === null && json_last_error() !== JSON_ERROR_NONE) {
+                throw new Exception('The JSON body is not valid JSON once the values are filled in.');
+            }
+            // The log names the header *names* only, and the address without its query
+            // string: both are where tokens live.
+            $shown = $method . ' ' . wiki_http_url_for_log($url);
+            $log .= "\n--- Web request\n{$shown}\nHeaders: " . (implode(', ', array_keys($headers)) ?: '(none)') . "\n";
+            $res = wiki_http_request($method, $url, $headers, $body);
+            $snippet = trim(mb_strcut($res['body'], 0, 2000, 'UTF-8'));
+            $log .= "Response: HTTP {$res['status']}\n" . ($snippet !== '' ? $snippet . "\n" : '');
+            if ($res['status'] < 200 || $res['status'] >= 300) {
+                throw new Exception("{$shown} answered HTTP {$res['status']}" . ($res['status'] >= 300 && $res['status'] < 400 ? ' (redirects are not followed)' : '') . '.');
+            }
+            return ['status' => 'ok', 'detail' => "{$shown} → HTTP {$res['status']}"];
         }
 
         case 'ai': {
@@ -700,6 +765,16 @@ function wiki_workflow_preview(array $wf, string $space, string $path, array $ac
                 $p['field'] = $a['field'] ?? '';
                 $p['value'] = wiki_wf_render((string)($a['value'] ?? ''), $vars);
                 if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'md') $p['warnings'][] = 'not_markdown';
+                break;
+            case 'webhook':
+                // Rendered exactly as the run would send it, and checked — but not sent.
+                require_once __DIR__ . '/outbound_http.php';
+                [$p['method'], $p['url'], $p['headers'], $p['body']] = wiki_wf_webhook_request($a, $vars);
+                try { wiki_http_target($p['url']); }
+                catch (Exception $e) { $p['warnings'][] = 'webhook_blocked'; $p['blocked'] = $e->getMessage(); }
+                if (($a['body_type'] ?? 'json') === 'json' && $p['body'] !== null && json_decode($p['body']) === null) {
+                    $p['warnings'][] = 'webhook_bad_json';
+                }
                 break;
         }
         $out['actions'][] = $p;

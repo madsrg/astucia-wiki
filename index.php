@@ -86,7 +86,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" data-i18n-title="nav.collapse" title="Collapse sidebar">&#x2039;</button>
             <div class="sidebar-header">
                 <div class="logo-wrapper" id="logo-btn" title="Go to start page" style="cursor:pointer;">
-                    <img src="logo.png" alt="Wiki Logo" class="sidebar-logo">
+                    <img src="logo3.svg" alt="Wiki Logo" class="sidebar-logo">
                 </div>
                 <div class="title-bar">
                     <h1><?php echo APP_TITLE; ?></h1>
@@ -153,12 +153,14 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                         <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                     </button>
                     <?php endif; ?>
-                    <?php if (AUTHENTICATION_ENABLED && isset($_SESSION['user'])): ?>
-                    <button id="mentions-btn" class="sidebar-icon-btn" data-i18n-title="nav.mentions-title" title="My Mentions — pages where I am mentioned">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/></svg>
-                    </button>
-                    <button id="my-comments-btn" class="sidebar-icon-btn" data-i18n-title="nav.comments-title" title="My Comments — pages I commented on">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    <?php /* Wiki Pulse: My Mentions and My Comments for a signed-in person, Content Health
+                           for editors and admins — one dialog behind one icon (modules/pulse). It carries the
+                           unread-mentions badge, so it is rendered whenever either half applies. */
+                    $pulseMine   = AUTHENTICATION_ENABLED && isset($_SESSION['user']);
+                    $pulseHealth = $userRole === 'admin' || $userRole === 'editor'; ?>
+                    <?php if ($pulseMine || $pulseHealth): ?>
+                    <button id="pulse-btn" class="sidebar-icon-btn" data-i18n-title="pulse.btn-title" title="Wiki Pulse" data-mine="<?php echo $pulseMine ? 1 : 0; ?>" data-health="<?php echo $pulseHealth ? 1 : 0; ?>">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                     </button>
                     <?php endif; ?>
                     <?php if ($userRole === 'admin' || $userRole === 'editor'): ?>
@@ -171,16 +173,16 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                         <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                     </button>
                     <?php endif; ?>
-                    <?php if ($userRole === 'admin' || $userRole === 'editor'): ?>
-                    <button id="content-health-btn" class="sidebar-icon-btn" data-i18n-title="health.btn-title" title="Content Health">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                    </button>
-                    <?php endif; ?>
                     <button id="graph-btn" class="sidebar-icon-btn" data-i18n-title="graph.btn-title" title="Knowledge Graph">
                         <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><line x1="6.7" y1="7.4" x2="10.5" y2="16.4"/><line x1="17.3" y1="7.4" x2="13.5" y2="16.4"/><line x1="7" y1="6" x2="17" y2="6"/></svg>
                     </button>
                     <button id="display-mode-btn" class="sidebar-icon-btn" data-i18n-title="mobile.toggle-title" title="Desktop / mobile view">
                         <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="14" height="10" rx="1"/><line x1="2" y1="17" x2="12" y2="17"/><rect x="17" y="9" width="5" height="11" rx="1"/></svg>
+                    </button>
+                    <?php /* Help: the keyboard shortcuts and a button to the online documentation (modules/help).
+                           Alt+H opens the same dialog from anywhere. */ ?>
+                    <button id="help-btn" class="sidebar-icon-btn" data-i18n-title="nav.help-title" title="Help — keyboard shortcuts and documentation (Alt+H)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                     </button>
                     <?php if (!(AUTHENTICATION_ENABLED && isset($_SESSION['user']))): ?>
                     <?php /* No preferences dialog for anonymous / no-auth visitors — keep a sidebar language selector so they can still switch language. */ ?>
@@ -817,21 +819,6 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
         </div>
     </div>
 
-    <div id="hotkey-lightbox" class="lightbox-overlay hidden">
-        <div class="lightbox-content">
-            <button id="hotkey-lightbox-close-btn" class="lightbox-close">&times;</button>
-            <h3 data-i18n="hotkeys.title">Editor Hotkeys</h3>
-            <div id="hotkey-list"></div>
-            <p class="hotkey-help-text">
-                <span data-i18n="hotkeys.hint1">When in edit mode, press 'Alt' + the desired key.</span>
-                <br>
-                <span data-i18n="hotkeys.hint2">While this menu is open, just press the key.</span>
-                <br>
-                <span data-i18n="hotkeys.hint3">Tab indents, Shift+Tab outdents. Press Esc then Tab to move focus out of the editor.</span>
-            </p>
-        </div>
-    </div>
-
     <!-- Include Page lightbox -->
     <div id="include-lightbox" class="lightbox-overlay hidden">
         <div class="lightbox-content">
@@ -1345,17 +1332,18 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <!-- Users pane -->
             <div id="admin-pane-users" class="admin-pane">
                 <div id="admin-users-table" class="admin-scroll-area"></div>
-                <p class="admin-role-hint" data-i18n="admin.role-hint" style="margin-top:0.75rem">
-                    <?php if (in_array(AUTHENTICATION, ['otp', 'both'])): ?>
-                    Admin — full access · Editor — read and write · Reader — read only. Add OTP users with the button below.
-                    <?php else: ?>
-                    Admin — full access including user management · Editor — read and write · Reader — read only. New users are added via the Requests tab after they sign in for the first time.
-                    <?php endif; ?>
-                </p>
+                <?php /* One hint per mode: the data-i18n key is chosen here, since the i18n pass replaces
+                       the text with whatever its key says — a single key read "added via the
+                       Requests tab" on wikis that have no Requests tab. */
+                $hintKey = wiki_auth_offers('password') ? 'admin.role-hint-password'
+                         : (wiki_auth_mode() === 'sso+email' ? 'admin.role-hint-mixed'
+                         : (wiki_auth_offers('email') ? 'admin.role-hint-email' : 'admin.role-hint')); ?>
+                <p class="admin-role-hint" data-i18n="<?php echo $hintKey; ?>" style="margin-top:0.75rem"></p>
             </div>
 
             <!-- Requests pane -->
             <div id="admin-pane-requests" class="admin-pane hidden">
+                <div id="admin-provisioning"></div>
                 <div id="admin-requests-table" class="admin-scroll-area"></div>
             </div>
 
@@ -1529,7 +1517,8 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <div class="lightbox-footer">
                 <div id="admin-footer-users" class="admin-footer-pane">
                     <span id="admin-dirty-notice" class="admin-dirty-notice hidden" data-i18n="admin.unsaved">Unsaved changes</span>
-                    <button id="admin-otp-add-btn" class="btn btn-blue btn-sm hidden" data-i18n="admin.users.add-otp-btn">+ Add OTP User</button>
+                    <?php $addKey = wiki_auth_offers('password') ? 'admin.users.add-user-btn' : 'admin.users.add-otp-btn'; ?>
+                    <button id="admin-otp-add-btn" class="btn btn-blue btn-sm hidden" data-i18n="<?php echo $addKey; ?>"><?php echo wiki_auth_offers('password') ? '+ Add User' : '+ Add OTP User'; ?></button>
                     <button id="admin-save-btn" class="btn btn-green" data-i18n="admin.save-btn" disabled>Save Changes</button>
                 </div>
                 <div id="admin-footer-requests" class="admin-footer-pane hidden">
@@ -1582,7 +1571,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
         window.WIKI_USER_FONT_SIZE = '<?php echo htmlspecialchars($userFontSize); ?>';
         window.WIKI_USER_SPACES  = <?php echo json_encode($_SESSION['user']['spaces'] ?? null); ?>; // null = all spaces
         window.WIKI_SESSION_TIMEOUT = <?php echo (AUTHENTICATION_ENABLED && defined('SESSION_TIMEOUT') && empty($_SESSION['remembered'])) ? (int)SESSION_TIMEOUT : 0; ?>;
-        window.WIKI_AUTH_MODE = '<?php echo AUTHENTICATION; ?>';
+        window.WIKI_AUTH_MODE = '<?php echo wiki_auth_mode(); ?>';   // off | sso | sso+email | email | password | invalid
         window.WIKI_SEARCH_ENGINE = '<?php echo defined('SEARCH_ENGINE') ? SEARCH_ENGINE : 'basic'; ?>';
     </script>
     <script src="script.js?v=<?php echo filemtime(__DIR__ . '/script.js'); ?>" type="module"></script>

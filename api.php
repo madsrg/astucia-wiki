@@ -27,6 +27,7 @@ require_once __DIR__ . '/memory.php';
 require_once __DIR__ . '/skills.php';
 require_once __DIR__ . '/remember_me.php';
 require_once __DIR__ . '/accounts.php';
+require_once __DIR__ . '/passwords.php';
 
 session_start();
 wiki_remember_restore();   // OTP "keep me signed in" — before anything reads $_SESSION['user']
@@ -1046,6 +1047,7 @@ if (isset($_REQUEST['action'])) {
                       'admin_set_space_skills', 'admin_ai_skills_settings', 'admin_skills_list', 'admin_skill_get', 'admin_skill_save',
                       'admin_skill_delete', 'admin_skill_import_stage', 'admin_skill_import_commit',
                       'admin_get_users', 'admin_save_users', 'admin_get_user_requests',
+                      'admin_password_link', 'admin_password_temp', 'admin_get_provisioning', 'admin_save_provisioning',
                       'admin_approve_request', 'admin_deny_request', 'admin_link_request',
                       'admin_get_logs', 'admin_get_log_content',
                       'admin_get_error_logs', 'admin_get_error_log_content',
@@ -1146,6 +1148,29 @@ if (isset($_REQUEST['action'])) {
                 'readonly_space' => $_ro_name,
                 'message'        => 'The space "' . $_ro_name . '" is read-only.',
             ]);
+            exit;
+        }
+    }
+
+    // A files library holds uploaded files, not wiki content: nothing is created, saved,
+    // moved or copied in or below one. The sidebar never offers it (New … is off on a
+    // library), and this is the rule itself, for every client of these actions. AI users
+    // write through execute_ai_tool(), which carries the same check.
+    $_lib_targets = [
+        'create_file' => 'path', 'create_folder' => 'path', 'create_diagram' => 'path', 'create_list' => 'path',
+        'create_chat' => 'path', 'create_search' => 'path', 'create_filesfolder' => 'path',
+        'save_message_page' => 'path', 'save' => 'file', 'move' => 'new_path', 'copy_page' => 'new_path',
+        'upload_page' => 'folder',
+    ];
+    if (isset($_lib_targets[$requested_action])) {
+        $_lib_rel  = ltrim(str_replace('..', '', (string)($_REQUEST[$_lib_targets[$requested_action]] ?? '')), '/');
+        $_lib_ts   = basename(trim((string)($_REQUEST['target_space'] ?? '')));
+        $_lib_base = in_array($requested_action, ['move', 'copy_page'], true) && $_lib_ts !== ''
+            ? rtrim(PAGES_DIR, '/') . '/' . $_lib_ts : rtrim($space_dir, '/');
+        // upload_page names the folder itself; the others name the item being written.
+        if ($_lib_rel !== '' && wiki_inside_files_library($_lib_base . '/' . $_lib_rel, $requested_action === 'upload_page')) {
+            wiki_audit_finish($_audit, 'failure', 'inside a files library', null, $_audit_space);
+            echo json_encode(['success' => false, 'message' => 'A files library holds files only — wiki content cannot be created in it.']);
             exit;
         }
     }
@@ -2257,7 +2282,7 @@ if (isset($_REQUEST['action'])) {
                     'server'   => $_SERVER['SERVER_SOFTWARE'] ?? '',
                     'sqlite'   => class_exists('SQLite3') ? SQLite3::version()['versionString'] : '',
                     'search'   => defined('SEARCH_ENGINE') ? (string)SEARCH_ENGINE : '',
-                    'auth'     => defined('AUTHENTICATION') ? (string)AUTHENTICATION : '',
+                    'auth'     => wiki_auth_mode(),
                     'realtime' => wiki_realtime_enabled(),
                     'mercure'  => wiki_mercure_version(),
                     'composer' => $si_lock,
@@ -4354,9 +4379,15 @@ if (isset($_REQUEST['action'])) {
                     $u['sso']  = wiki_user_sso_sub($u) !== '';
                     $otp = wiki_user_otp_email($u);
                     if ($otp !== '') $u['otpEmail'] = $otp; else unset($u['otpEmail']);
+                    // Whether a password is set, never the hash (which is not in users.json).
+                    $cred = wiki_credentials_get((int)($u['uid'] ?? 0));
+                    $u['password'] = ['set' => $cred !== null, 'mustChange' => !empty($cred['mustChange'])];
+                    // The one method this account uses under the current mode ('' = none).
+                    $u['method'] = wiki_user_signin_method($u);
                     return $u;
                 }, $human_users);
-                echo json_encode(['success' => true, 'data' => $human_users]);
+                echo json_encode(['success' => true, 'data' => $human_users, 'mode' => wiki_auth_mode(),
+                                  'pwLinks' => wiki_pw_links_possible()]);
                 break;
 
             case 'admin_save_users':
@@ -4462,6 +4493,11 @@ if (isset($_REQUEST['action'])) {
                     array_filter($list, fn($x) => wiki_user_is_person($x) && wiki_user_otp_email($x) !== '')
                 ), 'email', 'uid');
                 $otp_after = $otp_login($merged);
+                // A removed account's password goes with it: uids are reused (max + 1).
+                $kept_uids = array_map(fn($x) => (int)($x['uid'] ?? 0), $merged);
+                foreach (array_keys($existing_by_uid) as $old_uid) {
+                    if (!in_array((int)$old_uid, $kept_uids, true)) wiki_credentials_forget((int)$old_uid);
+                }
                 foreach ($otp_login($existing_by_uid) as $old_uid => $old_email) {
                     if (($otp_after[$old_uid] ?? null) !== $old_email) wiki_remember_forget_user($old_uid);
                 }
@@ -4479,14 +4515,98 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true]);
                 break;
 
+            case 'admin_password_link':
+            case 'admin_password_temp':
+                // An admin never types someone else's password. Either the person gets a
+                // one-time link to choose their own, or the server makes a temporary one,
+                // shown once, that only opens the forced-change form.
+                if (!wiki_auth_offers('password')) throw new Exception('This wiki does not use passwords.');
+                if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new Exception('POST required.');
+                $pa_users = wiki_users_list();
+                $pa_i = wiki_find_user_index($pa_users, (int)($_POST['uid'] ?? 0));
+                if ($pa_i === null) throw new Exception('User not found.');
+                $pa_u = $pa_users[$pa_i];
+                if (wiki_user_otp_email($pa_u) === '') throw new Exception('This account has no login email address.');
+                require_once __DIR__ . '/audit.php';
+                if ($requested_action === 'admin_password_link') {
+                    if (!wiki_pw_links_possible()) throw new Exception('Links cannot be sent: set APP_BASE_URL and configure email, or use a temporary password.');
+                    if (!wiki_pw_send_link($pa_u, 'invite')) throw new Exception('The email could not be sent.');
+                    write_access_log('PW_LINK_SENT', wiki_user_otp_email($pa_u), $pa_u['name'] ?? '', 'by admin');
+                    wiki_audit_log('password_link', 'success', ['object' => (string)($pa_u['name'] ?? ''), 'object_id' => (string)$pa_u['uid'], 'object_category' => 'account']);
+                    echo json_encode(['success' => true]);
+                } else {
+                    $pa_pw = wiki_pw_generate();
+                    wiki_password_set((int)$pa_u['uid'], $pa_pw, true);
+                    write_access_log('PW_TEMP_SET', wiki_user_otp_email($pa_u), $pa_u['name'] ?? '', 'by admin');
+                    wiki_audit_log('password_temporary', 'success', ['object' => (string)($pa_u['name'] ?? ''), 'object_id' => (string)$pa_u['uid'], 'object_category' => 'account']);
+                    // The only response that ever carries it.
+                    echo json_encode(['success' => true, 'password' => $pa_pw]);
+                }
+                break;
+
+            case 'account_password_change':
+                // A signed-in password account changing its own password. The current one
+                // is required (a borrowed session must not be able to lock the owner out) and
+                // throttled like a sign-in. Every other session ends; this one stays.
+                if ($ai_auth_user || empty($_SESSION['user']['uid'])) throw new Exception('Not authenticated.');
+                if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new Exception('POST required.');
+                $pc_uid = (int)$_SESSION['user']['uid'];
+                $pc_users = wiki_users_list();
+                $pc_i = wiki_find_user_index($pc_users, $pc_uid);
+                $pc_fail = fn(string $k) => print(json_encode(['success' => false, 'error' => $k, 'message' => $k]));
+                if ($pc_i === null || wiki_user_signin_method($pc_users[$pc_i]) !== 'password') { $pc_fail('account.err.not-offered'); break; }
+                $pc_login = wiki_user_otp_email($pc_users[$pc_i]);
+                if (wiki_pw_throttle_wait($pc_login) > 0) { $pc_fail('login.err.throttled'); break; }
+                if (!wiki_password_verify($pc_uid, (string)($_POST['current'] ?? ''))) {
+                    wiki_pw_throttle_fail($pc_login);
+                    $pc_fail('account.err.pw-current'); break;
+                }
+                $pc_new = (string)($_POST['password'] ?? '');
+                if ($pc_new !== (string)($_POST['password2'] ?? '')) { $pc_fail('login.err.pw-mismatch'); break; }
+                if ($pc_err = wiki_pw_policy_error($pc_new)) { $pc_fail($pc_err); break; }
+                wiki_pw_throttle_clear($pc_login);
+                wiki_password_set($pc_uid, $pc_new, false, true);
+                write_access_log('PW_CHANGED', $pc_login, $pc_users[$pc_i]['name'] ?? '', 'self-service');
+                echo json_encode(['success' => true]);
+                break;
+
+            case 'admin_get_provisioning':
+            case 'admin_save_provisioning':
+                // Automatic access for SSO sign-ins (provisioning.php). Read-only unless POST.
+                require_once __DIR__ . '/provisioning.php';
+                $pv_spaces = array_values(array_filter(array_map('basename', glob(rtrim(PAGES_DIR, '/') . '/*', GLOB_ONLYDIR) ?: []),
+                    fn($d) => $d !== '' && $d[0] !== '.'));
+                if ($requested_action === 'admin_save_provisioning') {
+                    if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new Exception('POST required.');
+                    $pv_in = json_decode((string)($_POST['config'] ?? ''), true);
+                    if (!is_array($pv_in)) throw new Exception('Invalid configuration.');
+                    $pv_before = wiki_prov_config();
+                    $pv_clean  = wiki_prov_normalize($pv_in, $pv_spaces);
+                    if (!wiki_setting_set('sso_provisioning', $pv_clean)) throw new Exception('Could not save — is WIKI_SYSTEM_DATA writable?');
+                    require_once __DIR__ . '/audit.php';
+                    wiki_audit_log('settings_changed', 'success', ['object' => 'sso_provisioning', 'object_category' => 'settings',
+                        'detail' => count($pv_before['rules']) . ' → ' . count($pv_clean['rules']) . ' rules; unmatched: ' . $pv_clean['unmatched']]);
+                }
+                echo json_encode(['success' => true, 'config' => wiki_prov_config(), 'spaces' => $pv_spaces,
+                                  'sso' => wiki_auth_offers('sso')]);
+                break;
+
             case 'admin_get_user_requests':
                 $rq_data = file_exists(WIKI_SYSTEM_DATA . 'user_requests.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'user_requests.json'), true) ?? []) : [];
                 // Existing accounts each request's address matches. A hint for the admin —
                 // the address may have been typed by the requester — so the only thing it
                 // offers is a link that the person still has to prove with a code.
                 $rq_users = wiki_users_list();
-                $rq_out = array_map(function ($r) use ($rq_users) {
+                require_once __DIR__ . '/provisioning.php';
+                $rq_prov = wiki_prov_config()['rules'];
+                $rq_out = array_map(function ($r) use ($rq_users, $rq_prov) {
                     $r['matches'] = wiki_request_matches($rq_users, (string)($r['email'] ?? ''));
+                    // Which automatic-access rule would admit this person at their next
+                    // sign-in — a preview against real claims while the admin writes rules.
+                    // None while the address matches an account: that stays a request.
+                    $hit = (!empty($r['claims']) && !$r['matches'] && !in_array($r['status'] ?? '', ['denied', 'link'], true))
+                        ? wiki_prov_match((array)$r['claims'], $rq_prov) : null;
+                    $r['rule'] = $hit ? $hit['n'] : null;
                     if (($r['status'] ?? '') === 'link') {
                         $li = wiki_find_user_index($rq_users, (int)($r['link_uid'] ?? 0));
                         $r['link_name'] = $li === null ? '' : (string)($rq_users[$li]['name'] ?? '');
@@ -4615,7 +4735,10 @@ if (isset($_REQUEST['action'])) {
                                 'ssoEmail' => wiki_user_sso_sub($pu) !== '' ? (string)($pu['email'] ?? '') : '',
                                 'otpEmail' => wiki_user_otp_email($pu),
                                 'via'      => (string)($_SESSION['user']['via'] ?? ''),
-                                'linkable' => AUTHENTICATION === 'both',
+                                // In sso+email an email-code account may move up to SSO.
+                                'linkable' => wiki_auth_mode() === 'sso+email',
+                                'mode'     => wiki_auth_mode(),
+                                'method'   => wiki_user_signin_method($pu),
                             ],
                             'name'        => $pu['name']       ?? '',
                             // The address they may change, not the one they log in with.
@@ -4699,8 +4822,18 @@ if (isset($_REQUEST['action'])) {
                 $ac_fail = function (string $key) {
                     echo json_encode(['success' => false, 'error' => $key, 'message' => wiki_account_error_text($key)]);
                 };
-                $ac_adding = in_array($requested_action, ['account_sso_link_start', 'account_otp_add_send', 'account_otp_add_verify'], true);
-                if ($ac_adding && AUTHENTICATION !== 'both') { $ac_fail('account.err.not-offered'); break; }
+                // Self-service only in sso+email, and only upward: an email-code account may
+                // move to SSO (or change its own address); an SSO account may not take an
+                // email code nor drop its SSO — either would make it an email account, and
+                // that is an administrator's decision. One method per account (auth_modes.php).
+                if (wiki_auth_mode() !== 'sso+email') { $ac_fail('account.err.not-offered'); break; }
+                $ac_has_sso = wiki_user_sso_sub($ac_me) !== '';
+                if ($ac_has_sso && in_array($requested_action, ['account_otp_add_send', 'account_otp_add_verify'], true)) {
+                    $ac_fail('account.err.downgrade'); break;
+                }
+                if ($requested_action === 'account_unlink' && ($_POST['method'] ?? '') === 'sso') {
+                    $ac_fail('account.err.downgrade'); break;
+                }
 
                 if ($requested_action === 'account_sso_link_start') {
                     if (wiki_user_sso_sub($ac_me) !== '') { $ac_fail('account.err.has-sso'); break; }

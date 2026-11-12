@@ -331,17 +331,7 @@ body {
 #confirm-modal .input-modal-content:has(.jobs-view) .confirm-modal-message {
     min-height: 45vh; max-height: 60vh; overflow-y: auto;
 }
-/* My Mentions / My Comments in the shared dialog. Keyed on .mentions-view, the wrapper
-   the list renders inside — the same pattern as .jobs-view and .fm-view, so only this
-   use of the dialog is resized. The height is on the message area rather than the box,
-   so the title and Close stay put and only the list scrolls. */
-#confirm-modal .input-modal-content:has(.mentions-view) { max-width: 795px; }
-#confirm-modal .input-modal-content:has(.mentions-view) .confirm-modal-message {
-    min-height: 45vh; max-height: 60vh; overflow-y: auto;
-}
-/* The rows are the search module's cards, which are written for the full-width viewer;
-   inside a dialog they need their own left alignment rather than the message area's
-   centred prose. */
+/* Mention and comment rows inside the Wiki Pulse dialog (modules/pulse). */
 .mentions-view { text-align: left; }
 .mentions-view .search-results { margin: 0; }
 .mentions-cutoff {
@@ -377,6 +367,9 @@ body {
    can sit on its corner without reserving layout space when there is nothing to show. */
 .sidebar-icon-btn { position: relative; }
 .sidebar-badge { position: absolute; top: -2px; right: -2px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--accent-danger); color: #fff; font-size: 0.62rem; font-weight: 700; line-height: 15px; text-align: center; pointer-events: none; box-shadow: 0 0 0 2px var(--sidebar-bg, #fff); }
+/* The pulse glyph's peak is the part that makes it recognisable, and it sits where the
+   badge goes on a round icon; up and out, clear of it and of the next icon. */
+#pulse-btn .sidebar-badge { top: -7px; right: -9px; }
 
 /* A mention the user has not seen yet, in the results list. */
 .sr-new-badge { font-size: 0.68rem; font-weight: 700; padding: 0.15em 0.55em; border-radius: 4px; background: var(--accent-danger); color: #fff; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
@@ -1069,49 +1062,7 @@ body {
 #clone-ai-lightbox { z-index: 1050; }
 .lightbox-close { position: absolute; top: 10px; right: 12px; font-size: 1.1rem; line-height: 1; cursor: pointer; border: 1px solid var(--border-color); background: white; color: #666; z-index: 1001; border-radius: 6px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s, border-color 0.15s; }
 .lightbox-close:hover { background: #f0f4f8; color: #1a202c; border-color: #b0bec5; }
-#help-content-wrapper, #diagram-editor-iframe { overflow-y: auto; flex-grow: 1; border: none; }
-
-/* Hotkey Lightbox Styles */
-#hotkey-list {
-    display: grid;
-    grid-template-columns: auto 1fr auto 1fr;
-    gap: 0.75rem 1.5rem;
-    align-items: center;
-}
-#hotkey-list a.hotkey-action {
-    display: contents;
-    text-decoration: none;
-    color: inherit;
-    border-radius: 4px;
-}
-#hotkey-list a.hotkey-action > * {
-    cursor: pointer;
-}
-#hotkey-list a.hotkey-action:hover > * {
-    background-color: #f0f0f0;
-}
-#hotkey-list kbd {
-    background-color: #fafafa;
-    border: 1px solid #ccc;
-    border-bottom: 2px solid #ccc;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-family: 'JetBrains Mono', monospace;
-    justify-self: start;
-    white-space: nowrap;
-}
-#hotkey-list span {
-    font-size: 0.9rem;
-}
-.hotkey-help-text {
-    margin-top: auto;
-    padding-top: 1rem;
-    border-top: 1px solid var(--border-color);
-    font-size: 0.8rem;
-    color: var(--accent-gray);
-    text-align: center;
-}
-
+#diagram-editor-iframe { overflow-y: auto; flex-grow: 1; border: none; }
 
 /* Link & Copy Lightbox Specific Styles */
 .link-file-tree { overflow-y: auto; color: var(--text-color); }
@@ -1154,6 +1105,38 @@ body {
 .admin-auth-badge { display: inline-block; font-size: 0.7rem; font-weight: 700; border-radius: 3px; padding: 0.1rem 0.4rem; letter-spacing: 0.04em; }
 .admin-auth-oidc { background: #dbeafe; color: #1e40af; }
 .admin-auth-otp  { background: #dcfce7; color: #166534; }
+.admin-auth-password { background: #fef3c7; color: #92400e; }
+
+/* Admin → Requests → Automatic access (modules/admin/provisioning.js). */
+.admin-prov { border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.9rem; background: #fafbfc; }
+.admin-prov-title { font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+.admin-prov-hint { font-size: 0.8rem; color: var(--accent-gray); margin: 0.4rem 0; }
+.admin-prov-warn { color: #92400e; }
+.admin-prov-note { font-size: 0.8rem; color: #c53030; margin: 0.4rem 0; }
+.admin-prov-rules { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.5rem 0; }
+.admin-prov-rule { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.admin-prov-rule .form-control { font-size: 0.8rem; padding: 0.2rem 0.35rem; height: auto; }
+.admin-prov-num { font-size: 0.75rem; color: var(--accent-gray); min-width: 1.2em; text-align: right; }
+.admin-prov-claim { width: 11rem; }
+.admin-prov-value { width: 12rem; }
+.admin-prov-op, .admin-prov-role { width: auto; }
+.admin-prov-arrow { color: var(--accent-gray); }
+.admin-prov-spaces { position: relative; font-size: 0.8rem; }
+.admin-prov-spaces summary { cursor: pointer; border: 1px solid var(--border-color); border-radius: 4px; padding: 0.15rem 0.4rem; background: white; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-prov-spaces-box { position: absolute; z-index: 20; top: calc(100% + 2px); left: 0; background: white; border: 1px solid var(--border-color); border-radius: 4px; padding: 0.35rem 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-height: 14rem; overflow-y: auto; min-width: 10rem; }
+.admin-prov-space { display: block; white-space: nowrap; padding: 0.1rem 0; }
+.admin-prov-empty { font-size: 0.8rem; color: var(--accent-gray); font-style: italic; margin: 0.2rem 0; }
+.admin-prov-unmatched { border: none; padding: 0; margin: 0.6rem 0; font-size: 0.82rem; }
+.admin-prov-unmatched legend { font-weight: 600; margin-bottom: 0.2rem; }
+.admin-prov-radio { display: block; cursor: pointer; }
+.admin-req-rule { color: #276749; }
+.admin-req-claims { font-size: 0.75rem; margin-top: 0.2rem; }
+.admin-req-claims summary { cursor: pointer; color: var(--accent-gray); }
+.admin-req-claims pre { white-space: pre-wrap; word-break: break-all; background: #f7fafc; padding: 0.35rem; border-radius: 4px; max-height: 12rem; overflow-y: auto; margin: 0.25rem 0 0; }
+.admin-pw-actions { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.3rem; }
+.admin-pw-actions .admin-auth-add { margin-left: 0; }
+.pref-pw-form { display: flex; flex-direction: column; gap: 0.45rem; max-width: 320px; }
+.pref-pw-form .btn { align-self: flex-start; }
 /* An account with both methods shows two badges, each removable; an SSO-only account can
    be given an email code. */
 .admin-td-auth { white-space: nowrap; }
@@ -1728,7 +1711,15 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 /* Admin → Content → Retention policies (modules/admin/retention.js) */
 .admin-retention-h { margin: 1.4rem 0 0.3rem; font-size: 0.95rem; }
 .admin-retention-h:first-of-type { margin-top: 0.8rem; }
-.admin-retention-table { margin: 0.4rem 0 0.6rem; }
+/* The full width of the pane: the logs table has four columns, and inside the 560px the
+   Index Pages tab is capped at, the last two wrapped their headers and their values. Both
+   classes, so specificity rather than sheet order decides (.admin-reindex-body comes later). */
+.admin-reindex-body.admin-retention-body { max-width: none; }
+.admin-retention-table { margin: 0.4rem 0 0.6rem; width: 100%; }
+/* The headers and the values of the later columns are short and read badly broken in two;
+   the first column (the log's name, with its hint) is the one that may wrap. */
+.admin-retention-table th, .admin-retention-table td:not(:first-child) { white-space: nowrap; }
+.admin-retention-table td:first-child { white-space: normal; }
 .admin-retention-table td { padding: 0.45rem 0.75rem; vertical-align: top; font-size: 0.85rem; }
 .admin-retention-num { width: 7rem; }
 .admin-retention-warn { color: #c05621; font-weight: 600; margin-top: 0.15rem; }
@@ -2194,6 +2185,10 @@ button.avatar-circle:hover, button.avatar-circle:focus-visible { border-color: v
 .wf-path-browse svg { width: 14px; height: 14px; }
 .pp-folder-actions { display: flex; justify-content: flex-end; padding-top: 0.5rem; border-top: 1px solid var(--border-color); }
 .wf-pre { white-space: pre-wrap; font-size: 0.8rem; background: #f7fafc; padding: 0.4rem 0.6rem; border-radius: 4px; margin: 0.3rem 0 0; max-height: 14rem; overflow: auto; }
+.wf-web-line { display: flex; gap: 0.4rem; align-items: center; }
+.wf-web-line .wf-web-method { flex: 0 0 auto; width: auto; }
+.wf-web-btype { width: auto; margin-bottom: 0.35rem; }
+.wf-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.8rem; }
 .wf-result { font-size: 0.8rem; margin: 2px 0; }
 .wf-history-head { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.6rem; }
 /* Admin → Skills (modules/admin/skills.js) */
@@ -2577,6 +2572,9 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 .content-health-row-path { font-size: 0.78rem; color: var(--accent-gray); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .content-health-row-details { margin: 0.2rem 0 0 1.75rem; padding: 0; list-style: none; font-size: 0.8rem; color: var(--accent-gray); }
 .content-health-row-details li { overflow-wrap: anywhere; }
+.pulse-scope { font-size: 0.75rem; color: var(--accent-gray); margin: 0 0 0.35rem; }
+.pulse-list .search-results { margin: 0; }
+.pulse-list .content-health-summary { margin: 0 0 0.4rem; }
 .content-health-empty { font-size: 0.88rem; color: var(--accent-gray); padding: 0.5rem 0; margin: 0; }
 
 .graph-overlay { position: fixed; inset: 0; z-index: 1000; background: #0f172a; display: flex; flex-direction: column; }
@@ -2818,3 +2816,17 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
    lines up at the bottom as well as the top. */
 .fm-table .dd-btn { box-sizing: border-box; height: 22px; padding: 0 6px; font-size: 0.82rem; border-radius: 4px; }
 .fm-not-in-tax { background: #fffbea; color: #975a16; border-color: #f6e05e; }
+
+/* Help (modules/help): keyboard shortcuts in two groups, and a way to the online docs. */
+.lightbox-content.help-content { box-sizing: border-box; width: 670px; max-width: 94vw; height: auto; max-height: 86vh; display: flex; flex-direction: column; padding-top: 0.75rem; }
+.help-content #help-title { margin: 0 0 0.4rem; line-height: 28px; }   /* level with the close button, no browser h3 margin */
+.help-body { overflow-y: auto; min-height: 0; flex: 1; }
+.help-group { margin: 0.9rem 0 0.35rem; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-gray); }
+.help-group:first-child { margin-top: 0.2rem; }
+.help-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.help-table td { padding: 0.28rem 0; border-bottom: 1px solid #f0f4f8; vertical-align: middle; }
+.help-keys { white-space: nowrap; width: 1%; min-width: 140px; padding-right: 1.5rem !important; }   /* as wide as the widest shortcut; one minimum, so both groups line up */
+.help-keys kbd { display: inline-block; min-width: 1.4em; padding: 0.05rem 0.4rem; font-family: inherit; font-size: 0.78rem; text-align: center;
+                 background: #f7fafc; border: 1px solid #cbd5e0; border-bottom-width: 2px; border-radius: 4px; color: #2d3748; }
+.help-key-sep { color: var(--accent-gray); font-size: 0.78rem; margin: 0 0.15rem; }
+.help-note { font-size: 0.78rem; color: var(--accent-gray); margin: 0.6rem 0 0; }

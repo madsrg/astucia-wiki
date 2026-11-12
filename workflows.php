@@ -34,7 +34,7 @@ require_once __DIR__ . '/retention.php';   // how much run history to keep
 
 const WIKI_WF_TRIGGERS = ['page_created', 'page_updated', 'page_deleted', 'page_renamed',
                           'tag_added', 'tag_removed', 'fm_changed'];
-const WIKI_WF_ACTIONS  = ['email', 'ai', 'chat', 'tag', 'frontmatter'];
+const WIKI_WF_ACTIONS  = ['email', 'ai', 'chat', 'tag', 'frontmatter', 'webhook'];
 const WIKI_WF_TYPES    = ['md', 'list', 'chat', 'json', 'drawio', 'search'];
 
 const WIKI_WF_MAX_DEPTH        = 3;     // workflow → write → workflow → …
@@ -626,6 +626,33 @@ function wiki_workflow_normalize(array $in, array $ai_uids, array $user_uids): a
                     catch (WikiTaxonomyException $e) { throw new Exception("Action {$n}: " . $e->getMessage()); }
                 }
                 $act = ['type' => 'frontmatter', 'field' => $field, 'value' => $value];
+                break;
+            case 'webhook':
+                // A web request (workflow_runner.php, outbound_http.php). Values may fill the
+                // path and query; the scheme, host and port are fixed here, or anyone able to
+                // name a page could choose which server the wiki talks to.
+                $method = strtoupper((string)($a['method'] ?? 'POST'));
+                if (!in_array($method, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], true)) throw new Exception("Action {$n}: unknown request method.");
+                $url = trim((string)($a['url'] ?? ''));
+                if (strlen($url) > 2000 || preg_match('/[\r\n\s]/', $url)) throw new Exception("Action {$n}: the address cannot contain spaces or line breaks.");
+                if (!preg_match('~^(https?)://([^/?#]+)~i', $url, $um)) throw new Exception("Action {$n}: the address must start with http:// or https://.");
+                if (strpos($um[2], '{') !== false) throw new Exception("Action {$n}: the server part of the address must be fixed — {{…}} values can go in the path and the query.");
+                if (strpos($um[2], '@') !== false) throw new Exception("Action {$n}: put credentials in a header, not in the address.");
+                $hdr_lines = [];
+                foreach (preg_split('/\r?\n/', (string)($a['headers'] ?? '')) as $line) {
+                    if (trim($line) === '') continue;
+                    if (!preg_match('/^\s*([A-Za-z0-9!#$%&\'*+.^_`|~-]+)\s*:(.*)$/', $line, $hm)) {
+                        throw new Exception("Action {$n}: write each header as \"Name: value\" on its own line.");
+                    }
+                    $hdr_lines[] = $hm[1] . ': ' . trim($hm[2]);
+                }
+                if (count($hdr_lines) > 20) throw new Exception("Action {$n}: at most 20 headers.");
+                $body_type = in_array($a['body_type'] ?? 'json', ['json', 'form', 'text'], true) ? $a['body_type'] ?? 'json' : 'json';
+                $body = (string)($a['body'] ?? '');
+                if (strlen($body) > 65536) throw new Exception("Action {$n}: the body is too long.");
+                $act = ['type' => 'webhook', 'method' => $method, 'url' => $url,
+                        'headers' => implode("\n", $hdr_lines), 'body_type' => $body_type,
+                        'body' => $method === 'GET' ? '' : $body];
                 break;
             default:
                 throw new Exception("Action {$n}: unknown action.");

@@ -77,9 +77,10 @@ const titles = () => $$('.content-health-row-title').map(n => n.textContent).joi
 
 const run = async () => {
   let out = '';
-  click($('#content-health-btn'));                            await sleep(1500);
-  out += ' open=' + (shown($('#content-health-modal')) ? 'yes' : 'no');
-  out += ' heading=' + $('#content-health-title').textContent.replace(/ /g, '_');
+  click($('#pulse-btn'));                            await sleep(1500);
+  out += ' open=' + (shown($('#pulse-modal')) ? 'yes' : 'no');
+  out += ' heading=' + $('#pulse-title').textContent.replace(/ /g, '_');
+  out += ' scope=' + $('#pulse-modal .pulse-scope').textContent.replace(/ /g, '_');
   out += ' counts=' + ['broken', 'stale', 'empty'].map(n => tab(n).querySelector('.content-health-count').textContent).join('/');
   out += ' active=' + $('.content-health-tab.active').dataset.tab;
   out += ' broken=' + titles();
@@ -97,13 +98,13 @@ const run = async () => {
 
   click($$('.content-health-row').find(a => a.textContent.includes('Lonely')));
   await sleep(1500);
-  out += ' closed=' + (shown($('#content-health-modal')) ? 'no' : 'yes');
+  out += ' closed=' + (shown($('#pulse-modal')) ? 'no' : 'yes');
   out += ' page=' + $('#current-page-title').textContent.trim();
 
-  click($('#content-health-btn'));                            await sleep(1200);
+  click($('#pulse-btn'));                            await sleep(1200);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
   await sleep(200);
-  out += ' escape=' + (shown($('#content-health-modal')) ? 'stays' : 'closes');
+  out += ' escape=' + (shown($('#pulse-modal')) ? 'stays' : 'closes');
   return out;
 };
 setTimeout(async () => {
@@ -136,14 +137,15 @@ assert_not_contains "the probe ran without throwing" 'fatal' "$PROBE"
 
 section 'the dialog'
 assert_contains "the sidebar button opens it"          'open=yes'                     "$PROBE"
-assert_contains "  …named for the Space"               'heading=Content_Health_—_Main' "$PROBE"
+assert_contains "  …the Wiki Pulse dialog"             'heading=Wiki_Pulse ' "$PROBE"
+assert_contains "  …saying which Space it reports on"  'scope=In_the_Space_Main' "$PROBE"
 assert_contains "  …with a count on every tab"         'counts=1/0/2'               "$PROBE"
 assert_contains "  …starting on broken links"          'active=broken'                "$PROBE"
 assert_contains "the broken tab lists the start page"  'broken=Main '                 "$PROBE"
 assert_contains "  …and says what is wrong"            'detail=[[Nowhere]]_—_no_page_by_that_name' "$PROBE"
 
 section 'tabs'
-assert_contains "three tabs, no orphans"               'tabs=broken|stale|empty '    "$PROBE"
+assert_contains "without sign-in, only the health tabs" 'tabs=broken|stale|empty '    "$PROBE"
 assert_contains "empty lists both, sorted"             'empty=Bold <em>|Lonely '    "$PROBE"
 assert_contains "the stale filter is only on Stale"    'filter1=hidden'               "$PROBE"
 assert_contains "  …where it shows"                    'filter2=shown'                "$PROBE"

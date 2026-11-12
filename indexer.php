@@ -19,6 +19,26 @@ require_once __DIR__ . '/taxonomy.php';
 require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/frontmatter.php';
 
+/**
+ * Does a path lie inside a files library (a directory carrying `.filesfolder`)? Walks up
+ * from $abs — or from its parent, unless $self — to PAGES_DIR. Lexical rather than
+ * realpath(), because the path being created does not exist yet; callers have already
+ * stripped `..`. A library holds uploaded files, never wiki content, so api.php refuses
+ * creating anything at such a path and execute_ai_tool() refuses an AI the same; the
+ * scan below skips libraries for the same reason.
+ */
+function wiki_inside_files_library(string $abs, bool $self = false): bool {
+    $root = rtrim(PAGES_DIR, '/');
+    $dir  = rtrim($self ? $abs : dirname($abs), '/');
+    while ($dir !== '' && strlen($dir) > strlen($root) && strpos($dir . '/', $root . '/') === 0) {
+        if (is_file($dir . '/.filesfolder')) return true;
+        $parent = dirname($dir);
+        if ($parent === $dir) break;
+        $dir = $parent;
+    }
+    return false;
+}
+
 class PageIndexer {
     // Content types that get a stable page id. Defined once because two paths walk the
     // tree — rebuildIndex() behind ?action=indexfiles, and index_sync.php's automatic
