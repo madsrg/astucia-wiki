@@ -38,7 +38,7 @@ it — see [Next steps](#next-steps).
 Published on Docker Hub, so running the wiki needs no checkout and no build:
 
 ```bash
-docker pull madsrotwitt/astucia-wiki:2026.11.2
+docker pull madsrotwitt/astucia-wiki:2026.11.3
 ```
 
 | Tag | Mutability | Use |
@@ -52,13 +52,13 @@ Then run it — nothing else is required:
 ```bash
 docker run -d --name astucia-wiki --restart=always \
     -p 8080:80 -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.11.2
+    madsrotwitt/astucia-wiki:2026.11.3
 ```
 
 Verify what you pulled, rather than trusting the tag:
 
 ```bash
-docker image inspect madsrotwitt/astucia-wiki:2026.11.2 \
+docker image inspect madsrotwitt/astucia-wiki:2026.11.3 \
     --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
 ```
 
@@ -210,7 +210,7 @@ landed in the registry and prints the platforms in the published manifest.
 Verify a published variant actually runs, rather than trusting the manifest:
 
 ```bash
-docker run --rm --platform linux/arm64 madsrotwitt/astucia-wiki:2026.11.2 \
+docker run --rm --platform linux/arm64 madsrotwitt/astucia-wiki:2026.11.3 \
     php -r 'echo php_uname("m"), " ", extension_loaded("pdo_sqlite") ? "ok" : "missing", "\n";'
 ```
 
@@ -344,7 +344,7 @@ podman run -d --name astucia-wiki \
     --userns=keep-id:uid=82,gid=82 --user 0 \
     -p 8080:80 -v ~/astucia-wiki/data:/data:Z \
     --env-file ~/astucia-wiki/wiki.env \
-    docker.io/madsrotwitt/astucia-wiki:2026.11.2
+    docker.io/madsrotwitt/astucia-wiki:2026.11.3
 ```
 
 - **`--userns=keep-id:uid=82,gid=82`** makes your files appear owned by `www-data` inside
@@ -391,9 +391,10 @@ The ones worth setting on any real deployment:
 |----------|---------|-------|
 | `APP_TITLE` | `Astucia Wiki` | Shown in the header |
 | `TZ` | `UTC` | **Set this.** Drives the clock, PHP *and* cron — leave it and scheduled jobs fire at the wrong hour |
-| `AUTHENTICATION` | `off` | `off` means anyone reaching the port is an admin. Use `otp` or `oidc` for anything exposed |
+| `AUTHENTICATION` | `off` | The security level: `sso`, `sso+email`, `email`, `password` or `off` (older `oidc` / `otp` / `both` still work). `off` means anyone reaching the port is an admin; an unknown value signs nobody in |
 | `ANONYMOUS_ACCESS_ENABLED` | `false` | Read-only browsing when auth is on |
-| `OTP_REMEMBER_DAYS` | `30` | How long "Keep me signed in" lasts for email-code logins; `0` disables it |
+| `OTP_REMEMBER_DAYS` | `30` | How long "Keep me signed in" lasts for email-code and password logins; `0` disables it |
+| `WEB_REQUEST_ALLOW_PRIVATE` | `false` | Let workflow *Web request* actions reach the server's own network (LAN, Docker network) |
 | `APP_BASE_URL` | — | Public URL; needed behind a reverse proxy so redirects and share links are right |
 | `SEARCH_ENGINE` | `sqlite` | FTS5 full-text index |
 | `INDEX_SYNC_INTERVAL_SECONDS` | `30` | How often to notice content changed outside the wiki |
@@ -754,13 +755,20 @@ requests with `transport http { read_timeout 900s }` inside the `reverse_proxy` 
 
 `AUTHENTICATION=off` means every visitor is an admin. Before exposing the wiki:
 
-- `AUTHENTICATION=otp` — one-time codes by email; needs the mail settings
-- `AUTHENTICATION=oidc` — your identity provider; needs the `OIDC_*` settings and
-  `APP_BASE_URL`
-- `AUTHENTICATION=both` — users choose
+- `AUTHENTICATION=sso` — your identity provider (Entra ID, AD FS, Google, Keycloak…); needs
+  the `OIDC_*` settings and `APP_BASE_URL`
+- `AUTHENTICATION=sso+email` — single sign-on for staff, email codes for everyone else; one
+  method per account
+- `AUTHENTICATION=email` — one-time codes by email; needs the mail settings
+- `AUTHENTICATION=password` — username and password; set `APP_BASE_URL` and mail for
+  "forgot password" links
 - `ANONYMOUS_ACCESS_ENABLED=true` — public read-only, editing requires login
 
-The first user to log in becomes admin; see the main README on bootstrapping.
+The first administrator: with `sso`, sign in once and copy your entry from
+`user_requests.json` into `users.json` as admin; with `email`, create `users.json` with
+yourself as admin; with `password`, run
+`docker exec -u www-data astucia-wiki php tools/set_password.php you@example.com --create "Your Name"`
+and sign in with the temporary password it prints. See the main README.
 
 ## Git version history for your content
 

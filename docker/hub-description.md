@@ -14,8 +14,9 @@ every page is a file on disk, so a backup is an archive of one directory.
 JSON data pages · **YAML front matter** · page and diagram templates · attachments, and
 **files libraries** with subfolders, drag-and-drop upload and Open / Download · **paste a
 screenshot straight into a page** · copy buttons on code blocks · wikilinks and transclusion · full-text search with saved searches · a knowledge
-graph · **Content Health**, listing each Space's broken links, stale and empty
-pages · optional git version history · static site export.
+graph · **Wiki Pulse**: your mentions, your comments and each Space's broken links, stale
+and empty pages in one place · a **Help** dialog with every keyboard shortcut (Alt+H) ·
+optional git version history · static site export.
 
 **Tags with a taxonomy** — one tree of tags for the whole wiki: folders group, items are the
 tags pages carry (`Department/Finance`). A tree editor to rename, move and merge — every page
@@ -51,8 +52,10 @@ can go straight into the **page's own chat**, so every page gets its review wher
 discussed. Test one without acting, or run it for real on a chosen page first; a run that
 fails tells the administrators at once, with a link to its log.
 
-**Teams** — Spaces with per-user access control, including read-only Spaces · OIDC login,
-email codes with **Keep me signed in**, or both on one account · mentions, page comments and a daily digest email · an optional audit log · **retention
+**Teams** — Spaces with per-user access control, including read-only Spaces · **one
+security level per site**: single sign-on (Entra ID, AD FS, Google, Keycloak…), email
+codes, both, or username and password · **automatic access** for SSO sign-ins by rules on
+their claims · mentions, page comments and a daily digest email · an optional audit log · **retention
 policies** for chat, mentions and every log the wiki writes · a REST API
 with service tokens, stored only as a hash · UI in nine languages.
 
@@ -83,14 +86,14 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.11.2
+    madsrotwitt/astucia-wiki:2026.11.3
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
 page in it — no setup wizard, no migrations.
 
 > **`AUTHENTICATION` defaults to `off`, which means every visitor has full admin rights.**
-> Fine on a private network; set `AUTHENTICATION=otp` or `oidc` before exposing it.
+> Fine on a private network; set `AUTHENTICATION` to `sso`, `email` or `password` before exposing it.
 
 ## All settings in one file
 
@@ -109,7 +112,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.11.2
+    madsrotwitt/astucia-wiki:2026.11.3
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -119,7 +122,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 ## Podman
 
 The same image runs under Podman — name the registry in full,
-`docker.io/madsrotwitt/astucia-wiki:2026.11.2`. For a rootless install with a host
+`docker.io/madsrotwitt/astucia-wiki:2026.11.3`. For a rootless install with a host
 directory, add `--userns=keep-id:uid=82,gid=82 --user 0` so your files stay yours. The
 repository ships a ready-made Quadlet unit, `docker/astucia-wiki.container`, for running it
 as a systemd service with `podman auto-update`; see *With Podman* in `DOCKER.md`.
@@ -129,7 +132,7 @@ as a systemd service with `podman auto-update`; see *With Podman* in `DOCKER.md`
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.11.2` | moves only if that release is rebuilt |
+| `2026.11.3` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
@@ -146,9 +149,10 @@ Everything is an environment variable; the container writes its own config on fi
 |----------|---------|-------|
 | `APP_TITLE` | `Astucia Wiki` | Shown in the header |
 | `TZ` | `UTC` | **Set this.** Drives the clock, PHP *and* cron — otherwise scheduled AI jobs fire at the wrong hour |
-| `AUTHENTICATION` | `off` | `off` / `otp` / `oidc` / `both` |
+| `AUTHENTICATION` | `off` | `sso` / `sso+email` / `email` / `password` / `off` (older `oidc` / `otp` / `both` still work). An unknown value signs nobody in |
 | `ANONYMOUS_ACCESS_ENABLED` | `false` | Read-only browsing when auth is on |
-| `OTP_REMEMBER_DAYS` | `30` | How long "Keep me signed in" lasts for email-code logins; `0` turns it off |
+| `OTP_REMEMBER_DAYS` | `30` | How long "Keep me signed in" lasts for email-code and password logins; `0` turns it off |
+| `WEB_REQUEST_ALLOW_PRIVATE` | `false` | Let workflow *Web request* actions reach the server's own network (LAN, Docker network) |
 | `APP_BASE_URL` | — | Public URL, so login redirects and share links are right behind a proxy |
 | `SEARCH_ENGINE` | `sqlite` | FTS5 full-text index |
 | `INDEX_SYNC_INTERVAL_SECONDS` | `30` | How quickly content changed on the host is noticed |
