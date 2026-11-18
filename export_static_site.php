@@ -14,6 +14,8 @@ if ($argc < 2) { echo "Usage: php export_static_site.php <destination_folder>\n"
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/frontmatter.php';
 require_once __DIR__ . '/indexer.php';
+require_once __DIR__ . '/lists.php';      // lookup fields read as their targets' titles
+require_once __DIR__ . '/maps.php';       // a ```map block becomes a link to the place
 require_once __DIR__ . '/vendor/autoload.php';
 
 $destDir  = rtrim($argv[1], '/');
@@ -180,6 +182,7 @@ function processListTags(string $content, array $idToPath, string $pagesDir): st
         if (!file_exists($full)) return "[List file not found: $id]";
         $listData = json_decode(file_get_contents($full), true);
         if (!$listData) return "[Error parsing list $id]";
+        $listData = wiki_list_flatten($listData, $pagesDir);
         return renderListAsHtml($listData, $arg);
     }, $content);
 }
@@ -448,7 +451,7 @@ foreach ($allPages as $id => $pageData) {
 
     } elseif ($ext === 'list') {
         echo "  [list]    $relPath\n";
-        $listData = json_decode(file_get_contents($fullPath), true) ?? [];
+        $listData = wiki_list_flatten(json_decode(file_get_contents($fullPath), true) ?? [], $pagesDir);
         $content  = renderFullList($listData);
 
     } else {
@@ -460,6 +463,7 @@ foreach ($allPages as $id => $pageData) {
         $raw     = processIncludes($raw, $idToPath, $pagesDir);
         $raw     = processDiagramTags($raw, $idToPath, $pagesDir);
         $raw     = processListTags($raw, $idToPath, $pagesDir);
+        $raw     = wiki_map_static_blocks($raw);
         $html    = $parsedown->text($raw);
         $html    = str_replace('{filename}', htmlspecialchars($pageTitle), $html);
         $html    = str_replace('{lastUpdated}', date('Y-m-d H:i', $mtime), $html);

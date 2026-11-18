@@ -16,6 +16,7 @@ require_once __DIR__ . '/service_auth.php';
 require_once __DIR__ . '/chat_retention.php';
 require_once __DIR__ . '/system_prompt_gallery.php';
 require_once __DIR__ . '/space_settings.php';
+require_once __DIR__ . '/maps.php';
 require_once __DIR__ . '/mentions.php';
 require_once __DIR__ . '/frontmatter.php';
 require_once __DIR__ . '/audit.php';
@@ -187,6 +188,9 @@ if (isset($_REQUEST['action'])) {
         $name = 'Main';
         $dir  = $root . '/' . $name;
         if (!is_dir($dir) && !@mkdir($dir, 0755)) return null;
+        // Nobody chose this Space's settings, so it gets what an admin chose for new
+        // Spaces — saved before the scaffold, which reads them (stamping the start page).
+        wiki_space_policy_set($name, wiki_space_defaults());
         $actor = get_current_actor();
         wiki_scaffold_space($dir, $actor['uid'] ?? null, $actor['name'] ?? null);
         return $name;
@@ -1041,8 +1045,8 @@ if (isset($_REQUEST['action'])) {
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'create_library_folder', 'update_tags', 'sync_fm_tags',
                       'save_diagram_svg', 'upload_page', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
-                      'retarget_wikilinks', 'set_frontmatter'];
-    $admin_actions = ['admin_chat_retention', 'admin_frontmatter_settings', 'admin_mention_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
+                      'retarget_wikilinks', 'set_frontmatter', 'geocode'];
+    $admin_actions = ['admin_chat_retention', 'admin_frontmatter_settings', 'admin_map_settings', 'admin_mention_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
                       'admin_set_space_fm_edit', 'admin_set_space_fm_autostamp', 'admin_set_space_fm_tags_sync', 'admin_set_space_memory',
                       'admin_set_space_skills', 'admin_ai_skills_settings', 'admin_skills_list', 'admin_skill_get', 'admin_skill_save',
                       'admin_skill_delete', 'admin_skill_import_stage', 'admin_skill_import_commit',
@@ -1067,7 +1071,7 @@ if (isset($_REQUEST['action'])) {
                       'admin_retention_settings',
                       'admin_realtime_status', 'admin_realtime_test',
                       'admin_audit_config', 'admin_set_audit_enabled', 'admin_get_audit_entries',
-                      'admin_ai_builtin_instructions', 'admin_space_settings', 'admin_set_space_readonly', 'admin_merge_space_preflight', 'admin_merge_space', 'admin_delete_space',
+                      'admin_ai_builtin_instructions', 'admin_space_settings', 'admin_space_copy_settings', 'admin_space_defaults', 'admin_set_space_readonly', 'admin_merge_space_preflight', 'admin_merge_space', 'admin_delete_space',
                       'admin_taxonomy', 'admin_taxonomy_mode', 'admin_taxonomy_node', 'admin_taxonomy_adopt', 'admin_taxonomy_import'];
     $requested_action = $_REQUEST['action'];
     $current_role     = get_current_role();
@@ -2361,6 +2365,43 @@ if (isset($_REQUEST['action'])) {
                         'value' => $fm_exp ? '1' : '0']);
                 }
                 echo json_encode(['success' => true, 'expose_ai' => wiki_fm_expose_to_ai()]);
+                break;
+
+            case 'geocode':
+                // Insert → Map: look an address up, once, while an author inserts a map —
+                // the block then stores the coordinates. An $edit_action because only
+                // somebody who can write a page has a reason to ask; see maps.php for why
+                // it goes through the server at all.
+                if (!wiki_map_settings()['enabled']) throw new Exception('Maps are switched off on this wiki.');
+                $gc_q = trim((string)($_GET['q'] ?? ''));
+                if ($gc_q === '') throw new Exception('Type an address to look up.');
+                if (mb_strlen($gc_q) > 300) throw new Exception('That address is too long.');
+                $gc_lang = preg_match('/^[a-z]{2}(-[A-Za-z]{2})?$/', (string)($_GET['lang'] ?? '')) ? $_GET['lang'] : '';
+                try {
+                    $gc = wiki_geocode($gc_q, $gc_lang);
+                } catch (\Throwable $e) {
+                    throw new Exception('The address could not be looked up: ' . $e->getMessage());
+                }
+                echo json_encode(['success' => true, 'results' => $gc['results'], 'cached' => $gc['cached']]);
+                break;
+
+            case 'admin_map_settings':
+                if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                    $ms_in = json_decode((string)($_POST['settings'] ?? ''), true);
+                    if (!is_array($ms_in)) throw new Exception('No settings were sent.');
+                    try {
+                        $ms_ok = wiki_map_settings_save($ms_in);
+                    } catch (InvalidArgumentException $e) {
+                        throw new Exception($e->getMessage());
+                    }
+                    if (!$ms_ok) throw new Exception('Could not save the setting — is WIKI_SYSTEM_DATA writable?');
+                    wiki_audit_log('update', 'success', ['object' => 'settings.json',
+                        'object_type' => 'setting', 'change_type' => 'maps',
+                        'value' => json_encode(wiki_map_settings())]);
+                }
+                echo json_encode(['success' => true, 'settings' => wiki_map_settings(),
+                                  'defaults' => ['geocoder' => WIKI_MAP_GEOCODER_DEFAULT,
+                                                 'tiles' => array_map(fn($l) => $l['url'], WIKI_MAP_TILES_DEFAULT)]]);
                 break;
 
             case 'toggle_chat_debug':
@@ -5327,9 +5368,14 @@ if (isset($_REQUEST['action'])) {
                     fn($s) => wiki_space_fm_autostamp($s) === 'on'));
                 $_ls_fm_tags = array_values(array_filter($spaces_list,
                     fn($s) => wiki_space_fm_tags_sync($s) === 'on'));
-                echo json_encode(['success' => true, 'data' => $spaces_list,
-                                  'readonly' => $_ls_readonly, 'fm_edit' => $_ls_fm_edit,
-                                  'fm_autostamp' => $_ls_fm_stamp, 'fm_tags_sync' => $_ls_fm_tags]);
+                $_ls_out = ['success' => true, 'data' => $spaces_list,
+                            'readonly' => $_ls_readonly, 'fm_edit' => $_ls_fm_edit,
+                            'fm_autostamp' => $_ls_fm_stamp, 'fm_tags_sync' => $_ls_fm_tags];
+                // What the New Space dialog starts from, for the roles that see it.
+                if (in_array(get_current_role(), ['admin', 'editor'], true)) {
+                    $_ls_out['space_defaults'] = wiki_space_defaults();
+                }
+                echo json_encode($_ls_out);
                 break;
 
             case 'get_all_tags':
@@ -5547,25 +5593,32 @@ if (isset($_REQUEST['action'])) {
                 if ($safe_space_name === WIKI_TAX_FILE) throw new Exception('That name is reserved for the taxonomy.');
                 $new_space_dir = PAGES_DIR . '/' . $safe_space_name;
                 if (is_dir($new_space_dir)) throw new Exception('A space with that name already exists.');
-                // Chosen in the same dialog as the name. Validated before anything is
-                // created, so a bad value cannot leave a half-made Space behind.
-                $cs_fm    = trim($_POST['fm_edit'] ?? 'off');
-                $cs_stamp = trim($_POST['fm_autostamp'] ?? 'off');
-                if ($cs_fm !== 'off' && !in_array($cs_fm, WIKI_FM_EDIT_MODES, true)) throw new Exception('Unknown metadata mode.');
-                if ($cs_stamp !== 'off' && !in_array($cs_stamp, WIKI_FM_AUTOSTAMP_MODES, true)) throw new Exception('Unknown stamping mode.');
-                $cs_tags  = trim($_POST['fm_tags_sync'] ?? 'off');
-                if (!in_array($cs_tags, ['off', 'on'], true)) throw new Exception('Unknown front-matter tags mode.');
+                // Chosen in the same dialog as the name, which starts from the wiki's
+                // defaults for new Spaces (wiki_space_defaults). A setting the request
+                // does not name gets the default too, so a caller that predates a setting
+                // — or a script — still produces a Space the admin configured for.
+                // Validated before anything is created, so a bad value cannot leave a
+                // half-made Space behind.
+                //
+                // Skills is the admin's alone: switching it on exposes the wiki-wide
+                // skills in that Space, and every other route to it is an admin action.
+                // An editor's Space gets the default, whatever the request says.
+                $cs_policy = wiki_space_defaults();
+                foreach (['fm_edit', 'fm_autostamp', 'fm_tags_sync', 'memory', 'skills'] as $cs_k) {
+                    if ($cs_k === 'skills' && get_current_role() !== 'admin') continue;
+                    if (isset($_POST[$cs_k])) $cs_policy[$cs_k] = trim((string)$_POST[$cs_k]);
+                }
+                try {
+                    $cs_policy = wiki_space_policy_normalize($cs_policy);
+                } catch (InvalidArgumentException $e) {
+                    throw new Exception($e->getMessage());
+                }
                 if (!mkdir($new_space_dir, 0755)) throw new Exception('Could not create space directory.');
                 // Saved before the scaffold, which reads them: with stamping on, the start
-                // page is stamped as it is written. 'off' writes nothing, so a Space
-                // created with the defaults has no record in spaces.json at all.
-                if ($cs_fm !== 'off')    wiki_space_set_fm_edit($safe_space_name, $cs_fm);
-                if ($cs_stamp !== 'off') wiki_space_set_fm_autostamp($safe_space_name, $cs_stamp);
-                if ($cs_tags !== 'off')  wiki_space_set_fm_tags_sync($safe_space_name, $cs_tags);
-                // AI memory, the third choice in the dialog. Only the setting: the memory/
-                // folder is created by the first remembered fact, as admin_set_space_memory
-                // documents, so a Space that never learns anything never shows one.
-                if (($_POST['memory'] ?? '0') === '1') wiki_space_set_memory($safe_space_name, true);
+                // page is stamped as it is written. All-off writes nothing, so a Space
+                // created that way has no record in spaces.json at all. Memory and skills
+                // are only the settings: their folders appear on first use.
+                wiki_space_policy_set($safe_space_name, $cs_policy);
                 // Start page + a copy of the app templates (see wiki_scaffold_space).
                 $actor = get_current_actor();
                 wiki_scaffold_space($new_space_dir, $actor['uid'] ?? null, $actor['name'] ?? null);
@@ -5573,7 +5626,8 @@ if (isset($_REQUEST['action'])) {
                                   'fm_edit' => wiki_space_fm_edit($safe_space_name),
                                   'fm_autostamp' => wiki_space_fm_autostamp($safe_space_name),
                                   'fm_tags_sync' => wiki_space_fm_tags_sync($safe_space_name),
-                                  'memory' => wiki_space_memory($safe_space_name)]);
+                                  'memory' => wiki_space_memory($safe_space_name),
+                                  'skills' => wiki_space_skills($safe_space_name)]);
                 break;
 
             case 'admin_ai_builtin_instructions':
@@ -5962,6 +6016,57 @@ if (isset($_REQUEST['action'])) {
                 echo json_encode(['success' => true, 'space' => $ssm_name, 'memory' => $ssm_on]);
                 break;
 
+            case 'admin_space_copy_settings':
+                // Space settings → Advanced → Copy to other Spaces. `dry_run=1` returns the
+                // plan the dialog previews; without it the same plan is applied, in one
+                // write of spaces.json and one audit entry naming every Space it changed.
+                // Read-only is never part of it — see WIKI_SPACE_POLICY_GROUPS.
+                $scp_src = basename(trim($_POST['source'] ?? ''));
+                if ($scp_src === '' || $scp_src[0] === '.' || !is_dir(PAGES_DIR . '/' . $scp_src)) throw new Exception('No such space.');
+                $scp_groups = array_values(array_filter(array_map('trim', explode(',', (string)($_POST['groups'] ?? '')))));
+                if (!$scp_groups) throw new Exception('Choose what to copy.');
+                foreach ($scp_groups as $scp_g) {
+                    if (!isset(WIKI_SPACE_POLICY_GROUPS[$scp_g])) throw new Exception('Unknown settings group.');
+                }
+                $scp_targets = [];
+                foreach (array_filter(array_map('trim', explode(',', (string)($_POST['targets'] ?? '')))) as $scp_t) {
+                    $scp_t = basename($scp_t);
+                    if ($scp_t === '' || $scp_t[0] === '.' || !is_dir(PAGES_DIR . '/' . $scp_t)) throw new Exception('No such space: ' . $scp_t);
+                    if ($scp_t !== $scp_src) $scp_targets[] = $scp_t;
+                }
+                if (!$scp_targets) throw new Exception('Choose at least one other Space.');
+                $scp_apply = ($_POST['dry_run'] ?? '0') !== '1';
+                $scp_plan  = wiki_space_policy_copy($scp_src, $scp_targets, $scp_groups, $scp_apply);
+                $scp_changed = array_values(array_map(fn($r) => $r['space'],
+                    array_filter($scp_plan, fn($r) => $r['changes'])));
+                if ($scp_apply && $scp_changed) {
+                    wiki_audit_log('update', 'success', ['object' => 'spaces.json',
+                        'object_type' => 'setting', 'change_type' => 'space_settings_copy',
+                        'object_category' => 'settings',
+                        'value' => $scp_src . ' [' . implode(',', $scp_groups) . '] -> ' . implode(', ', $scp_changed)]);
+                }
+                echo json_encode(['success' => true, 'applied' => $scp_apply,
+                                  'plan' => $scp_plan, 'changed' => $scp_changed]);
+                break;
+
+            case 'admin_space_defaults':
+                // The settings new Spaces start with. GET reads them; POST with
+                // `from_space` makes that Space's Content and AI settings the defaults —
+                // the dialog's one way to set them, so what is saved is always a
+                // combination the admin has seen working somewhere.
+                if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                    $sdf_src = basename(trim($_POST['from_space'] ?? ''));
+                    if ($sdf_src === '' || $sdf_src[0] === '.' || !is_dir(PAGES_DIR . '/' . $sdf_src)) throw new Exception('No such space.');
+                    if (!wiki_space_defaults_set(wiki_space_policy($sdf_src))) {
+                        throw new Exception('Could not save the setting — is WIKI_SYSTEM_DATA writable?');
+                    }
+                    wiki_audit_log('update', 'success', ['object' => 'settings.json',
+                        'object_type' => 'setting', 'change_type' => 'space_defaults',
+                        'object_category' => 'settings', 'value' => json_encode(wiki_space_defaults())]);
+                }
+                echo json_encode(['success' => true, 'defaults' => wiki_space_defaults()]);
+                break;
+
             case 'admin_space_settings':
                 // Everything the Space settings dialog needs, for every space, in one
                 // call: the read-only flag, a page count, and whether the space is its
@@ -5994,6 +6099,8 @@ if (isset($_REQUEST['action'])) {
                     'success'  => true,
                     'data'     => $ss_out,
                     'root_git' => is_dir(rtrim(PAGES_DIR, '/') . '/.git'),
+                    // So Advanced can say whether this Space matches what new ones get.
+                    'space_defaults' => wiki_space_defaults(),
                 ]);
                 break;
 

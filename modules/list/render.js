@@ -2,6 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { state } from '../core/state.js';
+import { cellText, cellParts, partsElement, normalizeList, loadLookupTargets, lookupsPending } from './fields.js';
 
 export const getFilteredItems = () => {
     const data = state.currentListData;
@@ -9,9 +10,11 @@ export const getFilteredItems = () => {
     if (!activeViewId) return data.items;
     const view = (data.views || []).find(v => v.id === activeViewId);
     if (!view?.filters?.length) return data.items;
+    // Matched against what the field *shows*, so a lookup filters on its titles, not its ids.
     return data.items.filter(item =>
         view.filters.every(f => {
-            const val = (item[f.colId] ?? '').toString().toLowerCase();
+            const col = data.columns.find(c => c.id === f.colId);
+            const val = (col ? cellText(col, item, data.columns) : (item[f.colId] ?? '').toString()).toLowerCase();
             return val.includes(f.value.toLowerCase());
         })
     );
@@ -36,9 +39,10 @@ export const sortListItems = () => {
     const col = state.currentListData.columns.find(c => c.id === colId);
     if (!col) return;
 
+    const cols = state.currentListData.columns;
     state.currentListData.items.sort((a, b) => {
-        let valA = a[colId] || '';
-        let valB = b[colId] || '';
+        let valA = cellText(col, a, cols);
+        let valB = cellText(col, b, cols);
         let comparison = 0;
 
         if (col.type === 'autoincrement') {
@@ -55,6 +59,16 @@ export const sortListItems = () => {
 
 export const renderListView = () => {
     if (!state.currentListData) return;
+    normalizeList(state.currentListData);
+    // Lookups resolve against other lists: paint now with what is cached, and once more
+    // when the rest has arrived. Only when something was actually missing, so this
+    // cannot loop.
+    if (lookupsPending(state.currentListData)) {
+        const data = state.currentListData;
+        loadLookupTargets(data).then(changed => {
+            if (changed && state.currentListData === data) renderListView();
+        });
+    }
 
     const visibleColumns = getActiveColumns();
     const listItemsTable = document.getElementById('list-items-table');
@@ -82,7 +96,15 @@ export const renderListView = () => {
         row.dataset.id = item.id;
         visibleColumns.forEach(col => {
             const cell = row.insertCell();
-            cell.textContent = item[col.id] || '';
+            // A lookup's values are separate entities — one pill each, stacked so that an
+            // "also show" column beside it lines up value for value.
+            const parts = cellParts(col, item, state.currentListData.columns);
+            if (parts?.length) {
+                cell.classList.add('has-lookup');
+                cell.appendChild(partsElement(parts, col.type === 'lookup_field'));
+            } else {
+                cell.textContent = cellText(col, item, state.currentListData.columns);
+            }
         });
     });
 

@@ -1,86 +1,227 @@
 // Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
+//
+// The item dialogs: viewing one item, and adding or editing one.
+//
+// Every value is put into the page with `textContent` / `.value`, never as markup. These
+// forms used to be built as HTML strings with the item's values spliced in, so a value of
+// `<img src=x onerror=…>` ran script for everybody who opened the item — and a Lookup shows
+// values from *another* list, which would have widened that to anyone able to edit any list
+// in the Space. Field names and help text are author-written too, and are treated the same.
 import { state } from '../core/state.js';
 import { saveListData } from './data.js';
-import { confirmModal } from '../core/utils.js';
+import { confirmModal, showToast } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { t } from '../i18n/index.js';
+import { cellText, cellParts, partsElement, loadLookupTargets, pickerOptions, titleField, normalizeList } from './fields.js';
 
-export const openItemViewModal = (itemData) => {
-    const itemViewModalContent = document.getElementById('item-view-modal-content');
-    itemViewModalContent.innerHTML = '';
-    state.currentListData.columns.forEach(col => {
-        const value = itemData[col.id] || '';
-        const formGroup = document.createElement('div');
-        formGroup.className = 'view-item-row';
-        formGroup.innerHTML = `<label>${col.name}</label><div class="view-item-value">${value}</div>`;
-        itemViewModalContent.appendChild(formGroup);
-    });
-    const itemViewModal = document.getElementById('item-view-modal');
-    itemViewModal.dataset.id = itemData.id;
-    itemViewModal.classList.remove('hidden');
+const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
 };
 
-export const openItemModal = (itemId = null) => {
+// ── Viewing an item ───────────────────────────────────────────────────────────
+
+export const openItemViewModal = async (itemData) => {
+    const data = state.currentListData;
+    await loadLookupTargets(data);
+    const content = document.getElementById('item-view-modal-content');
+    content.innerHTML = '';
+    data.columns.forEach(col => {
+        const row = el('div', 'view-item-row');
+        const value = el('div', 'view-item-value');
+        const parts = cellParts(col, itemData, data.columns);
+        if (parts?.length) { value.classList.add('has-lookup'); value.appendChild(partsElement(parts, col.type === 'lookup_field')); }
+        else value.textContent = cellText(col, itemData, data.columns);
+        row.append(el('label', '', col.name), value);
+        content.appendChild(row);
+    });
+    const modal = document.getElementById('item-view-modal');
+    modal.dataset.id = itemData.id;
+    modal.classList.remove('hidden');
+};
+
+// ── The lookup picker ─────────────────────────────────────────────────────────
+//
+// A type-ahead over the target list's items: chips for what is chosen, a box to type in,
+// and up to MAX_SUGGEST matches under it. One value replaces the chip; several add chips.
+// The chosen ids live on the element (`_values`), which saveItem reads — a FormData entry
+// per id would have to be reassembled into the array the file stores anyway.
+
+const MAX_SUGGEST = 20;
+
+const lookupPicker = (col, initial) => {
+    const options = pickerOptions(col);
+    const labelOf = (id) => options.find(o => o.id === id)?.label ?? t('list.lookup-deleted', { id });
+    const wrap = el('div', 'lookup-picker');
+    wrap.dataset.colId = col.id;
+    wrap._values = (Array.isArray(initial) ? initial : (initial == null || initial === '' ? [] : [initial]))
+        .map(v => parseInt(v, 10)).filter(Number.isFinite);
+
+    const chips = el('div', 'lookup-chips');
+    const input = el('input', 'form-control lookup-input');
+    input.type = 'text';
+    input.id = `field-${col.id}`;
+    input.placeholder = t('list.lookup-find-ph');
+    input.autocomplete = 'off';
+    const suggest = el('div', 'lookup-suggest hidden');
+    wrap.append(chips, input, suggest);
+
+    const drawChips = () => {
+        chips.innerHTML = '';
+        wrap._values.forEach(id => {
+            const chip = el('span', 'lookup-chip');
+            chip.dataset.id = id;
+            chip.appendChild(el('span', '', labelOf(id)));
+            const x = el('button', 'lookup-chip-remove', '×');
+            x.type = 'button';
+            x.title = t('list.lookup-remove');
+            x.addEventListener('click', () => { wrap._values = wrap._values.filter(v => v !== id); drawChips(); });
+            chip.appendChild(x);
+            chips.appendChild(chip);
+        });
+    };
+    const choose = (id) => {
+        wrap._values = col.lookup?.multiple ? [...new Set([...wrap._values, id])] : [id];
+        input.value = '';
+        suggest.classList.add('hidden');
+        drawChips();
+        input.focus();
+    };
+    const drawSuggest = () => {
+        const needle = input.value.trim().toLocaleLowerCase();
+        const hits = options
+            .filter(o => !wrap._values.includes(o.id))
+            .filter(o => !needle || o.label.toLocaleLowerCase().includes(needle))
+            .slice(0, MAX_SUGGEST);
+        suggest.innerHTML = '';
+        if (!hits.length) suggest.appendChild(el('div', 'lookup-suggest-empty', t('list.lookup-none-found')));
+        hits.forEach(o => {
+            const row = el('div', 'lookup-suggest-item', o.label);
+            row.dataset.id = o.id;
+            // mousedown, not click: the input's blur would hide the list before a click lands.
+            row.addEventListener('mousedown', (e) => { e.preventDefault(); choose(o.id); });
+            suggest.appendChild(row);
+        });
+        suggest.classList.remove('hidden');
+    };
+    input.addEventListener('focus', drawSuggest);
+    input.addEventListener('input', drawSuggest);
+    input.addEventListener('blur', () => suggest.classList.add('hidden'));
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const first = suggest.querySelector('.lookup-suggest-item');
+            if (first) choose(parseInt(first.dataset.id, 10));
+        } else if (e.key === 'Escape' && !suggest.classList.contains('hidden')) {
+            e.stopPropagation();          // close the suggestions, not the dialog
+            suggest.classList.add('hidden');
+        } else if (e.key === 'Backspace' && !input.value && wrap._values.length) {
+            wrap._values = wrap._values.slice(0, -1);
+            drawChips();
+        }
+    });
+    drawChips();
+    return wrap;
+};
+
+// ── Adding or editing an item ─────────────────────────────────────────────────
+
+export const openItemModal = async (itemId = null) => {
+    const data = normalizeList(state.currentListData);
     state.editingItemId = itemId;
-    const itemModalForm = document.getElementById('item-modal-form');
-    const itemModalTitle = document.getElementById('item-modal-title');
-    itemModalForm.innerHTML = '';
-    const itemData = itemId ? state.currentListData.items.find(i => i.id === itemId) : null;
-    itemModalTitle.textContent = itemData ? t('btn.edit-item') : t('list.add-item');
+    // The picker needs the target lists' items, fresh: somebody may have added the one
+    // you are about to pick a moment ago.
+    await loadLookupTargets(data, { force: true });
 
-    state.currentListData.columns.forEach(col => {
-        if (col.type === 'autoincrement') return;
-        const value = itemData ? itemData[col.id] || '' : '';
-        const formRow = document.createElement('div');
-        formRow.className = 'form-item-row';
+    const form = document.getElementById('item-modal-form');
+    form.innerHTML = '';
+    const itemData = itemId ? data.items.find(i => i.id === itemId) : null;
+    document.getElementById('item-modal-title').textContent = itemData ? t('btn.edit-item') : t('list.add-item');
 
-        const labelHTML = `<label for="field-${col.id}">${col.name}</label>`;
-        let inputHTML = '';
+    data.columns.forEach(col => {
+        // ItemId is assigned, and a lookup's "also show" fields follow the lookup.
+        if (col.type === 'autoincrement' || col.type === 'lookup_field') return;
+        const value = itemData ? itemData[col.id] ?? '' : '';
+        const row = el('div', 'form-item-row');
+        const label = el('label', '', col.name + (col.role === 'title' ? ' *' : ''));
+        label.htmlFor = `field-${col.id}`;
+        const field = el('div', 'form-item-field');
+
+        let input;
         switch (col.type) {
             case 'text_multi':
-                inputHTML = `<textarea id="field-${col.id}" name="${col.id}" class="form-control">${value}</textarea>`;
+                input = el('textarea', 'form-control');
+                input.value = value;
                 break;
             case 'date':
-                inputHTML = `<input type="date" id="field-${col.id}" name="${col.id}" value="${value}" class="form-control">`;
+                input = el('input', 'form-control');
+                input.type = 'date';
+                input.value = value;
                 break;
             case 'choice': {
-                const optionsHTML = col.options.map(opt => `<option value="${opt}" ${opt === value ? 'selected' : ''}>${opt}</option>`).join('');
-                inputHTML = `<select id="field-${col.id}" name="${col.id}" class="form-control">${optionsHTML}</select>`;
+                input = el('select', 'form-control');
+                const opts = [...(col.options || [])];
+                // A value no longer among the choices is kept, not silently replaced by the first.
+                if (value && !opts.includes(value)) opts.unshift(value);
+                opts.forEach(opt => {
+                    const o = el('option', '', opt);
+                    o.value = opt;
+                    input.appendChild(o);
+                });
+                input.value = value || opts[0] || '';
                 break;
             }
+            case 'lookup':
+                input = lookupPicker(col, value);
+                break;
             default:
-                inputHTML = `<input type="text" id="field-${col.id}" name="${col.id}" value="${value}" class="form-control">`;
+                input = el('input', 'form-control');
+                input.type = 'text';
+                input.value = value;
         }
-        const descHTML = col.description ? `<small class="field-helptext">${col.description}</small>` : '';
-        formRow.innerHTML = labelHTML + `<div class="form-item-field">${inputHTML}${descHTML}</div>`;
-        itemModalForm.appendChild(formRow);
+        if (col.type !== 'lookup') {
+            input.id = `field-${col.id}`;
+            input.name = col.id;
+        }
+        field.appendChild(input);
+        if (col.description) field.appendChild(el('small', 'field-helptext', col.description));
+        row.append(label, field);
+        form.appendChild(row);
     });
     document.getElementById('item-modal').classList.remove('hidden');
+    form.querySelector('input, textarea, select')?.focus();
 };
 
 export const saveItem = async () => {
-    const itemModalForm = document.getElementById('item-modal-form');
-    const formData = new FormData(itemModalForm);
+    const data = state.currentListData;
+    const form = document.getElementById('item-modal-form');
     const newItemData = {};
-    for (const [key, value] of formData.entries()) {
-        newItemData[key] = value;
+    for (const [key, value] of new FormData(form).entries()) newItemData[key] = value;
+    form.querySelectorAll('.lookup-picker').forEach(p => { newItemData[p.dataset.colId] = [...p._values]; });
+
+    // Title is the one field an item must have — it is what a Lookup in another list shows.
+    const title = titleField(data);
+    if (title && !String(newItemData[title.id] ?? '').trim()) {
+        showToast(t('list.title-required', { name: title.name }), 'error');
+        document.getElementById(`field-${title.id}`)?.focus();
+        return;
     }
 
     if (state.editingItemId !== null) {
-        const itemIndex = state.currentListData.items.findIndex(i => i.id === state.editingItemId);
-        if (itemIndex > -1) {
-            state.currentListData.items[itemIndex] = { ...state.currentListData.items[itemIndex], ...newItemData };
-        }
+        const index = data.items.findIndex(i => i.id === state.editingItemId);
+        if (index > -1) data.items[index] = { ...data.items[index], ...newItemData };
     } else {
-        const autoincrementCol = state.currentListData.columns.find(c => c.type === 'autoincrement');
-        if (autoincrementCol) {
-            newItemData[autoincrementCol.id] = state.currentListData.nextItemId;
-            state.currentListData.nextItemId++;
+        const auto = data.columns.find(c => c.type === 'autoincrement');
+        if (auto) {
+            newItemData[auto.id] = data.nextItemId;
+            data.nextItemId++;
         }
-        newItemData.id = newItemData[autoincrementCol?.id];
-        state.currentListData.items.push(newItemData);
+        newItemData.id = newItemData[auto?.id];
+        data.items.push(newItemData);
     }
 
     await saveListData();
@@ -91,95 +232,4 @@ export const deleteItem = async (itemId) => {
     if (!await confirmModal(t('list.item-delete-confirm'), { confirmLabel: t('btn.delete'), dangerous: true, icon: icons.trash })) return;
     state.currentListData.items = state.currentListData.items.filter(i => i.id !== itemId);
     await saveListData();
-};
-
-export const saveColumn = async () => {
-    const columnNameInput = document.getElementById('column-name');
-    const columnTypeSelect = document.getElementById('column-type');
-    const columnVisibleSelect = document.getElementById('column-visible');
-    const choiceOptionsInput = document.getElementById('choice-options');
-    const columnDescInput = document.getElementById('column-desc');
-    const { showToast } = await import('../core/utils.js');
-
-    const name = columnNameInput.value.trim();
-    const type = columnTypeSelect.value;
-    const isVisible = columnVisibleSelect.value === 'true';
-
-    if (!name) { showToast('Column name cannot be empty.', 'error'); return; }
-
-    const newColumn = {
-        id: `col_${new Date().getTime()}`,
-        name,
-        type,
-        showInListView: isVisible,
-        description: columnDescInput?.value.trim() || '',
-    };
-
-    if (type === 'choice') {
-        newColumn.options = choiceOptionsInput.value.split(',').map(s => s.trim()).filter(Boolean);
-    }
-
-    state.currentListData.columns.push(newColumn);
-    await saveListData();
-    document.getElementById('column-modal').classList.add('hidden');
-};
-
-export const openListPropsModal = () => {
-    const colsContainer = document.getElementById('list-props-columns');
-    colsContainer.innerHTML = '';
-
-    const typeLabels = { autoincrement: t('list.type-auto'), text_single: t('list.type-text'),
-                         text_multi: t('list.type-multi'), date: t('list.type-date'), choice: t('list.type-choice') };
-
-    const xIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-
-    state.currentListData.columns.forEach(col => {
-        if (col.type === 'autoincrement') return;
-        const row = document.createElement('div');
-        row.className = 'list-props-row';
-        row.dataset.colId = col.id;
-        const typeLabel = typeLabels[col.type] || col.type;
-        const safeName = col.name.replace(/"/g, '&quot;');
-        const safeDesc = (col.description || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-        row.innerHTML = `
-            <div class="list-props-header-row">
-                <input class="form-control list-props-name-input" type="text" value="${safeName}">
-                <span class="list-props-type-badge">${typeLabel}</span>
-                <button type="button" class="btn btn-sm btn-danger list-props-delete-btn" title="${t('list.delete-column')}">${xIcon}</button>
-            </div>
-            <div>
-                <label class="list-props-desc-label" data-i18n="col.desc-label">Description</label>
-                <textarea class="form-control list-props-desc-input" rows="4" data-i18n-placeholder="col.desc-ph" placeholder="Shown as help text when creating or editing items">${safeDesc}</textarea>
-            </div>`;
-        colsContainer.appendChild(row);
-    });
-
-    colsContainer.querySelectorAll('.list-props-delete-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            const row = e.target.closest('.list-props-row');
-            const col = state.currentListData.columns.find(c => c.id === row.dataset.colId);
-            if (!col) return;
-            if (!await confirmModal(`Delete column "${col.name}"?`, { confirmLabel: 'Delete', dangerous: true, icon: icons.trash })) return;
-            row.remove();
-        });
-    });
-
-    document.getElementById('list-props-modal').classList.remove('hidden');
-};
-
-export const saveListProps = async () => {
-    const colsContainer = document.getElementById('list-props-columns');
-    const remainingIds = new Set([...colsContainer.querySelectorAll('.list-props-row')].map(r => r.dataset.colId));
-
-    colsContainer.querySelectorAll('.list-props-row').forEach(row => {
-        const col = state.currentListData.columns.find(c => c.id === row.dataset.colId);
-        if (!col) return;
-        const newName = row.querySelector('.list-props-name-input').value.trim();
-        if (newName) col.name = newName;
-        col.description = row.querySelector('.list-props-desc-input').value.trim();
-    });
-
-    state.currentListData.columns = state.currentListData.columns.filter(c => c.type === 'autoincrement' || remainingIds.has(c.id));
-    await saveListData();
-    document.getElementById('list-props-modal').classList.add('hidden');
 };

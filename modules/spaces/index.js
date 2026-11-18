@@ -18,6 +18,9 @@ let _readOnly = new Set();
 let _fmEdit   = new Set();
 let _fmStamp  = new Set();
 let _fmTags   = new Set();
+// What the New Space dialog starts from (settings.json → space_defaults); sent to the
+// roles that may create a Space. Absent means every setting off.
+let _spaceDefaults = {};
 
 export const getAllSpaces = () => _allSpaces;
 export const isSpaceReadOnly = (name) => _readOnly.has(name);
@@ -53,6 +56,7 @@ export const initSpaces = async ({ onSpaceChange }) => {
     _fmEdit    = new Set(result.fm_edit || []);
     _fmStamp   = new Set(result.fm_autostamp || []);
     _fmTags    = new Set(result.fm_tags_sync || []);
+    _spaceDefaults = result.space_defaults || {};
     setAvailableSpaces(spaces);
 
     // Determine active space: URL param → localStorage → first available
@@ -133,6 +137,7 @@ const _reload = async (activeName) => {
     _fmEdit    = new Set(refreshed.fm_edit || []);
     _fmStamp   = new Set(refreshed.fm_autostamp || []);
     _fmTags    = new Set(refreshed.fm_tags_sync || []);
+    _spaceDefaults = refreshed.space_defaults || {};
     setAvailableSpaces(_allSpaces);
     const container = document.getElementById('space-switcher');
     if (container) {
@@ -261,6 +266,20 @@ const _render = (spaces, active) => {
         newBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> ${t('spaces.new-btn')}`;
         newBtn.addEventListener('click', async () => {
             dropdown.classList.add('hidden');
+            // Every field starts at the wiki's defaults for new Spaces, which an admin
+            // sets in Space settings → Advanced. Skills is an admin's choice only (the
+            // server ignores it from anyone else), so only an admin is shown it.
+            const d = _spaceDefaults;
+            const sel = (v, want) => (v === want ? ' selected' : '');
+            const skillsField = isAdmin ? `
+                <div class="form-group">
+                    <span class="form-label">${t('spaces.settings.skills-title')}</span>
+                    <label class="space-settings-switch-row">
+                        <input type="checkbox" id="new-space-skills"${d.skills ? ' checked' : ''}>
+                        <span>${t('spaces.settings.skills-label')}</span>
+                    </label>
+                    <p class="form-hint">${t('spaces.settings.skills-hint')}</p>
+                </div>` : '';
             const html = `<div class="new-space-form"><div class="form-group">
                     <label class="form-label" for="new-space-name">${t('spaces.prompt')}</label>
                     <input type="text" id="new-space-name" class="form-control" placeholder="${t('spaces.ph')}">
@@ -269,7 +288,7 @@ const _render = (spaces, active) => {
                     <label class="form-label" for="new-space-fm">${t('spaces.settings.fm-title')}</label>
                     <select id="new-space-fm" class="form-control">
                         <option value="off">${t('spaces.settings.fm-off')}</option>
-                        <option value="manual">${t('spaces.settings.fm-manual')}</option>
+                        <option value="manual"${sel(d.fm_edit, 'manual')}>${t('spaces.settings.fm-manual')}</option>
                     </select>
                     <p class="form-hint">${t('spaces.settings.fm-hint')}</p>
                 </div>
@@ -277,7 +296,7 @@ const _render = (spaces, active) => {
                     <label class="form-label" for="new-space-stamp">${t('spaces.settings.stamp-title')}</label>
                     <select id="new-space-stamp" class="form-control">
                         <option value="off">${t('spaces.settings.stamp-off')}</option>
-                        <option value="on">${t('spaces.settings.stamp-on')}</option>
+                        <option value="on"${sel(d.fm_autostamp, 'on')}>${t('spaces.settings.stamp-on')}</option>
                     </select>
                     <p class="form-hint">${t('spaces.settings.stamp-hint')}</p>
                 </div>
@@ -285,18 +304,18 @@ const _render = (spaces, active) => {
                     <label class="form-label" for="new-space-fmtags">${t('spaces.settings.fmtags-title')}</label>
                     <select id="new-space-fmtags" class="form-control">
                         <option value="off">${t('spaces.settings.fmtags-off')}</option>
-                        <option value="on">${t('spaces.settings.fmtags-on')}</option>
+                        <option value="on"${sel(d.fm_tags_sync, 'on')}>${t('spaces.settings.fmtags-on')}</option>
                     </select>
                     <p class="form-hint">${t('spaces.settings.fmtags-hint')}</p>
                 </div>
                 <div class="form-group">
                     <span class="form-label">${t('spaces.settings.memory-title')}</span>
                     <label class="space-settings-switch-row">
-                        <input type="checkbox" id="new-space-memory">
+                        <input type="checkbox" id="new-space-memory"${d.memory ? ' checked' : ''}>
                         <span>${t('spaces.settings.memory-label')}</span>
                     </label>
                     <p class="form-hint">${t('spaces.settings.memory-hint')}</p>
-                </div></div>`;
+                </div>${skillsField}</div>`;
             const ok = await confirmModal(t('spaces.new-btn'), {
                 messageHtml: html, confirmLabel: t('spaces.new-create-btn'), icon: icons.space,
             });
@@ -307,9 +326,11 @@ const _render = (spaces, active) => {
             const fmStamp = document.getElementById('new-space-stamp')?.value || 'off';
             const fmTags  = document.getElementById('new-space-fmtags')?.value || 'off';
             const memory  = document.getElementById('new-space-memory')?.checked ? '1' : '0';
+            const skillsBox = document.getElementById('new-space-skills');
             if (!ok || !name) return;
-            const res = await api.call('create_space',
-                { name, fm_edit: fmEdit, fm_autostamp: fmStamp, fm_tags_sync: fmTags, memory }, 'POST');
+            const params = { name, fm_edit: fmEdit, fm_autostamp: fmStamp, fm_tags_sync: fmTags, memory };
+            if (skillsBox) params.skills = skillsBox.checked ? '1' : '0';
+            const res = await api.call('create_space', params, 'POST');
             if (res.success) {
                 showToast(t('spaces.created', { name }), 'success');
                 const newSpaces = await _reload(name);
@@ -365,6 +386,11 @@ const _render = (spaces, active) => {
                     await _reload(state.currentSpace);
                     document.dispatchEvent(new CustomEvent('wiki:fmtagssync'));
                 },
+                // Copies only ever reach *other* Spaces, but the switcher's lists of which
+                // Space stamps, syncs tags or edits metadata are wiki-wide; the defaults
+                // feed the New Space dialog.
+                onCopied:   () => _reload(state.currentSpace),
+                onDefaults: () => _reload(state.currentSpace),
                 onFmEdit: async (name, mode) => {
                     if (mode === 'manual') _fmEdit.add(name); else _fmEdit.delete(name);
                     // Re-applies state.spaceFmEdit for the active space, so the Metadata

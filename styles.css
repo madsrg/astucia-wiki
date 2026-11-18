@@ -226,6 +226,18 @@ body {
 .space-settings-status { font-size: 0.78rem; color: var(--accent-gray); line-height: 1.45; min-height: 1.1em; }
 .space-settings-status.is-blocked { color: var(--accent-danger); }
 .space-settings-renames { margin: 0.35rem 0 0; padding-left: 1.1rem; font-size: 0.75rem; color: var(--accent-gray); word-break: break-all; }
+/* Copy to other Spaces borrows the shared confirm dialog, like the Metadata panel: keyed on
+   its .space-copy-view wrapper so only this use grows, with the height on the message area
+   so the title and buttons stay put and only the lists scroll. */
+#confirm-modal .input-modal-content:has(.space-copy-view) { max-width: 560px; }
+#confirm-modal .input-modal-content:has(.space-copy-view) .confirm-modal-message {
+    max-height: 60vh; overflow-y: auto; text-align: left;
+}
+.space-copy-view { display: flex; flex-direction: column; gap: 0.35rem; }
+.space-copy-view .space-settings-hint { margin-bottom: 0.4rem; }
+.space-copy-label { margin-top: 0.7rem; }
+.space-copy-targets { display: flex; flex-direction: column; gap: 0.3rem; max-height: 9rem; overflow-y: auto; }
+.space-copy-plan { word-break: normal; }
 .user-info {
     font-size: 0.8rem;
     display: flex;
@@ -969,6 +981,10 @@ body {
 .file-item-content:hover, .browse-item-content:hover { background-color: var(--accent-gray-hover); }
 .file-item.active > .file-item-content, .browse-item-content.active { background-color: var(--accent-blue); }
 .file-item-name { display: flex; align-items: center; gap: 0.4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A large folder (more than TREE_FOLDER_CAP pages, modules/file_tree): its page count beside
+   its name, and the one row that stands in for its pages. */
+.tree-count { margin-left: 0.15rem; padding: 0 0.4rem; border-radius: 999px; background: var(--accent-gray-hover); font-size: 0.7rem; color: var(--accent-gray); font-variant-numeric: tabular-nums; }
+.tree-more .file-item-name { font-style: italic; color: var(--accent-gray); }
 .folder-arrow { margin-left: auto; color: var(--accent-gray); }
 
 .session-warning { position: fixed; bottom: 0; left: 0; right: 0; background: #744210; color: #fff; padding: 0.65rem 1.5rem; display: flex; align-items: center; justify-content: center; gap: 1rem; z-index: 2000; font-size: 0.85rem; box-shadow: 0 -2px 8px rgba(0,0,0,0.2); }
@@ -1178,6 +1194,20 @@ body {
 .list-table th.sort-asc::after { border-bottom: 4px solid var(--text-color); }
 .list-table th.sort-desc::after { border-top: 4px solid var(--text-color); }
 .list-table tr:hover { background-color: #f0f9ff; cursor: pointer; }
+/* A lookup's values, one pill each, stacked (modules/list/fields.js → partsElement). Every pill
+   is the same height and lookup cells align to the top, so an "also show" column beside its
+   lookup lines up value for value — the reason for stacking rather than wrapping pills side
+   by side, which would put "Bergen" under whichever pill happened to wrap. A blank keeps its
+   line for the same reason. */
+.list-table td.has-lookup { vertical-align: top; padding-top: 6px; padding-bottom: 6px; }
+.lookup-values { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.lookup-value { box-sizing: border-box; height: 1.45rem; line-height: 1.45rem; padding: 0 0.55rem; border-radius: 999px; background: #e0ecff; color: #1e3a8a; font-size: 0.8rem; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.lookup-value.is-deleted { background: #f1f5f9; color: var(--accent-gray); font-style: italic; }
+/* After .is-deleted: the blank an "also show" column keeps for a deleted item is both. */
+.lookup-value.is-blank { background: transparent; box-shadow: none; }
+/* "Also show" values are details of the looked-up item rather than the item: outlined. */
+.lookup-values.is-projected .lookup-value:not(.is-blank) { background: transparent; color: var(--text-color); box-shadow: inset 0 0 0 1px #c7d7f5; }
+#item-view-modal-content .view-item-value.has-lookup { background: none; border: none; padding: 0; }
 .modal-form { display: flex; flex-direction: column; gap: 0.5rem; flex-grow: 1; overflow-y: auto; padding-right: 1rem; }
 .list-item-actions { display: flex; gap: 0.5rem; }
 .modal-form .form-item-row { display: grid; grid-template-columns: 120px 1fr; gap: 0.5rem 1rem; align-items: start; }
@@ -1198,7 +1228,33 @@ body {
 .list-props-name-input { flex: 1; }
 .list-props-type-badge { font-size: 0.72rem; background: #e2e8f0; color: #4a5568; padding: 2px 8px; border-radius: 10px; white-space: nowrap; flex-shrink: 0; }
 .list-props-desc-label { font-size: 0.78rem; color: var(--accent-gray); margin-bottom: 0.15rem; display: block; }
-.list-props-desc-input { resize: vertical; min-height: 88px; font-size: 0.82rem; }
+.list-props-desc-input { resize: vertical; min-height: 52px; font-size: 0.82rem; }
+/* List properties (modules/list/props.js): a new field picks its type in the header row;
+   an existing one shows it as a badge. Title carries a badge instead of a delete button. */
+.list-props-type-select { flex: 0 0 auto; width: auto; min-width: 9rem; }
+.list-props-title-badge { background: #dbeafe; color: #1e40af; cursor: help; }
+.list-props-row.is-new { border-style: dashed; }
+.list-props-config:empty { display: none; }
+.list-props-config { display: flex; flex-direction: column; gap: 0.4rem; }
+.list-props-field { display: flex; flex-direction: column; }
+.list-props-choices { resize: vertical; font-size: 0.82rem; }
+.list-props-also { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
+.list-props-check { font-size: 0.8rem; }
+.list-props-lookup-summary { font-style: normal; }
+.list-props-add-btn { margin-right: auto; }
+.list-props-name-input.is-invalid { border-color: var(--accent-danger); box-shadow: 0 0 0 2px rgba(229, 62, 62, 0.15); }
+/* The lookup picker in the item dialog: chips for what is chosen, a box to type in, and the
+   matches under it. The list is absolute inside the field, so it can overlap the rows below
+   without moving them. */
+.lookup-picker { position: relative; display: flex; flex-direction: column; gap: 0.3rem; }
+.lookup-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.lookup-chips:empty { display: none; }
+.lookup-chip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 2px 4px 2px 8px; border-radius: 999px; background: #dbeafe; color: #1e3a8a; font-size: 0.8rem; }
+.lookup-chip-remove { border: none; background: none; cursor: pointer; color: inherit; font-size: 0.9rem; line-height: 1; padding: 0 3px; }
+.lookup-suggest { position: absolute; top: 100%; left: 0; right: 0; z-index: 20; margin-top: 2px; max-height: 14rem; overflow-y: auto; background: #fff; border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); }
+.lookup-suggest-item { padding: 0.35rem 0.6rem; cursor: pointer; font-size: 0.85rem; }
+.lookup-suggest-item:hover { background: var(--accent-gray-hover); }
+.lookup-suggest-empty { padding: 0.35rem 0.6rem; font-size: 0.8rem; color: var(--accent-gray); font-style: italic; }
 #list-props-modal .lightbox-content { height: 80vh; max-height: 80vh; }
 
 .editor-area {
@@ -1576,6 +1632,12 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 /* The list is the pane's scroller. Without a bounded height it grew past the pane, whose
    wrapper clips (overflow: hidden), so a long library had no scrollbar at all. */
 #ff-file-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* A wiki folder listing of more than one page (modules/files_folder): under the list, which
+   is the scroller, so the pager stays put while the rows scroll. */
+.ff-pager { display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 0.5rem 0 0.1rem; flex-shrink: 0; }
+.ff-pager-label { font-size: 0.8rem; color: var(--accent-gray); font-variant-numeric: tabular-nums; }
+.ff-detail-table th.ff-sortable { cursor: pointer; user-select: none; }
+.ff-detail-table th.ff-sortable:hover { color: var(--accent-blue); }
 .ff-dir-link { cursor: pointer; }
 /* The shared folder icon is a pale yellow outline (#f6e05e), drawn for the dark sidebar.
    On the listing's white it is ~1.3:1; a darker amber outline (~3.6:1, past the 3:1 asked
@@ -2830,3 +2892,37 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
                  background: #f7fafc; border: 1px solid #cbd5e0; border-bottom-width: 2px; border-radius: 4px; color: #2d3748; }
 .help-key-sep { color: var(--accent-gray); font-size: 0.78rem; margin: 0 0.15rem; }
 .help-note { font-size: 0.78rem; color: var(--accent-gray); margin: 0.6rem 0 0; }
+
+/* ── Maps (modules/maps) ────────────────────────────────────────────────────────
+   A ```map block becomes a figure; its source <pre> stays in the page, hidden, so a failure
+   can put it back. The canvas gets its height from the block. */
+.wiki-map { margin: 1rem 0; max-width: 100%; }
+.wiki-map-canvas { width: 100%; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; background: #e5e7eb; z-index: 0; position: relative; }
+.wiki-map-caption { margin-top: 0.3rem; font-size: 0.78rem; color: var(--accent-gray); }
+pre.wiki-map-source { display: none; }
+.wiki-map-error { margin: 0.75rem 0 0.25rem; padding: 0.4rem 0.6rem; border-left: 3px solid var(--accent-danger); background: #fff5f5; color: #9b2c2c; font-size: 0.82rem; }
+.static-map a { text-decoration: none; }
+
+/* Insert → Map. Both classes and border-box, the Space settings trap: .lightbox-content sits
+   later in this sheet and would win a tie. Options on the left, the preview on the right;
+   stacked under 760px. */
+.lightbox-content.map-insert-content { box-sizing: border-box; width: 900px; max-width: 95vw; height: auto; max-height: 90vh; display: flex; flex-direction: column; }
+.map-insert-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.25rem; min-height: 0; overflow-y: auto; padding: 0.25rem 0.1rem 0.5rem; }
+@media (max-width: 760px) { .map-insert-body { grid-template-columns: 1fr; } }
+.map-insert-find { display: flex; gap: 0.5rem; }
+.map-insert-find .form-control { flex: 1; min-width: 0; }
+.map-insert-privacy { margin: 0.35rem 0 0.5rem; }
+.map-insert-results { display: flex; flex-direction: column; gap: 2px; max-height: 9.5rem; overflow-y: auto; margin-bottom: 0.75rem; }
+.map-insert-result { padding: 0.35rem 0.5rem; border-radius: 4px; font-size: 0.82rem; cursor: pointer; line-height: 1.3; }
+.map-insert-result:hover { background: var(--accent-gray-hover); }
+.map-insert-result.active { background: #dbeafe; color: #1e3a8a; }
+.map-insert-error { color: var(--accent-danger); font-size: 0.82rem; margin: 0.25rem 0; }
+.map-insert-options { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 0.75rem; }
+.map-insert-field { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.8rem; }
+.map-insert-field:last-child { grid-column: 1 / -1; }
+.map-insert-label { color: var(--accent-gray); font-weight: 600; }
+.map-insert-checks { display: flex; flex-wrap: wrap; gap: 0.35rem 1.25rem; margin-top: 0.75rem; }
+.map-insert-preview { height: 340px; border-radius: 6px; overflow: hidden; }
+.map-insert-empty { height: 340px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 1rem; border: 1px dashed var(--border-color); border-radius: 6px; color: var(--accent-gray); font-size: 0.85rem; }
+.admin-maps-attr { margin-top: 0.3rem; }
+

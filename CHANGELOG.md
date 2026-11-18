@@ -6,6 +6,50 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+### Added
+- **One Space's settings, applied to others.** Space settings → Advanced → *Use these
+  settings elsewhere* copies the Content and/or AI settings (page metadata, stamping, tags in
+  front matter, AI memory, AI skills) onto the Spaces you tick, with a preview of what
+  changes in each before anything is written. Read-only is never copied.
+- **Defaults for new Spaces.** *Make default for new spaces* in the same section makes this
+  Space's Content and AI settings what new Spaces start with: the New Space dialog opens with
+  them filled in (and now offers AI skills to administrators), and the `Main` Space a fresh
+  wiki creates gets them too. Both copy values — changing the defaults later never changes a
+  Space that already exists.
+- **Large folders.** A folder with more than 100 pages no longer lists every page in the
+  sidebar: it shows its subfolders, its page count and one *browse…* row, which opens the
+  folder in the main area 100 pages at a time, with a name filter (type to narrow, Enter
+  still searches the wiki) and sorting by name or last modified. The page you have open
+  stays marked in the tree.
+- **Lookup fields in lists.** A field can now look up items in another list of the same
+  Space: pick one or several with a type-ahead, show their Title (or another field) and tick
+  more of their fields to show alongside, as in SharePoint. Each value is shown as its own
+  pill, one per line, with its "also show" values level beside it, so each looked-up item
+  reads across the row. Exports write the titles.
+- **Maps in pages.** *Insert → Map* finds an address (or takes coordinates), previews the map
+  and writes a ```` ```map ```` block: streets, satellite or topographic, with size, zoom,
+  marker and label. Drawn with OpenStreetMap; the address is looked up once, when the map is
+  inserted, so reading a page sends nothing anywhere but the map images. Admin → Content →
+  Maps switches maps off or points them at your own servers. The static export links to the
+  place.
+- **List fields are managed in List properties** — adding one included (the toolbar's *Add
+  column* is gone), as are a Choice field's choices. The UI now says *field*. Title can be
+  renamed but not deleted, and an item needs one.
+
+### Fixed
+- **A list item's value could run script.** The item view and item form inserted values as
+  HTML, so a value containing markup ran for anyone who opened the item. Values are shown
+  as text now.
+- **Deleting a list field left its values behind** in every item and in views that showed or
+  filtered on it. They are removed with it.
+- **Large Spaces loaded slowly.** Listing a Space's pages looked each one up by scanning the
+  whole index, so the cost grew with the square of the page count: 10,000 pages took 1.2 s
+  on every tree refresh. It is a lookup table now — 0.03 s.
+- **A file too large to upload said only "HTTP error 413".** A files library now checks
+  each file against the wiki's upload limit before sending it and names the file, its size
+  and the limit. A 413 from the web server or a proxy in front of it (nginx's default is
+  1 MB) now says what it means and which settings raise the limit.
+
 ## [2026.11.3] — 2026-11-12
 
 Sign-in becomes one security level per site — single sign-on, single sign-on plus email

@@ -457,6 +457,9 @@ export const createEditorToolbar = () => {
         add(t('tb.insert-diagram'), t('tb.insert-diagram-title'), openDiagramInsertLightbox);
         add(t('tb.insert-list'), t('tb.insert-list-title'), openListInsertLightbox);
         add(t('tb.insert-comment'), t('tb.insert-comment-title'), openCommentLightbox);
+        // A ```map block, drawn by modules/maps. Loaded on first use: most pages never get one.
+        add(t('tb.insert-map'), t('tb.insert-map-title'),
+            () => import('../maps/insert.js').then(m => m.openMapInsertDialog()));
         // Text-defined diagrams: a ```mermaid block, rendered as SVG in read mode. The
         // skeleton is a working diagram, so it renders as soon as the page is saved. One
         // submenu rather than nine more rows here, which would push the callouts out of

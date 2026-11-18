@@ -286,3 +286,164 @@ function wiki_space_settings_forget(string $space): void {
     unset($all[$space]);
     wiki_space_settings_save($all);
 }
+
+// =================================================================
+// THE SPACE POLICY AS A WHOLE — copying it and defaulting it
+//
+// The five settings of the Content and AI tabs, taken together. Read-only is deliberately
+// not one of them: freezing every Space, or every new one, is a different act from
+// choosing how Spaces treat metadata and AI, and must never happen as a side effect.
+//
+// Both features *copy* values rather than letting Spaces inherit them. With inheritance,
+// changing the default would silently change every Space that never overrode it — turning
+// stamping on wiki-wide would start rewriting the blocks of a Space that mirrors an
+// Obsidian vault, which is exactly the case these settings were made per-Space for. A
+// copy changes a Space only when an admin applied it to that Space, and spaces.json stays
+// a list of exceptions.
+// =================================================================
+require_once __DIR__ . '/settings.php';
+
+// Grouped as the dialog's tabs are, which is how an admin chooses what to copy.
+const WIKI_SPACE_POLICY_GROUPS = [
+    'content' => ['fm_edit', 'fm_autostamp', 'fm_tags_sync'],
+    'ai'      => ['memory', 'skills'],
+];
+
+/**
+ * A Space's policy, every key present and normalised: the three front-matter modes as
+ * their strings, memory and skills as booleans.
+ */
+function wiki_space_policy(string $space): array {
+    return [
+        'fm_edit'      => wiki_space_fm_edit($space),
+        'fm_autostamp' => wiki_space_fm_autostamp($space),
+        'fm_tags_sync' => wiki_space_fm_tags_sync($space),
+        'memory'       => wiki_space_memory($space),
+        'skills'       => wiki_space_skills($space),
+    ];
+}
+
+/**
+ * Normalise a policy from untrusted input (a request, settings.json). A missing key is off;
+ * an unknown value is refused rather than quietly read as off, because a typo in a request
+ * that then reports success is how an admin ends up believing a setting was applied.
+ *
+ * Booleans accept true/'1'/'on' and false/'0'/'off'/''.
+ *
+ * @throws InvalidArgumentException naming the key
+ */
+function wiki_space_policy_normalize(array $in): array {
+    $mode = function (string $key, array $allowed) use ($in): string {
+        $v = $in[$key] ?? 'off';
+        if (!is_string($v) || !in_array($v, $allowed, true)) {
+            throw new InvalidArgumentException("Unknown value for $key.");
+        }
+        return $v;
+    };
+    $flag = function (string $key) use ($in): bool {
+        $v = $in[$key] ?? false;
+        if ($v === true  || $v === 1 || $v === '1' || $v === 'on')  return true;
+        if ($v === false || $v === 0 || $v === '0' || $v === 'off' || $v === '') return false;
+        throw new InvalidArgumentException("Unknown value for $key.");
+    };
+    return [
+        'fm_edit'      => $mode('fm_edit', WIKI_FM_EDIT_MODES),
+        'fm_autostamp' => $mode('fm_autostamp', WIKI_FM_AUTOSTAMP_MODES),
+        'fm_tags_sync' => $mode('fm_tags_sync', ['off', 'on']),
+        'memory'       => $flag('memory'),
+        'skills'       => $flag('skills'),
+    ];
+}
+
+// Write a policy's keys into one spaces.json record, in the record's own representation:
+// 'off' / false removes the key, so an all-off Space has no record at all.
+function _wiki_space_policy_into(array $rec, array $policy): array {
+    foreach (['fm_edit', 'fm_autostamp', 'fm_tags_sync'] as $k) {
+        if (!array_key_exists($k, $policy)) continue;
+        if ($policy[$k] === 'off') unset($rec[$k]);
+        else                       $rec[$k] = $policy[$k];
+    }
+    foreach (['memory', 'skills'] as $k) {
+        if (!array_key_exists($k, $policy)) continue;
+        if ($policy[$k]) $rec[$k] = true;
+        else             unset($rec[$k]);
+    }
+    return $rec;
+}
+
+/**
+ * What new Spaces start with (settings.json → space_defaults). All off when unset, which
+ * is what every new Space got before defaults existed. A damaged value reads as all off
+ * rather than failing Space creation.
+ */
+function wiki_space_defaults(): array {
+    $raw = wiki_setting('space_defaults', []);
+    try {
+        return wiki_space_policy_normalize(is_array($raw) ? $raw : []);
+    } catch (InvalidArgumentException $e) {
+        return wiki_space_policy_normalize([]);
+    }
+}
+
+function wiki_space_defaults_set(array $policy): bool {
+    return wiki_setting_set('space_defaults', wiki_space_policy_normalize($policy));
+}
+
+/**
+ * Give a Space a whole policy at once — used for a new Space, which has no record yet.
+ * One write, so a Space is never seen half-configured.
+ */
+function wiki_space_policy_set(string $space, array $policy): bool {
+    $space = basename(trim($space));
+    if ($space === '') return false;
+    $policy = wiki_space_policy_normalize($policy);
+    $all = wiki_space_settings_all(true);
+    $cur = is_array($all[$space] ?? null) ? $all[$space] : [];
+    $rec = _wiki_space_policy_into($cur, $policy);
+    // Nothing to record: write nothing, so a wiki whose Spaces are all at the defaults
+    // still has no spaces.json at all, as before this function existed.
+    if ($rec === $cur) return true;
+    $all[$space] = $rec;
+    return wiki_space_settings_save($all);
+}
+
+/**
+ * Copy the chosen groups of $source's policy onto $targets.
+ *
+ * Planned and applied by the same function so the preview the dialog shows and the write
+ * cannot disagree: with $apply false nothing is written. Returns one row per target, each
+ * with the keys that change (`[key => [from, to]]`, empty when the target already
+ * matches). The source itself and unknown names are dropped from the targets; the caller
+ * has already checked they are real Spaces.
+ *
+ * One read-modify-write of spaces.json for every target, so a copy to twenty Spaces is
+ * one write rather than a hundred.
+ */
+function wiki_space_policy_copy(string $source, array $targets, array $groups, bool $apply): array {
+    $keys = [];
+    foreach ($groups as $g) {
+        foreach (WIKI_SPACE_POLICY_GROUPS[$g] ?? [] as $k) $keys[] = $k;
+    }
+    $from = array_intersect_key(wiki_space_policy($source), array_flip($keys));
+
+    $plan = [];
+    $all  = wiki_space_settings_all(true);
+    foreach (array_unique($targets) as $t) {
+        if ($t === $source) continue;
+        $cur = array_intersect_key(wiki_space_policy($t), $from);
+        $changes = [];
+        foreach ($from as $k => $v) {
+            if ($cur[$k] !== $v) $changes[$k] = [$cur[$k], $v];
+        }
+        $plan[] = ['space' => $t, 'changes' => $changes];
+        if ($apply && $changes) {
+            $all[$t] = _wiki_space_policy_into(is_array($all[$t] ?? null) ? $all[$t] : [], $from);
+        }
+    }
+    if ($apply && array_filter($plan, fn($r) => $r['changes'])) {
+        if (!wiki_space_settings_save($all)) {
+            throw new RuntimeException('Could not save the settings — is WIKI_SYSTEM_DATA writable?');
+        }
+    }
+    return $plan;
+}

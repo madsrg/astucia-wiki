@@ -45,7 +45,7 @@ const buildFiltersSection = (activeView) => {
 
     const heading = document.createElement('div');
     heading.className = 'filters-section-heading';
-    heading.textContent = 'Filters';
+    heading.textContent = t('list.filters-heading');
     section.appendChild(heading);
 
     const list = document.createElement('div');

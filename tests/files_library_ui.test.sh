@@ -107,6 +107,18 @@ const run = async () => {
   await sleep(1500);
   out += ' afterdrop=' + rowNames().join('|');
 
+  // ── A file over the upload limit is refused before it is sent ──
+  out += ' maxpub=' + (Number(window.WIKI_MAX_UPLOAD) > 0 ? 'yes' : 'no');
+  const realMax = window.WIKI_MAX_UPLOAD;
+  window.WIKI_MAX_UPLOAD = 1000;                 // a limit the probe controls
+  const big = new DataTransfer();
+  big.items.add(new File(['x'.repeat(5000)], 'huge.mp4', { type: 'video/mp4' }));
+  pane.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: big }));
+  await sleep(800);
+  out += ' toobig=' + (($('#toast-message')?.textContent || '').includes('huge.mp4') ? 'said' : 'silent')
+       + '/' + (rowNames().includes('huge.mp4') ? 'uploaded' : 'kept');
+  window.WIKI_MAX_UPLOAD = realMax;
+
   // ── Marking files and acting on them ──
   const opened = [];
   window.open = (url) => { opened.push(url); return null; };
@@ -202,6 +214,10 @@ section 'drag and drop'
 assert_contains "a file drag highlights the pane"       'highlight=yes'     "$PROBE"
 assert_contains "a drop uploads into the open folder"   'afterdrop=..|Archive|dropped.txt|q1.pdf ' "$PROBE"
 assert_contains "  …and it reached the server"         'afterdrop=..|Archive|dropped.txt|q1.pdf ' "$PROBE"
+
+section 'the upload limit'
+assert_contains "the page knows the wiki's limit"       'maxpub=yes'        "$PROBE"
+assert_contains "a file over it is refused, by name"    'toobig=said/kept'  "$PROBE"
 
 section 'marking files, then choosing the action'
 assert_contains "a file is not a link any more"         'links=0 '          "$PROBE"

@@ -88,10 +88,11 @@ assert_contains "mermaid reports its version"   "noteLoaded('mermaid'"   "$(cat 
 assert_contains "cytoscape reports its version" "noteLoaded('cytoscape'" "$(cat "$WIKI_APP/modules/graph/index.js")"
 assert_contains "the JSON editor too"           "noteLoaded('vanilla-jsoneditor'" "$(cat "$WIKI_APP/modules/json_view/index.js")"
 assert_contains "and marked at startup"         "noteLoaded('marked'"    "$(cat "$WIKI_APP/script.js")"
+assert_contains "Leaflet, for maps"             "noteLoaded('leaflet'"   "$(cat "$WIKI_APP/modules/maps/index.js")"
 # Every library the registry lists must have a loader that records it, or the pane shows
 # "not loaded on this page" for ever and looks like a broken page rather than a stale list.
 reg=$(cat "$WIKI_APP/modules/core/versions.js")
-for key in marked mermaid cytoscape vanilla-jsoneditor; do
+for key in marked mermaid cytoscape vanilla-jsoneditor leaflet; do
     assert_contains "  $key is in the registry" "key: '$key'" "$reg"
 done
 

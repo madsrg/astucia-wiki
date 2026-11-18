@@ -5,6 +5,7 @@
 require_once 'config.php';
 require_once 'mailer.php';
 require_once 'remember_me.php';
+require_once __DIR__ . '/maps.php';   // window.WIKI_MAPS below
 session_start();
 wiki_remember_restore();
 
@@ -409,7 +410,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                                the sidebar input and clicks its button, and the New menu clicks the
                                sidebar dropdown's entries. One implementation of each, either way. */ ?>
                         <div id="ff-search" class="ff-search hidden">
-                            <input type="text" id="ff-search-input" data-i18n-placeholder="nav.search-ph" placeholder="Search pages&hellip;">
+                            <input type="text" id="ff-search-input" data-i18n-placeholder="folder.filter-ph" placeholder="Filter this folder &mdash; Enter searches the wiki">
                             <button id="ff-search-btn" class="btn btn-sm btn-secondary" data-i18n="nav.search-btn">Search</button>
                         </div>
                         <button id="ff-upload-pages-btn" class="btn btn-secondary btn-sm hidden">
@@ -444,6 +445,13 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                         </div>
                     </div>
                     <div id="ff-file-list"></div>
+                    <?php /* Folder listing only: pages of FOLDER_PAGE_SIZE once a folder (or the
+                           filter over it) holds more than that. Filled in by modules/files_folder. */ ?>
+                    <div id="ff-pager" class="ff-pager hidden">
+                        <button id="ff-pager-prev" class="btn btn-sm btn-secondary" data-i18n-title="folder.page-prev" title="Previous page">&lsaquo;</button>
+                        <span id="ff-pager-label" class="ff-pager-label"></span>
+                        <button id="ff-pager-next" class="btn btn-sm btn-secondary" data-i18n-title="folder.page-next" title="Next page">&rsaquo;</button>
+                    </div>
                 </div>
                 <div id="list-view-container" class="viewer-wrapper hidden">
                     <div class="list-actions">
@@ -466,9 +474,6 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                                 <a href="#" id="export-csv" data-i18n="list.export-csv">as CSV</a>
                             </div>
                         </div>
-                        <button id="add-column-btn" class="btn btn-icon btn-secondary" data-i18n-title="list.add-column" title="Add Column">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1" stroke-dasharray="3 2"/><line x1="17.5" y1="8" x2="17.5" y2="14"/><line x1="14.5" y1="11" x2="20.5" y2="11"/></svg>
-                        </button>
                     </div>
                     <div id="view-tabs" class="view-tabs hidden"></div>
                     <div id="list-items-table" class="list-table-wrapper"></div>
@@ -743,46 +748,6 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
         </div>
     </div>
 
-    <div id="column-modal" class="lightbox-overlay hidden">
-        <div class="lightbox-content">
-            <button id="column-modal-close-btn" class="lightbox-close">&times;</button>
-            <h3 data-i18n="col.title">Add New Column</h3>
-            <form id="column-modal-form" class="modal-form">
-                <div class="form-group">
-                    <label for="column-name" data-i18n="col.name-label">Column Name:</label>
-                    <input type="text" id="column-name" class="form-control" required>
-                </div>
-                <div class="form-group">
-                    <label for="column-type" data-i18n="col.type-label">Column Type:</label>
-                    <select id="column-type" class="form-control">
-                        <option value="text_single" data-i18n="col.type-single">Single line of text</option>
-                        <option value="text_multi" data-i18n="col.type-multi">Multi-line text</option>
-                        <option value="date" data-i18n="col.type-date">Date</option>
-                        <option value="choice" data-i18n="col.type-choice">Choice (Dropdown)</option>
-                    </select>
-                </div>
-                <div id="choice-options-group" class="form-group hidden">
-                    <label for="choice-options" data-i18n="col.choices-label">Choices (comma-separated):</label>
-                    <input type="text" id="choice-options" class="form-control">
-                </div>
-                <div class="form-group">
-                    <label for="column-visible" data-i18n="col.visible-label">Show in list view:</label>
-                    <select id="column-visible" class="form-control">
-                        <option value="true" selected data-i18n="col.visible-yes">Yes</option>
-                        <option value="false" data-i18n="col.visible-no">No</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="column-desc" data-i18n="col.desc-label">Description:</label>
-                    <textarea id="column-desc" class="form-control" rows="2" data-i18n-placeholder="col.desc-ph" placeholder="Shown as help text when creating or editing items" style="resize:vertical"></textarea>
-                </div>
-            </form>
-            <div class="lightbox-footer">
-                <button id="column-modal-save-btn" class="btn btn-blue" data-i18n="col.add-btn">Add Column</button>
-            </div>
-        </div>
-    </div>
-
     <div id="item-view-modal" class="lightbox-overlay hidden">
         <div class="lightbox-content">
             <button id="item-view-modal-close-btn" class="lightbox-close">&times;</button>
@@ -814,6 +779,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <h3 data-i18n="list-props.title">List Properties</h3>
             <div id="list-props-columns" class="modal-form list-props-columns"></div>
             <div class="lightbox-footer">
+                <button id="list-props-add-btn" class="btn btn-secondary list-props-add-btn" data-i18n="list.add-field-btn">+ Add field</button>
                 <button id="list-props-save-btn" class="btn btn-green" data-i18n="list-props.save-btn">Save Changes</button>
             </div>
         </div>
@@ -1325,6 +1291,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab hidden" data-tab="deleted" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg><span data-i18n="admin.tab.deleted">Deleted Pages</span></button>
                 <button class="admin-tab hidden" data-tab="retention" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg><span data-i18n="admin.tab.retention">Retention Policies</span></button>
                 <button class="admin-tab hidden" data-tab="metadata" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg><span data-i18n="admin.tab.metadata">Page Metadata</span></button>
+                <button class="admin-tab hidden" data-tab="maps" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span data-i18n="admin.tab.maps">Maps</span></button>
                 <button class="admin-tab hidden" data-tab="taxonomy" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="10" width="6" height="5" rx="1"/><rect x="15" y="17" width="6" height="5" rx="1"/><path d="M6 9v10h9"/><path d="M6 12.5h9"/></svg><span data-i18n="admin.tab.taxonomy">Taxonomy</span></button>
                 <button class="admin-tab hidden" data-tab="workflows" data-group="content"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M9 6h5a3 3 0 0 1 3 3v6"/><polyline points="14 12 17 15 20 12"/></svg><span data-i18n="admin.tab.workflows">Workflows</span></button>
             </div>
@@ -1439,6 +1406,29 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                             <p class="pref-hint" data-i18n="admin.metadata.expose-ai-hint"></p>
                         </div>
                         <button id="admin-fm-save" class="btn btn-blue" data-i18n="btn.save">Save</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Maps pane (maps.php): the ```map blocks in pages -->
+            <div id="admin-pane-maps" class="admin-pane hidden">
+                <div class="admin-scroll-area">
+                    <div class="admin-reindex-body">
+                        <p class="admin-reindex-desc" data-i18n="admin.maps.desc"></p>
+                        <div class="form-group">
+                            <label class="admin-ai-switch-boxed" for="admin-maps-enabled">
+                                <input type="checkbox" id="admin-maps-enabled">
+                                <span data-i18n="admin.maps.enabled">Draw maps in pages</span>
+                            </label>
+                            <p class="pref-hint" data-i18n="admin.maps.enabled-hint"></p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="admin-maps-geocoder" data-i18n="admin.maps.geocoder">Address lookup service</label>
+                            <input type="text" id="admin-maps-geocoder" class="form-control" spellcheck="false">
+                            <p class="pref-hint" data-i18n="admin.maps.geocoder-hint"></p>
+                        </div>
+                        <div id="admin-maps-tiles"></div>
+                        <button id="admin-maps-save" class="btn btn-blue" data-i18n="btn.save">Save</button>
                     </div>
                 </div>
             </div>
@@ -1570,6 +1560,17 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
         window.WIKI_USER_FONT      = '<?php echo htmlspecialchars($userFont); ?>';
         window.WIKI_USER_FONT_SIZE = '<?php echo htmlspecialchars($userFontSize); ?>';
         window.WIKI_USER_SPACES  = <?php echo json_encode($_SESSION['user']['spaces'] ?? null); ?>; // null = all spaces
+        // Whether ```map blocks are drawn, and the tile layer for each map type (maps.php).
+        window.WIKI_MAPS = <?php echo json_encode(wiki_map_client_config(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_SLASHES); ?>;
+        // The largest upload PHP will accept: the smaller of upload_max_filesize and post_max_size.
+        // A web server or proxy in front can be stricter still; that answers 413, which api.js names.
+        window.WIKI_MAX_UPLOAD = <?php echo (int)(function () {
+            $bytes = function ($v) { $v = trim((string)$v); if ($v === '') return 0; $n = (float)$v;
+                switch (strtolower(substr($v, -1))) { case 'g': $n *= 1024; case 'm': $n *= 1024; case 'k': $n *= 1024; }
+                return (int)$n; };
+            $u = $bytes(ini_get('upload_max_filesize')); $p = $bytes(ini_get('post_max_size'));
+            return ($p > 0 && $p < $u) ? $p : $u;
+        })(); ?>;
         window.WIKI_SESSION_TIMEOUT = <?php echo (AUTHENTICATION_ENABLED && defined('SESSION_TIMEOUT') && empty($_SESSION['remembered'])) ? (int)SESSION_TIMEOUT : 0; ?>;
         window.WIKI_AUTH_MODE = '<?php echo wiki_auth_mode(); ?>';   // off | sso | sso+email | email | password | invalid
         window.WIKI_SEARCH_ENGINE = '<?php echo defined('SEARCH_ENGINE') ? SEARCH_ENGINE : 'basic'; ?>';

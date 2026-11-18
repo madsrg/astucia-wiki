@@ -5,7 +5,7 @@ import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { hidePageControls } from '../core/page_chrome.js';
 import { icons } from '../core/icons.js';
-import { showToast, confirmModal, promptModal, canUpload } from '../core/utils.js';
+import { showToast, confirmModal, promptModal, canUpload, uploadTooLarge } from '../core/utils.js';
 import { t } from '../i18n/index.js';
 import { updateBreadcrumb, updateFavoriteBtn } from '../nav/index.js';
 
@@ -62,6 +62,16 @@ let currentViewMode = localStorage.getItem('ff_view') || 'simple';
 let paneMode   = 'library';   // 'library' (a *.uploads-style files folder) | 'folder' (a wiki folder)
 let folderPath = '';          // the wiki folder being listed, when paneMode === 'folder'
 
+// A wiki folder's listing is paged, filtered and sorted here, in the browser: the folder
+// is already in `state.fullFileTree`, so no request is needed for any of it. The tree
+// sends a large folder's pages to this listing (see TREE_FOLDER_CAP in modules/file_tree),
+// which is what makes a folder of thousands of pages browsable at all.
+const FOLDER_PAGE_SIZE = 100;
+let folderItems  = [];        // the folder's entries, as the tree data has them
+let folderFilter = '';        // narrows by name, as typed in the toolbar's box
+let folderPage   = 0;         // zero-based
+let folderSort   = 'name';    // 'name' (A→Z) | 'modified' (newest first); folders first either way
+
 const setActiveViewBtn = () => {
     ['simple', 'detailed', 'icons'].forEach(m => {
         const btn = document.getElementById(`ff-view-${m}`);
@@ -111,6 +121,8 @@ const showListingPane = (mode) => {
     // displaySearchResults, the tree's folder placeholder. A JS toggle would need undoing
     // in all four, and the row would stay hidden the first time one of them was missed.
     document.getElementById('files-folder-container').classList.toggle('ff-folder-mode', mode === 'folder');
+    // A files library is not paged; renderFolderView() shows the pager when it is needed.
+    if (mode !== 'folder') document.getElementById('ff-pager')?.classList.add('hidden');
     document.getElementById('page-actions-group').classList.toggle('hidden', mode === 'folder');
 };
 
@@ -390,9 +402,11 @@ const entryName = (item) => item.name.replace(CONTENT_EXT, '');
 // Directories first, then files, each A→Z. The server already sorts the tree this way,
 // but with strcmp — so "Zebra" sorted before "apple". A listing a person reads wants
 // case-insensitive, digit-aware order.
-const sortEntries = (items) => [...items].sort((a, b) =>
+const byName = (a, b) => entryName(a).localeCompare(entryName(b), undefined, { sensitivity: 'base', numeric: true });
+const sortEntries = (items, by = 'name') => [...items].sort((a, b) =>
     (isDir(a) ? 0 : 1) - (isDir(b) ? 0 : 1) ||
-    entryName(a).localeCompare(entryName(b), undefined, { sensitivity: 'base', numeric: true }));
+    (by === 'modified' ? (b.updated || 0) - (a.updated || 0) : 0) ||
+    byName(a, b));
 
 const openEntry = async (item) => {
     const kind = kindOf(item);
@@ -417,7 +431,7 @@ const openEntry = async (item) => {
 /** The ".." row, as a pseudo-entry the three renderers can treat like any other. */
 const upEntry = (path) => ({ up: true, name: '..', path: path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '' });
 
-const renderFolder = (items, path) => {
+const renderFolder = (items, path, { filtered = false } = {}) => {
     const container = document.getElementById('ff-file-list');
     container.innerHTML = '';
 
@@ -463,11 +477,25 @@ const renderFolder = (items, path) => {
         table.className = 'ff-detail-table';
         const thead = document.createElement('thead');
         const htr = document.createElement('tr');
-        [t('files.col-name'), t('folder.col-type'), t('files.col-modified')].forEach(label => {
-            const th = document.createElement('th');
-            th.textContent = label;
-            htr.appendChild(th);
-        });
+        // Name and Modified sort the listing (the whole folder, not just this page);
+        // the active one carries an arrow.
+        [['name', t('files.col-name')], [null, t('folder.col-type')], ['modified', t('files.col-modified')]]
+            .forEach(([key, label]) => {
+                const th = document.createElement('th');
+                th.textContent = label + (key && key === folderSort ? (key === 'name' ? ' ▲' : ' ▼') : '');
+                if (key) {
+                    th.className = 'ff-sortable';
+                    th.dataset.sort = key;
+                    th.title = t(key === 'name' ? 'folder.sort-name' : 'folder.sort-modified');
+                    th.addEventListener('click', () => {
+                        if (folderSort === key) return;
+                        folderSort = key;
+                        folderPage = 0;
+                        renderFolderView();
+                    });
+                }
+                htr.appendChild(th);
+            });
         thead.appendChild(htr);
         const tbody = document.createElement('tbody');
         rows.forEach(entry => {
@@ -520,9 +548,44 @@ const renderFolder = (items, path) => {
     if (!items.length) {
         const note = document.createElement('p');
         note.className = 'ff-empty';
-        note.textContent = t('folder.empty');
+        note.textContent = t(filtered ? 'folder.no-match' : 'folder.empty');
         container.appendChild(note);
     }
+};
+
+/**
+ * Draws the current page of the folder being listed, after the filter and the sort, and
+ * the pager under it. Everything it needs is in module state, so the filter box, the
+ * pager and the column headers each just change one value and call this.
+ */
+const renderFolderView = () => {
+    const needle = folderFilter.trim().toLocaleLowerCase();
+    const matches = needle
+        ? folderItems.filter(i => entryName(i).toLocaleLowerCase().includes(needle))
+        : folderItems;
+    const total = matches.length;
+    const pages = Math.max(1, Math.ceil(total / FOLDER_PAGE_SIZE));
+    folderPage = Math.min(Math.max(0, folderPage), pages - 1);   // a refresh can shrink it
+    const from = folderPage * FOLDER_PAGE_SIZE;
+    const shown = sortEntries(matches, folderSort).slice(from, from + FOLDER_PAGE_SIZE);
+
+    renderFolder(shown, folderPath, { filtered: !!needle });
+
+    const pager = document.getElementById('ff-pager');
+    if (!pager) return;
+    pager.classList.toggle('hidden', total <= FOLDER_PAGE_SIZE);
+    document.getElementById('ff-pager-label').textContent = t('folder.page-of', {
+        from: (from + 1).toLocaleString(), to: Math.min(from + FOLDER_PAGE_SIZE, total).toLocaleString(),
+        total: total.toLocaleString(),
+    });
+    document.getElementById('ff-pager-prev').disabled = folderPage === 0;
+    document.getElementById('ff-pager-next').disabled = folderPage >= pages - 1;
+};
+
+const turnPage = (delta) => {
+    folderPage += delta;
+    renderFolderView();
+    document.getElementById('ff-file-list').scrollTop = 0;
 };
 
 /** True while the pane is showing a wiki folder, so a tree refresh knows to repaint it. */
@@ -541,8 +604,17 @@ export const loadFolderView = async (path) => {
     const { findItemsByPath, renderBrowsePane, revealAndSelectFile } = await import('../file_tree/index.js');
     const items = findItemsByPath(target) || [];
 
-    paneMode   = 'folder';
-    folderPath = target;
+    // A different folder starts on its first page, unfiltered. The same folder — a tree
+    // refresh repainting it, a view-mode switch — keeps its page and its filter.
+    if (paneMode !== 'folder' || target !== folderPath) {
+        folderPage   = 0;
+        folderFilter = '';
+        const box = document.getElementById('ff-search-input');
+        if (box) box.value = '';
+    }
+    paneMode    = 'folder';
+    folderPath  = target;
+    folderItems = items;
     state.currentPagePath = target;
     state.currentPageType = 'folder';
     state.currentPageId   = null;
@@ -556,7 +628,7 @@ export const loadFolderView = async (path) => {
     document.getElementById('current-page-title').innerHTML = `${icons.folder} <span>${name}</span>`;
 
     setActiveViewBtn();
-    renderFolder(sortEntries(items), target);
+    renderFolderView();
 
     renderBrowsePane(items, target);
     revealAndSelectFile(target);
@@ -622,6 +694,13 @@ const walkEntry = (entry, dir, out) => new Promise(resolve => {
 });
 
 const uploadToLibrary = async (items) => {
+    // A file over the wiki's upload limit is not sent at all: it would be refused anyway,
+    // after the whole file had travelled, and with a bare status code.
+    const tooBig = items.filter(i => i.file && uploadTooLarge(i.file));
+    if (tooBig.length) {
+        showToast(uploadTooLarge(tooBig[0].file) + (tooBig.length > 1 ? ' ' + t('upload.too-large-more', { n: tooBig.length - 1 }) : ''), 'error');
+        items = items.filter(i => !tooBig.includes(i));
+    }
     const files = items.filter(i => i.file);
     const folders = items.filter(i => i.folder);
     if (!files.length && !folders.length) return;
@@ -729,6 +808,15 @@ const wireSearchBox = () => {
     };
     btn.addEventListener('click', run);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); run(); } });
+    // Typing filters the folder being listed by name, over all of it rather than the page
+    // on screen; Enter (or the button) still searches the wiki, as before. One box rather
+    // than a second one beside it, which would have had two text boxes meaning two things.
+    input.addEventListener('input', () => {
+        if (paneMode !== 'folder' || state.currentPageType !== 'folder') return;
+        folderFilter = input.value;
+        folderPage = 0;
+        renderFolderView();
+    });
 };
 
 // ── Uploading pages into the folder being browsed ─────────────────────────────
@@ -865,6 +953,9 @@ export const init = () => {
         if (!files.length || state.currentPageType !== 'filesfolder') return;
         await uploadToLibrary(files.map(file => ({ file, dir: '' })));
     });
+
+    document.getElementById('ff-pager-prev')?.addEventListener('click', () => turnPage(-1));
+    document.getElementById('ff-pager-next')?.addEventListener('click', () => turnPage(1));
 
     wireNewMenu();
     wireSearchBox();

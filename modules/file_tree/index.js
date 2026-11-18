@@ -10,9 +10,52 @@ import { loadFilesFolder, loadFolderView, isFolderViewActive } from '../files_fo
 import { showToast, canUpload } from '../core/utils.js';
 import { t } from '../i18n/index.js';
 
-export const renderTree = (items, parentElement) => {
+// ── Large folders ─────────────────────────────────────────────────────────────
+//
+// A folder holding more than TREE_FOLDER_CAP pages is not drawn page by page in the
+// sidebar: its subfolders still are (they are the structure you navigate by), but its
+// pages are replaced by one "N items — browse…" row that opens the folder listing in the
+// main area, which pages and filters them. 2,000 rows in a 250px sidebar is a list nobody
+// can use, and every tree refresh rebuilt all of them.
+//
+// The *data* is still the whole tree (`state.fullFileTree`): 10,000 pages is ~100 KB
+// gzipped and a few ms to parse, so only the drawing is capped. Code that read a page's
+// id and tags off its tree row therefore falls back to that data (see treeEntry), and the
+// open page is pinned into its folder (see revealAndSelectFile) so the selection still
+// shows. Pickers that render with renderTree() are not capped — a link dialog that hid
+// pages would make them unlinkable.
+export const TREE_FOLDER_CAP = 100;
+
+const isDirItem = (i) => i.type === 'folder' || i.type === 'filesfolder';
+const pageCount = (items) => (items || []).reduce((n, i) => n + (isDirItem(i) ? 0 : 1), 0);
+/** Does the sidebar draw this folder's pages as one "browse…" row? */
+export const isBigFolder = (items) => pageCount(items) > TREE_FOLDER_CAP;
+
+const escAttr = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/** The row standing in for a large folder's pages, in the tree or the browse pane. */
+const bigFolderRow = (folderPath, n, cls) => {
+    const li = document.createElement('li');
+    li.className = cls === 'file-item-content' ? 'file-item tree-more-item' : 'tree-more-item';
+    li.innerHTML = `
+        <div class="${cls} tree-more" data-path="${escAttr(folderPath)}" data-type="bigfolder" data-id="" data-tags="[]" title="${escAttr(t('tree.big-folder-title'))}">
+            <span class="file-item-name">
+                <span class="folder-icon">${icons.list}</span>
+                <span>${escAttr(t('tree.big-folder', { n: n.toLocaleString() }))}</span>
+            </span>
+        </div>`;
+    return li;
+};
+
+/**
+ * @param {object} [opts]
+ *   cap         draw a large folder's pages as one "browse…" row (the sidebar only)
+ *   folderPath  the folder `items` belong to — '' for the space root
+ */
+export const renderTree = (items, parentElement, { cap = false, folderPath = '' } = {}) => {
     const ul = document.createElement('ul');
-    items.forEach(item => {
+    const big = cap && isBigFolder(items);
+    (big ? items.filter(isDirItem) : items).forEach(item => {
         const li = document.createElement('li');
         li.className = 'file-item';
         const isDiagram = item.name.endsWith('.drawio');
@@ -40,15 +83,29 @@ export const renderTree = (items, parentElement) => {
                 </span>
             </div>
         `;
+        // A large folder says how many pages it holds, since they are not listed under it.
+        if (cap && item.type === 'folder' && isBigFolder(item.children)) {
+            const count = document.createElement('span');
+            count.className = 'tree-count';
+            count.textContent = pageCount(item.children).toLocaleString();
+            li.querySelector('.file-item-name').appendChild(count);
+        }
         if (item.type === 'folder' && item.children && item.children.length > 0) {
-            const childrenUl = renderTree(item.children, li);
+            const childrenUl = renderTree(item.children, li, { cap, folderPath: item.path });
             childrenUl.style.display = 'none';
             li.appendChild(childrenUl);
         }
         ul.appendChild(li);
     });
+    if (big) ul.appendChild(bigFolderRow(folderPath, pageCount(items), 'file-item-content'));
     parentElement.appendChild(ul);
     return ul;
+};
+
+/** A path's own entry in the loaded tree data, or null. */
+const treeItem = (path) => {
+    const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    return findItemsByPath(parent).find(i => i.path === path) || null;
 };
 
 /**
@@ -65,8 +122,13 @@ export const renderTree = (items, parentElement) => {
  */
 export const treeEntry = (path) => {
     if (!path) return null;
-    const el = document.querySelector(`#file-navigator [data-path="${path}"]`);
-    if (!el) return null;
+    const el = document.querySelector(`#file-navigator [data-path="${CSS.escape(path)}"]:not([data-type="bigfolder"])`);
+    if (!el) {
+        // A page inside a large folder has no row unless it is the one pinned there; the
+        // tree data holds it either way. The id comes back as a string, as a dataset would.
+        const item = treeItem(path);
+        return item ? { id: item.id != null ? String(item.id) : '', tags: item.tags || [] } : null;
+    }
     let tags = [];
     try { tags = JSON.parse(el.dataset.tags || '[]'); } catch { tags = []; }
     return { id: el.dataset.id, tags };
@@ -111,7 +173,10 @@ export const renderBrowsePane = (items, currentPath) => {
         ul.appendChild(li);
     }
 
-    items.forEach(item => {
+    // A large folder lists its subfolders and the open page, then one "browse…" row —
+    // the same cap as the tree.
+    const big = isBigFolder(items);
+    (big ? items.filter(i => isDirItem(i) || i.path === state.currentPagePath) : items).forEach(item => {
         const li = document.createElement('li');
         const isDiagram = item.name.endsWith('.drawio');
         const isList    = item.name.endsWith('.list');
@@ -142,14 +207,34 @@ export const renderBrowsePane = (items, currentPath) => {
         `;
         ul.appendChild(li);
     });
+    if (big) ul.appendChild(bigFolderRow(currentPath || '', pageCount(items), 'browse-item-content'));
     fileBrowser.appendChild(ul);
 };
 
 export const revealAndSelectFile = (path) => {
     document.querySelectorAll('#file-navigator .file-item.active').forEach(el => el.classList.remove('active'));
+    // A page pinned into a large folder belongs to the selection that put it there.
+    document.querySelectorAll('#file-navigator .tree-pinned').forEach(el => {
+        if (el.querySelector('.file-item-content')?.dataset.path !== path) el.remove();
+    });
     if (!path) return;
 
-    const activeEl = document.querySelector(`#file-navigator [data-path="${path}"]`);
+    let activeEl = document.querySelector(`#file-navigator [data-path="${CSS.escape(path)}"]:not([data-type="bigfolder"])`);
+    if (!activeEl) {
+        // Inside a large folder: draw just this page above the folder's "browse…" row, so
+        // the open page is still marked in the tree.
+        const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+        const more = document.querySelector(`#file-navigator [data-type="bigfolder"][data-path="${CSS.escape(parent)}"]`);
+        const item = more && treeItem(path);
+        if (item) {
+            const holder = document.createElement('div');
+            renderTree([item], holder);
+            const li = holder.querySelector('li');
+            li.classList.add('tree-pinned');
+            more.closest('li').before(li);
+            activeEl = li.querySelector('.file-item-content');
+        }
+    }
     if (activeEl) {
         const fileItem = activeEl.closest('.file-item');
         if (fileItem) {
@@ -204,7 +289,8 @@ export const showFolderPlaceholder = (path) => {
 export const syncFolderPane = async (collapsed) => {
     if (state.currentPageType !== 'folder') return;
     const path = state.currentPagePath || '';
-    if (collapsed) {
+    // A large folder is shown as its listing either way: its pages are not in the tree.
+    if (collapsed || isBigFolder(findItemsByPath(path))) {
         await loadFolderView(path);
     } else {
         showFolderPlaceholder(path);
@@ -223,7 +309,7 @@ export const refreshFileTree = async () => {
     if (result.success) {
         state.fullFileTree = result.data;
         fileNavigator.innerHTML = '';
-        renderTree(state.fullFileTree, fileNavigator);
+        renderTree(state.fullFileTree, fileNavigator, { cap: true });
         renderBrowsePane(state.fullFileTree, '');
         if (_onGenerateTagCloud) _onGenerateTagCloud();
         // Tags travel in the tree, so a refresh is how this browser learns of a tag change
@@ -315,6 +401,7 @@ const dropFolderFor = (e, pane) => {
     const path = el.dataset.path || '';
     switch (el.dataset.type) {
         case 'filesfolder': return null;
+        case 'bigfolder':   // the row stands for the folder's pages, so it is the folder
         case 'folder':
         case 'up':          return path;
         default:            return path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
@@ -414,7 +501,9 @@ export const init = ({ onLoadPage, onGenerateTagCloud }) => {
         if (!target) return;
         const path = target.dataset.path;
         const type = target.dataset.type;
-        if (type === 'folder' || type === 'up') {
+        if (type === 'bigfolder') {
+            loadFolderView(path);
+        } else if (type === 'folder' || type === 'up') {
             renderBrowsePane(findItemsByPath(path), path);
             revealAndSelectFile(path);
         } else if (type === 'filesfolder') {
@@ -438,6 +527,12 @@ export const init = ({ onLoadPage, onGenerateTagCloud }) => {
         const id = contentTarget.dataset.id;
         const tags = JSON.parse(contentTarget.dataset.tags);
 
+        if (type === 'bigfolder') {
+            // The folder is what gets selected, not this row; loadFolderView marks it.
+            loadFolderView(path);
+            return;
+        }
+
         document.querySelectorAll('#file-navigator .file-item.active').forEach(el => el.classList.remove('active'));
         contentTarget.closest('.file-item').classList.add('active');
 
@@ -446,7 +541,10 @@ export const init = ({ onLoadPage, onGenerateTagCloud }) => {
         } else if (type === 'filesfolder') {
             loadFilesFolder(path);
         } else if (type === 'folder') {
-            showFolderPlaceholder(path);
+            const big = isBigFolder(findItemsByPath(path));
+            // A large folder's pages are not in the tree, so its listing is what the main
+            // area shows; any other folder keeps the empty viewer under its path.
+            if (!big) showFolderPlaceholder(path);
 
             const childUl = contentTarget.parentElement.querySelector('ul');
             const iconEl = contentTarget.querySelector('.folder-icon');
@@ -456,7 +554,8 @@ export const init = ({ onLoadPage, onGenerateTagCloud }) => {
                 iconEl.innerHTML = isHidden ? icons.folderOpen : icons.folder;
             }
 
-            renderBrowsePane(findItemsByPath(path), path);
+            if (big) loadFolderView(path);
+            else renderBrowsePane(findItemsByPath(path), path);
         }
     });
 };

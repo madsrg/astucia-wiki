@@ -3,7 +3,7 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { state } from '../core/state.js';
 
-const getEditor = () => state.editMode === 'inline'
+export const getEditor = () => state.editMode === 'inline'
     ? (document.querySelector('.wiki-block.inline-block-editing textarea') ?? document.getElementById('editor-container'))
     : document.getElementById('editor-container');
 

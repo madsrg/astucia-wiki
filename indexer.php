@@ -95,6 +95,12 @@ class PageIndexer {
 
     private $indexFile;
     private $indexData;
+    // path → id, built on first lookup. getId() used to scan the whole index, and `list`
+    // calls it once per file: 10,000 pages took 1.2 s (100M comparisons) where 2,000 took
+    // 55 ms. Kept in step by every write below that adds a page or changes a path, and
+    // getId() checks a hit against indexData anyway, so a stale entry costs a rebuild,
+    // never a wrong answer.
+    private $pathIndex = null;
     private $space;      // which Space this index belongs to; '' is PAGES_DIR itself
 
     public function __construct($pagesDirectory) {
@@ -165,6 +171,13 @@ class PageIndexer {
         } else {
             $this->indexData = [];
         }
+        $this->pathIndex = null;
+    }
+
+    // Record a path the index has just gained, if the map has been built. The *first* id
+    // for a path wins, as it did when getId() scanned in order.
+    private function notePath($path, $id) {
+        if ($this->pathIndex !== null && !isset($this->pathIndex[$path])) $this->pathIndex[$path] = $id;
     }
 
     private function saveIndex() {
@@ -194,6 +207,7 @@ class PageIndexer {
                 $entry['updatedBy'] = ['uid' => (int)$uid, 'name' => $userName];
             }
             $this->indexData[$id] = $entry;
+            $this->notePath($path, $id);
             $this->saveIndex();
             $this->announce($path, 'create');
             if (!$adopt) $this->workflowEvent('create', $path, ['id' => $id, 'tags' => []]);
@@ -241,8 +255,9 @@ class PageIndexer {
         foreach ($addPaths as $path) {
             if ($this->getId($path) !== null) continue;
             $ts = $stamp($path);
-            $this->indexData[$this->generateUniqueId()] =
-                ['path' => $path, 'tags' => [], 'created' => $ts, 'updated' => $ts];
+            $newId = $this->generateUniqueId();
+            $this->indexData[$newId] = ['path' => $path, 'tags' => [], 'created' => $ts, 'updated' => $ts];
+            $this->notePath($path, $newId);
             $added++;
         }
         $removed = 0;
@@ -304,6 +319,7 @@ class PageIndexer {
             $newId = ($oldId > 0 && !isset($this->indexData[$oldId])) ? $oldId : $this->generateUniqueId();
             if (!isset($entry['tags']) || !is_array($entry['tags'])) $entry['tags'] = [];
             $this->indexData[$newId] = $entry;
+            $this->notePath($path, $newId);
             $map[$oldId] = $newId;
         }
         if ($map) { $this->saveIndex(); $this->announceTree(); }
@@ -325,6 +341,7 @@ class PageIndexer {
         $id = $this->getId($oldPath);
         if ($id !== null) {
             $this->indexData[$id]['path'] = $newPath;
+            $this->pathIndex = null;
             $this->saveIndex();
             // Both ends: a client with the old path open is the one that most needs to know,
             // and it is not subscribed to the new topic.
@@ -348,6 +365,7 @@ class PageIndexer {
                 $this->indexData[$id]['path'] = str_replace($oldFolderPath . '/', $newFolderPath . '/', $data['path']);
             }
         }
+        $this->pathIndex = null;
         $this->saveIndex();
         // A folder rename can move hundreds of pages. One tree event, and each client
         // refetches the tree it was going to refetch anyway.
@@ -455,12 +473,24 @@ class PageIndexer {
     }
 
     public function getId($path) {
+        if ($this->pathIndex === null) $this->buildPathIndex();
+        $id = $this->pathIndex[$path] ?? null;
+        if ($id === null) return null;
+        // A removed page or a rewritten path leaves a stale entry; rebuild and ask again.
+        if (($this->indexData[$id]['path'] ?? null) !== $path) {
+            $this->buildPathIndex();
+            $id = $this->pathIndex[$path] ?? null;
+        }
+        return $id;
+    }
+
+    private function buildPathIndex() {
+        $this->pathIndex = [];
         foreach ($this->indexData as $id => $data) {
-            if (isset($data['path']) && $data['path'] === $path) {
-                return $id;
+            if (isset($data['path']) && !isset($this->pathIndex[$data['path']])) {
+                $this->pathIndex[$data['path']] = $id;
             }
         }
-        return null;
     }
 
     public function getAllPages() {

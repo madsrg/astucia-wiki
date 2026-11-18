@@ -1,7 +1,8 @@
 // Astucia Wiki — Copyright (C) 2026 Mads Rotwitt
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
-import { openItemModal, saveItem, deleteItem, saveColumn, openItemViewModal, openListPropsModal, saveListProps } from './modals.js';
+import { openItemModal, saveItem, deleteItem, openItemViewModal } from './modals.js';
+import { openListPropsModal, saveListProps, addDraftField } from './props.js';
 import { init as initSettings } from './settings.js';
 import { init as initExport } from './export.js';
 import { renderListView, getActiveColumns } from './render.js';
@@ -80,32 +81,17 @@ export const init = () => {
 
     // Item / column events
     document.getElementById('add-item-btn').addEventListener('click', () => openItemModal());
-    document.getElementById('add-column-btn').addEventListener('click', () => {
-        document.getElementById('column-name').value = '';
-        document.getElementById('column-desc').value = '';
-        document.getElementById('column-type').value = 'text_single';
-        document.getElementById('column-visible').value = 'true';
-        document.getElementById('choice-options').value = '';
-        document.getElementById('choice-options-group').classList.add('hidden');
-        document.getElementById('column-modal').classList.remove('hidden');
-    });
     document.getElementById('item-modal-save-btn').addEventListener('click', saveItem);
-    document.getElementById('column-modal-save-btn').addEventListener('click', saveColumn);
     document.getElementById('item-modal-close-btn').addEventListener('click', () =>
         document.getElementById('item-modal').classList.add('hidden'));
-    document.getElementById('column-modal-close-btn').addEventListener('click', () =>
-        document.getElementById('column-modal').classList.add('hidden'));
+    // Fields are managed in List properties only — adding one included.
     document.getElementById('list-props-btn').addEventListener('click', () => openListPropsModal());
+    document.getElementById('list-props-add-btn').addEventListener('click', addDraftField);
     document.getElementById('list-props-save-btn').addEventListener('click', async () => {
-        await saveListProps();
-        renderListView();
+        if (await saveListProps()) { renderListView(); refreshViewTabs(); }
     });
     document.getElementById('list-props-modal-close-btn').addEventListener('click', () =>
         document.getElementById('list-props-modal').classList.add('hidden'));
-
-    document.getElementById('column-type').addEventListener('change', e => {
-        document.getElementById('choice-options-group').classList.toggle('hidden', e.target.value !== 'choice');
-    });
 
     document.getElementById('list-items-table').addEventListener('click', (e) => {
         if (e.target.closest('.edit-item-btn') || e.target.closest('.delete-item-btn')) return;

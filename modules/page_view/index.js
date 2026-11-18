@@ -17,6 +17,7 @@ import { t } from '../i18n/index.js';
 import { updateBreadcrumb, trackPageVisit, updateFavoriteBtn } from '../nav/index.js';
 import { extractHeadings, processTocTag, addHeadingIds, updateTocPanel, headingSlug } from '../toc/index.js';
 import { processWikiLinks } from '../wikilinks/index.js';
+import { cellText, cellParts, partsHtml, loadLookupTargets, normalizeList } from '../list/fields.js';
 
 // ── User comment tag processing ──────────────────────────────────────────────
 
@@ -89,7 +90,7 @@ const setupDiagramObserver = () => {
     diagramObserverSetup = true;
     const viewer = document.getElementById('viewer-content');
     new MutationObserver(mutations => {
-        let sawMermaid = false, sawQuote = false, sawCode = false, sawLink = false;
+        let sawMermaid = false, sawQuote = false, sawCode = false, sawLink = false, sawMap = false;
         for (const m of mutations) {
             for (const node of m.addedNodes) {
                 if (node.nodeType !== 1) continue;
@@ -97,6 +98,8 @@ const setupDiagramObserver = () => {
                 node.querySelectorAll('.inline-diagram-viewer:not([data-initialized])').forEach(initSingleDiagram);
                 if (!sawMermaid && (node.querySelector?.('code.language-mermaid')
                                     || node.matches?.('code.language-mermaid'))) sawMermaid = true;
+                if (!sawMap && (node.querySelector?.('code.language-map')
+                                || node.matches?.('code.language-map'))) sawMap = true;
                 // Any blockquote is a candidate; the callout pass itself decides which ones
                 // carry a [!type] marker. Converting one replaces it with a <div>, so this
                 // cannot re-trigger itself.
@@ -113,6 +116,9 @@ const setupDiagramObserver = () => {
         }
         if (sawMermaid) {
             import('../mermaid/index.js').then(m => m.scheduleMermaidRender(viewer)).catch(() => {});
+        }
+        if (sawMap) {
+            import('../maps/index.js').then(m => m.scheduleMapRender(viewer)).catch(() => {});
         }
         if (sawQuote) {
             import('../callouts/index.js').then(m => m.scheduleCalloutRender(viewer)).catch(() => {});
@@ -148,11 +154,12 @@ export const processDiagramTags = async (content) => {
 
 const escapeHtml = (str) => String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-const applyViewFilters = (items, view) => {
+const applyViewFilters = (items, view, columns) => {
     if (!view.filters?.length) return items;
     return items.filter(item =>
         view.filters.every(f => {
-            const val = (item[f.colId] ?? '').toString().toLowerCase();
+            const col = columns.find(c => c.id === f.colId);
+            const val = (col ? cellText(col, item, columns) : (item[f.colId] ?? '').toString()).toLowerCase();
             return val.includes(f.value.toLowerCase());
         })
     );
@@ -177,8 +184,12 @@ export const processListTags = async (content) => {
             continue;
         }
         try {
-            const listData = JSON.parse(contentResult.data);
-            let columns = listData.columns || [];
+            const listData = normalizeList(JSON.parse(contentResult.data));
+            // Lookups show their targets' titles here too, resolved the same way the list
+            // page resolves them (fields.js) — same Space only.
+            await loadLookupTargets(listData);
+            const allColumns = listData.columns || [];
+            let columns = allColumns;
             let items = listData.items || [];
 
             // Check if arg matches a named view (no comma = single token, try view name first)
@@ -190,7 +201,7 @@ export const processListTags = async (content) => {
             if (matchedView) {
                 columns = matchedView.columns
                     .map(cid => columns.find(c => c.id === cid)).filter(Boolean);
-                items = applyViewFilters(items, matchedView);
+                items = applyViewFilters(items, matchedView, allColumns);
             } else if (arg) {
                 const names = arg.split(',');
                 const ordered = [];
@@ -208,7 +219,12 @@ export const processListTags = async (content) => {
             html += '</tr></thead><tbody>';
             for (const item of items) {
                 html += '<tr>';
-                for (const col of columns) html += `<td>${escapeHtml(item[col.id])}</td>`;
+                for (const col of columns) {
+                    const parts = cellParts(col, item, allColumns);
+                    html += parts?.length
+                        ? `<td class="has-lookup">${partsHtml(parts, escapeHtml, col.type === 'lookup_field')}</td>`
+                        : `<td>${escapeHtml(cellText(col, item, allColumns))}</td>`;
+                }
                 html += '</tr>';
             }
             html += '</tbody></table></div>';

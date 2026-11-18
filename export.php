@@ -5,6 +5,7 @@
 require_once 'config.php';
 require_once 'service_auth.php';   // actor_spaces_filter(), wiki_path_space()
 require_once 'remember_me.php';
+require_once __DIR__ . '/lists.php';   // lookup fields export as their targets' titles
 session_start();
 wiki_remember_restore();
 
@@ -63,6 +64,9 @@ if (!wiki_space_allowed($allowed_spaces, wiki_path_space(realpath($full_path))))
 
 $json_content = file_get_contents($full_path);
 $list_data = json_decode($json_content, true);
+// Every value as the text it shows — a lookup's titles rather than its item ids, resolved
+// in this Space only.
+$list_data = wiki_list_flatten(is_array($list_data) ? $list_data : [], $base_dir);
 $items = $list_data['items'] ?? [];
 $columns = $list_data['columns'] ?? [];
 $filename_base = basename($sanitized_path, '.list');

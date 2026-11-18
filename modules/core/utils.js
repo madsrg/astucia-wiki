@@ -152,6 +152,21 @@ export const showStickyToast = ({ title, body = '', type = 'info', linkText = ''
  */
 export const canUpload = () => window.WIKI_ROLE !== 'reader' && !state.spaceReadOnly;
 
+/** A byte count for people: 1.2 MB, 340 KB. */
+export const fmtBytes = (n) => n >= 1073741824 ? `${(n / 1073741824).toFixed(1)} GB`
+    : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`;
+
+/**
+ * Why a file cannot be uploaded to this wiki, or null when it can. The limit is what PHP
+ * accepts (window.WIKI_MAX_UPLOAD, from index.php); checking it here saves sending a large
+ * file only to have it refused, and says what the limit is instead of a status code.
+ */
+export const uploadTooLarge = (file) => {
+    const max = Number(window.WIKI_MAX_UPLOAD || 0);
+    if (!max || !file || file.size <= max) return null;
+    return t('upload.too-large', { name: file.name, size: fmtBytes(file.size), max: fmtBytes(max) });
+};
+
 export const confirmModal = (title, { message = '', messageHtml = '', confirmLabel = 'Confirm', cancelLabel = 'Cancel', dangerous = false, icon = '', hideCancel = false } = {}) => new Promise(resolve => {
     const overlay = document.getElementById('confirm-modal');
     const titleEl = document.getElementById('confirm-modal-title');

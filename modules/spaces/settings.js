@@ -40,8 +40,10 @@ const section = (title, hint) => {
  *   onFmEdit(spaceName, mode)           after the metadata mode changed
  *   onFmStamp(spaceName, mode)          after automatic stamping was switched
  *   onFmTags(spaceName, mode)           after front-matter tag sync was switched
+ *   onCopied(names, settings)           after this space's settings were copied onto others
+ *   onDefaults(defaults)                after this space's settings became the new-Space defaults
  */
-export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onDeleted, onReadOnly, onFmEdit, onFmStamp, onFmTags } = {}) => {
+export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onDeleted, onReadOnly, onFmEdit, onFmStamp, onFmTags, onCopied, onDefaults } = {}) => {
     document.getElementById(OVERLAY_ID)?.remove();
 
     const info = await api.call('admin_space_settings');
@@ -201,6 +203,7 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onDele
             return;
         }
         self.fm_edit = want;
+        refreshShare();
         showToast(t('spaces.settings.fm-saved'), 'success');
         onFmEdit?.(spaceName, want);
     });
@@ -239,6 +242,7 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onDele
             return;
         }
         self.fm_autostamp = want;
+        refreshShare();
         showToast(t('spaces.settings.fm-saved'), 'success');
         onFmStamp?.(spaceName, want);
     });
@@ -277,6 +281,7 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onDele
             return;
         }
         self.fm_tags_sync = want;
+        refreshShare();
         showToast(t('spaces.settings.fm-saved'), 'success');
         onFmTags?.(spaceName, want);
     });
@@ -317,6 +322,7 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onDele
             return;
         }
         self.memory = want;
+        refreshShare();
         showToast(t('spaces.settings.fm-saved'), 'success');
     });
 
@@ -351,6 +357,7 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onDele
             return;
         }
         self.skills = want;
+        refreshShare();
         invalidateSkills();
         showToast(t('spaces.settings.fm-saved'), 'success');
     });
@@ -382,6 +389,170 @@ export const openSpaceSettings = async (spaceName, { onRenamed, onMerged, onDele
     frozenNote('content', 'spaces.settings.frozen-fm');
     frozenNote('ai',      'spaces.settings.frozen-memory');
     refreshFrozen();   // they are built shown, so a space that is not frozen hides them now
+
+    // ── Use these settings elsewhere ──────────────────────────────────────────
+    //
+    // The Content and AI settings of this Space, copied onto others or made what new
+    // Spaces start with. Both *copy*: nothing inherits, so changing the defaults later
+    // never reaches a Space that already exists. Read-only is never part of either —
+    // freezing every Space must not happen as a side effect of tidying their policy.
+    // First in the pane, above merge and delete: the two destructive actions stay
+    // together at the bottom.
+    const shareSec = section(t('spaces.settings.share-title'), t('spaces.settings.share-hint'));
+    const shareRow = el('div', 'space-settings-row');
+    const copyBtn  = el('button', 'btn btn-secondary', t('spaces.settings.copy-btn'));
+    copyBtn.id = 'space-copy-btn';
+    const defBtn   = el('button', 'btn btn-secondary', t('spaces.settings.defaults-btn'));
+    defBtn.id = 'space-defaults-btn';
+    shareRow.appendChild(copyBtn);
+    shareRow.appendChild(defBtn);
+    shareSec.appendChild(shareRow);
+    const shareStatus = el('div', 'space-settings-status');
+    shareStatus.id = 'space-defaults-status';
+    shareSec.appendChild(shareStatus);
+    panes.advanced.appendChild(shareSec);
+
+    let defaults = info.space_defaults || {};
+    const POLICY_KEYS = ['fm_edit', 'fm_autostamp', 'fm_tags_sync', 'memory', 'skills'];
+    const policyOf = (s) => ({
+        fm_edit: s.fm_edit || 'off', fm_autostamp: s.fm_autostamp || 'off',
+        fm_tags_sync: s.fm_tags_sync || 'off', memory: !!s.memory, skills: !!s.skills,
+    });
+    // How each setting reads in a summary: the section title plus the wording its own
+    // control uses, so the preview says what the Content and AI tabs say.
+    const settingLabel = (k) => t({
+        fm_edit: 'spaces.settings.fm-title', fm_autostamp: 'spaces.settings.stamp-title',
+        fm_tags_sync: 'spaces.settings.fmtags-title', memory: 'spaces.settings.memory-title',
+        skills: 'spaces.settings.skills-title',
+    }[k]);
+    const valueLabel = (k, v) => {
+        if (k === 'fm_edit') return t(v === 'manual' ? 'spaces.settings.fm-manual' : 'spaces.settings.fm-off');
+        return t(v === true || v === 'on' ? 'spaces.settings.value-on' : 'spaces.settings.value-off');
+    };
+    const others = spaces.filter(s => s.name !== spaceName);
+
+    function refreshShare() {
+        const mine = policyOf(self);
+        const diff = POLICY_KEYS.filter(k => mine[k] !== policyOf(defaults)[k]);
+        shareStatus.textContent = diff.length
+            ? t('spaces.settings.defaults-differ', {
+                list: diff.map(k => `${settingLabel(k)}: ${valueLabel(k, policyOf(defaults)[k])}`).join(' · ') })
+            : t('spaces.settings.defaults-same');
+        defBtn.disabled = !diff.length;
+        copyBtn.disabled = !others.length;
+        copyBtn.title = others.length ? '' : t('spaces.settings.merge-no-target');
+    }
+    refreshShare();
+
+    defBtn.addEventListener('click', async () => {
+        defBtn.disabled = true;
+        const res = await api.call('admin_space_defaults', { from_space: spaceName }, 'POST');
+        if (!res.success) {
+            showToast(res.message || t('spaces.settings.fm-failed'), 'error');
+            refreshShare();
+            return;
+        }
+        defaults = res.defaults || defaults;
+        refreshShare();
+        showToast(t('spaces.settings.defaults-saved'), 'success');
+        onDefaults?.(defaults);
+    });
+
+    copyBtn.addEventListener('click', () => openCopyDialog());
+
+    async function openCopyDialog() {
+        const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const html = `<div class="space-copy-view">
+            <p class="space-settings-hint">${esc(t('spaces.settings.copy-intro', { name: spaceName }))}</p>
+            <div class="form-label">${esc(t('spaces.settings.copy-what'))}</div>
+            <label class="space-settings-switch-row"><input type="checkbox" class="space-copy-group" value="content" checked>
+                <span>${esc(t('spaces.settings.copy-group-content'))}</span></label>
+            <label class="space-settings-switch-row"><input type="checkbox" class="space-copy-group" value="ai" checked>
+                <span>${esc(t('spaces.settings.copy-group-ai'))}</span></label>
+            <div class="form-label space-copy-label">${esc(t('spaces.settings.copy-to'))}</div>
+            <div class="space-copy-targets">${others.map(s => `
+                <label class="space-settings-switch-row"><input type="checkbox" class="space-copy-target" value="${esc(s.name)}" checked>
+                    <span>${esc(s.name)}</span></label>`).join('')}</div>
+            <div class="form-label space-copy-label">${esc(t('spaces.settings.copy-preview'))}</div>
+            <div id="space-copy-preview" class="space-settings-status"></div>
+        </div>`;
+        const pending = confirmModal(t('spaces.settings.copy-title', { name: spaceName }), {
+            messageHtml: html,
+            confirmLabel: t('spaces.settings.copy-apply'),
+            icon: icons.space,
+        });
+        const okBtn   = document.getElementById('confirm-modal-ok');
+        const preview = document.getElementById('space-copy-preview');
+        const view    = preview.closest('.space-copy-view');
+        const picked  = (cls) => [...view.querySelectorAll(`.${cls}:checked`)].map(b => b.value);
+        let changedCount = 0;
+        let seq = 0;
+
+        // Every change re-asks the server for the plan (dry run), so what is previewed is
+        // what the same code will then write. The confirm button only arms on a plan
+        // that changes something; `seq` drops an answer overtaken by a later click.
+        const refresh = async () => {
+            const groups = picked('space-copy-group');
+            const targets = picked('space-copy-target');
+            okBtn.disabled = true;
+            changedCount = 0;
+            // Taken before the early return too: an answer still in flight from the
+            // previous click must not repaint (and re-arm) a dialog with nothing chosen.
+            const mine = ++seq;
+            if (!groups.length || !targets.length) {
+                preview.textContent = t(groups.length ? 'spaces.settings.copy-pick-space' : 'spaces.settings.copy-pick-group');
+                return;
+            }
+            preview.textContent = t('spaces.settings.merge-checking');
+            const res = await api.call('admin_space_copy_settings',
+                { source: spaceName, targets: targets.join(','), groups: groups.join(','), dry_run: '1' }, 'POST');
+            if (mine !== seq) return;
+            if (!res.success) {
+                preview.textContent = res.message || t('spaces.settings.fm-failed');
+                return;
+            }
+            preview.textContent = '';
+            const list = el('ul', 'space-settings-renames space-copy-plan');
+            (res.plan || []).forEach(row => {
+                const keys = Object.keys(row.changes || {});
+                const li = el('li', '');
+                li.appendChild(el('strong', '', row.space + ': '));
+                li.appendChild(document.createTextNode(keys.length
+                    ? keys.map(k => `${settingLabel(k)} ${valueLabel(k, row.changes[k][0])} → ${valueLabel(k, row.changes[k][1])}`).join(' · ')
+                    : t('spaces.settings.copy-unchanged')));
+                if (keys.length) changedCount++;
+                list.appendChild(li);
+            });
+            preview.appendChild(list);
+            okBtn.textContent = t('spaces.settings.copy-apply-n', { n: changedCount });
+            okBtn.disabled = !changedCount;
+        };
+        view.addEventListener('change', refresh);
+        refresh();
+
+        const ok = await pending;
+        // The confirm dialog is shared: hand its button back as the next caller expects.
+        okBtn.disabled = false;
+        if (!ok || !changedCount) return;
+        const groups = picked('space-copy-group');
+        const targets = picked('space-copy-target');
+        const res = await api.call('admin_space_copy_settings',
+            { source: spaceName, targets: targets.join(','), groups: groups.join(',') }, 'POST');
+        if (!res.success) {
+            showToast(res.message || t('spaces.settings.copy-failed'), 'error');
+            return;
+        }
+        const changed = res.changed || [];
+        // The copies' settings are now this Space's, as far as the dialog's cached list
+        // knows — the merge list and a reopened dialog read from it.
+        const copied = {};
+        groups.forEach(g => (g === 'content' ? ['fm_edit', 'fm_autostamp', 'fm_tags_sync'] : ['memory', 'skills'])
+            .forEach(k => { copied[k] = self[k]; }));
+        spaces.filter(s => changed.includes(s.name)).forEach(s => Object.assign(s, copied));
+        showToast(t('spaces.settings.copied', { n: changed.length }), 'success');
+        if (groups.includes('ai')) invalidateSkills();
+        onCopied?.(changed, copied);
+    }
 
     // ── Merge ─────────────────────────────────────────────────────────────────
     const mergeSec = section(t('spaces.settings.merge-title'), t('spaces.settings.merge-hint'));

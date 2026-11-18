@@ -58,7 +58,7 @@ const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
     ai:         ['ai', 'llm', 'jobs', 'mcp', 'skills'],
     monitoring: ['logs', 'errorlog', 'audit', 'diagnostics', 'realtime', 'sysinfo'],
-    content:    ['reindex', 'deleted', 'retention', 'metadata', 'taxonomy', 'workflows'],
+    content:    ['reindex', 'deleted', 'retention', 'metadata', 'maps', 'taxonomy', 'workflows'],
 };
 const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 'reindex' };
 
@@ -107,6 +107,7 @@ const switchTab = (name) => {
     if (name === 'reindex')     loadReindexPane();
     if (name === 'retention')   loadRetentionPane();
     if (name === 'metadata')    loadMetadataPane();
+    if (name === 'maps')        loadMapsPane();
     if (name === 'mcp')         loadMcpServers();
     if (name === 'llm')         loadLlmConnections();
     if (name === 'workflows')   loadWorkflows();
@@ -200,6 +201,79 @@ const loadMetadataPane = async () => {
     }
     const res = await api.call('admin_frontmatter_settings');
     if (res.success) box.checked = !!res.expose_ai;
+};
+
+// ── Maps tab (Content) ────────────────────────────────────────────────────────
+//
+// ```map blocks in pages (modules/maps, maps.php). On by default, with OpenStreetMap's
+// services; an admin can switch maps off, or point the address lookup and the tiles at a
+// server of their own — a blank field is the built-in default, shown as its placeholder.
+
+const MAP_TYPES = ['streets', 'satellite', 'topo'];
+
+const loadMapsPane = async () => {
+    const enabled = document.getElementById('admin-maps-enabled');
+    const geocoder = document.getElementById('admin-maps-geocoder');
+    const tilesBox = document.getElementById('admin-maps-tiles');
+    const save = document.getElementById('admin-maps-save');
+    if (!enabled || !save) return;
+
+    const res = await api.call('admin_map_settings');
+    if (!res.success) { showToast(res.message || t('admin.maps.failed'), 'error'); return; }
+    const fill = (st) => {
+        enabled.checked = !!st.enabled;
+        geocoder.value = st.geocoder || '';
+        MAP_TYPES.forEach(type => {
+            document.getElementById(`admin-maps-tile-${type}`).value = st.tiles?.[type]?.url || '';
+            document.getElementById(`admin-maps-attr-${type}`).value = st.tiles?.[type]?.attribution || '';
+        });
+    };
+    geocoder.placeholder = res.defaults?.geocoder || '';
+
+    if (!tilesBox.dataset.built) {
+        tilesBox.dataset.built = '1';
+        MAP_TYPES.forEach(type => {
+            const g = document.createElement('div');
+            g.className = 'form-group';
+            const lab = document.createElement('label');
+            lab.className = 'form-label';
+            lab.htmlFor = `admin-maps-tile-${type}`;
+            lab.textContent = t('admin.maps.tiles', { type: t(`map.type-${type}`) });
+            const url = document.createElement('input');
+            Object.assign(url, { type: 'text', id: `admin-maps-tile-${type}`, className: 'form-control', spellcheck: false,
+                                 placeholder: res.defaults?.tiles?.[type] || '' });
+            const attr = document.createElement('input');
+            Object.assign(attr, { type: 'text', id: `admin-maps-attr-${type}`, className: 'form-control admin-maps-attr',
+                                  placeholder: t('admin.maps.attribution-ph') });
+            g.append(lab, url, attr);
+            tilesBox.appendChild(g);
+        });
+        const hint = document.createElement('p');
+        hint.className = 'pref-hint';
+        hint.textContent = t('admin.maps.tiles-hint');
+        tilesBox.appendChild(hint);
+    }
+    fill(res.settings || {});
+
+    if (!save.dataset.bound) {
+        save.dataset.bound = '1';
+        save.addEventListener('click', async () => {
+            const settings = { enabled: enabled.checked, geocoder: geocoder.value.trim(), tiles: {} };
+            MAP_TYPES.forEach(type => {
+                settings.tiles[type] = {
+                    url: document.getElementById(`admin-maps-tile-${type}`).value.trim(),
+                    attribution: document.getElementById(`admin-maps-attr-${type}`).value.trim(),
+                };
+            });
+            save.disabled = true;
+            const r = await api.call('admin_map_settings', { settings: JSON.stringify(settings) }, 'POST');
+            save.disabled = false;
+            if (r.success) fill(r.settings);
+            // Pages read the map settings at load (window.WIKI_MAPS), so say when they apply.
+            showToast(r.success ? t('admin.maps.saved') : (r.message || t('admin.maps.failed')),
+                      r.success ? 'success' : 'error');
+        });
+    }
 };
 
 // ── Audit Log tab ─────────────────────────────────────────────────────────────

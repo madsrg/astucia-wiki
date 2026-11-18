@@ -3,6 +3,7 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { showToast } from './utils.js';
 import { state } from './state.js';
+import { t } from '../i18n/index.js';
 
 export const api = {
     call: async (action, params = {}, method = 'GET', signal = null) => {
@@ -36,6 +37,9 @@ export const api = {
                 }
                 let message;
                 try { const e = await response.json(); message = e.message; } catch {}
+                // 413 comes from the web server (or a proxy in front of it) before PHP sees
+                // the request, so there is no JSON to read — say what it means instead.
+                if (response.status === 413) message = t('upload.server-too-large');
                 throw new Error(message || `HTTP error ${response.status}`);
             }
             const data = await response.json();

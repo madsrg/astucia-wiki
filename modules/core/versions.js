@@ -27,6 +27,7 @@ export const CDN_LIBS = [
     { key: 'marked',             label: 'marked',             pin: 'unpinned (latest)', where: 'index.php' },
     { key: 'mermaid',            label: 'mermaid',            pin: '@11',               where: 'modules/mermaid' },
     { key: 'cytoscape',          label: 'cytoscape',          pin: '@3.30.2',           where: 'modules/graph' },
+    { key: 'leaflet',            label: 'Leaflet',            pin: '@1.9.4',            where: 'modules/maps' },
     { key: 'vanilla-jsoneditor', label: 'vanilla-jsoneditor', pin: 'unpinned (latest)', where: 'modules/json_view' },
 ];
 
