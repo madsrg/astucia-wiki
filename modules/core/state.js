@@ -30,6 +30,11 @@ export const state = {
     currentPageFrontmatter: null,
     currentPageFrontmatterNested: null,    // fields holding a nested mapping; never editable
     currentPageFrontmatterManaged: null,   // fields the wiki stamps; shown, never editable
+    // The open page's place in a page generator, from `get`: {state: 'generated'|'archived'|'detached',
+    // template_id, template_path, row}, or null. A 'generated' page's body is not editable.
+    currentPageGenerated: null,
+    // A template's own status, from `get` (see wiki_gen_template_info), or null.
+    currentPageGenerator: null,
     editorLineHeight: 0,
     editMode: localStorage.getItem('wiki_editMode') || 'classic', // 'classic' | 'inline'
     inlineBlocks: [],

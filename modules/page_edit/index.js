@@ -35,6 +35,12 @@ export const setEditingMode = async (editing, opts = {}) => {
         showToast(t('spaces.readonly-toast', { name: state.currentSpace || '' }), 'error');
         return;
     }
+    // A generated page's body belongs to its template (page_generators.php) — the server
+    // refuses the save, so edit mode would only lose the work. Same funnel, same reason.
+    if (editing && state.currentPageType === 'md' && state.currentPageGenerated?.state === 'generated') {
+        showToast(t('generators.locked-toast'), 'error');
+        return;
+    }
     state.isEditing = editing;
     const editor = document.getElementById('editor-container');
     const editorWrapper = document.querySelector('.editor-container-wrapper');

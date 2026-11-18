@@ -76,6 +76,18 @@ function git_auto_commit(string $abs_path, string $git_name, string $git_email, 
  */
 function git_delete_commit(array $abs_paths, string $git_name, string $git_email, string $commit_msg,
                            ?string $for_space = null): void {
+    git_commit_paths($abs_paths, $git_name, $git_email, $commit_msg, $for_space);
+}
+
+/**
+ * Stage each path as it now stands — written, created, or gone — and commit them as one.
+ * A page generator's render is one commit however many pages it touched, so its history
+ * reads as one event rather than three hundred. `add -A` per path stages a removal as
+ * readily as a change, and each path is added on its own, because one `add` naming a path
+ * git never tracked fails whole. Nothing staged, nothing committed.
+ */
+function git_commit_paths(array $abs_paths, string $git_name, string $git_email, string $commit_msg,
+                          ?string $for_space = null): void {
     if ($for_space === null) {
         global $space_dir;
         $for_space = (string)$space_dir;
@@ -84,7 +96,7 @@ function git_delete_commit(array $abs_paths, string $git_name, string $git_email
     if (!$git_root) return;
     $root_prefix = rtrim($git_root['root'], '/') . '/';
     $staged = false;
-    foreach ($abs_paths as $abs) {
+    foreach (array_unique($abs_paths) as $abs) {
         if (strpos($abs, $root_prefix) !== 0) continue;
         $rel = rtrim(substr($abs, strlen($root_prefix)), '/');
         if ($rel === '') continue;

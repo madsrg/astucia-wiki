@@ -262,6 +262,11 @@ function _wiki_workflow_event(string $space, string $event, string $path, array 
         wiki_wf_follow_rename($space, (string)$info['old_path'], $path);
     }
 
+    // A page generator's write is not somebody editing a page: one template edit rewrites
+    // every page it made, and a "page updated" workflow would queue a run for each. The
+    // rename bookkeeping above still runs — it is about the queue, not about firing.
+    if (function_exists('wiki_gen_origin') && wiki_gen_origin() !== null) return;
+
     $enabled = array_filter(wiki_workflows_all(), fn($w) => !empty($w['enabled']));
     if (!$enabled) return;
 

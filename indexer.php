@@ -155,8 +155,14 @@ class PageIndexer {
      * moves, which do not announce individual pages either. See workflows.php.
      */
     private function workflowEvent($event, $path, array $info = []) {
-        if (!function_exists('wiki_workflow_event')) return;
-        wiki_workflow_event($this->space, $event, (string)$path, $info);
+        if (function_exists('wiki_workflow_event')) {
+            wiki_workflow_event($this->space, $event, (string)$path, $info);
+        }
+        // Page generators listen on the same calls: a save of a template or of a list a
+        // generator reads marks it dirty. Renames are not news to them — they hold ids.
+        if ($event !== 'rename' && $event !== 'tags' && function_exists('wiki_gen_on_event')) {
+            wiki_gen_on_event((string)$this->space, (string)$event, (string)$path, (int)($info['id'] ?? 0));
+        }
     }
 
     private function announceTree() {
@@ -537,3 +543,8 @@ class PageIndexer {
         return count($foundPaths);
     }
 }
+
+// Page generators hook workflowEvent() above. Loaded here, after the class, because every
+// entry point that writes content loads this file — and page_generators.php needs the
+// class to exist (it requires this file in turn, which require_once makes harmless).
+if (is_file(__DIR__ . '/page_generators.php')) require_once __DIR__ . '/page_generators.php';

@@ -2926,3 +2926,21 @@ pre.wiki-map-source { display: none; }
 .map-insert-empty { height: 340px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 1rem; border: 1px dashed var(--border-color); border-radius: 6px; color: var(--accent-gray); font-size: 0.85rem; }
 .admin-maps-attr { margin-top: 0.3rem; }
 
+/* ── Page generators (modules/generators) ───────────────────────────────────────
+   A banner above a generated, archived or detached page and above a template. A
+   generated page's body belongs to its template, so its edit button goes like a
+   reader's does — setEditingMode() refuses as well, for Ctrl+E. ────────────────── */
+.page-generated #edit-btn { display: none; }
+.generator-banner { display: flex; gap: 0.75rem; align-items: flex-start; margin: 0 0 1rem; padding: 0.6rem 0.9rem;
+    border: 1px solid var(--border-color); border-left: 4px solid #805ad5; border-radius: 6px; background: #faf5ff; font-size: 0.875rem; }
+.generator-banner.is-archived, .generator-banner.is-detached { border-left-color: var(--accent-gray); background: #f7fafc; }
+.generator-banner .generator-icon svg { width: 18px; height: 18px; margin-top: 2px; }
+.generator-body { flex: 1; display: flex; flex-direction: column; gap: 0.25rem; }
+.generator-actions { display: flex; gap: 0.5rem; margin-top: 0.35rem; }
+.generator-status.ok { color: #276749; }
+.generator-status.error { color: #c53030; }
+.generator-status.pending { color: #975a16; }
+.generator-warning { color: #975a16; }
+.generator-dialog-wide { max-width: 760px; width: 92vw; height: auto; max-height: 85vh; overflow: auto; }
+.generator-preview { border: 1px solid var(--border-color); border-radius: 6px; padding: 0.75rem 1rem; max-height: 50vh; overflow: auto; }
+.generator-preview-name, .generator-hint { color: var(--accent-gray); font-size: 0.85rem; margin: 0.25rem 0 0.5rem; }

@@ -1045,7 +1045,7 @@ if (isset($_REQUEST['action'])) {
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'create_library_folder', 'update_tags', 'sync_fm_tags',
                       'save_diagram_svg', 'upload_page', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
-                      'retarget_wikilinks', 'set_frontmatter', 'geocode'];
+                      'retarget_wikilinks', 'set_frontmatter', 'geocode', 'generator_render', 'generator_detach', 'generator_preview', 'generator_sources', 'generator_create'];
     $admin_actions = ['admin_chat_retention', 'admin_frontmatter_settings', 'admin_map_settings', 'admin_mention_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
                       'admin_set_space_fm_edit', 'admin_set_space_fm_autostamp', 'admin_set_space_fm_tags_sync', 'admin_set_space_memory',
                       'admin_set_space_skills', 'admin_ai_skills_settings', 'admin_skills_list', 'admin_skill_get', 'admin_skill_save',
@@ -1135,8 +1135,11 @@ if (isset($_REQUEST['action'])) {
     }
 
     $readonly_actions = array_merge($edit_actions, ['toggle_reaction']);
+    // Exempt: Space settings, and the two generator actions that only read (a preview, the
+    // lists to choose from) — they sit in $edit_actions to keep readers out, not because
+    // they write.
     if (in_array($requested_action, $readonly_actions, true)
-        && !in_array($requested_action, ['create_space', 'rename_space'], true)) {
+        && !in_array($requested_action, ['create_space', 'rename_space', 'generator_preview', 'generator_sources'], true)) {
         $_ro_names = [];
         if (rtrim($space_dir, '/') !== rtrim(PAGES_DIR, '/')) {
             $_ro_names[] = basename(rtrim($space_dir, '/'));
@@ -1151,6 +1154,27 @@ if (isset($_REQUEST['action'])) {
                 'success'        => false,
                 'readonly_space' => $_ro_name,
                 'message'        => 'The space "' . $_ro_name . '" is read-only.',
+            ]);
+            exit;
+        }
+    }
+
+    // A generated page's body belongs to its template (page_generators.php). Refused here,
+    // before dispatch, for every action that rewrites, removes or moves one page by name —
+    // the same shape as the read-only guard above. The generator's own writes never come
+    // through api.php actions, so nothing here has to tell them apart.
+    $_gen_lock = ['save' => 'file', 'save_message_page' => 'path', 'git_restore' => 'file',
+                  'delete' => 'path', 'move' => 'old_path'][$requested_action] ?? null;
+    if ($_gen_lock !== null) {
+        $_gen_rel = ltrim(str_replace('..', '', (string)($_REQUEST[$_gen_lock] ?? '')), '/');
+        if ($requested_action === 'save_message_page' && !preg_match('/\.md$/i', $_gen_rel)) $_gen_rel .= '.md';
+        $_gen_hit = $_gen_rel !== '' ? wiki_gen_write_refused(rtrim($space_dir, '/') . '/' . $_gen_rel) : null;
+        if ($_gen_hit !== null) {
+            wiki_audit_finish($_audit, 'failure', 'page is generated', null, $_audit_space);
+            echo json_encode([
+                'success'   => false,
+                'generated' => $_gen_hit,
+                'message'   => wiki_gen_locked_message($_gen_hit),
             ]);
             exit;
         }
@@ -1604,7 +1628,15 @@ if (isset($_REQUEST['action'])) {
                                       'rev' => wiki_content_rev($ext_get, $fm_raw_get),
                                       'frontmatter' => $fm_meta ?: null,
                                       'frontmatter_nested' => $fm_locked_get ?: null,
-                                      'frontmatter_managed' => $fm_managed_get ?: null]);
+                                      'frontmatter_managed' => $fm_managed_get ?: null,
+                                      // A generated page cannot be edited (page_generators.php):
+                                      // the client refuses edit mode and says where it comes from.
+                                      'generated'   => $ext_get === 'md' ? wiki_gen_get_info($fm_meta ?? [], $indexer) : null,
+                                      // …and a template says what it generates and how its last render went.
+                                      'generator'   => $ext_get === 'md' && rtrim($space_dir, '/') !== rtrim(PAGES_DIR, '/')
+                                          ? wiki_gen_template_info(basename(rtrim($space_dir, '/')), (int)$indexer->getId($rel_get), $fm_meta ?? [],
+                                                                   actor_spaces_filter(get_current_role(), $ai_auth_user))
+                                          : null]);
                 } else {
                     echo json_encode(['success' => true, 'data' => '', 'lastUpdated' => time(), 'size' => 0, 'git_commit' => true]);
                 }
@@ -2898,6 +2930,9 @@ if (isset($_REQUEST['action'])) {
                     if (!is_file($rw_abs)) continue;
                     $rw_raw = file_get_contents($rw_abs);
                     if (strpos($rw_raw, '[[') === false) continue;     // cheap reject
+                    // A generated page's links come from its template; fixing the template
+                    // fixes them on the next render, and the page itself is not writable.
+                    if (wiki_gen_page_generated($rw_abs) !== null) continue;
                     // Retarget the body and put the block back untouched: the wiki never
                     // rewrites somebody's front matter, not even to fix a link in it.
                     $rw_fm   = wiki_fm_split($rw_raw);
@@ -3709,6 +3744,107 @@ if (isset($_REQUEST['action'])) {
                 }
                 break;
 
+            case 'generator_render':
+                // Render a page generator now: one page per row of its source list. The
+                // template is a page in this Space (by id); see page_generators.php.
+                //
+                // Whoever runs it becomes its owner, and every later render runs as them —
+                // so they must pass the same check the render applies: a person, able to
+                // edit this Space and read the source's. An AI user or API account cannot
+                // own one; the data then crosses Spaces on nobody's authority.
+                if ($ai_auth_user) {
+                    echo json_encode(['success' => false, 'status' => 'error', 'error' => 'person_required',
+                                      'message' => 'A page generator is run by a person.']);
+                    break;
+                }
+                if (rtrim($space_dir, '/') === rtrim(PAGES_DIR, '/')) {
+                    echo json_encode(['success' => false, 'status' => 'error', 'error' => 'space_required',
+                                      'message' => 'A page generator lives in a Space.']);
+                    break;
+                }
+                $gr_id = (int)($_REQUEST['id'] ?? 0);
+                $gr_actor = get_current_actor();
+                $gr_owner = AUTHENTICATION_ENABLED ? ['uid' => $gr_actor['uid'], 'name' => $gr_actor['name']] : null;
+                $gr = wiki_gen_render(basename(rtrim($space_dir, '/')), $gr_id, $gr_owner, $indexer);
+                echo json_encode(['success' => $gr['status'] === 'ok'] + $gr);
+                break;
+
+            case 'generator_preview':
+                // One row of a template rendered, nothing written. Only for someone who may
+                // read the source Space: the template can show more than its pages do.
+                $gp = wiki_gen_preview(basename(rtrim($space_dir, '/')), (int)($_REQUEST['id'] ?? 0),
+                                       isset($_REQUEST['row']) && $_REQUEST['row'] !== '' ? (int)$_REQUEST['row'] : null,
+                                       actor_spaces_filter(get_current_role(), $ai_auth_user));
+                echo json_encode(['success' => $gp['ok']] + $gp);
+                break;
+
+            case 'generator_sources':
+                echo json_encode(['success' => true,
+                                  'data' => wiki_gen_sources(actor_spaces_filter(get_current_role(), $ai_auth_user))]);
+                break;
+
+            case 'generator_create':
+                // A new template in this Space, from New → Generated pages. Saving it through
+                // the indexer registers it with the requester as owner and renders it once
+                // the response has gone (page_generators.php, TRACKING).
+                if (rtrim($space_dir, '/') === rtrim(PAGES_DIR, '/')) throw new Exception('A page generator lives in a Space.');
+                $gc_src   = trim((string)($_POST['source'] ?? ''));
+                $gc_rel   = ltrim(str_replace('..', '', trim((string)($_POST['path'] ?? ''))), '/');
+                if ($gc_rel !== '' && !preg_match('/\.md$/i', $gc_rel)) $gc_rel .= '.md';
+                if ($gc_rel === '' || basename($gc_rel) === '.md') throw new Exception('A name is required.');
+                $gc_def   = wiki_gen_definition(['generator_source' => $gc_src, 'generator_folder' => (string)($_POST['folder'] ?? '')],
+                                                basename(rtrim($space_dir, '/')), $gc_rel);
+                if (!$gc_def['ok']) {
+                    echo json_encode(['success' => false, 'error' => $gc_def['error'], 'message' => 'The generator is not valid: ' . $gc_def['error']]);
+                    break;
+                }
+                // The list must be one the requester can read, and a list.
+                $gc_acl = actor_spaces_filter(get_current_role(), $ai_auth_user);
+                $gc_src_list = null;
+                foreach (wiki_gen_sources($gc_acl) as $gc_l) {
+                    if ($gc_l['space'] === $gc_def['source_space'] && $gc_l['id'] === $gc_def['source_id']) { $gc_src_list = $gc_l; break; }
+                }
+                if ($gc_src_list === null) {
+                    echo json_encode(['success' => false, 'error' => 'source_missing', 'message' => 'That list was not found.']);
+                    break;
+                }
+                $gc_key = (string)($_POST['filename_key'] ?? '');
+                if ($gc_key !== '' && !in_array($gc_key, array_column($gc_src_list['fields'], 'key'), true)) $gc_key = '';
+                $gc_abs = sanitize_path($gc_rel);
+                if (file_exists($gc_abs)) {
+                    echo json_encode(['success' => false, 'error' => 'exists', 'message' => 'A page with that name already exists.']);
+                    break;
+                }
+                if (wiki_inside_files_library($gc_abs)) throw new Exception('Nothing can be created inside a files library.');
+                if (!is_dir(dirname($gc_abs))) mkdir(dirname($gc_abs), 0755, true);
+                $gc_content = wiki_gen_starter($gc_def['source_space'] . ':' . $gc_def['source_id'], $gc_def['folder'], $gc_key,
+                                               $gc_src_list['fields']);
+                if (file_put_contents($gc_abs, $gc_content) === false) throw new Exception('Could not write the template.');
+                $gc_actor = get_current_actor();
+                $gc_id = $indexer->addPage($gc_rel, $gc_actor['uid'], $gc_actor['name']);
+                if ($search_idx) { try { $search_idx->upsertPage(_sidx_space(), $gc_rel, wiki_fm_body($gc_content)); } catch (\Throwable $_e) {} }
+                if (function_exists('git_auto_commit')) {
+                    git_auto_commit($gc_abs, $gc_actor['name'] ?? 'Wiki',
+                                    (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost',
+                                    'Create template ' . basename($gc_rel));
+                }
+                echo json_encode(['success' => true, 'id' => $gc_id, 'path' => $gc_rel]);
+                break;
+
+            case 'generator_detach':
+                // Make a generated page an ordinary one: it keeps its text, its generator
+                // stops writing it and does not make a new one for its row.
+                $gd_rel = ltrim(str_replace('..', '', (string)($_POST['path'] ?? '')), '/');
+                $gd_abs = sanitize_path($gd_rel);
+                $gd_err = wiki_gen_detach(rtrim($space_dir, '/'), $gd_rel, $indexer, get_current_actor());
+                if ($gd_err !== null) {
+                    echo json_encode(['success' => false, 'error' => $gd_err,
+                                      'message' => $gd_err === 'not_generated' ? 'This page is not generated.' : 'Could not write the page.']);
+                    break;
+                }
+                echo json_encode(['success' => true]);
+                break;
+
             case 'list_md_templates':
                 $tpl_dir = rtrim($space_dir, '/') . '/templates';
                 $tpl_names = [];
@@ -4132,6 +4268,12 @@ if (isset($_REQUEST['action'])) {
                     mkdir($new_parent, 0755, true);
                 }
                 if (copy($source_path_sanitized, $new_path_sanitized)) {
+                    // A copy of a generated page is the copy's own: no generator writes it,
+                    // so it must not carry the keys that would lock it (or let a render adopt it).
+                    if (wiki_gen_page_generated($new_path_sanitized) !== null) {
+                        $cp_raw_g = (string)file_get_contents($new_path_sanitized);
+                        file_put_contents($new_path_sanitized, wiki_fm_set($cp_raw_g, [], ['generated_by', 'generated_row']));
+                    }
                     $source_id = $indexer->getId(ltrim(str_replace('..', '', $source_path_raw), '/'));
                     $source_tags = [];
                     if ($source_id) {
@@ -5572,6 +5714,8 @@ if (isset($_REQUEST['action'])) {
                 // Per-space settings are keyed by name, so they have to follow it.
                 wiki_space_settings_rename($rs_safe_old, $rs_safe_new);
                 wiki_workflows_space_renamed($rs_safe_old, $rs_safe_new);
+                // Page generators name Spaces too — in their state and in a template's generator_source.
+                wiki_gen_space_renamed($rs_safe_old, $rs_safe_new);
                 // So is the external-change stamp: without this the renamed space
                 // starts with no stamp (one needless full scan) and the old one is
                 // left behind forever, one more with every rename.

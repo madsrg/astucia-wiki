@@ -209,5 +209,7 @@ function space_delete_forget_references(string $name): void {
         if ($stamp) { @unlink($stamp); @unlink($stamp . '.lock'); }
     }
 
+    if (function_exists('wiki_gen_space_deleted')) wiki_gen_space_deleted($name);
+
     wiki_space_settings_forget($name);
 }

@@ -633,6 +633,20 @@ function execute_ai_tool($tool_name, $tool_input, $ai_user, $indexer, $space_dir
                            : is_file(rtrim($space_dir, '/') . '/' . ltrim(str_replace('..', '', (string)($tool_input['path'] ?? '')), '/')));
         return $denied;
     }
+    // A generated page's body belongs to its template (page_generators.php) — the same
+    // refusal api.php's bootstrap guard gives a person, here for the tools that rewrite,
+    // append to or rename one page. Said in full, so the model can tell the user what to
+    // change instead.
+    $gen_key = ['wiki_write_page' => 'path', 'wiki_rename_page' => 'path', 'wiki_mention_users' => 'target'][$tool_name] ?? null;
+    if ($gen_key !== null && function_exists('wiki_gen_write_refused')) {
+        $gen_rel = ltrim(str_replace('..', '', (string)($tool_input[$gen_key] ?? '')), '/');
+        $gen_hit = $gen_rel !== '' ? wiki_gen_write_refused(rtrim($space_dir, '/') . '/' . $gen_rel) : null;
+        if ($gen_hit !== null) {
+            $denied = 'Error: ' . wiki_gen_locked_message($gen_hit) . ' Nothing was written.';
+            _wiki_ai_audit($tool_name, $tool_input, $ai_user, $indexer, $space_dir, $denied, true);
+            return $denied;
+        }
+    }
     // A files library holds uploaded files, not wiki content — the same rule api.php
     // applies to its create/save/move actions, here for the tools that write a page.
     $lib_key = ['wiki_write_page' => 'path', 'wiki_write_json' => 'path', 'wiki_rename_page' => 'new_path'][$tool_name] ?? null;
@@ -1073,6 +1087,8 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
                 $rn_file = rtrim($space_dir, '/') . '/' . $rn_rel;
                 if (!is_file($rn_file)) continue;
                 $rn_raw = (string)file_get_contents($rn_file);
+                // A generated page's links come from its template; see retarget_wikilinks.
+                if (function_exists('wiki_gen_page_generated') && wiki_gen_page_generated($rn_file) !== null) continue;
                 // Retarget the body and put the block back untouched: the wiki never
                 // rewrites somebody's front matter, not even to fix a link inside it.
                 $rn_fm  = wiki_fm_split($rn_raw);

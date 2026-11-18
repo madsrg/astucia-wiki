@@ -203,6 +203,8 @@ const WIKI_AUDIT_ACTIONS = [
     'upload_to_folder'   => ['attach',  'attachment', null],
     'git_restore'        => ['restore', 'page',       'file'],
     'retarget_wikilinks' => ['update',  'page',       'new_path'],
+    'generator_detach'   => ['update',  'page',       'path'],
+    'generator_create'   => ['create',  'page',       'path'],
 ];
 
 /**

@@ -35,6 +35,21 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 - **List fields are managed in List properties** — adding one included (the toolbar's *Add
   column* is gone), as are a Choice field's choices. The UI now says *field*. Title can be
   renamed but not deleted, and an item needs one.
+- **Generated pages.** A template page turns every row of a list into a page of its own —
+  a customer, a project, a product — written from Markdown with `{{field}}` placeholders,
+  `{{#field}}…{{/field}}` sections and a preview of any row. The list may live in another
+  Space. The pages are real pages: searchable, linked, exported, readable by AI users. They
+  stay in step by themselves: saving the list (or a list its lookup fields read) or the
+  template updates them, changes made outside the wiki are picked up within minutes, a renamed
+  row renames its page and keeps its address, and a row that is removed leaves its page
+  behind, archived. A generated page cannot be edited directly — change the template or the
+  list, or *Detach* the page to make it your own; its tags and other metadata stay editable.
+  Start one from **New → Generated Pages…**.
+  - Values from the list are shown as text: they cannot add HTML, links, includes or
+    mentions to the page.
+  - A template runs on behalf of whoever last saved it, and only while that person may edit
+    its Space and read the list's. Someone without access to the list cannot use a template
+    to publish more of it, and an AI user's edit pauses it until a person saves it again.
 
 ### Fixed
 - **A list item's value could run script.** The item view and item form inserted values as

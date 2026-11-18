@@ -355,6 +355,8 @@ export const refreshPageContent = async () => {
     // `data` is the body with any front matter removed, so the dirty-check and both
     // editors compare bodies. `size` is still the size on disk — see the get action.
     state.currentPageFrontmatter = result.frontmatter ?? null;
+    state.currentPageGenerated = result.generated ?? null;
+    state.currentPageGenerator = result.generator ?? null;
     state.currentPageFrontmatterNested = result.frontmatter_nested ?? null;
     state.currentPageFrontmatterManaged = result.frontmatter_managed ?? null;
     updateFrontmatterBadge();
@@ -427,6 +429,8 @@ const reloadWatchedPage = async (path) => {
     state.currentPageSize = result.size ?? null;
     state.currentPageRev = result.rev ?? null;
     state.currentPageFrontmatter = result.frontmatter ?? null;
+    state.currentPageGenerated = result.generated ?? null;
+    state.currentPageGenerator = result.generator ?? null;
     state.currentPageFrontmatterNested = result.frontmatter_nested ?? null;
     state.currentPageFrontmatterManaged = result.frontmatter_managed ?? null;
     updateFrontmatterBadge();
@@ -552,6 +556,8 @@ export const showBlankPage = async () => {
     document.getElementById('current-page-title').innerHTML = '';
     document.getElementById('page-id-display').classList.add('hidden');
     state.currentPageFrontmatter = null;
+    state.currentPageGenerated = null;
+    state.currentPageGenerator = null;
     updateFrontmatterBadge();
     updateBreadcrumb('', state.currentSpace);
     updateFavoriteBtn(null); // no page id → hides the star
@@ -670,6 +676,8 @@ export const loadPage = async (path, id, tags, opts = {}) => {
     // one read an ordinary page open performs — refreshPageContent() and
     // reloadWatchedPage() capture it too, but neither of those runs on a plain navigation.
     state.currentPageFrontmatter = result.frontmatter ?? null;
+    state.currentPageGenerated = result.generated ?? null;
+    state.currentPageGenerator = result.generator ?? null;
     state.currentPageFrontmatterNested = result.frontmatter_nested ?? null;
     state.currentPageFrontmatterManaged = result.frontmatter_managed ?? null;
     updateFrontmatterBadge();

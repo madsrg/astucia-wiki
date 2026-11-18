@@ -333,6 +333,19 @@ agent_job_touch_heartbeat();
 foreach (wiki_workflow_run_due() as $_wf_line) echo $_wf_line . "\n";
 
 // =============================================================================
+// Page generators — see page_generators.php. Saves are rendered right after they respond;
+// this tick renders what was left over, notices changes made outside the wiki (an rsync, a
+// git pull) and, hourly, templates no save registered. The scheduler slot only: renders
+// take one wiki-wide lock anyway, so a second slot would only queue behind it.
+// =============================================================================
+if ($is_scheduler) {
+    agent_job_touch_heartbeat();
+    foreach (wiki_gen_tick('agent_job_touch_heartbeat') as $_gen_line) {
+        echo date('c') . ' [agent-jobs] Generator ' . $_gen_line . "\n";
+    }
+}
+
+// =============================================================================
 // Retention — old log files, once a day (see retention.php). The scheduler slot only, so
 // two runners never sweep at once; it is the slot that is always running.
 // =============================================================================
