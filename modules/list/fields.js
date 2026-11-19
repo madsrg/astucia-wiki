@@ -14,10 +14,20 @@
 //   lookup                   items of another list in the same Space. The value is an array
 //                            of that list's item ids; `lookup` = { list: <page id>,
 //                            field: <its field shown>, multiple: bool }
+//                            `lookup.extras`: 'inline' shows its "also show" fields beside
+//                            each value in its own cell; 'columns' (or none) as their columns.
 //   lookup_field             read-only: another field of the item(s) a lookup points at —
 //                            SharePoint's "also show". { source: <lookup field id>,
 //                            field: <target field id> }. A real column, so views, filters,
 //                            sorting and export handle it like any other.
+//   object                   a "Group of fields": data that belongs to this item alone (an
+//                            address, its debit cards). `fields` are its sub-fields (the
+//                            GROUP_TYPES only — one level, no lookups), `summary` the ids of
+//                            those its one-line text shows, `multiple` = "Allow several".
+//                            The value is { <sub-field id>: value } — or, with several, an
+//                            array of those, each carrying an `id` from the list's
+//                            `nextEntryId`, never reused, so an entry stays itself however
+//                            the entries are reordered.
 //
 // The Title field carries `role: 'title'`: it can be renamed but not deleted, and an item
 // must have one. Lists created before the role existed get it on load (normalizeList).
@@ -28,6 +38,10 @@ import { t } from '../i18n/index.js';
 // Fields a lookup may display or "also show": plain values. Not another lookup — a chain
 // of lists to resolve for one cell is a second feature.
 export const PROJECTABLE = ['autoincrement', 'text_single', 'text_multi', 'date', 'choice'];
+
+// The types a Group of fields may hold. Plain values only: a lookup or a group inside a
+// group is the second level we decided against.
+export const GROUP_TYPES = ['text_single', 'text_multi', 'date', 'choice'];
 
 /**
  * Give a list loaded from disk what the current code expects. Idempotent and in memory
@@ -122,6 +136,9 @@ const plainValue = (target, fieldId, item) => {
  */
 export const cellText = (col, item, columns) => {
     if (!col || !item) return '';
+    if (col.type === 'object') {
+        return groupEntries(col, item[col.id]).map(e => groupSummary(col, e)).join('; ');
+    }
     if (col.type === 'lookup') {
         const ids = lookupIds(item[col.id]);
         if (!ids.length) return '';
@@ -146,6 +163,40 @@ export const cellText = (col, item, columns) => {
     return v == null ? '' : String(v);
 };
 
+// ── Group of fields ───────────────────────────────────────────────────────────
+
+/** A group's value as a list of entries: one (or none) for a single group, every
+ *  well-formed entry for one that allows several. */
+export const groupEntries = (col, value) => {
+    const isEntry = (e) => e != null && typeof e === 'object' && !Array.isArray(e);
+    if (col.multiple) return Array.isArray(value) ? value.filter(isEntry) : [];
+    return isEntry(value) ? [value] : [];
+};
+
+/**
+ * Make sure the list has its entry counter (`nextEntryId`), starting past any entry id already
+ * in the file — a list written by hand, or before the counter, must not hand out an id twice.
+ */
+export const ensureEntryCounter = (data) => {
+    if (Number.isInteger(data.nextEntryId)) return;
+    let max = 0;
+    (data.columns || []).filter(c => c.type === 'object' && c.multiple).forEach(c =>
+        (data.items || []).forEach(i => groupEntries(c, i[c.id]).forEach(e => { if (Number.isInteger(e.id)) max = Math.max(max, e.id); })));
+    data.nextEntryId = max + 1;
+};
+
+/** The sub-fields a group's summary shows: those picked, else the first two. */
+const summaryFields = (col) => {
+    const ids = (col.fields || []).map(f => f.id);
+    const picked = (col.summary || []).filter(id => ids.includes(id));
+    return picked.length ? picked : ids.slice(0, 2);
+};
+
+/** One entry as one line — "Main St 1, Oslo": its summary fields, empty ones left out. */
+export const groupSummary = (col, entry) => summaryFields(col)
+    .map(id => entry?.[id]).filter(v => v != null && String(v).trim() !== '')
+    .map(String).join(', ');
+
 /**
  * A lookup's values one by one, for renderers that draw them as separate entities rather
  * than one string: [{ text, deleted }], or null for any other kind of field.
@@ -155,38 +206,62 @@ export const cellText = (col, item, columns) => {
  * row with the lookup's own, and "Beta Corp" sits beside "Bergen", not beside "Oslo".
  */
 export const cellParts = (col, item, columns) => {
-    if (!col || !item || (col.type !== 'lookup' && col.type !== 'lookup_field')) return null;
+    if (!col || !item) return null;
+    // A group's several entries are entities too — one pill each, like a lookup's values.
+    if (col.type === 'object') {
+        return col.multiple ? groupEntries(col, item[col.id]).map(e => ({ text: groupSummary(col, e), deleted: false })) : null;
+    }
+    if (col.type !== 'lookup' && col.type !== 'lookup_field') return null;
     const source = col.type === 'lookup' ? col
         : (columns || state.currentListData?.columns || []).find(c => c.id === col.source);
     if (!source) return [];
     const ids = lookupIds(item[source.id]);
     const target = targetList(source.lookup?.list);
+    const inlineExtras = col.type === 'lookup' && col.lookup?.extras === 'inline'
+        ? (columns || state.currentListData?.columns || []).filter(c => c.type === 'lookup_field' && c.source === col.id) : [];
     return ids.map(id => {
         if (!target) return { text: col.type === 'lookup' ? '#' + id : '', deleted: false };
         const hit = target.items.find(i => i.id === id);
         if (!hit) return { text: col.type === 'lookup' ? t('list.lookup-deleted', { id }) : '', deleted: true };
         const field = col.type === 'lookup' ? (col.lookup.field || titleField(target)?.id) : col.field;
-        return { text: plainValue(target, field, hit), deleted: false };
+        const part = { text: plainValue(target, field, hit), deleted: false };
+        // Inline extras: the "also show" fields' values for this item, beside its title.
+        if (col.type === 'lookup' && inlineExtras.length) {
+            part.extras = inlineExtras.map(p => plainValue(target, p.field, hit)).filter(v => v !== '');
+        }
+        return part;
     });
 };
 
-/** The parts as DOM: one pill per value, stacked. `projected` for an "also show" field. */
-export const partsElement = (parts, projected = false) => {
+/**
+ * The parts as DOM: one pill per value, stacked. `projected` for an "also show" field.
+ * `max` caps how many are drawn (the table), the rest summed up as one "+N" pill.
+ */
+export const partsElement = (parts, projected = false, max = Infinity) => {
     const ul = document.createElement('ul');
     ul.className = 'lookup-values' + (projected ? ' is-projected' : '');
-    parts.forEach(p => {
+    const pill = (text, cls, extras = []) => {
         const li = document.createElement('li');
-        li.className = 'lookup-value' + (p.deleted ? ' is-deleted' : '') + (p.text ? '' : ' is-blank');
+        li.className = 'lookup-value' + cls;
         // A blank still takes its line, or the values below it would shift up a row.
-        li.textContent = p.text || '\u00a0';
-        ul.appendChild(li);
-    });
+        li.textContent = text || '\u00a0';
+        if (extras.length) {
+            const x = document.createElement('span');
+            x.className = 'lookup-extras';
+            x.textContent = ' · ' + extras.join(' · ');
+            li.appendChild(x);
+        }
+        return li;
+    };
+    parts.slice(0, max).forEach(p =>
+        ul.appendChild(pill(p.text, (p.deleted ? ' is-deleted' : '') + (p.text ? '' : ' is-blank'), p.extras || [])));
+    if (parts.length > max) ul.appendChild(pill(`+${parts.length - max}`, ' is-more'));
     return ul;
 };
 
 /** The same, as an HTML string for renderers that build markup (the {list:ID} embed). */
-export const partsHtml = (parts, escape, projected = false) => `<ul class="lookup-values${projected ? ' is-projected' : ''}">` + parts.map(p =>
-    `<li class="lookup-value${p.deleted ? ' is-deleted' : ''}${p.text ? '' : ' is-blank'}">${p.text ? escape(p.text) : '&nbsp;'}</li>`
+export const partsHtml = (parts, escape, projected = false, group = false) => `<ul class="lookup-values${projected ? ' is-projected' : ''}${group ? ' is-group' : ''}">` + parts.map(p =>
+    `<li class="lookup-value${p.deleted ? ' is-deleted' : ''}${p.text ? '' : ' is-blank'}">${p.text ? escape(p.text) : '&nbsp;'}${p.extras?.length ? `<span class="lookup-extras"> · ${p.extras.map(escape).join(' · ')}</span>` : ''}</li>`
 ).join('') + '</ul>';
 
 /** The fields of a target list a lookup may show, as [{ id, name }]. */

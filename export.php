@@ -66,7 +66,8 @@ $json_content = file_get_contents($full_path);
 $list_data = json_decode($json_content, true);
 // Every value as the text it shows — a lookup's titles rather than its item ids, resolved
 // in this Space only.
-$list_data = wiki_list_flatten(is_array($list_data) ? $list_data : [], $base_dir);
+$list_raw  = is_array($list_data) ? $list_data : [];
+$list_data = wiki_list_flatten($list_raw, $base_dir);
 $items = $list_data['items'] ?? [];
 $columns = $list_data['columns'] ?? [];
 $filename_base = basename($sanitized_path, '.list');
@@ -99,20 +100,8 @@ switch ($format) {
         header('Content-Type: application/xml; charset=utf-8');
         header('Content-Disposition: attachment; filename="' . $filename_base . '.xml"');
         
-        $xml = new SimpleXMLElement('<?xml version="1.0"?><items></items>');
-        
-        foreach ($items as $item) {
-            $xml_item = $xml->addChild('item');
-            foreach ($columns as $col) {
-                // Sanitize column name to be a valid XML tag
-                $tag_name = preg_replace('/[^a-zA-Z0-9_]/', '', $col['name']);
-                if (is_numeric(substr($tag_name, 0, 1))) {
-                    $tag_name = '_' . $tag_name; // Prepend underscore if it starts with a number
-                }
-                $xml_item->addChild($tag_name, htmlspecialchars($item[$col['id']] ?? ''));
-            }
-        }
-        echo $xml->asXML();
+        // A Group of fields is written as nested elements; see wiki_list_xml().
+        echo wiki_list_xml($list_raw, $list_data);
         break;
 
     default:

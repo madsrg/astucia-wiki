@@ -35,6 +35,21 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 - **List fields are managed in List properties** — adding one included (the toolbar's *Add
   column* is gone), as are a Choice field's choices. The UI now says *field*. Title can be
   renamed but not deleted, and an item needs one.
+- **Groups of fields in lists.** A field can now hold fields of its own — a customer's
+  address — and, with *Allow several*, a list of entries such as its debit cards. The table
+  shows a group as one line (the fields you choose, or the first two) and several entries as
+  pills; the item form edits a group in place, with entries you can add, remove and reorder,
+  each keeping its number for good. CSV exports the one-line summary, XML and JSON the
+  structure. Changing a group is safe (a deleted field's values go with it; *Allow several*
+  cannot be switched off while an item holds more than one entry), and a save that breaks a
+  group is refused with the item and field named. In generated pages a template reaches
+  inside a group — `{{address.city}}` — and repeats per entry: `{{#debit_cards}}…{{/debit_cards}}`.
+- **A lookup's extra fields can show with each value** — "Beta Corp · Bergen · BC" in the
+  lookup's own cell — instead of as columns of their own, chosen per lookup in List
+  Properties. New lookups start this way; existing ones keep their columns. Either way the
+  extra fields stay fields: filter, sort and export by them, or show one as a column.
+- **List Properties shows one field at a time**: each field is a single line, and opening one
+  shows its settings, so the dialog stays short however many fields a list has.
 - **Generated pages.** A template page turns every row of a list into a page of its own —
   a customer, a project, a product — written from Markdown with `{{field}}` placeholders,
   `{{#field}}…{{/field}}` sections and a preview of any row. The list may live in another
@@ -44,7 +59,10 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   row renames its page and keeps its address, and a row that is removed leaves its page
   behind, archived. A generated page cannot be edited directly — change the template or the
   list, or *Detach* the page to make it your own; its tags and other metadata stay editable.
-  Start one from **New → Generated Pages…**. **Admin → Content → Generators** lists every
+  Start one from **New → Generated Pages…**; the template goes in the Space's `templates/`
+  folder, has an icon of its own in the file tree, and is not offered as a New Page template.
+  A generated page says so with an icon in its header; clicking it shows where the page comes
+  from, with Detach. **Admin → Content → Generators** lists every
   generator in the wiki — its list, pages, owner and whether it is running or has stopped, and
   why — with Open and Re-render now.
   - Values from the list are shown as text: they cannot add HTML, links, includes or
@@ -54,8 +72,15 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
     to publish more of it, and an AI user's edit pauses it until a person saves it again.
 
 ### Changed
+- **New Spaces get one page template**, *meeting-notes*, instead of ten. Spaces that
+  already exist keep the templates they have.
 - **Shorter Content tabs in Admin**: *Index*, *Deleted*, *Retention* and *Metadata* (were Index
   Pages, Deleted Pages, Retention Policies and Page Metadata), to make room for Generators.
+
+### Deprecated
+- **The static site export** (`export_static_site.php`) is no longer maintained and will probably
+  be removed. It keeps working as it is, but new features — such as a list's groups of
+  fields — are not added to it. It prints a notice when run.
 
 ### Fixed
 - **A list item's value could run script.** The item view and item form inserted values as

@@ -111,6 +111,10 @@ setTimeout(async () => {
     out += ' displayField=' + r.querySelector('.list-props-lookup-field').value;
     const multi = r.querySelector('.list-props-lookup-multiple'); multi.checked = true; fire(multi, 'change');
     const city = r.querySelector('.list-props-lookup-also[value="col_3"]'); city.checked = true; fire(city, 'change');
+    // A new lookup shows its extra fields with each value; this part of the suite is about the
+    // column layout, so it chooses that — the inline one is tested below.
+    out += ' extrasDefault=' + (r.querySelector('.list-props-lookup-extras:checked') || {}).value;
+    const asCols = r.querySelector('.list-props-lookup-extras[value="columns"]'); asCols.checked = true; fire(asCols, 'change');
     $('#list-props-save-btn').click();                         await sleep(1500);
     out += ' propsClosed=' + $('#list-props-modal').classList.contains('hidden')
         + ' cols=' + cols().map(c => c.name + ':' + c.type).join('|')
@@ -169,6 +173,32 @@ setTimeout(async () => {
         + ' viewPills=' + $$('#item-view-modal-content .lookup-value').map(e => e.textContent).join('|');
     $('#item-view-modal-close-btn').click();                   await sleep(200);
 
+    // ── The extra fields shown with each value instead ──────────────────────
+    const lookupRow = () => $$('#list-props-columns .list-props-row').find(rw => rw.querySelector('.list-props-name-input').value === 'Customer');
+    const extrasMode = async (mode) => {
+        $('#list-props-btn').click();                          await sleep(800);
+        lookupRow().querySelector('.list-props-toggle').click(); await sleep(300);
+        const rb = lookupRow().querySelector('.list-props-lookup-extras[value="' + mode + '"]');
+        rb.checked = true; fire(rb, 'change');
+        $('#list-props-save-btn').click();                     await sleep(1500);
+    };
+    const under = (s) => s.replace(/ /g, '_');
+    await extrasMode('inline');
+    const ih = $$('#list-items-table th').map(th => th.textContent);
+    const icell = $$('#list-items-table tbody tr:first-child td')[ih.indexOf('Customer')];
+    out += ' inlineHeads=' + under(ih.join('|'))
+        + ' inlinePills=' + [...icell.querySelectorAll('.lookup-value')].map(p => under(p.textContent)).join('|')
+        + ' inlineMuted=' + [...icell.querySelectorAll('.lookup-extras')].length
+        + ' inlineStored=' + JSON.stringify(cols().find(c => c.type === 'lookup').lookup.extras)
+        + ' stillField=' + (cols().find(c => c.type === 'lookup_field') ? 'yes' : 'no')
+        + ',' + (cols().find(c => c.type === 'lookup_field') || {}).showInListView;
+    $('#list-items-table tbody tr').click();                   await sleep(1000);
+    out += ' inlineView=' + $$('#item-view-modal-content .view-item-row label').map(l => under(l.textContent)).join('|')
+        + ' inlineViewPills=' + $$('#item-view-modal-content .lookup-value').map(e => under(e.textContent)).join('|');
+    $('#item-view-modal-close-btn').click();                   await sleep(200);
+    await extrasMode('columns');
+    out += ' backToColumns=' + under($$('#list-items-table th').map(th => th.textContent).join('|'));
+
     // ── Rename Title; delete the lookup and its projection ──────────────────
     $('#list-props-btn').click();                              await sleep(800);
     setVal($('#list-props-columns .list-props-row .list-props-name-input'), 'Order');
@@ -221,6 +251,7 @@ assert_contains "  and shows its Title by default"         'displayField=col_2' 
 assert_contains "saving adds the fields, and the projected one after the lookup" \
                 'cols=ItemId:autoincrement|Title:text_single|Status:choice|Customer:lookup|Customer: City:lookup_field' "$PROBE"
 assert_contains "  and records Title's role"               'titleRole=title'     "$PROBE"
+assert_contains "a new lookup shows its extra fields with each value" 'extrasDefault=inline ' "$PROBE"
 assert_contains "a nameless field is refused"              'namelessOpen=true namelessMarked=true' "$PROBE"
 assert_contains "  and closing the dialog discards the draft" 'discarded=true'   "$PROBE"
 
@@ -237,6 +268,16 @@ assert_contains "  so each item reads across the row"      'aligned=true'       
 assert_contains "a deleted target item says so"            'partsLookup=Beta Corp|!(deleted #99)|Acme ' "$PROBE"
 assert_contains "  and its projection keeps the line blank" 'partsCity=Bergen|_|Oslo ' "$PROBE"
 assert_contains "the item view shows the pills too"        'viewPills=Beta Corp|Acme|Bergen|Oslo ' "$PROBE"
+
+section 'extra fields shown with each value'
+assert_contains "the column goes from All items"            'inlineHeads=ItemId|Title|Status|Customer ' "$PROBE"
+assert_contains "  and each value reads 'title · extra'"   'inlinePills=Beta_Corp_·_Bergen|Acme_·_Oslo ' "$PROBE"
+assert_contains "  the extra in its own muted span"        'inlineMuted=2 '      "$PROBE"
+assert_contains "  the choice is stored on the lookup"     'inlineStored="inline" ' "$PROBE"
+assert_contains "  and the extra field is still a field, hidden" 'stillField=yes,false ' "$PROBE"
+assert_contains "the item view shows it once, with the value" 'inlineView=ItemId|Title|Status|Customer ' "$PROBE"
+assert_contains "  inside the lookup's pills"              'inlineViewPills=Beta_Corp_·_Bergen|Acme_·_Oslo ' "$PROBE"
+assert_contains "switching back gives the column back"     'backToColumns=ItemId|Title|Status|Customer|Customer:_City ' "$PROBE"
 
 section 'values are text, never markup'
 assert_contains "the table shows the markup as text"       'cellTitleLiteral=true imgInTable=0' "$PROBE"

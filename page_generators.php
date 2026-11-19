@@ -189,12 +189,55 @@ function wiki_gen_rows(array $list, string $source_dir, array $source): array {
         $keymap[$id] = $key;
     }
 
+    // A Group of fields is given as the structure it is, not its text: its sub-fields under
+    // keys of their own (the same rule as fields), `_text` its one-line summary, and — for one
+    // allowing several — a list of entries, each with `_id`, `_index` (from 1), `_first`, `_last`.
+    $groups = [];   // column id => [column, sub-field id => key]
+    foreach ($list['columns'] ?? [] as $col) {
+        if (($col['type'] ?? '') !== 'object' || !isset($keymap[$col['id'] ?? ''])) continue;
+        $subkeys = [];
+        $subused = ['id' => true];      // reserved: entries carry `_id`, and `id` would shadow it in a reader's mind
+        foreach ($col['fields'] ?? [] as $sf) {
+            $base = wiki_tpl_key((string)($sf['name'] ?? '')) ?: wiki_tpl_key((string)($sf['id'] ?? ''));
+            if ($base === '') continue;
+            $k = $base;
+            for ($n = 2; isset($subused[$k]); $n++) $k = $base . '_' . $n;
+            $subused[$k] = true;
+            $subkeys[(string)$sf['id']] = $k;
+        }
+        $groups[$col['id']] = [$col, $subkeys];
+    }
+    $entry_ctx = function (array $col, array $subkeys, array $entry): array {
+        $out = [];
+        foreach ($subkeys as $sid => $k) {
+            $v = $entry[$sid] ?? '';
+            $out[$k] = is_scalar($v) ? (string)$v : '';
+        }
+        $out['_text'] = wiki_list_group_summary($col, $entry);
+        return $out;
+    };
+
     $rows = [];
-    foreach ($flat['items'] ?? [] as $item) {
+    $raw_items = $list['items'] ?? [];
+    foreach ($flat['items'] ?? [] as $i => $item) {
         if (!isset($item['id']) || !is_numeric($item['id'])) continue;
         $rid = (int)$item['id'];
         $ctx = [];
         foreach ($keymap as $cid => $key) {
+            if (isset($groups[$cid])) {
+                [$gcol, $subkeys] = $groups[$cid];
+                $entries = wiki_list_group_entries($gcol, $raw_items[$i][$cid] ?? null);
+                if (empty($gcol['multiple'])) {
+                    // No value is null, so {{#address}}…{{/address}} shows nothing.
+                    $ctx[$key] = $entries ? $entry_ctx($gcol, $subkeys, $entries[0]) : null;
+                } else {
+                    $n = count($entries);
+                    $ctx[$key] = array_map(fn($e, $x) => $entry_ctx($gcol, $subkeys, $e) + [
+                        '_id' => (int)($e['id'] ?? 0), '_index' => $x + 1, '_first' => $x === 0, '_last' => $x === $n - 1,
+                    ], $entries, array_keys($entries));
+                }
+                continue;
+            }
             $v = $item[$cid] ?? '';
             $ctx[$key] = is_array($v) ? implode('; ', array_map('strval', array_filter($v, 'is_scalar'))) : (string)$v;
         }
@@ -738,6 +781,15 @@ function wiki_gen_state_all(): array {
     if (!is_file($f)) return [];
     $d = json_decode((string)file_get_contents($f), true);
     return is_array($d['generators'] ?? null) ? $d['generators'] : [];
+}
+
+/** The ids of a Space's registered templates, as keys — for the file tree's icon. */
+function wiki_gen_template_ids(string $space): array {
+    $ids = [];
+    foreach (wiki_gen_state_all() as $s) {
+        if (($s['space'] ?? '') === $space && !empty($s['template_id'])) $ids[(int)$s['template_id']] = true;
+    }
+    return $ids;
 }
 
 /** The generators that read this page: as their template, or as a list they depend on. */

@@ -27,7 +27,7 @@
 export const PAGE_SCOPED_CONTROLS = [
     // The meta row under the title, and the title's own badges.
     'page-meta-row', 'tags-container', 'attachments-section',
-    'page-id-display', 'frontmatter-badge',
+    'page-id-display', 'frontmatter-badge', 'generator-badge',
     // Editing.
     'edit-btn', 'save-btn', 'cancel-btn', 'editor-mode-group', 'search-btn',
     // Per-type viewers and panels.

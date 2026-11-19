@@ -8,8 +8,8 @@
 
 # ---------------------------------------------------------------------------
 # Stage 1 — Composer dependencies
-# Only needed for OIDC login (jumbojett/openid-connect-php) and the static-site
-# export (erusev/parsedown), but both are cheap, so they are always installed.
+# Only needed for OIDC login (jumbojett/openid-connect-php) and the deprecated
+# static-site export (erusev/parsedown), but both are cheap, so they are always installed.
 # ---------------------------------------------------------------------------
 FROM composer:2 AS vendor
 WORKDIR /app

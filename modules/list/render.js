@@ -101,7 +101,11 @@ export const renderListView = () => {
             const parts = cellParts(col, item, state.currentListData.columns);
             if (parts?.length) {
                 cell.classList.add('has-lookup');
-                cell.appendChild(partsElement(parts, col.type === 'lookup_field'));
+                // A group's entries are capped (+N); a lookup's are not, or an "also show"
+                // column would stop lining up with it.
+                const ul = partsElement(parts, col.type === 'lookup_field', col.type === 'object' ? 5 : Infinity);
+                if (col.type === 'object') ul.classList.add('is-group');
+                cell.appendChild(ul);
             } else {
                 cell.textContent = cellText(col, item, state.currentListData.columns);
             }

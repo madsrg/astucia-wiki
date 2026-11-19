@@ -95,7 +95,22 @@ const toast = () => ($('#toast') || {}).textContent || '';
 let out = '';
 const run = async () => {
   // The start URL opened the generated page Acme.
+  // The header is folded away; the page-header icon says the page is generated and opens it.
+  const gbadge = () => $('#generator-badge');
+  out += ' genStart=' + (shown(banner()) ? 'shown' : 'hidden');
+  out += ' badge=' + (shown(gbadge()) ? (gbadge().classList.contains('is-muted') ? 'grey' : 'colour') : 'none');
+  click(gbadge());                                  await sleep(200);
   out += ' gen=' + (shown(banner()) ? banner().className.replace(/ /g, '.') : 'none');
+  // Lined up with the page text: the content's own left edge plus its padding.
+  const vc = $('#viewer-content');
+  const textLeft = vc.getBoundingClientRect().left + parseFloat(getComputedStyle(vc).paddingLeft);
+  out += ' aligned=' + (Math.abs(banner().getBoundingClientRect().left - textLeft) < 1.5 ? 'yes' : 'no');
+  click(gbadge());                                  await sleep(200);
+  out += ' closes=' + (shown(banner()) ? 'no' : 'yes');
+  click(gbadge());                                  await sleep(200);
+  // The tree draws a template with the generator icon, and a generated page as a page.
+  const treeIcon = (path) => ($('.file-item-content[data-path="' + path + '"]') || document).querySelector('svg path[d="M15 2v5h5"]') ? 'generator' : 'other';
+  out += ' treeTpl=' + treeIcon('Templates/Account.md') + ' treePage=' + treeIcon('Accounts/Acme.md');
   out += ' link=' + w(($('#generator-banner .generator-link') || {}).textContent || '');
   out += ' editbtn=' + (shown($('#edit-btn')) ? 'shown' : 'hidden');
   out += ' modebtn=' + (shown($('#editor-mode-group')) ? 'shown' : 'hidden');
@@ -106,6 +121,7 @@ const run = async () => {
 
   click($('#generator-banner .generator-link')); await sleep(1500);
   out += ' tplpage=' + w($('#current-page-title').textContent);
+  out += ' tplBadge=' + (shown(gbadge()) ? 'shown' : 'none');
   out += ' tpl=' + (shown(banner()) ? banner().className.replace(/ /g, '.') : 'none');
   out += ' status=' + ($('#generator-banner .generator-status.ok') ? 'ok' : 'other');
   out += ' reads=' + w(($('#generator-banner .generator-link') || {}).textContent || '');
@@ -130,6 +146,9 @@ const run = async () => {
   await loadPage('Accounts/Acme.md', window.ACME_ID, []);  await sleep(800);
   click($('#generator-banner [data-gen=detach]'));    await sleep(500);
   click($('#confirm-modal-ok'));                      await sleep(1800);
+  out += ' detachedStart=' + (shown(banner()) ? 'shown' : 'hidden');
+  out += ' detachedBadge=' + (gbadge().classList.contains('is-muted') ? 'grey' : 'colour');
+  click(gbadge());                                    await sleep(200);
   out += ' detached=' + (shown(banner()) ? banner().className.replace(/ /g, '.') : 'none');
   out += ' editbtn2=' + (shown($('#edit-btn')) ? 'shown' : 'hidden');
   out += ' modebtn2=' + (shown($('#editor-mode-group')) ? 'shown' : 'hidden');
@@ -197,7 +216,13 @@ PROBE=$(grep -o '<title>PROBE.*</title>' "$WIKI_ROOT/dom.html" \
 assert_not_contains "the probe ran without throwing" 'fatal' "$PROBE"
 
 section 'a generated page'
-assert_contains "it carries the banner"                    'gen=generator-banner.is-generated' "$PROBE"
+assert_contains "its header starts folded away"            'genStart=hidden '                "$PROBE"
+assert_contains "  a coloured icon in the page header says it is generated" 'badge=colour '  "$PROBE"
+assert_contains "the icon opens the header"                 'gen=generator-banner.is-generated' "$PROBE"
+assert_contains "  lined up with the page text"             'aligned=yes '                     "$PROBE"
+assert_contains "  and closes it again"                     'closes=yes '                      "$PROBE"
+assert_contains "the tree draws a template with the generator icon" 'treeTpl=generator ' "$PROBE"
+assert_contains "  and a generated page as a page"          'treePage=other'                   "$PROBE"
 assert_contains "  …naming its template"                    'link=Templates/Account '         "$PROBE"
 assert_contains "it has no edit button"                     'editbtn=hidden'                   "$PROBE"
 assert_contains "  …nor the inline/classic editor switch"    'modebtn=hidden'                   "$PROBE"
@@ -206,7 +231,8 @@ assert_contains "  …and says why"                           'locked=said'     
 
 section 'its template'
 assert_contains "the link opens the template"               'tplpage=Account '                 "$PROBE"
-assert_contains "  …whose banner is the template's"         'tpl=generator-banner.is-template' "$PROBE"
+assert_contains "  …whose banner is the template's, open from the start" 'tpl=generator-banner.is-template' "$PROBE"
+assert_contains "  …and which has the icon too"             'tplBadge=shown '                  "$PROBE"
 assert_contains "  …reporting the last render"              'status=ok'                        "$PROBE"
 assert_contains "  …and naming its list"                    'reads=CRM_/_Accounts '            "$PROBE"
 
@@ -220,14 +246,16 @@ assert_contains "  …and it closes"                          'dlgclosed=yes'   
 assert_contains "Re-render says what it did"                'rendered=Rendered:_nothing_changed.' "$PROBE"
 
 section 'detach'
-assert_contains "Detach turns the banner into 'detached'"   'detached=generator-banner.is-detached' "$PROBE"
+assert_contains "a detached page's header starts folded too" 'detachedStart=hidden '         "$PROBE"
+assert_contains "  its icon grey"                           'detachedBadge=grey '              "$PROBE"
+assert_contains "  and opens on 'detached'"                 'detached=generator-banner.is-detached' "$PROBE"
 assert_contains "  …and the page is editable again"         'editbtn2=shown'                   "$PROBE"
 assert_contains "  …with its editor switch back"             'modebtn2=shown'                   "$PROBE"
 
 section 'New → Generated pages'
 assert_contains "the New menu offers it"                    'menu=Generated_Pages…'            "$PROBE"
 assert_contains "  …listing the lists of every Space"       'sources=CRM_/_Accounts '          "$PROBE"
-assert_contains "  …with defaults from the chosen list"     'defaults=Templates/Accounts,Accounts' "$PROBE"
+assert_contains "  …with defaults from the chosen list"     'defaults=templates/Accounts,Accounts' "$PROBE"
 assert_contains "creating it opens the new template"        'newpage=Fresh '                   "$PROBE"
 assert_contains "  …as a template"                          'newtpl=generator-banner.is-template' "$PROBE"
 assert_file_exists "  …which rendered its pages"            "$WIKI_PAGES/Customers/Fresh/Acme.md"

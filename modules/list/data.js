@@ -25,6 +25,13 @@ export const saveListData = async () => {
                 : t('conflict.list'), 'info');
             return;
         }
+        if (!ok && result.list_invalid) {
+            // Refused by the server's check of a list's groups (lists.php): say what and where.
+            const why = result.list_invalid;
+            const where = [why.item != null ? t('list.invalid.item', { item: why.item }) : '',
+                           why.field != null ? t('list.invalid.field', { field: why.field }) : ''].filter(Boolean).join(', ');
+            throw new Error((where ? where + ': ' : '') + t(`list.invalid.${why.code}`, { detail: why.detail ?? '' }));
+        }
         if (!ok) throw new Error(result.message || t('list.save-failed'));
         showToast(t('list.saved'), 'success');
         // Our own write — re-baseline the watcher so it is not reported as external.

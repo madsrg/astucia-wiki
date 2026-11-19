@@ -6,10 +6,15 @@
 // =================================================================
 // AstuciaWiki — Static Site Exporter
 // Usage: php export_static_site.php <destination_folder>
+//
+// DEPRECATED (2026-11-19): no longer maintained, and will probably be removed. New features
+// do not add support here — it already lags (it exports root-level content only, not the
+// pages in Spaces). Kept working as it is until it goes.
 // =================================================================
 
 if (PHP_SAPI !== 'cli') { die("Run from CLI only.\n"); }
 if ($argc < 2) { echo "Usage: php export_static_site.php <destination_folder>\n"; exit(1); }
+fwrite(STDERR, "Deprecated: the static site export is no longer maintained and will probably be removed.\n");
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/frontmatter.php';

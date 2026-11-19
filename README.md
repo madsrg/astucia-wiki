@@ -422,7 +422,7 @@ Full documentation, feature guides, and a step-by-step installation guide for De
 - **Diagrams:** Embedded [draw.io](https://www.diagrams.net)
 - **Markdown:** [marked.js](https://marked.js.org) (CDN)
 - **Realtime:** [Mercure](https://mercure.rocks) hub over SSE (optional; bundled in the Docker image)
-- **Static export:** `export_static_site.php` — generates a self-contained HTML site from all pages
+- **Static export (deprecated):** `export_static_site.php` — generates a self-contained HTML site from the root-level pages. No longer maintained, and will probably be removed
 
 ## License
 

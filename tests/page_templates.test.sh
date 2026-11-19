@@ -45,6 +45,14 @@ assert_eq 'unicode key'               'Århus'             "$(render '{{by}}' '{
 assert_eq 'single braces are left alone' '{filename} {include:3}' \
     "$(render '{filename} {include:3}' '{}')"
 
+section 'A value that says how it reads (a list group)'
+assert_eq 'a value with _text prints that'       'Main St 1, Oslo' "$(render '{{a}}' '{"a":{"_text":"Main St 1, Oslo","city":"Oslo"}}')"
+assert_eq '  and is still reached inside'        'Oslo'            "$(render '{{a.city}}' '{"a":{"_text":"x","city":"Oslo"}}')"
+assert_eq 'a list of them, joined with "; "'     '1111; 2222'      "$(render '{{c}}' '{"c":[{"_text":"1111"},{"_text":""},{"_text":"2222"}]}')"
+assert_eq '  escaped like any value'             '&lt;b&gt;'       "$(render '{{c}}' '{"c":[{"_text":"<b>"}]}')"
+assert_eq 'any other structure prints nothing'   '[]'              "$(render '[{{a}}]' '{"a":{"city":"Oslo"}}')"
+assert_eq '  nor does a plain list'              '[]'              "$(render '[{{a}}]' '{"a":["x","y"]}')"
+
 section 'Sections'
 # `$(…)` drops trailing newlines, so templates whose last line matters end in a sentinel.
 assert_eq 'a list, once per item' '- a

@@ -1206,6 +1206,11 @@ body {
 /* After .is-deleted: the blank an "also show" column keeps for a deleted item is both. */
 .lookup-value.is-blank { background: transparent; box-shadow: none; }
 /* "Also show" values are details of the looked-up item rather than the item: outlined. */
+/* A lookup's "also show" fields shown inline, beside each value: "Beta Corp · Bergen". */
+.lookup-value .lookup-extras { color: #4a6fa5; }
+/* A group's entries are this item's own data, not links to another list: neutral pills. */
+.lookup-values.is-group .lookup-value:not(.is-blank) { background: #edf2f7; color: var(--text-color); }
+.lookup-value.is-more { background: transparent; color: var(--accent-gray); padding-left: 0.3rem; }
 .lookup-values.is-projected .lookup-value:not(.is-blank) { background: transparent; color: var(--text-color); box-shadow: inset 0 0 0 1px #c7d7f5; }
 #item-view-modal-content .view-item-value.has-lookup { background: none; border: none; padding: 0; }
 .modal-form { display: flex; flex-direction: column; gap: 0.5rem; flex-grow: 1; overflow-y: auto; padding-right: 1rem; }
@@ -1217,6 +1222,23 @@ body {
 #view-settings-form .form-group { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
 /* (A) item view modal: match wiki page font size */
 #item-view-modal .lightbox-content { font-size: 0.9rem; }
+/* A Group of fields in the item view and the item form (modules/list/modals.js). */
+#item-view-modal-content .view-item-value.has-group { background: none; border: none; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.group-view-entry { border: 1px solid var(--border-color); border-radius: 4px; background: #f7fafc; padding: 4px 8px; }
+.group-view-line { display: flex; gap: 0.5rem; }
+.group-view-label { color: var(--accent-gray); min-width: 5.5rem; }
+.group-editor { display: flex; flex-direction: column; gap: 0.4rem; }
+.group-fields { display: flex; flex-direction: column; gap: 0.3rem; border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.6rem; }
+.group-field-row { display: grid; grid-template-columns: 90px 1fr; gap: 0.5rem; align-items: center; }
+.group-field-row label { font-size: 0.82rem; color: var(--accent-gray); text-align: right; }
+.group-entries { display: flex; flex-direction: column; gap: 0.35rem; }
+.group-entry { border: 1px solid var(--border-color); border-radius: 6px; background: var(--hover-bg); }
+.group-entry .group-fields { border: none; border-top: 1px solid var(--border-color); border-radius: 0; }
+.group-entry:not(.is-open) .group-fields { display: none; }
+.group-entry-head { display: flex; align-items: center; gap: 0.3rem; padding: 0.3rem 0.5rem; }
+.group-entry-summary { flex: 1; cursor: pointer; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-entry-btn { padding: 0 0.45rem; line-height: 1.5rem; }
+.group-add-entry { align-self: flex-start; }
 /* (B) halve spacing between view-item rows */
 #item-view-modal-content .view-item-row { display: grid; grid-template-columns: 120px 1fr; gap: 0.5rem; margin-bottom: 0.375rem; align-items: start; }
 #item-view-modal-content .view-item-row label { font-weight: bold; text-align: right; padding-top: 3px; color: var(--accent-gray); }
@@ -1243,6 +1265,13 @@ body {
 .list-props-lookup-summary { font-style: normal; }
 .list-props-add-btn { margin-right: auto; }
 .list-props-name-input.is-invalid { border-color: var(--accent-danger); box-shadow: 0 0 0 2px rgba(229, 62, 62, 0.15); }
+/* A Group of fields in List properties: its sub-fields as compact rows inside the group's row. */
+.list-props-group-help { margin: 0; }
+.list-props-subfields { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.15rem 0 0.4rem 0.75rem; padding-left: 0.6rem; border-left: 2px solid var(--border-color); }
+.list-props-subrow { display: flex; flex-direction: column; gap: 0.3rem; }
+.list-props-subrow.is-new .list-props-sub-name { border-style: dashed; }
+.list-props-group-add { align-self: flex-start; margin-left: 1.35rem; }
+.list-props-sub-name.is-invalid { border-color: var(--accent-danger); box-shadow: 0 0 0 2px rgba(229, 62, 62, 0.15); }
 /* The lookup picker in the item dialog: chips for what is chosen, a box to type in, and the
    matches under it. The list is absolute inside the field, so it can overlap the rows below
    without moving them. */
@@ -1255,7 +1284,18 @@ body {
 .lookup-suggest-item { padding: 0.35rem 0.6rem; cursor: pointer; font-size: 0.85rem; }
 .lookup-suggest-item:hover { background: var(--accent-gray-hover); }
 .lookup-suggest-empty { padding: 0.35rem 0.6rem; font-size: 0.8rem; color: var(--accent-gray); font-style: italic; }
-#list-props-modal .lightbox-content { height: 80vh; max-height: 80vh; }
+/* As tall as its fields need, up to 70vh; only the field list scrolls. One field is open at a
+   time (modules/list/props.js), so the dialog stays short however many fields a list has. */
+#list-props-modal .lightbox-content { height: auto; max-height: 70vh; box-sizing: border-box; }
+#list-props-modal .list-props-columns { flex: 1 1 auto; min-height: 0; }
+.list-props-row:not(.is-open) .list-props-body { display: none; }
+.list-props-row:not(.is-open) { padding-top: 0.4rem; padding-bottom: 0.4rem; }
+.list-props-body { display: flex; flex-direction: column; gap: 0.4rem; }
+.list-props-header-row { cursor: pointer; }
+.list-props-header-row :is(input, select) { cursor: auto; }
+.list-props-toggle { flex: 0 0 auto; color: var(--accent-gray); }
+.list-props-toggle svg { transition: transform 0.15s; }
+.list-props-row.is-open .list-props-toggle svg { transform: rotate(90deg); }
 
 .editor-area {
     position: relative;
@@ -2932,8 +2972,13 @@ pre.wiki-map-source { display: none; }
    switch go like a reader's do — setEditingMode() refuses as well, for Ctrl+E. ────────────────── */
 /* …and the inline/classic switch, which only matters to someone who can edit. */
 .page-generated #edit-btn, .page-generated #editor-mode-group { display: none; }
-.generator-banner { display: flex; gap: 0.75rem; align-items: flex-start; margin: 0 0 1rem; padding: 0.6rem 0.9rem;
+/* Lined up with the page itself: #viewer-content's own left margin and padding. */
+.generator-banner { display: flex; gap: 0.75rem; align-items: flex-start; margin: 1rem 2rem 0 calc(24px + 2rem); padding: 0.6rem 0.9rem;
     border: 1px solid var(--border-color); border-left: 4px solid #805ad5; border-radius: 6px; background: #faf5ff; font-size: 0.875rem; }
+body.mobile .generator-banner { margin: 1rem 1rem 0; }
+/* The page-header icon that opens and closes the header; grey once a page has left its generator. */
+.generator-badge.is-active { background: #e6f2fb; }
+.generator-badge.is-muted svg { stroke: var(--accent-gray); }
 .generator-banner.is-archived, .generator-banner.is-detached { border-left-color: var(--accent-gray); background: #f7fafc; }
 .generator-banner .generator-icon svg { width: 18px; height: 18px; margin-top: 2px; }
 .generator-body { flex: 1; display: flex; flex-direction: column; gap: 0.25rem; }

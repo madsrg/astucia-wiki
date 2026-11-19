@@ -9,6 +9,12 @@
  *    reads, where it writes, how the last render went — with Re-render now and Preview;
  *  - New → Generated pages…, which writes a template for a chosen list and opens it.
  *
+ * **The header is folded away on a generated, archived or detached page**: the page is for
+ * reading, and "where this comes from" is a detail. A coloured icon in the page header (beside
+ * the Metadata badge, `#generator-badge`) says the page belongs to a generator, and opens or
+ * closes the header. A template shows it open — it is the template's control panel — and the
+ * icon closes it. Each page opened starts that way again.
+ *
  * Everything it shows comes from the `get` that rendered the page (`generated`,
  * `generator`), so the banner follows the same `wiki:frontmatter` event the Metadata badge
  * does and never asks the server on its own. A generated page also gets
@@ -27,6 +33,10 @@ const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
 const canEdit = () => window.WIKI_ROLE !== 'reader' && !state.spaceReadOnly;
 
 let banner = null;
+let badge = null;
+// Whether the header is open, and for which page: opening another page starts it afresh.
+let openFor = null;
+let open = false;
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 
@@ -125,9 +135,26 @@ export const renderBanner = () => {
     const gen = md ? state.currentPageGenerated : null;
     const tpl = md ? state.currentPageGenerator : null;
     document.body.classList.toggle('page-generated', state.currentPageType === 'md' && state.currentPageGenerated?.state === 'generated');
-    if (!gen && !tpl) { banner.classList.add('hidden'); banner.innerHTML = ''; return; }
-    banner.className = `generator-banner ${tpl ? 'is-template' : `is-${gen.state}`}`;
-    banner.innerHTML = `<span class="generator-icon">${icons.list || ''}</span><div class="generator-body">${tpl ? templateBanner(tpl) : pageBanner(gen)}</div>`;
+    if (!gen && !tpl) {
+        banner.classList.add('hidden');
+        banner.innerHTML = '';
+        badge?.classList.add('hidden');
+        return;
+    }
+    // A page newly opened: a template's header open, any other's folded away.
+    const key = `${state.currentSpace}:${state.currentPagePath}`;
+    if (openFor !== key) { openFor = key; open = !!tpl; }
+
+    if (badge) {
+        badge.classList.remove('hidden');
+        badge.classList.toggle('is-active', open);
+        // Coloured while the page is generated (or is a template); grey once it has left.
+        badge.classList.toggle('is-muted', !tpl && gen.state !== 'generated');
+        badge.title = t(tpl ? 'generators.badge-template' : `generators.badge-${gen.state}`);
+        badge.setAttribute('aria-expanded', String(open));
+    }
+    banner.className = `generator-banner ${tpl ? 'is-template' : `is-${gen.state}`}` + (open ? '' : ' hidden');
+    banner.innerHTML = `<span class="generator-icon">${icons.generator}</span><div class="generator-body">${tpl ? templateBanner(tpl) : pageBanner(gen)}</div>`;
 };
 
 /** Re-read the open page's `get` so the banner shows the state after an action. */
@@ -238,7 +265,9 @@ const createDialog = async () => {
     [pathEl, folderEl].forEach(el => el.addEventListener('input', () => typed.add(el)));
     const fill = () => {
         const l = lists[Number(src.value)];
-        if (!typed.has(pathEl)) pathEl.value = `Templates/${l.title}`;
+        // A Space's `templates/` folder (lowercase, as a new Space gets it) — the New Page
+        // dialog leaves generator templates out of its list (list_md_templates).
+        if (!typed.has(pathEl)) pathEl.value = `templates/${l.title}`;
         if (!typed.has(folderEl)) folderEl.value = l.title;
         nameEl.innerHTML = `<option value="">${esc(t('generators.new-name-title'))}</option>`
             + l.fields.filter(f => !f.title).map(f => `<option value="${esc(f.key)}">${esc(f.name)}</option>`).join('');
@@ -279,6 +308,17 @@ export const init = () => {
             else if (action === 'preview') preview();
         });
     }
+    // The icon in the page header that opens and closes it, beside the Metadata badge.
+    const fm = document.getElementById('frontmatter-badge');
+    if (fm && !document.getElementById('generator-badge')) {
+        badge = document.createElement('button');
+        badge.id = 'generator-badge';
+        badge.type = 'button';
+        badge.className = 'btn btn-icon btn-secondary generator-badge hidden';
+        badge.innerHTML = icons.generator;
+        badge.addEventListener('click', () => { open = !open; renderBanner(); });
+        fm.parentNode.insertBefore(badge, fm);
+    }
     document.addEventListener('wiki:frontmatter', () => { renderBanner(); followPending(); });
     document.addEventListener('wiki:pagestate', renderBanner);
     // Opening a list or a chat does not raise wiki:frontmatter; the type change does.
@@ -290,7 +330,7 @@ export const init = () => {
         const a = document.createElement('a');
         a.href = '#';
         a.id = 'dropdown-new-generator';
-        a.innerHTML = `${icons.list || ''} ${esc(t('nav.new-generator'))}`;
+        a.innerHTML = `${icons.generator} ${esc(t('nav.new-generator'))}`;
         a.addEventListener('click', (e) => { e.preventDefault(); dropdown.classList.add('hidden'); createDialog(); });
         const after = document.getElementById('dropdown-new-json');
         if (after?.nextSibling) dropdown.insertBefore(a, after.nextSibling); else dropdown.appendChild(a);

@@ -16,7 +16,7 @@ JSON data pages · **YAML front matter** · page and diagram templates · attach
 screenshot straight into a page** · copy buttons on code blocks · wikilinks and transclusion · full-text search with saved searches · a knowledge
 graph · **Wiki Pulse**: your mentions, your comments and each Space's broken links, stale
 and empty pages in one place · a **Help** dialog with every keyboard shortcut (Alt+H) ·
-optional git version history · static site export.
+optional git version history.
 
 **Tags with a taxonomy** — one tree of tags for the whole wiki: folders group, items are the
 tags pages carry (`Department/Finance`). A tree editor to rename, move and merge — every page

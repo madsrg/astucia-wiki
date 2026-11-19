@@ -11,7 +11,8 @@
 //
 //   {{field}}            the value, escaped so it reads as plain text in Markdown
 //   {{{field}}} {{&f}}   the value as Markdown — formatting allowed, HTML and mentions not
-//   {{a.b}}  {{.}}       a dotted name; the current item
+//   {{a.b}}  {{.}}       a dotted name; the current item. A value with `_text` (a list's
+//                        group) prints that text; a list of them, joined with "; "
 //   {{#f}}…{{/f}}        once per item of a list, once for any other value that is not empty
 //   {{^f}}…{{/f}}        only when the value is empty
 //   {{! comment }}       nothing
@@ -314,8 +315,23 @@ function _wiki_tpl_truthy($v): bool {
     return !($v === null || $v === false || $v === '' || $v === []);
 }
 
+/**
+ * A value as text. A structure prints nothing — except one that says how it reads: a value
+ * carrying `_text` (a list's Group of fields, see wiki_gen_rows()) prints that, and a list of
+ * such values prints them joined with "; ", as the list's table does. So {{address}} is the
+ * summary while {{address.city}} and {{#address}}…{{/address}} reach inside it.
+ */
 function _wiki_tpl_str($v): string {
-    if ($v === null || $v === false || is_array($v)) return '';
+    if ($v === null || $v === false) return '';
     if ($v === true) return 'true';
+    if (is_array($v)) {
+        if (isset($v['_text']) && is_scalar($v['_text'])) return (string)$v['_text'];
+        if (array_is_list($v)) {
+            $parts = array_filter(array_map(fn($e) => is_array($e) && isset($e['_text']) && is_scalar($e['_text'])
+                ? (string)$e['_text'] : '', $v), fn($s) => $s !== '');
+            return implode('; ', $parts);
+        }
+        return '';
+    }
     return (string)$v;
 }

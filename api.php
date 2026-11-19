@@ -17,6 +17,7 @@ require_once __DIR__ . '/chat_retention.php';
 require_once __DIR__ . '/system_prompt_gallery.php';
 require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/maps.php';
+require_once __DIR__ . '/lists.php';      // wiki_list_check() on every .list save
 require_once __DIR__ . '/mentions.php';
 require_once __DIR__ . '/frontmatter.php';
 require_once __DIR__ . '/audit.php';
@@ -1480,7 +1481,7 @@ if (isset($_REQUEST['action'])) {
 "\n" .
 "### List available page templates\n" .
 "GET {$base_url}?action=list_md_templates\n" .
-"Returns: {\"success\":true,\"templates\":[\"meeting-notes\",\"project-overview\",...]}\n" .
+"Returns: {\"success\":true,\"templates\":[\"default\",\"meeting-notes\",...]}\n" .
 "\n" .
 "### Full API schema reference\n" .
 "GET {$base_url}?action=api_schema\n" .
@@ -1557,6 +1558,8 @@ if (isset($_REQUEST['action'])) {
                             // only consumer, and a whole-tree scandir is expensive enough already.
                             'updated' => $is_dir ? null : ($indexer->getPageData($id)['updated'] ?? null)
                         ];
+                        // A page generator's template, so the tree can draw it as one.
+                        if (!$is_dir && isset($GLOBALS['_wiki_tree_gen_ids'][(int)$id])) $item['generator'] = true;
 
                         if ($is_dir) {
                             $item['children'] = get_dir_contents($path, $indexer, $base_dir);
@@ -1572,6 +1575,11 @@ if (isset($_REQUEST['action'])) {
                     });
                     return $items;
                 }
+                // Templates are known from the generators' state, not by reading every page's
+                // front matter: a template no save has registered yet keeps the page icon until
+                // the hourly scan finds it.
+                $GLOBALS['_wiki_tree_gen_ids'] = rtrim($space_dir, '/') !== rtrim(PAGES_DIR, '/')
+                    ? wiki_gen_template_ids(basename(rtrim($space_dir, '/'))) : [];
                 echo json_encode(['success' => true, 'data' => get_dir_contents($space_dir, $indexer, $space_dir)]);
                 break;
 
@@ -3668,6 +3676,18 @@ if (isset($_REQUEST['action'])) {
                     }
                     $content = json_encode($decoded_save, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
                 }
+                // A list's groups of fields have a shape everything that reads the list relies
+                // on (lists.php). A save that breaks it is refused — never "fixed" — with the
+                // item and field named, so the writer can see what to correct.
+                if ($ext_save === 'list' && ($list_bad = wiki_list_check($content)) !== null) {
+                    if ($save_lock) { flock($save_lock, LOCK_UN); fclose($save_lock); $save_lock = false; }
+                    wiki_audit_finish($_audit, 'failure', 'invalid list: ' . $list_bad['code'], null, $_audit_space);
+                    $_audit = null;
+                    http_response_code(422);
+                    echo json_encode(['success' => false, 'list_invalid' => $list_bad,
+                                      'message' => wiki_list_check_message($list_bad)]);
+                    break;
+                }
                 if (file_put_contents($file_path, $content) !== false) {
                     $actor = get_current_actor();
                     $indexer->updateModified($_GET['file'], $actor['uid'], $actor['name']);
@@ -3855,6 +3875,10 @@ if (isset($_REQUEST['action'])) {
                 $tpl_names = [];
                 if (is_dir($tpl_dir)) {
                     foreach (glob($tpl_dir . '/*.md') as $f) {
+                        // A page generator's template lives here too (New → Generated Pages puts
+                        // it in templates/), but it is not a starting point for a page: a page
+                        // made from it would itself become a generator.
+                        if (wiki_gen_is_template(wiki_fm_split((string)file_get_contents($f))['meta'])) continue;
                         $tpl_names[] = pathinfo($f, PATHINFO_FILENAME);
                     }
                     sort($tpl_names);

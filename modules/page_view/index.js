@@ -222,7 +222,7 @@ export const processListTags = async (content) => {
                 for (const col of columns) {
                     const parts = cellParts(col, item, allColumns);
                     html += parts?.length
-                        ? `<td class="has-lookup">${partsHtml(parts, escapeHtml, col.type === 'lookup_field')}</td>`
+                        ? `<td class="has-lookup">${partsHtml(parts, escapeHtml, col.type === 'lookup_field', col.type === 'object')}</td>`
                         : `<td>${escapeHtml(cellText(col, item, allColumns))}</td>`;
                 }
                 html += '</tr>';

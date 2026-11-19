@@ -73,6 +73,7 @@ export const renderTree = (items, parentElement, { cap = false, folderPath = '' 
         if (isChat)    icon = icons.chat;
         if (isSearch)  icon = icons.search;
         if (isJson)    icon = icons.json;
+        if (item.generator) icon = icons.generator;
 
         const itemType = isDiagram ? 'diagram' : (isList ? 'list' : (isChat ? 'chat' : (isSearch ? 'search' : item.type)));
         li.innerHTML = `
@@ -194,6 +195,7 @@ export const renderBrowsePane = (items, currentPath) => {
         if (isChat)    icon = icons.chat;
         if (isJson)    icon = icons.json;
         if (isSearch)  icon = icons.search;
+        if (item.generator) icon = icons.generator;
 
         const bType = isDiagram ? 'diagram' : (isList ? 'list' : (isChat ? 'chat' : (isSearch ? 'search' : item.type)));
         li.innerHTML = `

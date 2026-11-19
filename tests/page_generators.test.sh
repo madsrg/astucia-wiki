@@ -403,6 +403,28 @@ assert_eq '  owned by its creator'                       'Carl' \
     "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["generators"]["Customers:"+sys.argv[2]]["owner"]["name"])' "$WIKI_SYS/generators.json" "$(echo "$C" | gj id)")"
 assert_eq 'creating over an existing page is refused'    'exists' "$(post_as "$CARL" 'api.php?action=generator_create&space=Customers' "source=CRM:$ACCOUNTS&path=Templates/Cards&folder=X" | gj error)"
 
+section 'A generator template is not a New Page template'
+mkdir -p "$WIKI_PAGES/Customers/templates"
+printf -- '# Meeting\n' > "$WIKI_PAGES/Customers/templates/meeting-notes.md"
+printf -- "---\ngenerator_source: CRM:%s\ngenerator_folder: FromTemplates\n---\n# {{name}}\n" "$ACCOUNTS" > "$WIKI_PAGES/Customers/templates/Accounts.md"
+T=$(get_as "$CARL" 'api.php?action=list_md_templates&space=Customers')
+assert_contains 'control: an ordinary template is offered'  '"meeting-notes"' "$T"
+assert_not_contains 'a generator template in templates/ is not' '"Accounts"' "$T"
+
+section 'The file tree marks a template'
+L=$(get_as "$CARL" 'api.php?action=list&space=Customers')
+flag() { python3 -c 'import json,sys
+def walk(items):
+    for i in items:
+        if i.get("path") == sys.argv[1]: return i
+        r = walk(i.get("children") or [])
+        if r: return r
+i = walk(json.load(sys.stdin)["data"]) or {}
+print(i.get("generator", False))' "$1"; }
+assert_eq 'a template carries generator: true'           'True'  "$(echo "$L" | flag Templates/Account.md)"
+assert_eq '  a page it generated does not'               'False' "$(echo "$L" | flag 'Accounts/Acme Ltd.md')"
+assert_eq '  nor an ordinary page'                       'False' "$(echo "$L" | flag Linker.md)"
+
 section 'Admin → Content → Generators'
 A=$(get_as "$CARL" 'api.php?action=admin_get_generators')
 assert_not_contains 'an editor cannot list them'         '"success":true' "$A"
@@ -428,6 +450,62 @@ touch "$WIKI_SYS/generators.discover"       # the hourly scan has just run
 A=$(get_as "$ADMIN" 'api.php?action=admin_get_generators')
 assert_eq 'a dropped-in template is listed at once'  'None' "$(echo "$A" | row Dropped/T.md owner)"
 assert_file_missing '  and listing it rendered nothing'  "$WIKI_PAGES/Customers/Dropped/Out"
+
+section 'A list with groups of fields'
+cat > "$WIKI_PAGES/CRM/Members.list" <<'JSON'
+{"columns":[{"id":"col_2","name":"Name","type":"text_single","role":"title"},
+            {"id":"col_3","name":"Address","type":"object","summary":["sf_s","sf_c"],
+             "fields":[{"id":"sf_s","name":"Street","type":"text_single"},{"id":"sf_c","name":"City","type":"text_single"}]},
+            {"id":"col_4","name":"Debit cards","type":"object","multiple":true,"summary":["sf_n"],
+             "fields":[{"id":"sf_n","name":"Number","type":"text_single"},{"id":"sf_e","name":"Expires","type":"date"},
+                       {"id":"sf_i","name":"Id","type":"text_single"}]}],
+ "items":[{"id":1,"col_2":"Ann","col_3":{"sf_s":"Main St 1","sf_c":"Oslo"},
+           "col_4":[{"id":7,"sf_n":"1111","sf_e":"2027-01-31","sf_i":"A"},{"id":9,"sf_n":"<b>2222</b>","sf_e":"2028-05-31"}]},
+          {"id":2,"col_2":"Bo","col_3":null,"col_4":[]}],
+ "nextItemId":3,"nextEntryId":10}
+JSON
+get_as "$ADMIN" 'api.php?action=indexfiles&space=CRM' > /dev/null
+MEMBERS=$(id_of CRM Members.list)
+mkdir -p "$WIKI_PAGES/Customers/Templates"
+cat > "$WIKI_PAGES/Customers/Templates/Member.md" <<EOF
+---
+generator_source: CRM:$MEMBERS
+generator_folder: Members
+---
+# {{name}}
+
+Lives at {{address}}; city: {{address.city}}.
+{{^address}}
+No address on file.
+{{/address}}
+Cards: {{debit_cards}}
+{{#debit_cards}}
+- {{_index}}. {{number}} (entry {{_id}}, expires {{expires}}, card id {{id_2}}){{#_first}} FIRST{{/_first}}{{#_last}} LAST{{/_last}}
+{{/debit_cards}}
+{{^debit_cards}}
+No cards.
+{{/debit_cards}}
+EOF
+get_as "$ADMIN" 'api.php?action=indexfiles&space=Customers' > /dev/null
+MTPL=$(id_of Customers Templates/Member.md)
+OUT=$(render "$CARL" "$MTPL")
+assert_eq 'the template renders'                           'ok' "$(echo "$OUT" | field status)"
+assert_eq '  with no unknown fields'                        '[]' "$(echo "$OUT" | field warnings)"
+ANN=$(cat "$WIKI_PAGES/Customers/Members/Ann.md"); BO=$(cat "$WIKI_PAGES/Customers/Members/Bo.md")
+assert_contains '{{address}} is the summary'                'Lives at Main St 1, Oslo;' "$ANN"
+assert_contains '{{address.city}} reaches inside'           'city: Oslo.' "$ANN"
+assert_not_contains '{{^address}} is false when set'        'No address on file' "$ANN"
+assert_contains '  and true when not'                       'No address on file' "$BO"
+assert_contains '{{debit_cards}} joins the summaries'       'Cards: 1111; &lt;b&gt;2222&lt;/b&gt;' "$ANN"
+assert_contains 'a loop over the entries, with _index and _id' '- 1. 1111 (entry 7, expires 2027-01-31, card id A) FIRST' "$ANN"
+assert_contains '  _last on the last one, values escaped'  '- 2. &lt;b&gt;2222&lt;/b&gt; (entry 9, expires 2028-05-31, card id ) LAST' "$ANN"
+assert_not_contains '  _first only on the first'            '2222</b> (entry 9, expires 2028-05-31, card id ) FIRST' "$ANN"
+assert_contains 'no entries: the inverted section'          'No cards.' "$BO"
+assert_not_contains '  and no loop line'                    '- 1.' "$BO"
+P=$(get_as "$CARL" "api.php?action=generator_preview&space=Customers&id=$MTPL&row=1")
+assert_contains 'the preview renders the same'              'Lives at Main St 1, Oslo' "$(echo "$P" | field body)"
+S=$(get_as "$CARL" 'api.php?action=generator_sources')
+assert_contains 'the sources name a group by its key'       '"key":"debit_cards","type":"object"' "$S"
 
 section 'State'
 assert_eq 'the owner is recorded'                             'Carl' \
