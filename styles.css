@@ -2928,9 +2928,10 @@ pre.wiki-map-source { display: none; }
 
 /* ── Page generators (modules/generators) ───────────────────────────────────────
    A banner above a generated, archived or detached page and above a template. A
-   generated page's body belongs to its template, so its edit button goes like a
-   reader's does — setEditingMode() refuses as well, for Ctrl+E. ────────────────── */
-.page-generated #edit-btn { display: none; }
+   generated page's body belongs to its template, so its edit button and editor-mode
+   switch go like a reader's do — setEditingMode() refuses as well, for Ctrl+E. ────────────────── */
+/* …and the inline/classic switch, which only matters to someone who can edit. */
+.page-generated #edit-btn, .page-generated #editor-mode-group { display: none; }
 .generator-banner { display: flex; gap: 0.75rem; align-items: flex-start; margin: 0 0 1rem; padding: 0.6rem 0.9rem;
     border: 1px solid var(--border-color); border-left: 4px solid #805ad5; border-radius: 6px; background: #faf5ff; font-size: 0.875rem; }
 .generator-banner.is-archived, .generator-banner.is-detached { border-left-color: var(--accent-gray); background: #f7fafc; }

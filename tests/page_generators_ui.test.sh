@@ -98,6 +98,7 @@ const run = async () => {
   out += ' gen=' + (shown(banner()) ? banner().className.replace(/ /g, '.') : 'none');
   out += ' link=' + w(($('#generator-banner .generator-link') || {}).textContent || '');
   out += ' editbtn=' + (shown($('#edit-btn')) ? 'shown' : 'hidden');
+  out += ' modebtn=' + (shown($('#editor-mode-group')) ? 'shown' : 'hidden');
   $('#edit-btn').click();                        await sleep(400);
   out += ' editing=' + (shown($('#save-btn')) ? 'yes' : 'no');
   out += ' locked=' + (toast().includes('generated from a template') ? 'said' : 'silent');
@@ -131,6 +132,7 @@ const run = async () => {
   click($('#confirm-modal-ok'));                      await sleep(1800);
   out += ' detached=' + (shown(banner()) ? banner().className.replace(/ /g, '.') : 'none');
   out += ' editbtn2=' + (shown($('#edit-btn')) ? 'shown' : 'hidden');
+  out += ' modebtn2=' + (shown($('#editor-mode-group')) ? 'shown' : 'hidden');
 
   click($('#new-item-btn'));                          await sleep(200);
   const item = $('#dropdown-new-generator');
@@ -144,6 +146,19 @@ const run = async () => {
   click(nd.querySelector('[data-gen-ok]'));           await sleep(3000);
   out += ' newpage=' + w($('#current-page-title').textContent);
   out += ' newtpl=' + (shown(banner()) ? banner().className.replace(/ /g, '.') : 'none');
+
+  click($('#admin-btn'));                                       await sleep(800);
+  click($('.admin-group[data-group="content"]'));               await sleep(500);
+  const tabText = (n) => w($('.admin-tab[data-tab="' + n + '"]').textContent);
+  out += ' tabs=' + ['reindex', 'deleted', 'retention', 'metadata', 'generators'].map(tabText).join('|');
+  click($('.admin-tab[data-tab="generators"]'));                await sleep(1500);
+  const genRows = $$('#admin-generators-list tbody tr');
+  out += ' genrows=' + genRows.length;
+  out += ' gennames=' + genRows.map(r => w(r.querySelector('.admin-td-name').firstChild.textContent)).join('|');
+  out += ' genstatus=' + w(genRows[0].querySelector('.admin-job-status').textContent);
+  click(genRows[0].querySelector('.gen-open'));                 await sleep(1800);
+  out += ' adminclosed=' + (shown($('#admin-lightbox')) ? 'no' : 'yes');
+  out += ' opened=' + w($('#current-page-title').textContent);
   return out;
 };
 setTimeout(async () => {
@@ -185,6 +200,7 @@ section 'a generated page'
 assert_contains "it carries the banner"                    'gen=generator-banner.is-generated' "$PROBE"
 assert_contains "  …naming its template"                    'link=Templates/Account '         "$PROBE"
 assert_contains "it has no edit button"                     'editbtn=hidden'                   "$PROBE"
+assert_contains "  …nor the inline/classic editor switch"    'modebtn=hidden'                   "$PROBE"
 assert_contains "the button's own handler does not edit it" 'editing=no'                       "$PROBE"
 assert_contains "  …and says why"                           'locked=said'                      "$PROBE"
 
@@ -206,6 +222,7 @@ assert_contains "Re-render says what it did"                'rendered=Rendered:_
 section 'detach'
 assert_contains "Detach turns the banner into 'detached'"   'detached=generator-banner.is-detached' "$PROBE"
 assert_contains "  …and the page is editable again"         'editbtn2=shown'                   "$PROBE"
+assert_contains "  …with its editor switch back"             'modebtn2=shown'                   "$PROBE"
 
 section 'New → Generated pages'
 assert_contains "the New menu offers it"                    'menu=Generated_Pages…'            "$PROBE"
@@ -214,6 +231,14 @@ assert_contains "  …with defaults from the chosen list"     'defaults=Template
 assert_contains "creating it opens the new template"        'newpage=Fresh '                   "$PROBE"
 assert_contains "  …as a template"                          'newtpl=generator-banner.is-template' "$PROBE"
 assert_file_exists "  …which rendered its pages"            "$WIKI_PAGES/Customers/Fresh/Acme.md"
+
+section 'Admin → Content → Generators'
+assert_contains "the Content toolbar's shorter labels"     'tabs=Index|Deleted|Retention|Metadata|Generators ' "$PROBE"
+assert_contains "the tab lists every generator"             'genrows=2'                       "$PROBE"
+assert_contains "  …by template, sorted"                    'gennames=Templates/Account|Templates/Fresh ' "$PROBE"
+assert_contains "  …with its status"                        'genstatus=Running '              "$PROBE"
+assert_contains "Open closes the admin panel"               'adminclosed=yes'                 "$PROBE"
+assert_contains "  …and opens the template"                 'opened=Account'                  "$PROBE"
 
 printf '\n'
 exit $(( ASSERT_FAIL > 0 ))

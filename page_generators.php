@@ -853,6 +853,44 @@ function wiki_gen_run_dirty(?array $only, float $budget, ?callable $progress = n
 }
 
 /**
+ * Register templates no save ever registered — dropped in by rsync, or there before this
+ * feature. Without an owner: a person has to vouch for one before it reads anything (unless
+ * authentication is off). Hourly from the cron tick; $force runs it now (the admin overview,
+ * which must not miss a template because the hour is not up). Returns the keys it added.
+ */
+function wiki_gen_discover(bool $force): array {
+    if (!defined('WIKI_SYSTEM_DATA') || !WIKI_SYSTEM_DATA) return [];
+    $stamp = rtrim(WIKI_SYSTEM_DATA, '/') . '/generators.discover';
+    if (!$force && is_file($stamp) && time() - (int)@filemtime($stamp) < WIKI_GEN_DISCOVER_EVERY) return [];
+    @touch($stamp);
+    $known = wiki_gen_state_all();
+    $found = [];
+    foreach (glob(rtrim(PAGES_DIR, '/') . '/*', GLOB_ONLYDIR) ?: [] as $dir) {
+        $space = basename($dir);
+        if (!wiki_gen_space_name_ok($space)) continue;
+        $i = new PageIndexer($dir);
+        foreach ($i->getAllPages() as $pid => $e) {
+            $rel = (string)($e['path'] ?? '');
+            if (isset($known[$space . ':' . $pid]) || strtolower(pathinfo($rel, PATHINFO_EXTENSION)) !== 'md') continue;
+            $head = (string)@file_get_contents($dir . '/' . $rel, false, null, 0, 4096);
+            if (strpos($head, 'generator_source') === false) continue;
+            $meta = wiki_fm_split((string)file_get_contents($dir . '/' . $rel))['meta'];
+            if (wiki_gen_is_template($meta)) $found[$space . ':' . $pid] = [$space, (int)$pid];
+        }
+    }
+    if ($found) {
+        wiki_gen_state_mutate(function (array &$g) use ($found) {
+            foreach ($found as $k => [$space, $pid]) {
+                if (isset($g[$k])) continue;
+                $g[$k] = ['space' => $space, 'template_id' => $pid, 'rows' => [],
+                          'owner' => null, 'dirty' => true];
+            }
+        });
+    }
+    return array_keys($found);
+}
+
+/**
  * The cron tick: find what changed without an event, then render what is dirty.
  *  - drift: a template or a list it read whose revision is not the one last rendered from;
  *  - discovery, hourly: a template no save ever registered (it arrived by rsync, or was
@@ -887,39 +925,15 @@ function wiki_gen_tick(?callable $progress = null): array {
         if ($changed) $drifted[] = $key;
     }
 
-    // ── Discovery ────────────────────────────────────────────────────────
-    $found = [];
-    $stamp = rtrim(WIKI_SYSTEM_DATA, '/') . '/generators.discover';
-    if (!is_file($stamp) || time() - (int)@filemtime($stamp) >= WIKI_GEN_DISCOVER_EVERY) {
-        @touch($stamp);
-        $known = wiki_gen_state_all();
-        foreach (glob(rtrim(PAGES_DIR, '/') . '/*', GLOB_ONLYDIR) ?: [] as $dir) {
-            $space = basename($dir);
-            $i = $ix($space);
-            if (!$i) continue;
-            foreach ($i->getAllPages() as $pid => $e) {
-                $rel = (string)($e['path'] ?? '');
-                if (isset($known[$space . ':' . $pid]) || strtolower(pathinfo($rel, PATHINFO_EXTENSION)) !== 'md') continue;
-                $head = (string)@file_get_contents($dir . '/' . $rel, false, null, 0, 4096);
-                if (strpos($head, 'generator_source') === false) continue;
-                $meta = wiki_fm_split((string)file_get_contents($dir . '/' . $rel))['meta'];
-                if (wiki_gen_is_template($meta)) $found[$space . ':' . $pid] = [$space, (int)$pid];
-            }
-        }
-    }
-
-    if ($drifted || $found) {
-        wiki_gen_state_mutate(function (array &$g) use ($drifted, $found) {
+    if ($drifted) {
+        wiki_gen_state_mutate(function (array &$g) use ($drifted) {
             foreach ($drifted as $k) if (isset($g[$k])) $g[$k]['dirty'] = true;
-            foreach ($found as $k => [$space, $pid]) {
-                if (isset($g[$k])) continue;
-                $g[$k] = ['space' => $space, 'template_id' => $pid, 'rows' => [],
-                          'owner' => null, 'dirty' => true];
-            }
         });
         foreach ($drifted as $k) $lines[] = "$k: changed outside the wiki";
-        foreach (array_keys($found) as $k) $lines[] = "$k: template found";
     }
+
+    // ── Discovery, hourly ────────────────────────────────────────────────
+    foreach (wiki_gen_discover(false) as $k) $lines[] = "$k: template found";
 
     return array_merge($lines, wiki_gen_run_dirty(null, WIKI_GEN_CRON_BUDGET, $progress));
 }
@@ -1224,4 +1238,62 @@ function wiki_gen_space_deleted(string $name): void {
     wiki_gen_state_mutate(function (array &$g) use ($name) {
         foreach (array_keys($g) as $k) if (($g[$k]['space'] ?? '') === $name) unset($g[$k]);
     });
+}
+
+// =================================================================
+// ADMIN → CONTENT → GENERATORS
+//
+// Every generator in the wiki in one table, for an administrator — the only place a
+// generator that has stopped (an owner without access, a broken template, a vanished
+// list) shows up without opening its template. Read-only: a row's actions are the same
+// generator_render the template's banner uses, and opening the template.
+// =================================================================
+
+function wiki_gen_admin_list(): array {
+    wiki_gen_discover(true);
+    $ix = [];
+    $index = function (string $space) use (&$ix) {
+        if (!wiki_gen_space_name_ok($space) || !is_dir(rtrim(PAGES_DIR, '/') . '/' . $space)) return null;
+        return $ix[$space] ??= new PageIndexer(rtrim(PAGES_DIR, '/') . '/' . $space);
+    };
+    $out = [];
+    foreach (wiki_gen_state_all() as $key => $s) {
+        $space = (string)($s['space'] ?? '');
+        $tid   = (int)($s['template_id'] ?? 0);
+        $i     = $index($space);
+        $path  = $i ? $i->getPath($tid) : null;
+        $abs   = $path !== null ? rtrim(PAGES_DIR, '/') . '/' . $space . '/' . $path : null;
+        $def   = null;
+        if ($abs !== null && is_file($abs)) {
+            $d = wiki_gen_definition(wiki_fm_split((string)file_get_contents($abs))['meta'], $space, $path);
+            if ($d['ok']) $def = $d;
+        }
+        $src = $def ? ['space' => $def['source_space'], 'id' => $def['source_id']]
+                    : (is_array($s['source'] ?? null) ? $s['source'] : null);
+        if ($src) {
+            $si = $index((string)$src['space']);
+            $src['path'] = $si ? $si->getPath((int)$src['id']) : null;
+        }
+        $out[] = [
+            'key'           => $key,
+            'space'         => $space,
+            'template_id'   => $tid,
+            'template_path' => $path ?? ($s['template_path'] ?? null),
+            'template_exists' => $abs !== null && is_file($abs),
+            'source'        => $src,
+            'folder'        => $def['folder'] ?? null,
+            'pages'         => count(array_filter($s['rows'] ?? [], fn($r) => !empty($r['page_id']) && empty($r['detached']))),
+            'owner'         => $s['owner']['name'] ?? null,
+            'status'        => $s['status'] ?? null,
+            'pending'       => !empty($s['dirty']),
+            'error'         => $s['error'] ?? null,
+            'detail'        => $s['detail'] ?? null,
+            'line'          => $s['line'] ?? null,
+            'warnings'      => $s['warnings'] ?? [],
+            'counts'        => $s['counts'] ?? null,
+            'last_run'      => $s['last_run'] ?? null,
+        ];
+    }
+    usort($out, fn($a, $b) => [$a['space'], (string)$a['template_path']] <=> [$b['space'], (string)$b['template_path']]);
+    return $out;
 }

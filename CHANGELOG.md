@@ -44,12 +44,18 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   row renames its page and keeps its address, and a row that is removed leaves its page
   behind, archived. A generated page cannot be edited directly — change the template or the
   list, or *Detach* the page to make it your own; its tags and other metadata stay editable.
-  Start one from **New → Generated Pages…**.
+  Start one from **New → Generated Pages…**. **Admin → Content → Generators** lists every
+  generator in the wiki — its list, pages, owner and whether it is running or has stopped, and
+  why — with Open and Re-render now.
   - Values from the list are shown as text: they cannot add HTML, links, includes or
     mentions to the page.
   - A template runs on behalf of whoever last saved it, and only while that person may edit
     its Space and read the list's. Someone without access to the list cannot use a template
     to publish more of it, and an AI user's edit pauses it until a person saves it again.
+
+### Changed
+- **Shorter Content tabs in Admin**: *Index*, *Deleted*, *Retention* and *Metadata* (were Index
+  Pages, Deleted Pages, Retention Policies and Page Metadata), to make room for Generators.
 
 ### Fixed
 - **A list item's value could run script.** The item view and item form inserted values as

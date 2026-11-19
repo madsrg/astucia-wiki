@@ -31,7 +31,7 @@ let banner = null;
 // ── Navigation ───────────────────────────────────────────────────────────────
 
 /** Open a page by id, in another Space if need be — the way job_watch does it. */
-const openPage = async (space, id) => {
+export const openPage = async (space, id) => {
     if (space && space !== state.currentSpace) {
         const { switchSpaceSilently } = await import('../spaces/index.js');
         const { refreshFileTree } = await import('../file_tree/index.js');
@@ -65,7 +65,7 @@ const tplErrorText = (detail) => {
     return text === key ? String(detail) : text;
 };
 
-const errorText = (info) => {
+export const errorText = (info) => {
     const detail = ['template_error', 'filename_error'].includes(info.error) ? tplErrorText(info.detail) : (info.detail ?? '');
     const vars = { detail, line: info.line ?? '', owner: info.owner ?? info.detail ?? '' };
     const key = `generators.error.${info.error}`;
@@ -73,13 +73,13 @@ const errorText = (info) => {
     return text === key ? t('generators.error.other', vars) : text;
 };
 
-const warningText = (w) => {
+export const warningText = (w) => {
     const key = `generators.warning.${w.warning}`;
     const text = t(key, { detail: w.detail ?? '' });
     return text === key ? (w.detail ?? '') : text;
 };
 
-const countsText = (c) => {
+export const countsText = (c) => {
     if (!c) return '';
     const parts = ['created', 'updated', 'renamed', 'archived']
         .filter(k => c[k] > 0).map(k => t(`generators.count.${k}`, { n: c[k] }));

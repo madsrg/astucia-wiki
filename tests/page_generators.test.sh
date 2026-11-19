@@ -403,6 +403,32 @@ assert_eq '  owned by its creator'                       'Carl' \
     "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["generators"]["Customers:"+sys.argv[2]]["owner"]["name"])' "$WIKI_SYS/generators.json" "$(echo "$C" | gj id)")"
 assert_eq 'creating over an existing page is refused'    'exists' "$(post_as "$CARL" 'api.php?action=generator_create&space=Customers' "source=CRM:$ACCOUNTS&path=Templates/Cards&folder=X" | gj error)"
 
+section 'Admin → Content → Generators'
+A=$(get_as "$CARL" 'api.php?action=admin_get_generators')
+assert_not_contains 'an editor cannot list them'         '"success":true' "$A"
+A=$(get_as "$ADMIN" 'api.php?action=admin_get_generators')
+assert_contains 'an administrator can'                   '"success":true' "$A"
+row() { python3 -c 'import json,sys
+d = json.load(sys.stdin)["data"]
+r = next((g for g in d if g["template_path"] == sys.argv[1]), None)
+if r is None: print("missing"); sys.exit()
+for k in sys.argv[2].split("."): r = r.get(k) if isinstance(r, dict) else None
+print(r)' "$1" "$2"; }
+assert_eq '  the Account template is listed'         'Customers' "$(echo "$A" | row Templates/Account.md space)"
+assert_eq '  with its source list'                   'Accounts.list' "$(echo "$A" | row Templates/Account.md source.path)"
+assert_eq '  its folder'                             'Accounts' "$(echo "$A" | row Templates/Account.md folder)"
+assert_eq '  its owner'                              'Carl' "$(echo "$A" | row Templates/Account.md owner)"
+assert_eq '  and its status'                         'ok' "$(echo "$A" | row Templates/Account.md status)"
+assert_eq "  a template that stopped says why"       'template_error' "$(echo "$A" | row Bad/broken.md error)"
+# A template that arrived without a save is listed at once, not after the hourly scan.
+mkdir -p "$WIKI_PAGES/Customers/Dropped"
+printf -- "---\ngenerator_source: CRM:%s\ngenerator_folder: Dropped/Out\n---\n# {{name}}\n" "$ACCOUNTS" > "$WIKI_PAGES/Customers/Dropped/T.md"
+get_as "$ADMIN" 'api.php?action=indexfiles&space=Customers' > /dev/null
+touch "$WIKI_SYS/generators.discover"       # the hourly scan has just run
+A=$(get_as "$ADMIN" 'api.php?action=admin_get_generators')
+assert_eq 'a dropped-in template is listed at once'  'None' "$(echo "$A" | row Dropped/T.md owner)"
+assert_file_missing '  and listing it rendered nothing'  "$WIKI_PAGES/Customers/Dropped/Out"
+
 section 'State'
 assert_eq 'the owner is recorded'                             'Carl' \
     "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["generators"]["Customers:"+sys.argv[2]]["owner"]["name"])' "$WIKI_SYS/generators.json" "$TPL")"

@@ -1046,7 +1046,7 @@ if (isset($_REQUEST['action'])) {
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'create_library_folder', 'update_tags', 'sync_fm_tags',
                       'save_diagram_svg', 'upload_page', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
                       'retarget_wikilinks', 'set_frontmatter', 'geocode', 'generator_render', 'generator_detach', 'generator_preview', 'generator_sources', 'generator_create'];
-    $admin_actions = ['admin_chat_retention', 'admin_frontmatter_settings', 'admin_map_settings', 'admin_mention_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
+    $admin_actions = ['admin_get_generators', 'admin_chat_retention', 'admin_frontmatter_settings', 'admin_map_settings', 'admin_mention_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
                       'admin_set_space_fm_edit', 'admin_set_space_fm_autostamp', 'admin_set_space_fm_tags_sync', 'admin_set_space_memory',
                       'admin_set_space_skills', 'admin_ai_skills_settings', 'admin_skills_list', 'admin_skill_get', 'admin_skill_save',
                       'admin_skill_delete', 'admin_skill_import_stage', 'admin_skill_import_commit',
@@ -3829,6 +3829,11 @@ if (isset($_REQUEST['action'])) {
                                     'Create template ' . basename($gc_rel));
                 }
                 echo json_encode(['success' => true, 'id' => $gc_id, 'path' => $gc_rel]);
+                break;
+
+            case 'admin_get_generators':
+                // Admin → Content → Generators: every generator in the wiki, whatever Space.
+                echo json_encode(['success' => true, 'data' => wiki_gen_admin_list()]);
                 break;
 
             case 'generator_detach':

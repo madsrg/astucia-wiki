@@ -11,6 +11,7 @@ import { invalidateMcpServers } from '../core/mcp_servers.js';
 import { t, getLanguage } from '../i18n/index.js';
 import { isLive, subscribe, rtTopic } from '../realtime/index.js';
 import { loadWorkflows, initWorkflows } from './workflows.js';
+import { loadGenerators } from './generators.js';
 import { loadProvisioning, setKnownClaims } from './provisioning.js';
 import { openPagePicker } from './page_picker.js';
 import { loadTaxonomyPane } from './taxonomy.js';
@@ -58,7 +59,7 @@ const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
     ai:         ['ai', 'llm', 'jobs', 'mcp', 'skills'],
     monitoring: ['logs', 'errorlog', 'audit', 'diagnostics', 'realtime', 'sysinfo'],
-    content:    ['reindex', 'deleted', 'retention', 'metadata', 'maps', 'taxonomy', 'workflows'],
+    content:    ['reindex', 'deleted', 'retention', 'metadata', 'maps', 'taxonomy', 'workflows', 'generators'],
 };
 const lastTabInGroup = { users: 'users', ai: 'ai', monitoring: 'logs', content: 'reindex' };
 
@@ -111,6 +112,7 @@ const switchTab = (name) => {
     if (name === 'mcp')         loadMcpServers();
     if (name === 'llm')         loadLlmConnections();
     if (name === 'workflows')   loadWorkflows();
+    if (name === 'generators')  loadGenerators();
     if (name === 'taxonomy')    loadTaxonomyPane();
     if (name === 'skills')      loadSkills();
 };
