@@ -5,6 +5,7 @@ import { api } from '../core/api.js';
 import { state } from '../core/state.js';
 import { icons } from '../core/icons.js';
 import { insertMarkdown, insertBlock } from './editor.js';
+import { isHtmlPage, image as htmlImage } from './html_insert.js';
 import { showToast } from '../core/utils.js';
 import { t } from '../i18n/index.js';
 
@@ -226,6 +227,11 @@ export const init = () => {
         const _sp = state.currentSpace ? `&space=${encodeURIComponent(state.currentSpace)}` : '';
         const url = `getfile.php?path=${encodeURIComponent(selectedImagePath)}${_sp}`;
         const filename = selectedImagePath.split('/').pop();
+        if (isHtmlPage()) {
+            htmlImage(url, filename, w, h);
+            closeEl('insert-image-lightbox');
+            return;
+        }
         let md;
         if (w || h) {
             const wAttr = w ? ` width="${w}"` : '';

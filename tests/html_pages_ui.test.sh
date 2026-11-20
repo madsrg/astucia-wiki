@@ -149,7 +149,60 @@ const run = async () => {
   out += ' modeWhile=' + state.editMode;
   out += ' source=' + ($('#editor-container').value.includes('<div class="probe-card">') ? 'html' : 'no');
 
+  // The toolbar on an HTML page inserts HTML (modules/page_edit/html_insert.js).
+  {
+    const { t } = await import('./modules/i18n/index.js');
+    const ed = $('#editor-container');
+    const orig = ed.value;
+    const NL = String.fromCharCode(10);
+    const flat = (v) => v.split(NL).join('~').replace(/ /g, '_');
+    const btn = (key) => $$('#editor-toolbar button').find(b => b.title === t(key));
+    const put = (text, s, e) => { ed.value = text; ed.focus(); ed.setSelectionRange(s, e); };
+    const tryBtn = (name, key, text, s, e) => { put(text, s, e); click(btn(key)); out += ' tb' + name + '=' + flat(ed.value); };
+    tryBtn('H2', 'tb.h2', 'Title', 5, 5);
+    click(btn('tb.h3'));  out += ' tbH3=' + flat(ed.value);
+    tryBtn('Bold', 'tb.bold', 'a word', 2, 6);
+    tryBtn('Italic', 'tb.italic', 'x', 0, 1);
+    tryBtn('Strike', 'tb.strikethrough', 'x', 0, 1);
+    tryBtn('Code', 'tb.code', 'a<b', 0, 3);
+    tryBtn('Ul', 'tb.ul', 'one' + NL + 'two', 0, 7);
+    tryBtn('OlEmpty', 'tb.ol', '', 0, 0);
+    tryBtn('Quote', 'tb.quote', 'q', 0, 1);
+    tryBtn('Hr', 'tb.hr', '', 0, 0);
+    tryBtn('Table', 'tb.table', '', 0, 0);
+    // Shortcuts: Alt+B is <strong>; Alt+N still inserts {filename}, which an HTML page fills in.
+    const alt = (k) => { const ev = new KeyboardEvent('keydown', { key: k, altKey: true, bubbles: true, cancelable: true }); ed.dispatchEvent(ev); return ev.defaultPrevented; };
+    put('y', 0, 1); alt('b'); out += ' hkBold=' + flat(ed.value);
+    put('', 0, 0); alt('n'); out += ' hkN=' + (ed.value || 'nothing');
+    put('', 0, 0); const claimedP = alt('p'); out += ' hkP=' + (ed.value === '' ? 'nothing' : flat(ed.value)) + ',' + (claimedP ? 'claimed' : 'free') + ',' + (shown($('#link-lightbox')) ? 'dialog' : 'nodialog');
+    put('', 0, 0); alt('k'); out += ' hkComment=' + flat(ed.value);
+    // An external link: the typed text and the URL escaped.
+    put('', 0, 0);
+    $('#external-link-url').value = 'https://x.test/?a=1&b="2"';
+    $('#external-link-text').value = '<T>';
+    click($('#external-link-insert-btn'));
+    out += ' extLink=' + flat(ed.value);
+    // What has no HTML form is hidden; Image stays in Insert.
+    const gone = (el) => !!el && getComputedStyle(el).display === 'none';
+    out += ' checklistHidden=' + gone(btn('tb.checklist'));
+    const menu = (key) => $$('#editor-toolbar .dropdown-container').find(c => c.querySelector(':scope > button') && c.querySelector(':scope > button').textContent.startsWith(t(key) + ' '));
+    const auto = menu('tb.menu-autotext');
+    out += ' autotextItems=' + (auto ? [...auto.querySelectorAll(':scope > .dropdown-content > a')].filter(a => !gone(a)).map(a => w(a.textContent)).join(',') : 'none');
+    put('', 0, 0); click([...auto.querySelectorAll(':scope > .dropdown-content > a')].pop()); out += ' autoComment=' + flat(ed.value);
+    const ins = menu('tb.menu-insert');
+    out += ' insertItems=' + (ins ? [...ins.querySelectorAll(':scope > .dropdown-content > a, :scope > .dropdown-content > .dropdown-submenu')].filter(a => !gone(a)).map(a => w(a.textContent.split(NL)[0])).join(',') : 'none');
+    out += ' linkMenu=' + (gone(menu('tb.menu-link')) ? 'hidden' : 'shown');
+    // Positive control: the same buttons on a Markdown page still write Markdown.
+    document.body.classList.remove('page-html');
+    tryBtn('MdBold', 'tb.bold', 'x', 0, 1);
+    out += ' mdChecklist=' + (gone(btn('tb.checklist')) ? 'hidden' : 'shown');
+    document.body.classList.add('page-html');
+    ed.value = orig;
+    ed.dispatchEvent(new Event('input'));
+    state.hasUnsavedChanges = false;
+  }
   click($('#cancel-btn'));                                 await sleep(600);
+  if (shown($('#confirm-modal'))) { click($('#confirm-modal-ok')); await sleep(600); }
   out += ' modeAfter=' + state.editMode + ',' + localStorage.getItem('wiki_editMode');
 
   const { loadPage } = await import('./modules/page_view/index.js');
@@ -240,6 +293,31 @@ assert_contains "  but the classic editor opens"            'editor=classic '   
 assert_contains "  for this edit"                           'modeWhile=classic '    "$PROBE"
 assert_contains "  on the HTML source"                      'source=html '          "$PROBE"
 assert_contains "  and afterwards the preference is as it was" 'modeAfter=inline,inline ' "$PROBE"
+
+section 'its toolbar writes HTML'
+assert_contains "H2 wraps the line"                         'tbH2=<h2>Title</h2> '  "$PROBE"
+assert_contains "  and H3 changes its level"                'tbH3=<h3>Title</h3> '  "$PROBE"
+assert_contains "Bold wraps the selection in <strong>"      'tbBold=a_<strong>word</strong> ' "$PROBE"
+assert_contains "Italic is <em>"                            'tbItalic=<em>x</em> '  "$PROBE"
+assert_contains "Strikethrough is <s>"                      'tbStrike=<s>x</s> '    "$PROBE"
+assert_contains "Code escapes what it shows"                'tbCode=<code>a&lt;b</code> ' "$PROBE"
+assert_contains "a list makes each selected line an item"   'tbUl=<ul>~__<li>one</li>~__<li>two</li>~</ul> ' "$PROBE"
+assert_contains "  or one empty item to type into"          'tbOlEmpty=<ol>~__<li></li>~</ol> ' "$PROBE"
+assert_contains "Quote is <blockquote>"                     'tbQuote=<blockquote>q</blockquote> ' "$PROBE"
+assert_contains "the rule is <hr>"                          'tbHr=<hr> '            "$PROBE"
+assert_contains "the table is a <table>"                    'tbTable=<table>~__<thead>' "$PROBE"
+assert_contains "Alt+B is <strong> too"                     'hkBold=<strong>y</strong> ' "$PROBE"
+assert_contains "Alt+N still inserts {filename}, which an HTML page fills in" 'hkN={filename} ' "$PROBE"
+assert_contains "Alt+P ({include}) does nothing, and leaves the key alone" 'hkP=nothing,free,nodialog ' "$PROBE"
+assert_contains "Alt+K is an HTML comment"                  'hkComment=<!--__--> '  "$PROBE"
+assert_contains "an external link is an <a>, its URL and text escaped" \
+    'extLink=<a_href="https://x.test/?a=1&amp;b=&quot;2&quot;">&lt;T&gt;</a> ' "$PROBE"
+assert_contains "the checklist is hidden"                   'checklistHidden=true ' "$PROBE"
+assert_contains "Auto text keeps what an HTML page fills in, not {toc}" 'autotextItems=Filename,Last_Updated,Comment ' "$PROBE"
+assert_contains "  and its Comment is an HTML comment"     'autoComment=<!--__--> ' "$PROBE"
+assert_contains "Insert offers Image alone"                 'insertItems=Image '    "$PROBE"
+assert_contains "Link stays"                                'linkMenu=shown '       "$PROBE"
+assert_contains "positive control: a Markdown page still gets Markdown" 'tbMdBold=**x** mdChecklist=shown ' "$PROBE"
 
 section 'a Markdown page, unchanged'
 assert_contains "is still Markdown"                         'plain=markdown '       "$PROBE"

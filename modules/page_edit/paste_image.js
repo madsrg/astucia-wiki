@@ -16,6 +16,7 @@
 import { state } from '../core/state.js';
 import { showToast } from '../core/utils.js';
 import { insertMarkdown } from './editor.js';
+import { isHtmlPage, image as htmlImage } from './html_insert.js';
 import { renderAttachments } from '../attachments/index.js';
 import { t } from '../i18n/index.js';
 
@@ -93,7 +94,9 @@ const handlePaste = async (e) => {
 
         const name = result.filename;
         const path = `${pagePath}.uploads/${name}`;
-        insertMarkdown(`![${name}](getfile.php?path=${encodeURIComponent(path)}${spaceQs})`);
+        const src = `getfile.php?path=${encodeURIComponent(path)}${spaceQs}`;
+        if (isHtmlPage()) htmlImage(src, name);
+        else insertMarkdown(`![${name}](${src})`);
     }
     showToast(t('img.uploaded'), 'success');
     renderAttachments();

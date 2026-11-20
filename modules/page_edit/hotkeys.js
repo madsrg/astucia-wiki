@@ -6,6 +6,7 @@ import { insertHeading, insertSmart, indentLines, newlineKeepIndent, isMarkdownE
 import { savePage } from './index.js';
 import { openSearchReplace } from './search.js';
 import { openLinkLightbox } from './link_lightbox.js';
+import { isHtmlPage, HTML_HOTKEYS } from './html_insert.js';
 
 export const loadHotkeys = async () => {
     try {
@@ -80,8 +81,15 @@ export const init = () => {
             if (e.altKey && !e.ctrlKey && !e.metaKey) {
                 if (key === 's') { e.preventDefault(); if (!document.getElementById('save-btn').disabled) savePage(); return; }
                 if (key === 'l') { e.preventDefault(); state.linkInsertionMode = 'link'; openLinkLightbox(); return; }
-                if (key === 'p') { e.preventDefault(); state.linkInsertionMode = 'include'; openLinkLightbox(); return; }
+                if (key === 'p' && !isHtmlPage()) { e.preventDefault(); state.linkInsertionMode = 'include'; openLinkLightbox(); return; }
                 if (key === 'f') { e.preventDefault(); openSearchReplace(); return; }
+                // An HTML page: the HTML form of a shortcut, or nothing ({include} would show
+                // literally there). Alt+L above inserts an <a> through the dialog.
+                if (isHtmlPage()) {
+                    const f = HTML_HOTKEYS[key];
+                    if (f) { e.preventDefault(); f(); }
+                    return;
+                }
 
                 if (key >= '1' && key <= '3' && state.hotkeys[`alt+${key}`]) {
                     e.preventDefault(); insertHeading(parseInt(key, 10));

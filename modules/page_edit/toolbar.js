@@ -8,6 +8,9 @@ import { openIncludeLightbox, openImageLightbox, openDiagramInsertLightbox, open
 import { openCommentLightbox } from './insert_comment.js';
 import { openLinkLightbox, openExternalLinkLightbox } from './link_lightbox.js';
 import { t } from '../i18n/index.js';
+// On an HTML page (format: html) the same buttons insert HTML; see html_insert.js.
+import * as html from './html_insert.js';
+const isHtml = html.isHtmlPage;
 
 const svg = (inner, sw = 2) =>
     `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
@@ -187,30 +190,30 @@ export const createEditorToolbar = () => {
     const hk = key => state.hotkeys[key] || {};
 
     // ── Headings ────────────────────────────────────────────────────────────
-    addBtn('H1', t('tb.h1'), () => insertHeading(1));
-    addBtn('H2', t('tb.h2'), () => insertHeading(2));
-    addBtn('H3', t('tb.h3'), () => insertHeading(3));
+    addBtn('H1', t('tb.h1'), () => isHtml() ? html.heading(1) : insertHeading(1));
+    addBtn('H2', t('tb.h2'), () => isHtml() ? html.heading(2) : insertHeading(2));
+    addBtn('H3', t('tb.h3'), () => isHtml() ? html.heading(3) : insertHeading(3));
 
     // ── Inline formatting ───────────────────────────────────────────────────
     addBtn(
         svg('<path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/>', 2.5),
         t('tb.bold'),
-        () => insertMarkdown(hk('alt+b').prefix, hk('alt+b').suffix)
+        () => isHtml() ? html.inline('strong') : insertMarkdown(hk('alt+b').prefix, hk('alt+b').suffix)
     );
     addBtn(
         svg('<line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/>', 2.5),
         t('tb.italic'),
-        () => insertMarkdown(hk('alt+i').prefix, hk('alt+i').suffix)
+        () => isHtml() ? html.inline('em') : insertMarkdown(hk('alt+i').prefix, hk('alt+i').suffix)
     );
     addBtn(
         svg('<line x1="5" y1="12" x2="19" y2="12"/><path d="M16 6.5C14.5 5 12.5 4.5 11 4.5c-2.5 0-4 1.2-4 3 0 1.3.9 2.2 2.5 2.5"/><path d="M8 17.5C9.5 19 11.5 19.5 13 19.5c2.5 0 4-1.2 4-3 0-1.3-.9-2.2-2.5-2.5"/>'),
         t('tb.strikethrough'),
-        () => insertMarkdown('~~', '~~')
+        () => isHtml() ? html.inline('s') : insertMarkdown('~~', '~~')
     );
     addBtn(
         svg('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'),
         t('tb.code'),
-        () => insertSmart(hk('alt+c').prefix, hk('alt+c').suffix)
+        () => isHtml() ? html.code() : insertSmart(hk('alt+c').prefix, hk('alt+c').suffix)
     );
 
     // ── Emoji ───────────────────────────────────────────────────────────────
@@ -261,18 +264,19 @@ export const createEditorToolbar = () => {
     addBtn(
         svg('<line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/>'),
         t('tb.ul'),
-        () => prependLines('- ')
+        () => isHtml() ? html.list('ul') : prependLines('- ')
     );
     addBtn(
         svg('<line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>'),
         t('tb.ol'),
-        () => prependLines('1. ')
+        () => isHtml() ? html.list('ol') : prependLines('1. ')
     );
+    // No HTML counterpart worth inserting: hidden on an HTML page.
     addBtn(
         svg('<rect x="2" y="5" width="6" height="6" rx="1"/><polyline points="3.5 8 5 9.5 7.5 6.5"/><line x1="11" y1="8" x2="22" y2="8"/><rect x="2" y="14" width="6" height="6" rx="1"/><line x1="11" y1="17" x2="22" y2="17"/>'),
         t('tb.checklist'),
         () => prependLines('- [ ] ')
-    );
+    ).classList.add('tb-md-only');
 
     // ── Block formatting ────────────────────────────────────────────────────
     addBtn(
@@ -280,17 +284,17 @@ export const createEditorToolbar = () => {
         t('tb.quote'),
         // prependLines, like the list buttons beside it: "> " only quotes when it starts a line,
         // and a multi-line selection needs the marker on every line, not just the first.
-        () => prependLines('> ')
+        () => isHtml() ? html.quote() : prependLines('> ')
     );
     addBtn(
         svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>'),
         t('tb.table'),
-        () => insertSmart(hk('alt+t').prefix, hk('alt+t').suffix)
+        () => isHtml() ? html.table() : insertSmart(hk('alt+t').prefix, hk('alt+t').suffix)
     );
     addBtn(
         svg('<line x1="3" y1="12" x2="21" y2="12"/>', 2.5),
         t('tb.hr'),
-        () => insertBlock('---')
+        () => isHtml() ? html.hr() : insertBlock('---')
     );
 
     // ── New paragraph ───────────────────────────────────────────────────────
@@ -337,6 +341,7 @@ export const createEditorToolbar = () => {
             a.addEventListener('mousedown', e => e.preventDefault());
             a.addEventListener('click', (e) => { e.preventDefault(); action(); content.classList.add('hidden'); });
             content.appendChild(a);
+            return a;
         };
 
         // Nested menus, for groups too long to sit inline (the mermaid types, the callouts)
@@ -415,6 +420,7 @@ export const createEditorToolbar = () => {
                 e.stopPropagation();
                 openSubmenu(wrap);
             });
+            return wrap;
         };
 
         buildItems(addItem, addSubmenu);
@@ -440,11 +446,14 @@ export const createEditorToolbar = () => {
     });
 
     // ── Metadata dropdown ───────────────────────────────────────────────────
+    // An HTML page still fills in {filename} and {lastUpdated}; {toc} needs the Markdown
+    // pass, so it is hidden there, and the comment is an HTML one.
     makeDropdown(t('tb.menu-autotext'), add => {
         add(t('tb.meta-filename'), t('tb.meta-filename-title'), () => insertMarkdown('{filename}'));
         add(t('tb.meta-updated'), t('tb.meta-updated-title'), () => insertMarkdown('{lastUpdated}'));
-        add(t('tb.meta-toc'), t('tb.meta-toc-title'), () => insertBlock('{toc maxLevels:3}'));
+        add(t('tb.meta-toc'), t('tb.meta-toc-title'), () => insertBlock('{toc maxLevels:3}')).classList.add('tb-md-only');
         add(t('tb.meta-comment'), t('tb.meta-comment-title'), () => {
+            if (isHtml()) { html.comment(); return; }
             const k = hk('alt+k');
             if (k.prefix !== undefined) insertSmart(k.prefix, k.suffix);
         });
@@ -452,31 +461,34 @@ export const createEditorToolbar = () => {
 
     // ── Insert dropdown ─────────────────────────────────────────────────────
     makeDropdown(t('tb.menu-insert'), (add, addSubmenu) => {
-        add(t('tb.insert-include'), t('tb.insert-include-title'), openIncludeLightbox);
+        // On an HTML page only Image applies (as an <img>); the rest are wiki tags and
+        // Markdown blocks the page view does not render there, so they are hidden.
+        const mdOnly = (el) => el.classList.add('tb-md-only');
+        mdOnly(add(t('tb.insert-include'), t('tb.insert-include-title'), openIncludeLightbox));
         add(t('tb.insert-image'), t('tb.insert-image-title'), openImageLightbox);
-        add(t('tb.insert-diagram'), t('tb.insert-diagram-title'), openDiagramInsertLightbox);
-        add(t('tb.insert-list'), t('tb.insert-list-title'), openListInsertLightbox);
-        add(t('tb.insert-comment'), t('tb.insert-comment-title'), openCommentLightbox);
+        mdOnly(add(t('tb.insert-diagram'), t('tb.insert-diagram-title'), openDiagramInsertLightbox));
+        mdOnly(add(t('tb.insert-list'), t('tb.insert-list-title'), openListInsertLightbox));
+        mdOnly(add(t('tb.insert-comment'), t('tb.insert-comment-title'), openCommentLightbox));
         // A ```map block, drawn by modules/maps. Loaded on first use: most pages never get one.
-        add(t('tb.insert-map'), t('tb.insert-map-title'),
-            () => import('../maps/insert.js').then(m => m.openMapInsertDialog()));
+        mdOnly(add(t('tb.insert-map'), t('tb.insert-map-title'),
+            () => import('../maps/insert.js').then(m => m.openMapInsertDialog())));
         // Text-defined diagrams: a ```mermaid block, rendered as SVG in read mode. The
         // skeleton is a working diagram, so it renders as soon as the page is saved. One
         // submenu rather than nine more rows here, which would push the callouts out of
         // reach and make Insert a list of mostly mermaid.
-        addSubmenu(t('tb.insert-mermaid'), t('tb.insert-mermaid-title'), addItem => {
+        mdOnly(addSubmenu(t('tb.insert-mermaid'), t('tb.insert-mermaid-title'), addItem => {
             MERMAID_STARTERS
                 .map(([key, skeleton]) => [t(key), skeleton])
                 .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base', numeric: true }))
                 .forEach(([label, skeleton]) => {
                     addItem(label, t('tb.mermaid-item-title'), () => insertBlock(skeleton, FENCE_END));
                 });
-        });
+        }));
         // Callouts render as coloured boxes in read mode. Same syntax as Obsidian, GitHub and
         // GitLab, so a page carrying one displays correctly in all of them. Left in their
         // own order rather than sorted: Note → Tip → Warning → Danger is a severity
         // progression, and Foldable is a variant of any of them rather than a sixth type.
-        addSubmenu(t('tb.insert-callouts'), t('tb.insert-callouts-title'), addItem => {
+        mdOnly(addSubmenu(t('tb.insert-callouts'), t('tb.insert-callouts-title'), addItem => {
             addItem(t('tb.callout-note'), t('tb.callout-note-title', { types: CALLOUT_TYPES }),
                 () => insertBlock(callout('note', 'Note')));
             addItem(t('tb.callout-tip'), t('tb.callout-tip-title'), () => insertBlock(callout('tip', 'Tip')));
@@ -484,7 +496,7 @@ export const createEditorToolbar = () => {
             addItem(t('tb.callout-danger'), t('tb.callout-danger-title'), () => insertBlock(callout('danger', 'Danger')));
             addItem(t('tb.callout-foldable'), t('tb.callout-foldable-title'),
                 () => insertBlock('> [!note]- Click to expand\n> '));
-        });
+        }));
     });
 
     // ── Help / keyboard shortcuts dropdown ──────────────────────────────────

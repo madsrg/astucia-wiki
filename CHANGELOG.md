@@ -49,6 +49,9 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   blocked and reported. A template that puts a value somewhere no escaping makes safe — in a
   script, a style, an `on…` handler — is refused with the line and the reason. An HTML page is
   shown as written, edited in the classic editor, and searched by its text, not its markup.
+  While editing one, the toolbar, its shortcuts and the link and image dialogs write HTML
+  (`<strong>`, `<h2>`, `<a href>`, `<img>`, …) instead of Markdown, and what has no HTML form —
+  the checklist, `{toc}`, the wiki's Insert blocks — is hidden.
   Each new HTML template starts with its own copy of those styles in a `<style>` block, to
   edit freely; it is copied to every page and applies only to the page, never the wiki around it.
 - **Groups of fields in lists.** A field can now hold fields of its own — a customer's

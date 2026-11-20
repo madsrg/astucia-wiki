@@ -6,6 +6,7 @@ import { state } from '../core/state.js';
 import { icons } from '../core/icons.js';
 import { renderTree } from '../file_tree/index.js';
 import { insertMarkdown, insertBlock } from './editor.js';
+import { isHtmlPage, link as htmlLink } from './html_insert.js';
 
 const closeLinkLightbox = () => {
     document.getElementById('link-lightbox').classList.add('hidden');
@@ -77,11 +78,12 @@ export const init = () => {
             if (state.linkInsertionMode === 'include') {
                 insertBlock(`{include:${id}}`);
             } else {
-                const linkText = editor.value.substring(editor.selectionStart, editor.selectionEnd)
-                    || contentTarget.querySelector('span:last-child').textContent.trim();
+                const selected = editor.value.substring(editor.selectionStart, editor.selectionEnd);
+                const linkText = selected || contentTarget.querySelector('span:last-child').textContent.trim();
                 const selectedSpace = spaceSelect.value || state.currentSpace;
                 const spaceSuffix = selectedSpace ? `&space=${encodeURIComponent(selectedSpace)}` : '';
-                insertMarkdown(`[${linkText}](?pageid=${id}${spaceSuffix})`);
+                if (isHtmlPage()) htmlLink(`?pageid=${id}${spaceSuffix}`, linkText, !!selected);
+                else insertMarkdown(`[${linkText}](?pageid=${id}${spaceSuffix})`);
             }
             closeLinkLightbox();
         } else if (type === 'folder') {
@@ -111,7 +113,8 @@ export const init = () => {
         const url  = extUrlInput.value.trim();
         const text = extTextInput.value.trim() || url;
         if (!url) return;
-        insertMarkdown(`[${text}](${url})`);
+        if (isHtmlPage()) htmlLink(url, text);
+        else insertMarkdown(`[${text}](${url})`);
         closeExternalLinkLightbox();
     };
 

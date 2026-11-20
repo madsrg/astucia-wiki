@@ -7,6 +7,8 @@
 // unordered lists, and delete-current-line.
 import { insertMarkdown, insertHeading, prependLines, deleteCurrentLine } from './editor.js';
 import { t } from '../i18n/index.js';
+import * as html from './html_insert.js';
+const isHtml = html.isHtmlPage;
 
 const svg = (inner) =>
     `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
@@ -29,18 +31,19 @@ export const createMobileEditorToolbar = () => {
         toolbar.appendChild(btn);
     };
 
-    add('<b>H1</b>', 'mobile.ed.h1', () => insertHeading(1));
-    add('<b>H2</b>', 'mobile.ed.h2', () => insertHeading(2));
-    add('<b>H3</b>', 'mobile.ed.h3', () => insertHeading(3));
-    add('<b>B</b>',  'mobile.ed.bold',   () => insertMarkdown('**', '**'));
-    add('<i>I</i>', 'mobile.ed.italic', () => insertMarkdown('*', '*'));
+    // On an HTML page the same buttons insert HTML (html_insert.js).
+    add('<b>H1</b>', 'mobile.ed.h1', () => isHtml() ? html.heading(1) : insertHeading(1));
+    add('<b>H2</b>', 'mobile.ed.h2', () => isHtml() ? html.heading(2) : insertHeading(2));
+    add('<b>H3</b>', 'mobile.ed.h3', () => isHtml() ? html.heading(3) : insertHeading(3));
+    add('<b>B</b>',  'mobile.ed.bold',   () => isHtml() ? html.inline('strong') : insertMarkdown('**', '**'));
+    add('<i>I</i>', 'mobile.ed.italic', () => isHtml() ? html.inline('em') : insertMarkdown('*', '*'));
     add(
         svg('<line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/>'),
-        'mobile.ed.ul', () => prependLines('- ')
+        'mobile.ed.ul', () => isHtml() ? html.list('ul') : prependLines('- ')
     );
     add(
         svg('<line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>'),
-        'mobile.ed.ol', () => prependLines('1. ')
+        'mobile.ed.ol', () => isHtml() ? html.list('ol') : prependLines('1. ')
     );
     add(
         svg('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>'),

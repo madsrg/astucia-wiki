@@ -2974,6 +2974,8 @@ pre.wiki-map-source { display: none; }
 .page-generated #edit-btn, .page-generated #editor-mode-group { display: none; }
 /* An HTML page (`format: html`) is edited in the classic editor only: no inline/classic switch. */
 .page-html #editor-mode-group { display: none; }
+/* The toolbar controls with no HTML form (modules/page_edit/html_insert.js). */
+.page-html .tb-md-only { display: none !important; }
 /* Lined up with the page itself: #viewer-content's own left margin and padding. */
 .generator-banner { display: flex; gap: 0.75rem; align-items: flex-start; margin: 1rem 2rem 0 calc(24px + 2rem); padding: 0.6rem 0.9rem;
     border: 1px solid var(--border-color); border-left: 4px solid #805ad5; border-radius: 6px; background: #faf5ff; font-size: 0.875rem; }
