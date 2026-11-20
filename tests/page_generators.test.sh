@@ -186,6 +186,10 @@ assert_eq 'one archived'                                      '1' "$(echo "$OUT"
 assert_file_exists '  the page is still there'                "$WIKI_PAGES/Customers/Accounts/Gamma.md"
 assert_eq '  no longer generated'                             '' "$(fm Accounts/Gamma.md generated_by)"
 assert_eq '  archived from the template'                      "$TPL" "$(fm Accounts/Gamma.md archived_from)"
+assert_eq '  because its row was deleted'                    'row_removed' "$(fm Accounts/Gamma.md archived_reason)"
+assert_eq '  from this list'                                 'Accounts' "$(fm Accounts/Gamma.md archived_list)"
+assert_contains '  which `get` passes on'                    '"reason":"row_removed","list":"Accounts"' \
+    "$(get_as "$CARL" 'api.php?action=get&space=Customers&file=Accounts/Gamma.md')"
 OUT=$(render "$CARL")
 assert_eq '  and the next render leaves it alone'             '0' "$(echo "$OUT" | field counts.archived)"
 
@@ -371,6 +375,9 @@ assert_eq '  and where it writes'                        'Accounts' "$(echo "$G"
 G=$(get_as "$EVE" "api.php?action=get&space=Customers&file=Templates/Account.md")
 assert_eq "to Eve, who cannot read CRM, the list's path is withheld" 'None' "$(echo "$G" | gj generator.source.path)"
 assert_eq '  and marked unreadable'                      'False' "$(echo "$G" | gj generator.source.readable)"
+B=$(get_as "$CARL" "api.php?action=get&space=Customers&file=Bad/broken.md")
+assert_eq 'a template that failed says why'                'template_error' "$(echo "$B" | gj generator.error)"
+assert_eq '  and is not "rendering": it is retried, not pending' 'False' "$(echo "$B" | gj generator.pending)"
 assert_eq 'an ordinary page has no generator'            'None' "$(get_as "$CARL" 'api.php?action=get&space=Customers&file=Linker.md' | gj generator)"
 
 P=$(get_as "$CARL" "api.php?action=generator_preview&space=Customers&id=$TPL&row=1")
@@ -506,6 +513,96 @@ P=$(get_as "$CARL" "api.php?action=generator_preview&space=Customers&id=$MTPL&ro
 assert_contains 'the preview renders the same'              'Lives at Main St 1, Oslo' "$(echo "$P" | field body)"
 S=$(get_as "$CARL" 'api.php?action=generator_sources')
 assert_contains 'the sources name a group by its key'       '"key":"debit_cards","type":"object"' "$S"
+
+section 'An HTML template, previewed'
+cat > "$WIKI_PAGES/CRM/Links.list" <<'JSON'
+{"columns":[{"id":"col_2","name":"Name","type":"text_single","role":"title"},{"id":"col_3","name":"Site","type":"text_single"}],
+ "items":[{"id":1,"col_2":"<b>Ann</b> @alice","col_3":"javascript:alert(1)"},{"id":2,"col_2":"Bo","col_3":"https://bo.example"}],"nextItemId":3}
+JSON
+get_as "$ADMIN" 'api.php?action=indexfiles&space=CRM' > /dev/null
+LINKS=$(id_of CRM Links.list)
+printf -- '---\nformat: html\ngenerator_source: CRM:%s\ngenerator_folder: Links\n---\n<p title="{{name}}">{{name}}</p><a href="{{site}}">site</a>\n' "$LINKS" > "$WIKI_PAGES/Customers/Templates/Link.md"
+printf -- '---\nformat: html\ngenerator_source: CRM:%s\ngenerator_folder: Bad\n---\n<p onclick="{{name}}">x</p>\n' "$LINKS" > "$WIKI_PAGES/Customers/Templates/BadHtml.md"
+get_as "$ADMIN" 'api.php?action=indexfiles&space=Customers' > /dev/null
+P=$(get_as "$CARL" "api.php?action=generator_preview&space=Customers&id=$(id_of Customers Templates/Link.md)&row=1")
+assert_eq 'the preview says it is HTML'                     'html' "$(echo "$P" | field format)"
+assert_contains '  text escaped, mentions neutralised'      '<p title="&lt;b&gt;Ann&lt;/b&gt; &#64;alice">&lt;b&gt;Ann&lt;/b&gt; &#64;alice</p>' "$(echo "$P" | field body)"
+assert_contains '  a javascript: link blocked'              '<a href="#blocked">' "$(echo "$P" | field body)"
+assert_contains '  and reported'                            'url_blocked' "$(echo "$P" | field warnings)"
+P=$(get_as "$CARL" "api.php?action=generator_preview&space=Customers&id=$(id_of Customers Templates/Link.md)&row=2")
+assert_contains 'control: an https link passes'             '<a href="https://bo.example">' "$(echo "$P" | field body)"
+P=$(get_as "$CARL" "api.php?action=generator_preview&space=Customers&id=$(id_of Customers Templates/BadHtml.md)")
+assert_eq 'a value in an event handler refuses the template' 'template_error' "$(echo "$P" | field error)"
+assert_contains '  naming why'                              'html_context: event handler' "$(echo "$P" | field detail)"
+
+section 'An HTML template writes HTML pages'
+LTPL=$(id_of Customers Templates/Link.md)
+OUT=$(render "$CARL" "$LTPL")
+assert_eq 'it renders'                                      'ok' "$(echo "$OUT" | field status)"
+assert_contains 'a blocked link is reported once, with its rows' '"warning":"url_blocked","detail":"site (1)"' "$OUT"
+ANNP=$(ls "$WIKI_PAGES/Customers/Links/" | grep -v Bo); ANN="$WIKI_PAGES/Customers/Links/$ANNP"
+assert_eq 'its pages are format: html'                      'html' "$(fm "Links/$ANNP" format)"
+assert_contains '  their values escaped for where they land' '<p title="&lt;b&gt;Ann&lt;/b&gt; &#64;alice">' "$(cat "$ANN")"
+assert_contains '  the link blocked'                        '<a href="#blocked">' "$(cat "$ANN")"
+assert_contains 'control: the other row keeps its link'     '<a href="https://bo.example">' "$(cat "$WIKI_PAGES/Customers/Links/Bo.md")"
+# Back to Markdown: the key comes off the pages.
+printf -- '---\ngenerator_source: CRM:%s\ngenerator_folder: Links\n---\n# {{name}}\n' "$LINKS" > "$WIKI_PAGES/Customers/Templates/Link.md"
+render "$CARL" "$LTPL" > /dev/null
+assert_eq 'a template back to Markdown takes format off its pages' '' "$(fm Links/Bo.md format)"
+assert_contains '  and writes Markdown'                     '# Bo' "$(cat "$WIKI_PAGES/Customers/Links/Bo.md")"
+printf -- '---\nformat: html\ngenerator_source: CRM:%s\ngenerator_folder: Links\n---\n<h2>{{name}}</h2>\n' "$LINKS" > "$WIKI_PAGES/Customers/Templates/Link.md"
+render "$CARL" "$LTPL" > /dev/null
+post_as "$CARL" 'api.php?action=generator_detach&space=Customers' 'path=Links/Bo.md' > /dev/null
+assert_eq 'a detached page stays HTML'                      'html' "$(fm Links/Bo.md format)"
+assert_eq '  and is detached'                               "$LTPL" "$(fm Links/Bo.md detached_from)"
+
+section 'New → Generated Pages, as HTML'
+# A hostile field name, to show labels are text in the starter too.
+python3 - "$WIKI_PAGES/CRM/Members.list" <<'PY'
+import json, sys; p = sys.argv[1]; d = json.load(open(p))
+d["columns"].append({"id": "col_9", "name": "Note <i>{{x}}</i>", "type": "text_single"})
+d["items"][0]["col_9"] = "fine"
+json.dump(d, open(p, "w"))
+PY
+C=$(post_as "$CARL" 'api.php?action=generator_create&space=Customers' "source=CRM:$MEMBERS&path=templates/Members&folder=MembersHtml&format=html")
+assert_contains 'an HTML template is created'               '"success":true' "$C"
+T="$WIKI_PAGES/Customers/templates/Members.md"
+assert_contains '  marked format: html'                     'format: html' "$(cat "$T")"
+assert_contains '  starting with its own copy of the styles' '<style>' "$(head -12 "$T")"
+assert_contains '  the wk-* rules, written plainly'         '.wk-card   { border' "$(cat "$T")"
+assert_contains '  a card of fields'                        '<div class="wk-card">' "$(cat "$T")"
+assert_contains '  a single group as a nested block'        '{{#address}}' "$(cat "$T")"
+assert_contains '  several entries as a grid of cards'      '<div class="wk-grid">' "$(cat "$T")"
+assert_contains '  a field name escaped, braces included'  '<dt>Note &lt;i&gt;&#123;&#123;x&#125;&#125;&lt;/i&gt;</dt>' "$(cat "$T")"
+ANNH=$(cat "$WIKI_PAGES/Customers/MembersHtml/Ann.md"); BOH=$(cat "$WIKI_PAGES/Customers/MembersHtml/Bo.md")
+assert_contains 'its pages render: the title'               '<h1>Ann</h1>' "$ANNH"
+assert_contains '  a group field inside its block'          '<dt>City</dt><dd>Oslo</dd>' "$ANNH"
+assert_contains '  one card per entry'                      '<dt>Number</dt><dd>1111</dd>' "$ANNH"
+assert_contains '  values escaped'                          '<dd>&lt;b&gt;2222&lt;/b&gt;</dd>' "$ANNH"
+assert_contains '  and the empty case'                      '<p class="wk-muted">—</p>' "$BOH"
+assert_eq '  and they are HTML pages'                       'html' "$(fm MembersHtml/Ann.md format)"
+assert_contains '  each carrying the styles'                '.wk-card   { border' "$ANNH"
+C=$(post_as "$CARL" 'api.php?action=generator_create&space=Customers' "source=CRM:$MEMBERS&path=templates/MembersMd&folder=MembersMd")
+assert_not_contains 'without a format, a Markdown template, as before' 'format: html' "$(cat "$WIKI_PAGES/Customers/templates/MembersMd.md")"
+
+section 'Search reads an HTML page as text'
+# Ann's HTML page holds <dt>City</dt><dd>Oslo</dd> and "Note: fine" under a <dt>.
+printf -- '# Plain md\n\n<div class="wk-card">markdown with inline html, findable as before</div>\n' > "$WIKI_PAGES/Customers/PlainMd.md"
+for engine in basic sqlite; do
+    sed -i "s#^define('SEARCH_ENGINE'.*#define('SEARCH_ENGINE', '$engine');#" "$WIKI_APP/config.php"
+    rm -f "$WIKI_SYS/search.sqlite"
+    get_as "$ADMIN" 'api.php?action=indexfiles&space=Customers' > /dev/null
+    q() { get_as "$CARL" "api.php?action=search&space=Customers&query=$1"; }
+    assert_not_contains "[$engine] markup is not text: wk-card finds no HTML page" 'MembersHtml' "$(q wk-card)"
+    assert_contains     "[$engine] control: a Markdown page's inline html is as before" 'PlainMd.md' "$(q wk-card)"
+    hit=$(q Oslo)
+    assert_contains     "[$engine] a value in an HTML page is found"   'MembersHtml\/Ann.md' "$hit"
+    assert_not_contains "[$engine]   its snippet has no tags"          '&lt;dd' "$hit"
+    assert_contains     "[$engine]   and its title is its heading"     '"header":"# Ann"' "$hit"
+    assert_contains     "[$engine] an entity is searched as the character" 'MembersHtml\/Ann.md' "$(q '%3Cb%3E2222')"
+    assert_not_contains "[$engine] a page's CSS is not text"   'MembersHtml' "$(q border-radius)"
+done
+sed -i "s#^define('SEARCH_ENGINE'.*#define('SEARCH_ENGINE', 'basic');#" "$WIKI_APP/config.php"
 
 section 'State'
 assert_eq 'the owner is recorded'                             'Carl' \

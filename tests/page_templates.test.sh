@@ -171,4 +171,69 @@ assert_eq 'key: spaces'        'account_manager' "$(php_lib 'echo wiki_tpl_key("
 assert_eq 'key: punctuation'   'kunde_nr'        "$(php_lib 'echo wiki_tpl_key(" Kunde nr. ");')"
 assert_eq 'key: unicode'       'område'          "$(php_lib 'echo wiki_tpl_key("Område");')"
 
+# ── HTML templates ────────────────────────────────────────────────────────────
+# html <template> <context-json>  — rendered in HTML mode, or ERR:<code>:<line>:<detail>.
+# Warnings (a blocked link) are appended as " WARN:<code>".
+html() {
+    TPL="$1" CTX="$2" php -r '
+        require getenv("APP") . "/mustache.php";
+        try {
+            $tree = wiki_tpl_parse(getenv("TPL"), ["html" => true]);
+            echo wiki_tpl_render($tree, json_decode(getenv("CTX"), true) ?? [], ["escape" => "html"]);
+            foreach (wiki_tpl_take_warnings() as $w) echo " WARN:", $w["warning"];
+        } catch (WikiTemplateError $e) { echo "ERR:", $e->error, ":", $e->templateLine, ":", $e->detail; }'
+}
+
+section 'HTML: text between tags'
+assert_eq 'markup, quotes and & are escaped' '<p>&lt;b&gt;x&lt;/b&gt; &amp; &quot;q&quot; &#39;s</p>' \
+    "$(html '<p>{{v}}</p>' '{"v":"<b>x</b> & \"q\" '"'"'s"}')"
+assert_eq 'mentions and wiki tags are entities' '<p>&#64;alice &#35;Bot &#123;include:1&#125; &#91;&#91;Page&#93;&#93;</p>' \
+    "$(html '<p>{{v}}</p>' '{"v":"@alice #Bot {include:1} [[Page]]"}')"
+assert_eq 'a line break is <br>'            '<p>a<br>b</p>' "$(html '<p>{{v}}</p>' '{"v":"a\nb"}')"
+assert_eq 'in a textarea, still just text'  '<textarea>&lt;/textarea&gt;</textarea>' "$(html '<textarea>{{v}}</textarea>' '{"v":"</textarea>"}')"
+
+section 'HTML: attribute values'
+assert_eq 'a quote cannot end the attribute' '<a title="x&quot; onmouseover=&quot;alert(1)">' \
+    "$(html '<a title="{{v}}">' '{"v":"x\" onmouseover=\"alert(1)"}')"
+assert_eq '  nor a single quote'             "<a title='x&#39; y'>" "$(html "<a title='{{v}}'>" '{"v":"x'"'"' y"}')"
+assert_eq 'a line break stays inside'        '<a title="a&#10;b">' "$(html '<a title="{{v}}">' '{"v":"a\nb"}')"
+
+section 'HTML: links'
+assert_eq 'https passes, escaped'            '<a href="https://ex.com/?a=1&amp;b=2">' "$(html '<a href="{{v}}">' '{"v":"https://ex.com/?a=1&b=2"}')"
+assert_eq 'a relative link passes'           '<a href="index.php?pageid=3">' "$(html '<a href="{{v}}">' '{"v":"index.php?pageid=3"}')"
+assert_eq 'mailto passes'                    '<a href="mailto:a&#64;b.c">' "$(html '<a href="{{v}}">' '{"v":"mailto:a@b.c"}')"
+for bad in 'javascript:alert(1)' 'JaVaScRiPt:alert(1)' '  javascript:alert(1)' 'java\tscript:alert(1)' 'data:text/html,<b>x</b>' 'vbscript:x'; do
+    assert_eq "blocked: $bad" '<a href="#blocked"> WARN:url_blocked' "$(html '<a href="{{v}}">' "{\"v\":\"$bad\"}")"
+done
+assert_eq 'img src too'                      '<img src="#blocked"> WARN:url_blocked' "$(html '<img src="{{v}}">' '{"v":"javascript:x"}')"
+assert_eq 'an entity in the data is not decoded into a scheme' '<a href="javascript&amp;&#35;58;x">' \
+    "$(html '<a href="{{v}}">' '{"v":"javascript&#58;x"}')"
+assert_eq "the template's own prefix fixes the scheme" '<a href="mailto:javascript:x">' \
+    "$(html '<a href="mailto:{{v}}">' '{"v":"javascript:x"}')"
+assert_eq '  so does a relative one'         '<a href="?id=javascript:x">' "$(html '<a href="?id={{v}}">' '{"v":"javascript:x"}')"
+assert_eq 'a prefix that fixes nothing is checked with the value' '<a href="java#blocked"> WARN:url_blocked' \
+    "$(html '<a href="java{{v}}">' '{"v":"script:x"}')"
+
+section 'HTML: refused, with the line'
+assert_eq 'inside <script>'                  'ERR:html_context:2:script'  "$(html $'<p>x</p>\n<script>var a="{{v}}"</script>' '{}')"
+assert_eq 'inside <style>'                   'ERR:html_context:1:style'   "$(html '<style>.a{color:{{v}}}</style>' '{}')"
+assert_eq 'an on… attribute'                 'ERR:html_context:1:event handler' "$(html '<p onclick="{{v}}">' '{}')"
+assert_eq 'a style attribute'                'ERR:html_context:1:style'   "$(html '<p style="color:{{v}}">' '{}')"
+assert_eq 'srcdoc'                           'ERR:html_context:1:srcdoc'  "$(html '<iframe srcdoc="{{v}}"></iframe>' '{}')"
+assert_eq 'an unquoted attribute'            'ERR:html_context:1:unquoted attribute' "$(html '<p title={{v}}>' '{}')"
+assert_eq 'a tag name'                       'ERR:html_context:1:tag'     "$(html '<{{v}}>' '{}')"
+assert_eq 'an attribute name'                'ERR:html_context:1:tag'     "$(html '<p {{v}}>' '{}')"
+assert_eq 'a comment'                        'ERR:html_context:1:comment' "$(html '<!-- {{v}} -->' '{}')"
+assert_eq '{{{x}}}'                          'ERR:html_raw:1:v'           "$(html '<p>{{{v}}}</p>' '{}')"
+assert_eq '{{& x}}'                          'ERR:html_raw:1:v'           "$(html '<p>{{& v}}</p>' '{}')"
+assert_eq 'a section that moves into an attribute' 'ERR:html_section_context:1:a' "$(html '{{#a}}<p class="{{/a}}x">' '{}')"
+
+section 'HTML: what keeps working'
+assert_eq 'a loop of whole elements'         '<ul><li>a</li><li>&lt;b&gt;</li></ul>' "$(html '<ul>{{#xs}}<li>{{.}}</li>{{/xs}}</ul>' '{"xs":["a","<b>"]}')"
+assert_eq 'a section inside an attribute value' '<p class="a b">' "$(html '<p class="a {{#x}}b{{/x}}">' '{"x":true}')"
+assert_eq 'text again after </script>'       '<script>1</script><p>&lt;i&gt;</p>' "$(html '<script>1</script><p>{{v}}</p>' '{"v":"<i>"}')"
+assert_eq 'a loop of cards with links'       '<a href="https://a.b">A</a><a href="#blocked">&lt;B&gt;</a> WARN:url_blocked' \
+    "$(html '{{#xs}}<a href="{{u}}">{{n}}</a>{{/xs}}' '{"xs":[{"u":"https://a.b","n":"A"},{"u":"javascript:x","n":"<B>"}]}')"
+assert_eq 'Markdown mode is unchanged'       '\*a\*' "$(render '{{v}}' '{"v":"*a*"}')"
+
 exit $(( ASSERT_FAIL > 0 ))

@@ -142,7 +142,7 @@ function index_sync_maybe(string $space_dir, PageIndexer $indexer, $search_idx =
                 // Body only, as a save through the wiki indexes it — an rsynced Obsidian
                 // note would otherwise put its YAML into search while the same file
                 // edited here would not.
-                if ($ext === 'md') $raw = wiki_fm_body($raw);
+                if ($ext === 'md') $raw = wiki_fm_search_text($raw);
                 try { $search_idx->upsertPage($space_name, $rel, $raw); } catch (\Throwable $_e) {}
             }
             foreach ($removed as $rel) {

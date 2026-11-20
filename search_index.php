@@ -315,7 +315,7 @@ class SearchIndex {
             // Front matter is metadata, not body text: indexing it would put YAML in every
             // search preview (extractInfo builds one from the first non-heading lines) and
             // match pages on key names like "status". Same rule as the save path.
-            if ($ext === 'md') $raw = wiki_fm_body($raw);
+            if ($ext === 'md') $raw = wiki_fm_search_text($raw);
             [$title, $content, $preview] = $this->extractInfo($ext, $item, $raw);
             $stmt->execute([$space, $rel, $title, $content, $preview, time()]);
             $count++;

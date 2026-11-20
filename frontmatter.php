@@ -96,6 +96,31 @@ function wiki_fm_body(string $raw): string {
 }
 
 /**
+ * What the search index is given for a Markdown page: its body — and for a page whose front
+ * matter says `format: html` (page generators write them), that body as text: no tags, no
+ * entities, headings as `# …` lines so the index takes its title from the first one as it
+ * does for Markdown, block ends as line breaks. Otherwise "div" would find every generated
+ * page and every snippet would show markup. Every place that indexes a page goes through here.
+ */
+function wiki_fm_search_text(string $raw): string {
+    $split = wiki_fm_split($raw);
+    $format = $split['meta']['format'] ?? null;
+    if (!is_string($format) || strtolower(trim($format)) !== 'html') return $split['body'];
+    return wiki_html_search_text($split['body']);
+}
+
+function wiki_html_search_text(string $html): string {
+    $h = preg_replace('#<(script|style)\b[^>]*>.*?</\1\s*>#is', ' ', $html) ?? $html;
+    $h = preg_replace('#<!--.*?-->#s', ' ', $h) ?? $h;
+    $h = preg_replace_callback('#<h[1-6]\b[^>]*>(.*?)</h[1-6]\s*>#is',
+        fn($m) => "\n# " . trim(preg_replace('/\s+/', ' ', strip_tags($m[1]))) . "\n", $h) ?? $h;
+    $h = preg_replace('#<(br|hr)\b[^>]*>|</(p|div|li|dd|dt|tr|td|th|section|article|header|footer|ul|ol|dl|table|blockquote|pre)\s*>#i', "\n", $h) ?? $h;
+    $h = html_entity_decode(strip_tags($h), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $lines = array_map(fn($l) => trim(preg_replace('/[ \t]+/', ' ', $l)), explode("\n", $h));
+    return trim(preg_replace("/\n{3,}/", "\n\n", implode("\n", $lines)));
+}
+
+/**
  * The revision a client edits from: `get` hands it out, `save` takes it back as `base`
  * and refuses the write when the page has moved on since (see the save action).
  *

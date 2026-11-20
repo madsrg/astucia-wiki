@@ -41,6 +41,17 @@ export const setEditingMode = async (editing, opts = {}) => {
         showToast(t('generators.locked-toast'), 'error');
         return;
     }
+    // The inline editor edits Markdown blocks, so an HTML page (`format: html`) is edited in
+    // the classic editor whatever the preference says — switched for this edit and put back
+    // after, as modules/mobile does, so every place that reads state.editMode follows and the
+    // stored preference is untouched.
+    if (editing && state.editMode === 'inline' && document.body.classList.contains('page-html')) {
+        state.editModeBeforeHtml = 'inline';
+        state.editMode = 'classic';
+    } else if (!editing && state.editModeBeforeHtml) {
+        state.editMode = state.editModeBeforeHtml;
+        state.editModeBeforeHtml = null;
+    }
     state.isEditing = editing;
     const editor = document.getElementById('editor-container');
     const editorWrapper = document.querySelector('.editor-container-wrapper');
@@ -142,7 +153,13 @@ export const setEditingMode = async (editing, opts = {}) => {
 };
 
 const renderCurrentPage = async (markdown) => {
-    const { processIncludes, processDiagramTags, processListTags, processUserCommentTags } = await import('../page_view/index.js');
+    const { processIncludes, processDiagramTags, processListTags, processUserCommentTags, isHtmlFormat } = await import('../page_view/index.js');
+    if (isHtmlFormat(state.currentPageFrontmatter)) {
+        // An HTML page is its own rendering; see isHtmlFormat() in page_view.
+        let html = markdown.replaceAll('{filename}', state.currentPagePath.split('/').pop().replace(/\.(md|drawio|list)$/, ''));
+        if (state.currentPageLastUpdated) html = html.replaceAll('{lastUpdated}', new Date(state.currentPageLastUpdated * 1000).toLocaleString());
+        return html;
+    }
     const { extractHeadings, processTocTag } = await import('../toc/index.js');
     let content = await processIncludes(processWikiLinks(markdown));
     content = await processDiagramTags(content);

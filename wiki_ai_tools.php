@@ -800,7 +800,7 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             $fm_changed = $is_new || wiki_fm_body($fm_prev) !== wiki_fm_body($content);
             if (file_put_contents($abs, $content) === false) return 'Error: could not write file.';
             // Index the body only, matching the save path.
-            wiki_ai_fts_upsert($space_dir, $rel, wiki_fm_body($content));
+            wiki_ai_fts_upsert($space_dir, $rel, wiki_fm_search_text($content));
             $ai_git_name  = $ai_user['name'] ?? 'AI';
             $ai_git_email = !empty($ai_user['email']) ? $ai_user['email'] : 'ai@wiki.localhost';
             if ($is_new) $indexer->addPage($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);

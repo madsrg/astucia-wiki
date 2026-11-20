@@ -3180,8 +3180,9 @@ if (isset($_REQUEST['action'])) {
                         $full_path = sanitize_path($data['path']);
                         if (!file_exists($full_path)) continue;
                         // Body only, or every page matches "status" and the snippet
-                        // for a real hit near the top of a page is a block of YAML.
-                        $content = wiki_fm_body(file_get_contents($full_path));
+                        // for a real hit near the top of a page is a block of YAML — and an
+                        // HTML page's text, not its markup (wiki_fm_search_text).
+                        $content = wiki_fm_search_text(file_get_contents($full_path));
 
                         $content_pos = stripos($content, $query);
                         $path_pos    = stripos($data['path'], $query);
@@ -3750,7 +3751,7 @@ if (isset($_REQUEST['action'])) {
                     if ($search_idx && in_array($ext_save, ['md', 'json'], true)) {
                         // Body only: front matter in the index would put YAML in every
                         // search preview and match on key names like "status".
-                        $idx_body = $ext_save === 'md' ? wiki_fm_body($content) : $content;
+                        $idx_body = $ext_save === 'md' ? wiki_fm_search_text($content) : $content;
                         try { $search_idx->upsertPage(_sidx_space(), $rel_save, $idx_body); } catch (\Throwable $_e) {}
                     }
                     if (in_array($ext_save, ['md', 'drawio', 'json'], true) && $indexer->getGitCommit($rel_save, true)) {
@@ -3837,12 +3838,15 @@ if (isset($_REQUEST['action'])) {
                 }
                 if (wiki_inside_files_library($gc_abs)) throw new Exception('Nothing can be created inside a files library.');
                 if (!is_dir(dirname($gc_abs))) mkdir(dirname($gc_abs), 0755, true);
+                // HTML unless the dialog asked for Markdown; an API caller that says nothing
+                // gets Markdown, as it did before the choice existed.
+                $gc_html = ($_POST['format'] ?? '') === 'html';
                 $gc_content = wiki_gen_starter($gc_def['source_space'] . ':' . $gc_def['source_id'], $gc_def['folder'], $gc_key,
-                                               $gc_src_list['fields']);
+                                               $gc_src_list['fields'], $gc_html);
                 if (file_put_contents($gc_abs, $gc_content) === false) throw new Exception('Could not write the template.');
                 $gc_actor = get_current_actor();
                 $gc_id = $indexer->addPage($gc_rel, $gc_actor['uid'], $gc_actor['name']);
-                if ($search_idx) { try { $search_idx->upsertPage(_sidx_space(), $gc_rel, wiki_fm_body($gc_content)); } catch (\Throwable $_e) {} }
+                if ($search_idx) { try { $search_idx->upsertPage(_sidx_space(), $gc_rel, wiki_fm_search_text($gc_content)); } catch (\Throwable $_e) {} }
                 if (function_exists('git_auto_commit')) {
                     git_auto_commit($gc_abs, $gc_actor['name'] ?? 'Wiki',
                                     (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost',

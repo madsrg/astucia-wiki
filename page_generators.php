@@ -36,6 +36,12 @@
 // `generated_by` was removed by hand is treated as detached — the render leaves it alone
 // and does not make a new one for its row.
 //
+// **HTML templates.** A template whose front matter says `format: html` is parsed in
+// mustache.php's HTML mode — each value escaped for the place in the HTML it lands, and the
+// template refused where no escaping would be safe — and its pages are written with
+// `format: html` too, which the page view shows as HTML. A template switched back to Markdown
+// takes the key off its pages. Detach and archive leave it: the page stays HTML.
+//
 // Writes go through wiki_gen_write(), which does what `save` does — index, search, realtime
 // (via the indexer), automatic stamping, audit — except mention announcements (data cannot
 // mention anyone; a mention typed into the template would otherwise notify on every page).
@@ -114,6 +120,11 @@ function wiki_gen_definition(array $meta, string $space, string $template_rel): 
     ];
 }
 
+/** Is this page's body HTML (`format: html` in its front matter)? */
+function wiki_gen_is_html(array $meta): bool {
+    return is_string($meta['format'] ?? null) && strtolower(trim($meta['format'])) === 'html';
+}
+
 /** A Space name that may be resolved under PAGES_DIR: one segment, not hidden. */
 function wiki_gen_space_name_ok(string $name): bool {
     return $name !== '' && strpos($name, '/') === false && strpos($name, '\\') === false
@@ -170,6 +181,25 @@ function wiki_gen_system_name(string $template_rel): string {
  *
  * @return array{rows: array<int,array>, keys: string[], warnings: array}
  */
+/**
+ * A group's sub-fields as template keys, by sub-field id — the field rule (wiki_tpl_key of the
+ * name, `_2` on a clash), with `id` reserved: entries carry `_id`, and a sub-field "Id" as
+ * `id` would read as the same thing. Shared by the rows and the New dialog's starter.
+ */
+function wiki_gen_sub_keys(array $col): array {
+    $keys = [];
+    $used = ['id' => true];
+    foreach ($col['fields'] ?? [] as $sf) {
+        $base = wiki_tpl_key((string)($sf['name'] ?? '')) ?: wiki_tpl_key((string)($sf['id'] ?? ''));
+        if ($base === '') continue;
+        $k = $base;
+        for ($n = 2; isset($used[$k]); $n++) $k = $base . '_' . $n;
+        $used[$k] = true;
+        $keys[(string)$sf['id']] = $k;
+    }
+    return $keys;
+}
+
 function wiki_gen_rows(array $list, string $source_dir, array $source): array {
     $warnings = [];
     $flat  = wiki_list_flatten($list, $source_dir);
@@ -195,17 +225,7 @@ function wiki_gen_rows(array $list, string $source_dir, array $source): array {
     $groups = [];   // column id => [column, sub-field id => key]
     foreach ($list['columns'] ?? [] as $col) {
         if (($col['type'] ?? '') !== 'object' || !isset($keymap[$col['id'] ?? ''])) continue;
-        $subkeys = [];
-        $subused = ['id' => true];      // reserved: entries carry `_id`, and `id` would shadow it in a reader's mind
-        foreach ($col['fields'] ?? [] as $sf) {
-            $base = wiki_tpl_key((string)($sf['name'] ?? '')) ?: wiki_tpl_key((string)($sf['id'] ?? ''));
-            if ($base === '') continue;
-            $k = $base;
-            for ($n = 2; isset($subused[$k]); $n++) $k = $base . '_' . $n;
-            $subused[$k] = true;
-            $subkeys[(string)$sf['id']] = $k;
-        }
-        $groups[$col['id']] = [$col, $subkeys];
+        $groups[$col['id']] = [$col, wiki_gen_sub_keys($col)];
     }
     $entry_ctx = function (array $col, array $subkeys, array $entry): array {
         $out = [];
@@ -446,7 +466,8 @@ function _wiki_gen_render(string $space, int $template_id, ?array $owner, $index
     }
 
     // ── The template text ────────────────────────────────────────────────
-    try { $body_tree = wiki_tpl_parse($split['body']); }
+    $html = wiki_gen_is_html($split['meta']);
+    try { $body_tree = wiki_tpl_parse($split['body'], ['html' => $html]); }
     catch (WikiTemplateError $e) {
         // The body's line numbers, counted from the top of the file, which is what the
         // author sees in the editor.
@@ -474,6 +495,7 @@ function _wiki_gen_render(string $space, int $template_id, ?array $owner, $index
 
     // ── Plan: where each row's page is, and where it should be ───────────
     $sys      = wiki_gen_system_name($tpl_rel);
+    $blocked  = [];           // field => row ids where a link was blocked
     $prev     = is_array($state['rows'] ?? null) ? $state['rows'] : [];
     $rows_out = [];
     $touched  = [];           // absolute paths for the one commit
@@ -509,7 +531,9 @@ function _wiki_gen_render(string $space, int $template_id, ?array $owner, $index
             }
         }
 
-        $body = wiki_tpl_render($body_tree, $ctx);
+        wiki_tpl_take_warnings();
+        $body = wiki_tpl_render($body_tree, $ctx, ['escape' => $html ? 'html' : 'markdown']);
+        foreach (wiki_tpl_take_warnings() as $w) $blocked[$w['detail']][] = $rid;
         $name = wiki_gen_clean_name(wiki_tpl_render($name_tree, $ctx, ['escape' => 'none']), $rid);
         $want = wiki_gen_free_path($ix, $target_dir, $def['folder'], $name, $rid, $template_id,
                                    $reserved, $cur['path'] ?? null);
@@ -526,18 +550,27 @@ function _wiki_gen_render(string $space, int $template_id, ?array $owner, $index
             $counts['renamed']++;
             $cur['path'] = $want;
         }
-        $changed = wiki_gen_write($ix, $target_dir, $space, $want, $body, $template_id, $rid, $sys, $touched);
+        $changed = wiki_gen_write($ix, $target_dir, $space, $want, $body, $template_id, $rid, $sys, $touched, $html);
         if ($cur === null)  $counts['created']++;
         elseif ($changed)   $counts['updated']++;
         elseif (!isset($touched[$target_dir . '/' . $want])) $counts['unchanged']++;
         $rows_out[$rid] = ['page_id' => (int)$ix->getId($want)];
     }
 
+    // A link the data held that is not http(s), mailto or relative was written as #blocked —
+    // said once per field, with the rows it happened in.
+    foreach ($blocked as $field => $rids) {
+        $rids = array_values(array_unique($rids));
+        $warnings[] = ['warning' => 'url_blocked', 'detail' => $field . ' (' . implode(', ', array_slice($rids, 0, 5))
+            . (count($rids) > 5 ? ', …' : '') . ')'];
+    }
+
     // ── Rows that are gone: archive their pages ──────────────────────────
     foreach ($owned as $rid => $cur) {
         if (isset($data['rows'][$rid])) continue;
         if (!empty($cur['detached'])) continue;
-        if (wiki_gen_archive($ix, $target_dir, $space, $cur['path'], $template_id, $rid, $sys, $touched)) {
+        if (wiki_gen_archive($ix, $target_dir, $space, $cur['path'], $template_id, $rid, $sys, $touched,
+                             'row_removed', basename($src_rel, '.list'))) {
             $counts['archived']++;
         }
     }
@@ -571,7 +604,7 @@ function wiki_gen_retire($ix, string $target_dir, string $space, int $template_i
     $sys = $last_path !== '' ? wiki_gen_system_name($last_path) : 'Template #' . $template_id;
     $touched = [];
     foreach ($owned as $rid => $cur) {
-        if (wiki_gen_archive($ix, $target_dir, $space, $cur['path'], $template_id, (int)$rid, $sys, $touched)) {
+        if (wiki_gen_archive($ix, $target_dir, $space, $cur['path'], $template_id, (int)$rid, $sys, $touched, 'template_gone')) {
             $counts['archived']++;
         }
     }
@@ -649,16 +682,19 @@ function wiki_gen_free_path($ix, string $target_dir, string $folder, string $nam
  * replaced, and the two `generated_*` keys are set. Returns whether anything was written.
  */
 function wiki_gen_write($ix, string $target_dir, string $space, string $rel, string $body,
-                        int $template_id, int $rid, string $sys, array &$touched): bool {
+                        int $template_id, int $rid, string $sys, array &$touched, bool $html = false): bool {
     $abs = $target_dir . '/' . $rel;
     $is_new = !is_file($abs);
     $old = $is_new ? '' : (string)file_get_contents($abs);
     $block = $is_new ? '' : wiki_fm_split($old)['block'];
     // Joined by hand, not through wiki_fm_preserve(): a rendered body that happens to start
     // with a `---` block of its own would otherwise replace the page's.
+    // `format: html` follows the template: set on an HTML template's pages, taken off when the
+    // template goes back to Markdown.
     $new = $block === ''
-        ? "---\ngenerated_by: $template_id\ngenerated_row: $rid\n---\n" . $body
-        : wiki_fm_set($block . $body, ['generated_by' => (string)$template_id, 'generated_row' => (string)$rid]);
+        ? "---\ngenerated_by: $template_id\ngenerated_row: $rid\n" . ($html ? "format: html\n" : '') . "---\n" . $body
+        : wiki_fm_set($block . $body, ['generated_by' => (string)$template_id, 'generated_row' => (string)$rid]
+                      + ($html ? ['format' => 'html'] : []), $html ? [] : ['format']);
     if ($new === $old) return false;
 
     $dir = dirname($abs);
@@ -672,7 +708,7 @@ function wiki_gen_write($ix, string $target_dir, string $space, string $rel, str
         $entry = $ix->getAllPages()[$ix->getId($rel)] ?? null;
         wiki_fm_autostamp_file($abs, $entry, $sys, $body_changed);
     }
-    wiki_gen_search(fn($s) => $s->upsertPage($space, $rel, wiki_fm_body($new)));
+    wiki_gen_search(fn($s) => $s->upsertPage($space, $rel, wiki_fm_search_text($new)));
     if (function_exists('wiki_audit_log')) {
         wiki_audit_log($is_new ? 'create' : 'update', 'success',
             ['object_category' => 'page', 'object' => $rel, 'space' => $space, 'change_type' => 'generated']);
@@ -711,13 +747,17 @@ function wiki_gen_move($ix, string $target_dir, string $space, string $old, stri
  * locked and nothing regenerates it.
  */
 function wiki_gen_archive($ix, string $target_dir, string $space, string $rel, int $template_id,
-                          int $rid, string $sys, array &$touched): bool {
+                          int $rid, string $sys, array &$touched, string $reason = '', string $list = ''): bool {
     $abs = $target_dir . '/' . $rel;
     if (!is_file($abs)) return false;
     $old = (string)file_get_contents($abs);
     if ((string)(wiki_fm_split($old)['meta']['generated_by'] ?? '') !== (string)$template_id) return false;
-    $new = wiki_fm_set($old, ['archived_from' => (string)$template_id, 'archived_row' => (string)$rid,
-                              'archived_at' => date('c')], ['generated_by', 'generated_row']);
+    // Why, so the banner can say it: a page archived because its *template* went is not one
+    // whose list item was deleted, and saying so frightened someone into checking their list.
+    $updates = ['archived_from' => (string)$template_id, 'archived_row' => (string)$rid, 'archived_at' => date('c')];
+    if ($reason !== '') $updates['archived_reason'] = $reason;
+    if ($list !== '')   $updates['archived_list'] = $list;
+    $new = wiki_fm_set($old, $updates, ['generated_by', 'generated_row']);
     if (file_put_contents($abs, $new) === false) throw new RuntimeException('Could not write ' . $rel);
     $ix->updateModified($rel, 0, $sys);
     if (function_exists('wiki_audit_log')) {
@@ -1078,8 +1118,13 @@ function wiki_gen_get_info(array $meta, $indexer): ?array {
         $tid = is_string($meta[$k_tpl] ?? null) ? trim($meta[$k_tpl]) : '';
         if ($tid === '' || !ctype_digit($tid)) continue;
         $path = $indexer ? $indexer->getPath((int)$tid) : null;
-        return ['state' => $state, 'template_id' => (int)$tid, 'template_path' => $path,
+        $out = ['state' => $state, 'template_id' => (int)$tid, 'template_path' => $path,
                 'row' => (int)($meta[$k_row] ?? 0)];
+        if ($state === 'archived') {
+            $out['reason'] = is_string($meta['archived_reason'] ?? null) ? $meta['archived_reason'] : '';
+            $out['list']   = is_string($meta['archived_list'] ?? null) ? $meta['archived_list'] : '';
+        }
+        return $out;
     }
     return null;
 }
@@ -1101,7 +1146,9 @@ function wiki_gen_template_info(string $space, int $id, array $meta, ?array $acl
     $st  = wiki_gen_state_get(wiki_gen_key($space, $id)) ?? [];
     $out = [
         'status'   => $st['status'] ?? null,     // null: registered, never rendered yet
-        'pending'  => !empty($st['dirty']),
+        // Dirty also marks a generator that failed and is retried every tick; that is not a
+        // render about to happen, and saying "Rendering…" would hide why it stopped.
+        'pending'  => !empty($st['dirty']) && empty($st['error']),
         'error'    => $st['error'] ?? ($def['ok'] ? null : $def['error']),
         'detail'   => $st['detail'] ?? ($def['ok'] ? null : $def['detail']),
         'line'     => $st['line'] ?? null,
@@ -1150,7 +1197,8 @@ function wiki_gen_preview(string $space, int $id, ?int $row, ?array $acl): array
     $list = json_decode((string)file_get_contents($src_dir . '/' . $src_rel), true);
     if (!is_array($list)) return ['ok' => false, 'error' => 'source_unreadable', 'detail' => $src_rel];
 
-    try { $body_tree = wiki_tpl_parse($split['body']); }
+    $html = wiki_gen_is_html($split['meta']);
+    try { $body_tree = wiki_tpl_parse($split['body'], ['html' => $html]); }
     catch (WikiTemplateError $e) {
         return ['ok' => false, 'error' => 'template_error', 'detail' => $e->error . ($e->detail !== '' ? ': ' . $e->detail : ''),
                 'line' => $e->templateLine + substr_count($split['block'], "\n")];
@@ -1169,9 +1217,12 @@ function wiki_gen_preview(string $space, int $id, ?int $row, ?array $acl): array
     $unknown = array_values(array_diff(array_merge(wiki_tpl_names($body_tree), wiki_tpl_names($name_tree)),
                                        array_merge($data['keys'], ['_row', '_title', '_source'])));
     if ($unknown) $warnings[] = ['warning' => 'unknown_field', 'detail' => implode(', ', $unknown)];
-    return ['ok' => true, 'rows' => $rows, 'row' => $rid,
+    wiki_tpl_take_warnings();
+    $body = wiki_tpl_render($body_tree, $ctx, ['escape' => $html ? 'html' : 'markdown']);
+    foreach (wiki_tpl_take_warnings() as $w) $warnings[] = $w;
+    return ['ok' => true, 'rows' => $rows, 'row' => $rid, 'format' => $html ? 'html' : 'markdown',
             'name' => wiki_gen_clean_name(wiki_tpl_render($name_tree, $ctx, ['escape' => 'none']), $rid),
-            'body' => wiki_tpl_render($body_tree, $ctx), 'warnings' => $warnings];
+            'body' => $body, 'warnings' => $warnings];
 }
 
 /**
@@ -1198,8 +1249,15 @@ function wiki_gen_sources(?array $acl, int $max = 500): array {
                 $key = $base;
                 for ($n = 2; isset($used[$key]); $n++) $key = $base . '_' . $n;
                 $used[$key] = true;
-                $fields[] = ['name' => (string)($col['name'] ?? $key), 'key' => $key, 'type' => (string)($col['type'] ?? ''),
-                             'title' => ($col['id'] ?? null) === wiki_list_title_field($list)];
+                $field = ['name' => (string)($col['name'] ?? $key), 'key' => $key, 'type' => (string)($col['type'] ?? ''),
+                          'title' => ($col['id'] ?? null) === wiki_list_title_field($list)];
+                if ($field['type'] === 'object') {
+                    $field['multiple'] = !empty($col['multiple']);
+                    $names = array_column($col['fields'] ?? [], 'name', 'id');
+                    $field['subs'] = [];
+                    foreach (wiki_gen_sub_keys($col) as $sid => $k) $field['subs'][] = ['name' => (string)($names[$sid] ?? $k), 'key' => $k];
+                }
+                $fields[] = $field;
             }
             $out[] = ['space' => $space, 'id' => (int)$pid, 'path' => $rel, 'title' => basename($rel, '.list'),
                       'fields' => $fields, 'rows' => count($list['items'] ?? [])];
@@ -1214,17 +1272,89 @@ function wiki_gen_sources(?array $acl, int $max = 500): array {
  * The text of a new template: its generator keys, and a body that shows every field, so
  * the first render already says something and the author edits rather than starts blank.
  */
-function wiki_gen_starter(string $source, string $folder, string $filename_key, array $fields): string {
+function wiki_gen_starter(string $source, string $folder, string $filename_key, array $fields, bool $html = false): string {
+    $body = $html ? wiki_gen_starter_html($fields) : wiki_gen_starter_md($fields);
+    $updates = [];
+    if ($html) $updates['format'] = 'html';
+    $updates += ['generator_source' => $source, 'generator_folder' => $folder];
+    if ($filename_key !== '') $updates['generator_filename'] = '{{' . $filename_key . '}}';
+    return wiki_fm_set($body, $updates);
+}
+
+/** The Markdown starter: a table of every field but the Title, which is the heading. */
+function wiki_gen_starter_md(array $fields): string {
     $body = "# {{_title}}\n\n| | |\n|---|---|\n";
     foreach ($fields as $f) {
         if (!empty($f['title'])) continue;
         $label = str_replace('|', '\\|', (string)$f['name']);
         $body .= "| **{$label}** | {{" . $f['key'] . "}} |\n";
     }
-    $body .= "\n";
-    $updates = ['generator_source' => $source, 'generator_folder' => $folder];
-    if ($filename_key !== '') $updates['generator_filename'] = '{{' . $filename_key . '}}';
-    return wiki_fm_set($body, $updates);
+    return $body . "\n";
+}
+
+/**
+ * The styles an HTML template starts with: a copy of the wiki's wk-* rules, for the template's
+ * author to edit. Copied into every page the template writes, where the page view confines
+ * them to the page (modules/core/scoped_css.js) — so they are written plainly, unscoped. A
+ * width query, not the wiki's `body.mobile`, makes the phone layout: scoping turns `body` into
+ * the page's own box, where a rule about the wiki's body class would never match.
+ */
+const WIKI_GEN_STARTER_CSS = <<<'CSS'
+<style>
+/* This template's own styles — edit freely. They apply only to the pages it generates. */
+.wk-card   { border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem 1.25rem; margin: 0 0 1rem; background: #fff; }
+.wk-card > :last-child { margin-bottom: 0; }
+.wk-grid   { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .75rem; margin: 0 0 1rem; }
+.wk-grid > .wk-card { margin: 0; padding: .75rem 1rem; }
+.wk-fields { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1.25rem; margin: 0 0 .5rem; }
+.wk-fields > dt, .wk-label { color: #718096; font-weight: 600; }
+.wk-fields > dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.wk-fields .wk-fields { margin: 0; }
+.wk-muted  { color: #718096; }
+@media (max-width: 640px) {
+  .wk-fields { grid-template-columns: 1fr; gap: .1rem; }
+  .wk-fields > dd { margin-bottom: .4rem; }
+}
+</style>
+
+CSS;
+
+/**
+ * The HTML starter: a card with the fields as label/value rows (`wk-fields`), a single
+ * group as a nested block of its own fields, and a group allowing several as a grid of small
+ * cards, one per entry — a working for-each from the first render. Field names are text the
+ * list's authors wrote, so they are escaped here like any value (braces too: a name like
+ * "{{x}}" must not become a placeholder).
+ */
+function wiki_gen_starter_html(array $fields): string {
+    $label = fn(string $s) => strtr(htmlspecialchars($s, ENT_QUOTES), ['{' => '&#123;', '}' => '&#125;']);
+    $rows = fn(array $subs, string $indent) => implode('', array_map(fn($sf) =>
+        "$indent<dt>" . $label($sf['name']) . "</dt><dd>{{" . $sf['key'] . "}}</dd>\n", $subs));
+    $plain = [];
+    $several = [];
+    foreach ($fields as $f) {
+        if (!empty($f['title'])) continue;
+        if (($f['type'] ?? '') === 'object' && !empty($f['multiple'])) { $several[] = $f; continue; }
+        $plain[] = $f;
+    }
+    $out = WIKI_GEN_STARTER_CSS . "<div class=\"wk-card\">\n  <h1>{{_title}}</h1>\n  <dl class=\"wk-fields\">\n";
+    foreach ($plain as $f) {
+        if (($f['type'] ?? '') === 'object') {
+            $out .= "    <dt>" . $label($f['name']) . "</dt>\n    <dd>\n      {{#" . $f['key'] . "}}\n"
+                  . "      <dl class=\"wk-fields\">\n" . $rows($f['subs'] ?? [], '        ') . "      </dl>\n"
+                  . "      {{/" . $f['key'] . "}}\n    </dd>\n";
+            continue;
+        }
+        $out .= "    <dt>" . $label($f['name']) . "</dt><dd>{{" . $f['key'] . "}}</dd>\n";
+    }
+    $out .= "  </dl>\n";
+    foreach ($several as $f) {
+        $out .= "\n  <h2>" . $label($f['name']) . "</h2>\n  <div class=\"wk-grid\">\n    {{#" . $f['key'] . "}}\n"
+              . "    <div class=\"wk-card\">\n      <dl class=\"wk-fields\">\n" . $rows($f['subs'] ?? [], '        ')
+              . "      </dl>\n    </div>\n    {{/" . $f['key'] . "}}\n  </div>\n"
+              . "  {{^" . $f['key'] . "}}<p class=\"wk-muted\">—</p>{{/" . $f['key'] . "}}\n";
+    }
+    return $out . "</div>\n";
 }
 
 // =================================================================

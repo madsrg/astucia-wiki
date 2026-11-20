@@ -18,6 +18,7 @@ import { updateBreadcrumb, trackPageVisit, updateFavoriteBtn } from '../nav/inde
 import { extractHeadings, processTocTag, addHeadingIds, updateTocPanel, headingSlug } from '../toc/index.js';
 import { processWikiLinks } from '../wikilinks/index.js';
 import { cellText, cellParts, partsHtml, loadLookupTargets, normalizeList } from '../list/fields.js';
+import { scopeStyles } from '../core/scoped_css.js';
 
 // ── User comment tag processing ──────────────────────────────────────────────
 
@@ -328,10 +329,21 @@ export const processIncludes = async (content, processedIds = []) => {
  * It is an indicator first and a shortcut second — the count is what makes it an
  * indicator, since "this page has metadata" is otherwise a chip with no information in it.
  */
+/**
+ * A page whose front matter says `format: html` has an HTML body: it is shown as it is —
+ * no Markdown, and none of the wiki's tag passes ({include:}, [[wikilinks]], {list:}, {toc}),
+ * which were written for Markdown and would rewrite parts of HTML they do not understand.
+ * Only {filename} and {lastUpdated} still apply, as they do after rendering anyway. Page
+ * generators write such pages (page_generators.php); `body.page-html` hides the
+ * inline/classic switch, since the inline editor edits Markdown blocks.
+ */
+export const isHtmlFormat = (fm) => String(fm?.format ?? '').trim().toLowerCase() === 'html';
+
 export const updateFrontmatterBadge = () => {
     // Whoever compares the block with something else (the tag area's sync notice) follows
     // every change to it from here, rather than from each of the places that set it.
     document.dispatchEvent(new CustomEvent('wiki:frontmatter'));
+    document.body.classList.toggle('page-html', state.currentPageType === 'md' && isHtmlFormat(state.currentPageFrontmatter));
     const badge = document.getElementById('frontmatter-badge');
     if (!badge) return;
     const keys = Object.keys(state.currentPageFrontmatter || {});
@@ -365,14 +377,19 @@ export const refreshPageContent = async () => {
     // Wikilinks first: a `![[Page]]` embed becomes an `{include:ID}` tag, which the next
     // call expands, so page embeds reuse the transclusion machinery and its
     // circular-reference guard rather than repeating it.
-    const withWikiLinks = processWikiLinks(state.initialContent);
-    const processedContent = await processIncludes(withWikiLinks);
-    const withDiagrams = await processDiagramTags(processedContent);
-    const withLists = await processListTags(withDiagrams);
-    const withComments = await processUserCommentTags(withLists);
-    const headings = extractHeadings(withComments);
-    const withToc = processTocTag(withComments, headings);
-    let renderedHTML = marked.parse(withToc);
+    let renderedHTML, headings = [];
+    if (isHtmlFormat(result.frontmatter)) {
+        renderedHTML = state.initialContent;
+    } else {
+        const withWikiLinks = processWikiLinks(state.initialContent);
+        const processedContent = await processIncludes(withWikiLinks);
+        const withDiagrams = await processDiagramTags(processedContent);
+        const withLists = await processListTags(withDiagrams);
+        const withComments = await processUserCommentTags(withLists);
+        headings = extractHeadings(withComments);
+        const withToc = processTocTag(withComments, headings);
+        renderedHTML = marked.parse(withToc);
+    }
 
     const filename = path.split('/').pop().replace(/\.(md|drawio|list)$/, '');
     renderedHTML = renderedHTML.replaceAll('{filename}', filename);
@@ -382,6 +399,8 @@ export const refreshPageContent = async () => {
 
     const viewerContent = document.getElementById('viewer-content');
     viewerContent.innerHTML = renderedHTML;
+    // An HTML page's own <style> reaches only the page (modules/core/scoped_css.js).
+    if (isHtmlFormat(result.frontmatter)) scopeStyles(viewerContent, '#viewer-content');
     addHeadingIds(viewerContent, headings);
     updateTocPanel(headings, viewerContent);
 };
@@ -838,14 +857,19 @@ export const loadPage = async (path, id, tags, opts = {}) => {
             // Wikilinks first: a `![[Page]]` embed becomes an `{include:ID}` tag, which the next
             // call expands, so page embeds reuse the transclusion machinery and its
             // circular-reference guard rather than repeating it.
-            const withWikiLinks = processWikiLinks(state.initialContent);
-            const processedContent = await processIncludes(withWikiLinks);
-            const withDiagrams = await processDiagramTags(processedContent);
-            const withLists = await processListTags(withDiagrams);
-            const withComments = await processUserCommentTags(withLists);
-            mdHeadings = extractHeadings(withComments);
-            const withToc = processTocTag(withComments, mdHeadings);
-            mdHtml = marked.parse(withToc);
+            if (isHtmlFormat(result.frontmatter)) {
+                mdHtml = state.initialContent;
+                mdHeadings = [];
+            } else {
+                const withWikiLinks = processWikiLinks(state.initialContent);
+                const processedContent = await processIncludes(withWikiLinks);
+                const withDiagrams = await processDiagramTags(processedContent);
+                const withLists = await processListTags(withDiagrams);
+                const withComments = await processUserCommentTags(withLists);
+                mdHeadings = extractHeadings(withComments);
+                const withToc = processTocTag(withComments, mdHeadings);
+                mdHtml = marked.parse(withToc);
+            }
 
             const filename = path.split('/').pop().replace(/\.(md|drawio|list)$/, '');
             mdHtml = mdHtml.replaceAll('{filename}', filename);
@@ -881,6 +905,7 @@ export const loadPage = async (path, id, tags, opts = {}) => {
             editBtn.disabled = false;
         } else {
             viewerContent.innerHTML = mdHtml;
+            if (isHtmlFormat(result.frontmatter)) scopeStyles(viewerContent, '#viewer-content');
             // Start a freshly loaded page at the top — replacing innerHTML
             // keeps the old scrollTop when the new page is also tall enough.
             viewerContent.scrollTop = 0;

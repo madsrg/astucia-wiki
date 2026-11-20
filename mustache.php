@@ -20,6 +20,11 @@
 // Not supported, and refused by name rather than silently ignored: partials ({{> x}}),
 // changing delimiters ({{=<% %>=}}) and lambdas.
 //
+// **HTML templates** (a page with `format: html`): wiki_tpl_parse($tpl, ['html' => true]) works
+// out *where* in the HTML each {{…}} lands, and rendering escapes the value for that place —
+// see "HTML templates" below. {{{x}}} is refused there: inserting HTML from the data is
+// exactly what the data must never do.
+//
 // Double braces on purpose: the wiki's own placeholders are single ({filename},
 // {include:ID}), and workflows already use {{page}}.
 //
@@ -81,7 +86,7 @@ function wiki_tpl_key(string $name): string {
  * (Mustache's "standalone" rule). Without that every {{#rows}} would leave a blank line in
  * the output, and a blank line ends a Markdown table.
  */
-function wiki_tpl_parse(string $tpl): array {
+function wiki_tpl_parse(string $tpl, array $opts = []): array {
     if (strlen($tpl) > WIKI_TPL_MAX_BYTES) throw new WikiTemplateError('too_large', 1);
     $tpl = str_replace(["\r\n", "\r"], "\n", $tpl);
 
@@ -148,7 +153,7 @@ function wiki_tpl_parse(string $tpl): array {
         $flush();
         if ($sigil === '#' || $sigil === '^') {
             if (count($frames) > WIKI_TPL_MAX_DEPTH) throw new WikiTemplateError('too_deep', $at);
-            $frames[] = ['node' => ['t' => $sigil === '#' ? 'sec' : 'inv', 'n' => $name], 'line' => $at, 'c' => []];
+            $frames[] = ['node' => ['t' => $sigil === '#' ? 'sec' : 'inv', 'n' => $name, 'line' => $at], 'line' => $at, 'c' => []];
         } elseif ($sigil === '/') {
             if (count($frames) === 1) throw new WikiTemplateError('unexpected_close', $at, $name);
             $top = array_pop($frames);
@@ -157,7 +162,7 @@ function wiki_tpl_parse(string $tpl): array {
             }
             $frames[count($frames) - 1]['c'][] = $top['node'] + ['c' => $top['c']];
         } else {
-            $frames[count($frames) - 1]['c'][] = ['t' => 'var', 'n' => $name, 'raw' => $sigil === '{' || $sigil === '&'];
+            $frames[count($frames) - 1]['c'][] = ['t' => 'var', 'n' => $name, 'raw' => $sigil === '{' || $sigil === '&', 'line' => $at];
         }
         $pos = $end;
     }
@@ -166,16 +171,21 @@ function wiki_tpl_parse(string $tpl): array {
         $top = end($frames);
         throw new WikiTemplateError('unclosed_section', $top['line'], $top['node']['n']);
     }
-    return $frames[0]['c'];
+    $tree = $frames[0]['c'];
+    if (!empty($opts['html'])) {
+        $st = _wiki_tpl_html_start();
+        _wiki_tpl_html_annotate($tree, $st);
+    }
+    return $tree;
 }
 
 /**
  * Check a template without rendering it: null when it parses, otherwise
  * ['error' => code, 'line' => n, 'detail' => string] for the UI to translate.
  */
-function wiki_tpl_check(string $tpl): ?array {
+function wiki_tpl_check(string $tpl, array $opts = []): ?array {
     try {
-        wiki_tpl_parse($tpl);
+        wiki_tpl_parse($tpl, $opts);
         return null;
     } catch (WikiTemplateError $e) {
         return ['error' => $e->error, 'line' => $e->templateLine, 'detail' => $e->detail];
@@ -194,6 +204,198 @@ function wiki_tpl_names(array $tree): array {
         $names[explode('.', $n['n'])[0]] = true;
     }
     return array_keys($names);
+}
+
+// -----------------------------------------------------------------
+// HTML templates — where in the HTML each value lands
+// -----------------------------------------------------------------
+//
+// The template's own HTML is trusted as any page an editor writes is; the *data* is not — it
+// can come from a list in another Space, edited by people who cannot edit the page. So each
+// {{…}} is placed by a small scanner that walks the template text the way a browser would,
+// and the value is escaped for that place:
+//
+//   between tags                text — HTML-escaped, @ # { } [ ] as entities (the mention
+//                               scanner and the wiki's tags read the raw file), newline → <br>
+//   a quoted attribute value    the same, quotes included
+//   a link attribute            the same, and the link must be http(s), mailto or relative —
+//   (href, src, action, …)      anything else (javascript:, data:, …) becomes #blocked
+//
+// Everywhere else no escaping makes a value safe, so the template is refused with its line:
+// inside <script> or <style>, a comment, an on… or style or srcdoc attribute, an unquoted
+// attribute value, a tag or attribute name. A section must leave the scanner where it found
+// it — otherwise the place a value lands would depend on how often the section repeats (the
+// rule Go's html/template has for the same reason).
+
+const WIKI_TPL_URL_ATTRS = ['href', 'src', 'action', 'formaction', 'poster', 'cite', 'srcset',
+                            'background', 'data', 'xlink:href', 'longdesc', 'manifest', 'icon'];
+
+function _wiki_tpl_html_start(): array {
+    return ['s' => 'text', 'tag' => '', 'end' => false, 'attr' => '', 'val' => '', 'raw' => ''];
+}
+
+/** Walk $text from state $st; returns the state after it. */
+function _wiki_tpl_html_step(array $st, string $text): array {
+    $len = strlen($text);
+    $isName = fn($c) => $c !== '' && !ctype_space($c) && !in_array($c, ['>', '/', '=', '"', "'", '<'], true);
+    $close = function (array $st): array {
+        $tag = strtolower($st['tag']);
+        $st['s'] = (!$st['end'] && in_array($tag, ['script', 'style'], true)) ? 'raw' : 'text';
+        $st['raw'] = $st['s'] === 'raw' ? $tag : '';
+        // Back in text, which tag it was no longer matters — keeping it would make a section
+        // holding a whole <li>…</li> look as if it had moved the scanner.
+        $st['tag'] = ''; $st['end'] = false; $st['attr'] = ''; $st['val'] = '';
+        return $st;
+    };
+    for ($i = 0; $i < $len; $i++) {
+        $c = $text[$i];
+        switch ($st['s']) {
+            case 'text':
+                if ($c !== '<') break;
+                if (substr($text, $i, 4) === '<!--') { $st['s'] = 'comment'; $i += 3; break; }
+                $n = $text[$i + 1] ?? '';
+                if ($n === '!' || $n === '?') { $st['s'] = 'decl'; $i++; break; }
+                if ($n === '/') { $st = ['s' => 'tagname', 'tag' => '', 'end' => true] + $st; $i++; break; }
+                if ($n === '' || ctype_alpha($n)) { $st = ['s' => 'tagname', 'tag' => '', 'end' => false] + $st; }
+                break;
+            case 'tagname':
+                if ($c === '>') { $st = $close($st); break; }
+                if (ctype_space($c) || $c === '/') { $st['s'] = 'intag'; break; }
+                $st['tag'] .= $c;
+                break;
+            case 'intag':
+                if ($c === '>') { $st = $close($st); break; }
+                if (ctype_space($c) || $c === '/') break;
+                $st['s'] = 'attrname'; $st['attr'] = $c;
+                break;
+            case 'attrname':
+                if ($c === '>') { $st = $close($st); break; }
+                if ($c === '=') { $st['s'] = 'beforeval'; break; }
+                if (ctype_space($c)) { $st['s'] = 'afterattr'; break; }
+                if ($c === '/') { $st['s'] = 'intag'; break; }
+                $st['attr'] .= $c;
+                break;
+            case 'afterattr':
+                if ($c === '>') { $st = $close($st); break; }
+                if ($c === '=') { $st['s'] = 'beforeval'; break; }
+                if (ctype_space($c) || $c === '/') break;
+                $st['s'] = 'attrname'; $st['attr'] = $c;
+                break;
+            case 'beforeval':
+                if (ctype_space($c)) break;
+                if ($c === '>') { $st = $close($st); break; }
+                if ($c === '"') { $st['s'] = 'valdq'; $st['val'] = ''; break; }
+                if ($c === "'") { $st['s'] = 'valsq'; $st['val'] = ''; break; }
+                $st['s'] = 'valunq'; $st['val'] = $c;
+                break;
+            case 'valdq':
+            case 'valsq':
+                if ($c === ($st['s'] === 'valdq' ? '"' : "'")) { $st['s'] = 'intag'; $st['val'] = ''; break; }
+                $st['val'] .= $c;
+                break;
+            case 'valunq':
+                if (ctype_space($c)) { $st['s'] = 'intag'; $st['val'] = ''; break; }
+                if ($c === '>') { $st = $close($st); break; }
+                $st['val'] .= $c;
+                break;
+            case 'comment':
+                if (substr($text, $i, 3) === '-->') { $st['s'] = 'text'; $i += 2; }
+                break;
+            case 'decl':
+                if ($c === '>') $st['s'] = 'text';
+                break;
+            case 'raw':
+                // Only the matching end tag ends a <script> or <style>.
+                if ($c === '<' && strtolower(substr($text, $i, strlen($st['raw']) + 2)) === '</' . $st['raw']) {
+                    $st = ['s' => 'tagname', 'tag' => '', 'end' => true, 'raw' => ''] + $st;
+                    $i++;
+                }
+                break;
+        }
+    }
+    return $st;
+}
+
+/** The parts of the state a section must leave as it found them. */
+function _wiki_tpl_html_key(array $st): string {
+    return $st['s'] . '|' . strtolower($st['tag']) . '|' . strtolower($st['attr']) . '|' . $st['raw'];
+}
+
+/** Label each value with the place it lands, or refuse the template. */
+function _wiki_tpl_html_annotate(array &$nodes, array &$st): void {
+    foreach ($nodes as &$n) {
+        if ($n['t'] === 'text') { $st = _wiki_tpl_html_step($st, $n['v']); continue; }
+        $line = (int)($n['line'] ?? 1);
+        if ($n['t'] === 'var') {
+            if ($n['raw']) throw new WikiTemplateError('html_raw', $line, $n['n']);
+            [$n['ctx'], $n['prefix']] = _wiki_tpl_html_context($st, $line);
+            continue;
+        }
+        // A section, repeated or not, must leave the scanner where it found it.
+        $inner = $st;
+        _wiki_tpl_html_annotate($n['c'], $inner);
+        if (_wiki_tpl_html_key($inner) !== _wiki_tpl_html_key($st)) {
+            throw new WikiTemplateError('html_section_context', $line, $n['n']);
+        }
+    }
+    unset($n);
+}
+
+/** [context, url prefix] for a value at state $st; throws where nothing would be safe. */
+function _wiki_tpl_html_context(array $st, int $line): array {
+    switch ($st['s']) {
+        case 'text':
+            return ['text', ''];
+        case 'valdq':
+        case 'valsq':
+            $attr = strtolower($st['attr']);
+            if (str_starts_with($attr, 'on')) throw new WikiTemplateError('html_context', $line, 'event handler');
+            if ($attr === 'style')  throw new WikiTemplateError('html_context', $line, 'style');
+            if ($attr === 'srcdoc') throw new WikiTemplateError('html_context', $line, 'srcdoc');
+            if (in_array($attr, WIKI_TPL_URL_ATTRS, true)) return ['url', $st['val']];
+            return ['attr', ''];
+        case 'beforeval':
+        case 'valunq':
+            throw new WikiTemplateError('html_context', $line, 'unquoted attribute');
+        case 'raw':
+            throw new WikiTemplateError('html_context', $line, $st['raw']);
+        case 'comment':
+        case 'decl':
+            throw new WikiTemplateError('html_context', $line, 'comment');
+        default:
+            throw new WikiTemplateError('html_context', $line, 'tag');
+    }
+}
+
+/** HTML-escape a value for text or a quoted attribute, neutralising what the wiki reads. */
+function wiki_tpl_html_escape(string $v, bool $text): string {
+    $v = str_replace(["\r\n", "\r"], "\n", $v);
+    static $map = ['&' => '&amp;', '<' => '&lt;', '>' => '&gt;', '"' => '&quot;', "'" => '&#39;',
+                   '@' => '&#64;', '#' => '&#35;', '{' => '&#123;', '}' => '&#125;', '[' => '&#91;', ']' => '&#93;'];
+    $v = strtr($v, $map);
+    return $text ? str_replace("\n", '<br>', $v) : str_replace("\n", '&#10;', $v);
+}
+
+/**
+ * Is a link safe to write into a link attribute? $prefix is the template's own text before
+ * the value in that attribute: if it already fixes the scheme ("mailto:", "https://…",
+ * "/page", "?id=") the value cannot change it. Otherwise the whole link must be http(s),
+ * mailto or relative. Browsers ignore tabs and line breaks inside a scheme, and leading
+ * spaces and control characters, so those are taken out before looking.
+ */
+function wiki_tpl_url_allowed(string $prefix, string $value): bool {
+    $p = ltrim($prefix, "\x00..\x20");
+    if ($p !== '' && (strpbrk($p[0], '/?#.') !== false || preg_match('/^[^\/?#]*:/', $p))) return true;
+    $url = preg_replace('/[\t\n\r]/', '', ltrim($prefix . $value, "\x00..\x20")) ?? '';
+    if (!preg_match('/^([a-zA-Z][a-zA-Z0-9+.\-]*):/', $url, $m)) return true;   // relative
+    return in_array(strtolower($m[1]), ['http', 'https', 'mailto'], true);
+}
+
+/** Warnings from the last render (a blocked link), taken once. */
+function wiki_tpl_take_warnings(): array {
+    $w = $GLOBALS['_wiki_tpl_warnings'] ?? [];
+    $GLOBALS['_wiki_tpl_warnings'] = [];
+    return $w;
 }
 
 // -----------------------------------------------------------------
@@ -251,14 +453,15 @@ function wiki_tpl_md_raw(string $v): string {
  * Render a template (string, or a tree from wiki_tpl_parse — parse once when rendering
  * many rows) against a context.
  *
- * $opts['escape']: 'markdown' (default) — as above; 'none' — every value verbatim, for a
- * page name, which is cleaned as a filename afterwards and never rendered as Markdown.
+ * $opts['escape']: 'markdown' (default) — as above; 'html' — by the place each value lands
+ * (the tree must come from wiki_tpl_parse(…, ['html' => true])); 'none' — every value
+ * verbatim, for a page name, which is cleaned as a filename afterwards and never rendered.
  *
  * A missing name renders as nothing, as in Mustache.
  */
 function wiki_tpl_render($tpl, array $ctx, array $opts = []): string {
-    $tree = is_array($tpl) ? $tpl : wiki_tpl_parse($tpl);
-    $mode = ($opts['escape'] ?? 'markdown') === 'none' ? 'none' : 'markdown';
+    $tree = is_array($tpl) ? $tpl : wiki_tpl_parse($tpl, ['html' => ($opts['escape'] ?? '') === 'html']);
+    $mode = in_array($opts['escape'] ?? 'markdown', ['none', 'html'], true) ? $opts['escape'] : 'markdown';
     return _wiki_tpl_nodes($tree, [$ctx], $mode);
 }
 
@@ -271,6 +474,16 @@ function _wiki_tpl_nodes(array $nodes, array $stack, string $mode): string {
                 break;
             case 'var':
                 $s = _wiki_tpl_str(_wiki_tpl_lookup($n['n'], $stack));
+                if ($mode === 'html') {
+                    $ctx = $n['ctx'] ?? 'text';
+                    if ($ctx === 'url' && !wiki_tpl_url_allowed((string)($n['prefix'] ?? ''), $s)) {
+                        $GLOBALS['_wiki_tpl_warnings'][] = ['warning' => 'url_blocked', 'detail' => $n['n']];
+                        $out .= '#blocked';
+                    } else {
+                        $out .= wiki_tpl_html_escape($s, $ctx === 'text');
+                    }
+                    break;
+                }
                 if ($mode === 'none')   $out .= $s;
                 elseif ($n['raw'])      $out .= wiki_tpl_md_raw($s);
                 else                    $out .= wiki_tpl_md_escape($s);

@@ -26,6 +26,7 @@ import { state } from '../core/state.js';
 import { icons } from '../core/icons.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { t } from '../i18n/index.js';
+import { scopeStyles } from '../core/scoped_css.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -71,7 +72,13 @@ const tplErrorText = (detail) => {
     const m = /^([a-z_]+)(?::\s*(.*))?$/.exec(String(detail ?? ''));
     if (!m) return String(detail ?? '');
     const key = `generators.tpl.${m[1]}`;
-    const text = t(key, { x: m[2] ?? '' });
+    // Where a value may not go in HTML is named in English by the server; say it in words.
+    let x = m[2] ?? '';
+    if (m[1] === 'html_context') {
+        const where = t(`generators.html-where.${x.replace(/ /g, '_')}`);
+        if (!where.startsWith('generators.')) x = where;
+    }
+    const text = t(key, { x });
     return text === key ? String(detail) : text;
 };
 
@@ -125,7 +132,14 @@ const pageBanner = (g) => {
             ? `<div class="generator-actions"><button type="button" class="btn btn-secondary btn-sm" data-gen="detach">${esc(t('generators.detach'))}</button></div>` : '';
         return `<div>${t('generators.banner-generated', { template: templateLink(g), row: esc(g.row) })}</div>${detach}`;
     }
-    if (g.state === 'archived') return `<div>${t('generators.banner-archived', { template: templateLink(g) })}</div>`;
+    // Archived for one of two reasons, which must not be confused: the list item was deleted,
+    // or the template was (or stopped generating). A page archived before the reason was
+    // recorded gets a wording that claims neither.
+    if (g.state === 'archived') {
+        if (g.reason === 'row_removed') return `<div>${t('generators.banner-archived-row', { template: templateLink(g), list: esc(g.list || '') })}</div>`;
+        if (g.reason === 'template_gone') return `<div>${esc(t('generators.banner-archived-template'))}</div>`;
+        return `<div>${t('generators.banner-archived', { template: templateLink(g) })}</div>`;
+    }
     return `<div>${t('generators.banner-detached', { template: templateLink(g) })}</div>`;
 };
 
@@ -233,7 +247,12 @@ const preview = async () => {
         overlay.querySelector('.generator-preview-name').textContent = res.rows.length ? t('generators.preview-name', { name: `${res.name}.md` }) : t('generators.preview-empty');
         overlay.querySelector('.generator-preview-warnings').innerHTML =
             (res.warnings || []).map(w => `<div class="generator-warning">${esc(warningText(w))}</div>`).join('');
-        out.innerHTML = window.marked ? window.marked.parse(res.body || '') : esc(res.body || '');
+        // Rendered by the server, values already escaped for where they land: an HTML
+        // template's output is shown as it is, a Markdown one through marked.
+        out.innerHTML = res.format === 'html' ? (res.body || '')
+            : (window.marked ? window.marked.parse(res.body || '') : esc(res.body || ''));
+        // The template's own <style> reaches only the preview, not the wiki around it.
+        if (res.format === 'html') scopeStyles(out, '.generator-dialog .generator-preview');
     };
     sel.addEventListener('change', () => show(sel.value));
     await show(null);
@@ -255,7 +274,10 @@ const createDialog = async () => {
         <div class="form-group"><label class="form-label">${esc(t('generators.new-folder'))}</label>
             <input type="text" class="form-control" data-gen-folder></div>
         <div class="form-group"><label class="form-label">${esc(t('generators.new-name-from'))}</label>
-            <select class="form-control" data-gen-name></select></div>`, { okLabel: t('btn.create') });
+            <select class="form-control" data-gen-name></select></div>
+        <div class="form-group"><label class="form-label">${esc(t('generators.new-output'))}</label>
+            <label class="pref-check"><input type="radio" name="gen-format" value="html" data-gen-format checked> ${esc(t('generators.new-output-html'))}</label>
+            <label class="pref-check"><input type="radio" name="gen-format" value="markdown" data-gen-format> ${esc(t('generators.new-output-md'))}</label></div>`, { okLabel: t('btn.create') });
     const src = overlay.querySelector('[data-gen-source]');
     const pathEl = overlay.querySelector('[data-gen-path]');
     const folderEl = overlay.querySelector('[data-gen-folder]');
@@ -278,6 +300,7 @@ const createDialog = async () => {
         const l = lists[Number(src.value)];
         const r = await api.call('generator_create', {
             source: `${l.space}:${l.id}`, path: pathEl.value.trim(), folder: folderEl.value.trim(), filename_key: nameEl.value,
+            format: overlay.querySelector('[data-gen-format]:checked')?.value || 'html',
         }, 'POST');
         if (!r.success) {
             showToast(r.error === 'exists' ? t('generators.exists') : (r.error ? errorText(r) : (r.message || '')), 'error');

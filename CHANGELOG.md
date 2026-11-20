@@ -35,6 +35,17 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 - **List fields are managed in List properties** — adding one included (the toolbar's *Add
   column* is gone), as are a Choice field's choices. The UI now says *field*. Title can be
   renamed but not deleted, and an item needs one.
+- **Generated pages in HTML.** A page generator can now write its pages in HTML — the
+  default in New → Page Generator — for layouts Markdown cannot do: cards, label/value
+  rows, a grid of cards per entry of a group. The starter template does all three, styled by a
+  few new classes (`wk-card`, `wk-grid`, `wk-fields`, `wk-muted`). Values from the list are
+  escaped for where they land in the HTML: as text, in an attribute, or in a link, where only
+  http, https, mailto and relative links are allowed and anything else (`javascript:`…) is
+  blocked and reported. A template that puts a value somewhere no escaping makes safe — in a
+  script, a style, an `on…` handler — is refused with the line and the reason. An HTML page is
+  shown as written, edited in the classic editor, and searched by its text, not its markup.
+  Each new HTML template starts with its own copy of those styles in a `<style>` block, to
+  edit freely; it is copied to every page and applies only to the page, never the wiki around it.
 - **Groups of fields in lists.** A field can now hold fields of its own — a customer's
   address — and, with *Allow several*, a list of entries such as its debit cards. The table
   shows a group as one line (the fields you choose, or the first two) and several entries as
@@ -83,6 +94,8 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   fields — are not added to it. It prints a notice when run.
 
 ### Fixed
+- **A page generator that had stopped showed "Rendering…" for good** on its template, instead
+  of why it stopped — a missing list, an owner without access, a broken template. It says why.
 - **A list item's value could run script.** The item view and item form inserted values as
   HTML, so a value containing markup ran for anyone who opened the item. Values are shown
   as text now.

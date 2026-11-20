@@ -160,11 +160,18 @@ const run = async () => {
   const nd = $('.generator-dialog');
   out += ' sources=' + w(Array.from(nd.querySelectorAll('[data-gen-source] option')).map(o => o.textContent.split(' (')[0]).join('|'));
   out += ' defaults=' + nd.querySelector('[data-gen-path]').value + ',' + nd.querySelector('[data-gen-folder]').value;
+  out += ' formatDefault=' + (nd.querySelector('[data-gen-format]:checked') || {}).value;
   nd.querySelector('[data-gen-path]').value = 'Templates/Fresh';
   nd.querySelector('[data-gen-folder]').value = 'Fresh';
   click(nd.querySelector('[data-gen-ok]'));           await sleep(3000);
   out += ' newpage=' + w($('#current-page-title').textContent);
   out += ' newtpl=' + (shown(banner()) ? banner().className.replace(/ /g, '.') : 'none');
+  // The HTML starter, shown as HTML and styled by the wk-* classes.
+  const card = $('#viewer-content .wk-card');
+  out += ' starterCard=' + (card ? 'yes' : 'no');
+  out += ' cardStyled=' + (card && parseFloat(getComputedStyle(card).borderTopWidth) > 0 ? 'yes' : 'no');
+  const fl = $('#viewer-content .wk-fields');
+  out += ' fieldsGrid=' + (fl && getComputedStyle(fl).display === 'grid' ? 'yes' : 'no');
 
   click($('#admin-btn'));                                       await sleep(800);
   click($('.admin-group[data-group="content"]'));               await sleep(500);
@@ -256,7 +263,12 @@ section 'New → Generated pages'
 assert_contains "the New menu offers it"                    'menu=Generated_Pages…'            "$PROBE"
 assert_contains "  …listing the lists of every Space"       'sources=CRM_/_Accounts '          "$PROBE"
 assert_contains "  …with defaults from the chosen list"     'defaults=templates/Accounts,Accounts' "$PROBE"
+assert_contains "  …offering HTML by default"               'formatDefault=html '              "$PROBE"
 assert_contains "creating it opens the new template"        'newpage=Fresh '                   "$PROBE"
+assert_contains "  …an HTML starter, shown as HTML"          'starterCard=yes '                 "$PROBE"
+assert_contains "  …styled as a card"                        'cardStyled=yes '                  "$PROBE"
+assert_contains "  …its fields as label/value rows"          'fieldsGrid=yes'                   "$PROBE"
+assert_contains "  …and its pages are HTML"                  'format: html'                     "$(cat "$WIKI_PAGES/Customers/Fresh/Acme.md" 2>/dev/null)"
 assert_contains "  …as a template"                          'newtpl=generator-banner.is-template' "$PROBE"
 assert_file_exists "  …which rendered its pages"            "$WIKI_PAGES/Customers/Fresh/Acme.md"
 

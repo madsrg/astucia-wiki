@@ -197,6 +197,8 @@ r=$(post_as "$CARL" 'api.php?action=delete&space=Customers' 'path=Templates/Acco
 assert_contains 'the template is deleted'                '"success":true' "$r"
 assert_file_exists '  its pages stay'                    "$WIKI_PAGES/Customers/Accounts/Acme.md"
 assert_contains '  archived'                             "archived_from: $TPL" "$(page Acme)"
+assert_contains '  because the template went, not the row' 'archived_reason: template_gone' "$(page Acme)"
+assert_not_contains '  so no list is named'                'archived_list' "$(page Acme)"
 assert_not_contains '  no longer generated'              'generated_by' "$(page Acme)"
 assert_eq '  and the generator is forgotten'             '' "$(state space)"
 
