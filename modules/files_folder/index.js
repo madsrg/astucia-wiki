@@ -8,6 +8,7 @@ import { icons } from '../core/icons.js';
 import { showToast, confirmModal, promptModal, canUpload, uploadTooLarge } from '../core/utils.js';
 import { t } from '../i18n/index.js';
 import { updateBreadcrumb, updateFavoriteBtn } from '../nav/index.js';
+import { initBulk, rowCheckbox, syncBulk, showBulk, resetBulk, isSelectable } from './bulk.js';
 
 
 // ── File type icons ───────────────────────────────────────────────────────────
@@ -71,6 +72,7 @@ let folderItems  = [];        // the folder's entries, as the tree data has them
 let folderFilter = '';        // narrows by name, as typed in the toolbar's box
 let folderPage   = 0;         // zero-based
 let folderSort   = 'name';    // 'name' (A→Z) | 'modified' (newest first); folders first either way
+let bulkView     = { shown: [], matches: [] };   // what bulk.js selects from: this page, and all that match
 
 const setActiveViewBtn = () => {
     ['simple', 'detailed', 'icons'].forEach(m => {
@@ -124,6 +126,8 @@ const showListingPane = (mode) => {
     // A files library is not paged; renderFolderView() shows the pager when it is needed.
     if (mode !== 'folder') document.getElementById('ff-pager')?.classList.add('hidden');
     document.getElementById('page-actions-group').classList.toggle('hidden', mode === 'folder');
+    // Selecting pages to move, delete or tag together — a wiki folder only (bulk.js).
+    showBulk(mode === 'folder');
 };
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -447,6 +451,9 @@ const renderFolder = (items, path, { filtered = false } = {}) => {
         return span;
     };
     const labelFor = (entry) => entry.up ? '..' : entryName(entry);
+    // A page row's checkbox (bulk.js); folders and the ".." row have none, nor does a
+    // reader's listing, where nothing could be done with a selection.
+    const withBox = (entry) => !entry.up && isSelectable(entry) && canUpload();
 
     if (currentViewMode === 'simple') {
         const ul = document.createElement('ul');
@@ -458,6 +465,7 @@ const renderFolder = (items, path, { filtered = false } = {}) => {
             const name = document.createElement('span');
             name.className = 'ff-filename';
             name.textContent = labelFor(entry);
+            if (withBox(entry)) li.appendChild(rowCheckbox(entry));
             li.append(iconFor(entry, 'ff-icon-sm'), name);
             if (entry.up || isDir(entry)) {
                 const arrow = document.createElement('span');
@@ -477,6 +485,7 @@ const renderFolder = (items, path, { filtered = false } = {}) => {
         table.className = 'ff-detail-table';
         const thead = document.createElement('thead');
         const htr = document.createElement('tr');
+        if (canUpload()) htr.appendChild(Object.assign(document.createElement('th'), { className: 'ff-bulk-col' }));
         // Name and Modified sort the listing (the whole folder, not just this page);
         // the active one carries an arrow.
         [['name', t('files.col-name')], [null, t('folder.col-type')], ['modified', t('files.col-modified')]]
@@ -516,6 +525,12 @@ const renderFolder = (items, path, { filtered = false } = {}) => {
             // Folders carry no stamp in the index, and a page written outside the wiki
             // gets one on the next reconcile — an em dash beats a wrong date.
             tdDate.textContent = entry.up ? '' : (entry.updated ? fmtDate(entry.updated) : '—');
+            if (canUpload()) {
+                const tdBox = document.createElement('td');
+                tdBox.className = 'ff-bulk-col';
+                if (withBox(entry)) tdBox.appendChild(rowCheckbox(entry));
+                tr.appendChild(tdBox);
+            }
             tr.append(tdName, tdType, tdDate);
             tr.addEventListener('click', () => activate(entry));
             tbody.appendChild(tr);
@@ -538,6 +553,7 @@ const renderFolder = (items, path, { filtered = false } = {}) => {
             const label = labelFor(entry);
             name.textContent = label.length > 18 ? label.slice(0, 17) + '…' : label;
             link.append(iconFor(entry, 'ff-icon-lg fv-icon-lg'), name);
+            if (withBox(entry)) item.appendChild(rowCheckbox(entry));
             item.appendChild(link);
             item.addEventListener('click', () => activate(entry));
             grid.appendChild(item);
@@ -567,9 +583,12 @@ const renderFolderView = () => {
     const pages = Math.max(1, Math.ceil(total / FOLDER_PAGE_SIZE));
     folderPage = Math.min(Math.max(0, folderPage), pages - 1);   // a refresh can shrink it
     const from = folderPage * FOLDER_PAGE_SIZE;
-    const shown = sortEntries(matches, folderSort).slice(from, from + FOLDER_PAGE_SIZE);
+    const sorted = sortEntries(matches, folderSort);
+    const shown = sorted.slice(from, from + FOLDER_PAGE_SIZE);
+    bulkView = { shown, matches: sorted };
 
     renderFolder(shown, folderPath, { filtered: !!needle });
+    syncBulk();
 
     const pager = document.getElementById('ff-pager');
     if (!pager) return;
@@ -607,6 +626,7 @@ export const loadFolderView = async (path) => {
     // A different folder starts on its first page, unfiltered. The same folder — a tree
     // refresh repainting it, a view-mode switch — keeps its page and its filter.
     if (paneMode !== 'folder' || target !== folderPath) {
+        resetBulk();
         folderPage   = 0;
         folderFilter = '';
         const box = document.getElementById('ff-search-input');
@@ -933,6 +953,11 @@ const wireFolderActions = () => {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 export const init = () => {
+    initBulk({
+        shown:   () => bulkView.shown,
+        matches: () => bulkView.matches,
+        refresh: () => { if (isFolderViewActive()) loadFolderView(folderPath); },
+    });
     const uploadInput = document.getElementById('ff-upload-input');
 
     document.getElementById('ff-upload-btn').addEventListener('click', () => uploadInput.click());

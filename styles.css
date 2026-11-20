@@ -3009,3 +3009,20 @@ body.mobile .generator-banner { margin: 1rem 1rem 0; }
 #viewer-content .wk-muted, .generator-preview .wk-muted { color: var(--accent-gray); }
 body.mobile #viewer-content .wk-fields { grid-template-columns: 1fr; gap: 0.1rem; }
 body.mobile #viewer-content .wk-fields > dd { margin-bottom: 0.4rem; }
+
+/* ── Selecting pages in a folder listing (modules/files_folder/bulk.js) ─────────────────
+   A checkbox on every page row, and a bar above the list: "select all on this page", then the
+   actions once something is selected. The name stays a link; only the box selects. */
+.ff-bulk { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem 0.75rem; padding: 0.35rem 0.5rem; margin-bottom: 0.35rem; border-bottom: 1px solid var(--border-color); font-size: 0.85rem; }
+.ff-bulk-all { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; color: var(--accent-gray); }
+.ff-bulk-count { font-weight: 600; }
+.ff-bulk-actions { display: inline-flex; gap: 0.4rem; margin-left: auto; }
+.ff-bulk .btn-link { background: none; border: none; color: #3182ce; cursor: pointer; padding: 0 0.25rem; font-size: 0.85rem; }
+.ff-bulk .btn-link:disabled { color: var(--accent-gray); cursor: default; }
+.ff-bulk-check { margin: 0 0.45rem 0 0; cursor: pointer; flex: 0 0 auto; }
+.ff-bulk-col { width: 1.6rem; padding-right: 0 !important; }
+.ff-bulk-col .ff-bulk-check { margin: 0; }
+.fv-row.ff-bulk-on { background: #ebf4ff; }
+.ff-icon-item { position: relative; }
+.ff-icon-item > .ff-bulk-check { position: absolute; top: 6px; left: 6px; }
+.ff-bulk-failed { margin: 0.5rem 0 0; padding-left: 1.2rem; max-height: 40vh; overflow-y: auto; }

@@ -43,7 +43,16 @@ const loadFolderTree = async (spaceSelect, moveFileTree) => {
     moveFileTree.appendChild(ul);
 };
 
-export const openMoveLightbox = async () => {
+// When set, the dialog picks a destination for somebody else instead of moving one page —
+// the folder listing's bulk Move (modules/files_folder/bulk.js) hands its own callback in.
+let pickCallback = null;
+
+/**
+ * Open the Move dialog. With `onPick`, choosing a destination calls onPick(folder, space)
+ * and closes; nothing is moved here. Without it, it moves state.sourcePathToMove as always.
+ */
+export const openMoveLightbox = async (onPick = null) => {
+    pickCallback = onPick;
     const spaceSelect = document.getElementById('move-space-select');
     const moveFileTree = document.getElementById('move-file-tree');
 
@@ -95,6 +104,13 @@ export const init = () => {
     moveConfirmBtn.addEventListener('click', async () => {
         const activeDest = moveFileTree.querySelector('.file-item-content.active');
         const destFolder = activeDest?.dataset.path || '';
+        if (pickCallback) {
+            const cb = pickCallback;
+            pickCallback = null;
+            close();
+            await cb(destFolder, spaceSelect.value || state.currentSpace);
+            return;
+        }
         const fileName = state.sourcePathToMove.split('/').pop();
         const newPath = (destFolder ? destFolder + '/' : '') + fileName;
         const targetSpace = spaceSelect.value || state.currentSpace;

@@ -35,6 +35,11 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 - **List fields are managed in List properties** — adding one included (the toolbar's *Add
   column* is gone), as are a Choice field's choices. The UI now says *field*. Title can be
   renamed but not deleted, and an item needs one.
+- **Selecting several pages in a folder.** The main-area folder listing has a checkbox on
+  every page: tick some (Shift for a range, or all on the page — and then all in the
+  folder), then **Move…**, **Add tag…** or **Delete** them together. The page names still
+  open the pages. Anything that cannot be done — a generated page cannot be deleted, say —
+  is listed afterwards and stays selected; a move asks once about updating `[[wikilinks]]`.
 - **Generated pages in HTML.** A page generator can now write its pages in HTML — the
   default in New → Page Generator — for layouts Markdown cannot do: cards, label/value
   rows, a grid of cards per entry of a group. The starter template does all three, styled by a
