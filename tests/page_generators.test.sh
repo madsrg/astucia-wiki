@@ -575,7 +575,7 @@ assert_contains '  a single group as a nested block'        '{{#address}}' "$(ca
 assert_contains '  several entries as a grid of cards'      '<div class="wk-grid">' "$(cat "$T")"
 assert_contains '  a field name escaped, braces included'  '<dt>Note &lt;i&gt;&#123;&#123;x&#125;&#125;&lt;/i&gt;</dt>' "$(cat "$T")"
 ANNH=$(cat "$WIKI_PAGES/Customers/MembersHtml/Ann.md"); BOH=$(cat "$WIKI_PAGES/Customers/MembersHtml/Bo.md")
-assert_contains 'its pages render: the title'               '<h1>Ann</h1>' "$ANNH"
+assert_contains 'its pages render: the title, with its edit button' '<h1>Ann <button type="button" class="wk-edit"' "$ANNH"
 assert_contains '  a group field inside its block'          '<dt>City</dt><dd>Oslo</dd>' "$ANNH"
 assert_contains '  one card per entry'                      '<dt>Number</dt><dd>1111</dd>' "$ANNH"
 assert_contains '  values escaped'                          '<dd>&lt;b&gt;2222&lt;/b&gt;</dd>' "$ANNH"

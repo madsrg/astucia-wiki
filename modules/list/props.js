@@ -45,10 +45,11 @@ const el = (tag, cls, text) => {
     return n;
 };
 
-const TYPES = ['text_single', 'text_multi', 'date', 'choice', 'lookup', 'object'];
+const TYPES = ['text_single', 'text_multi', 'date', 'choice', 'number', 'boolean', 'comments', 'lookup', 'object'];
 const typeLabel = (type) => t({
     autoincrement: 'list.type-auto', text_single: 'list.type-text', text_multi: 'list.type-multi',
     date: 'list.type-date', choice: 'list.type-choice', lookup: 'list.type-lookup', object: 'list.type-group',
+    number: 'list.type-number', boolean: 'list.type-boolean', comments: 'list.type-comments',
 }[type] || 'list.type-text');
 
 const chevron = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
@@ -72,6 +73,32 @@ const choicesEditor = (d) => {
         d.options = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
     });
     g.appendChild(ta);
+    return g;
+};
+
+/**
+ * A Number's settings: how many decimals it shows, and a unit after it. Both only change how
+ * a value reads, so unlike its type they stay editable once the field exists.
+ */
+const numberConfig = (d) => {
+    const g = el('div', 'list-props-field list-props-number');
+    const dl = el('label', 'list-props-desc-label', t('list.number-decimals'));
+    const dec = el('select', 'form-control list-props-decimals');
+    for (let i = 0; i <= 6; i++) {
+        const o = el('option', '', String(i));
+        o.value = String(i);
+        dec.appendChild(o);
+    }
+    dec.value = String(Math.min(6, Math.max(0, parseInt(d.decimals, 10) || 0)));
+    dec.addEventListener('change', () => { d.decimals = parseInt(dec.value, 10); });
+    const ul = el('label', 'list-props-desc-label', t('list.number-unit'));
+    const unit = el('input', 'form-control list-props-unit');
+    unit.type = 'text';
+    unit.maxLength = 12;
+    unit.placeholder = t('list.number-unit-ph');
+    unit.value = d.unit || '';
+    unit.addEventListener('input', () => { d.unit = unit.value; });
+    g.append(dl, dec, ul, unit);
     return g;
 };
 
@@ -325,6 +352,10 @@ const drawRow = (d, container) => {
         config.innerHTML = '';
         if (d.type === 'choice') {
             config.appendChild(choicesEditor(d));
+        } else if (d.type === 'number') {
+            config.appendChild(numberConfig(d));
+        } else if (d.type === 'comments') {
+            config.appendChild(el('p', 'field-helptext', t('list.comments-help')));
         } else if (d.type === 'lookup') {
             lookupConfig(d, config);
         } else if (d.type === 'object') {
@@ -344,6 +375,7 @@ const drawRow = (d, container) => {
             d.type = sel.value;
             if (d.type === 'lookup' && !d.lookup) { d.lookup = { list: null, field: null, multiple: false, extras: 'inline' }; d._show = []; }
             if (d.type === 'choice' && !d.options) d.options = [];
+            if (d.type === 'number' && d.decimals == null) d.decimals = 0;
             if (d.type === 'object' && !d.fields) { d.fields = [newSub()]; d.multiple = false; d.summary = []; }
             drawConfig();
         });
@@ -462,6 +494,11 @@ const clean = (d) => {
     if (d.role) c.role = d.role;
     c.showInListView = d.showInListView !== false;
     if (d.type === 'choice') c.options = [...(d.options || [])];
+    if (d.type === 'number') {
+        c.decimals = Math.min(6, Math.max(0, parseInt(d.decimals, 10) || 0));
+        const unit = (d.unit || '').trim();
+        if (unit) c.unit = unit;
+    }
     if (d.type === 'lookup') {
         c.lookup = { list: parseInt(d.lookup.list, 10), field: d.lookup.field, multiple: !!d.lookup.multiple };
         if (d.lookup.extras) c.lookup.extras = d.lookup.extras;

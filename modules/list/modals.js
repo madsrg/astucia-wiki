@@ -15,13 +15,29 @@
 // collapsed to that header when there are more than COLLAPSE_AFTER. A group's inputs carry
 // no `name`, so the form's FormData never sees them; each group editor collects its own
 // value (`_collect()`), as the lookup picker keeps its own (`_values`).
+//
+// A **Comments** field is a log: earlier comments are shown, read-only, with ✕ on those the
+// reader may remove (their own; an admin's, any), and a box for a new one. The new comment is
+// sent as { text } alone — the server stamps who and when (lists.php), so a comment cannot be
+// posted in somebody else's name.
+//
+// The add/edit form normally edits the open list. `openItemModal(id, external)` edits another
+// one — a list behind a generated page, possibly in another Space ({{_edit}},
+// modules/generators): `external` = { data, space, save(data) → Promise<bool>, onClose }.
 import { state } from '../core/state.js';
 import { saveListData } from './data.js';
 import { confirmModal, showToast } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { t } from '../i18n/index.js';
 import { cellText, cellParts, partsElement, loadLookupTargets, pickerOptions, titleField, normalizeList,
-         groupEntries, groupSummary, ensureEntryCounter } from './fields.js';
+         groupEntries, groupSummary, ensureEntryCounter, commentEntries, commentTime, setLookupSpace } from './fields.js';
+
+// The list the add/edit form is working on when it is not the open one (see above).
+let external = null;
+const formData = () => external ? external.data : state.currentListData;
+
+/** May the reader remove this comment? Their own, or any for an admin (the server decides). */
+const mayRemoveComment = (c) => window.WIKI_ROLE === 'admin' || (Number(c.by) > 0 && Number(c.by) === Number(window.WIKI_USER_UID));
 
 const el = (tag, cls, text) => {
     const n = document.createElement(tag);
@@ -34,6 +50,7 @@ const el = (tag, cls, text) => {
 
 export const openItemViewModal = async (itemData) => {
     const data = state.currentListData;
+    setLookupSpace(null);
     await loadLookupTargets(data);
     const content = document.getElementById('item-view-modal-content');
     content.innerHTML = '';
@@ -49,6 +66,12 @@ export const openItemViewModal = async (itemData) => {
             content.appendChild(row);
             return;
         }
+        if (col.type === 'comments') {
+            value.appendChild(commentLog(itemData[col.id]));
+            row.append(el('label', '', col.name), value);
+            content.appendChild(row);
+            return;
+        }
         const parts = cellParts(col, itemData, data.columns);
         if (parts?.length) { value.classList.add('has-lookup'); value.appendChild(partsElement(parts, col.type === 'lookup_field')); }
         else value.textContent = cellText(col, itemData, data.columns);
@@ -58,6 +81,49 @@ export const openItemViewModal = async (itemData) => {
     const modal = document.getElementById('item-view-modal');
     modal.dataset.id = itemData.id;
     modal.classList.remove('hidden');
+};
+
+/** A Comments field's entries, oldest first: who and when above each text. `remove(c)` adds ✕. */
+const commentLog = (value, remove = null) => {
+    const ul = el('ul', 'comment-log');
+    commentEntries(value).forEach(c => {
+        const li = el('li', 'comment-entry');
+        li.dataset.id = c.id ?? '';
+        const head = el('div', 'comment-head');
+        head.append(el('span', 'comment-author', c.name || ''), el('span', 'comment-time', commentTime(c.at)));
+        if (remove && mayRemoveComment(c)) {
+            const x = el('button', 'btn btn-sm btn-secondary comment-remove', '✕');
+            x.type = 'button';
+            x.title = t('list.comment-remove');
+            x.addEventListener('click', () => remove(c, li));
+            head.appendChild(x);
+        }
+        li.append(head, el('div', 'comment-text', c.text));
+        ul.appendChild(li);
+    });
+    return ul;
+};
+
+/** The form's Comments editor: the log (removable where allowed) and a box for a new one. */
+const commentsEditor = (col, initial) => {
+    const wrap = el('div', 'comments-editor');
+    wrap.dataset.colId = col.id;
+    let kept = commentEntries(initial);
+    wrap.appendChild(commentLog(kept, (c, li) => {
+        kept = kept.filter(k => k !== c);
+        li.remove();
+    }));
+    const box = el('textarea', 'form-control comment-new');
+    box.id = `field-${col.id}`;
+    box.rows = 2;
+    box.placeholder = t('list.comment-add-ph');
+    wrap.appendChild(box);
+    // Kept entries exactly as they were (the server compares them), the new one as text only.
+    wrap._collect = () => {
+        const text = box.value.trim();
+        return text ? [...kept, { text }] : [...kept];
+    };
+    return wrap;
 };
 
 /** A group in the item view: its sub-fields as label/value pairs, each entry its own block. */
@@ -180,6 +246,17 @@ const plainInput = (type, options, value, { blankChoice = false } = {}) => {
             input = el('input', 'form-control');
             input.type = 'date';
             input.value = value;
+            break;
+        case 'number':
+            input = el('input', 'form-control');
+            input.type = 'number';
+            input.step = 'any';
+            input.value = value === null || value === undefined ? '' : String(value);
+            break;
+        case 'boolean':
+            input = el('input', 'form-check-input');
+            input.type = 'checkbox';
+            input.checked = value === true;
             break;
         case 'choice': {
             input = el('select', 'form-control');
@@ -306,8 +383,10 @@ const groupEditor = (col, initial) => {
 
 // ── Adding or editing an item ─────────────────────────────────────────────────
 
-export const openItemModal = async (itemId = null) => {
-    const data = normalizeList(state.currentListData);
+export const openItemModal = async (itemId = null, ext = null) => {
+    external = ext;
+    setLookupSpace(ext ? ext.space : null);
+    const data = normalizeList(formData());
     state.editingItemId = itemId;
     // The picker needs the target lists' items, fresh: somebody may have added the one
     // you are about to pick a moment ago.
@@ -330,12 +409,18 @@ export const openItemModal = async (itemId = null) => {
         let input;
         if (col.type === 'lookup') input = lookupPicker(col, value);
         else if (col.type === 'object') input = groupEditor(col, itemData ? itemData[col.id] : null);
+        else if (col.type === 'comments') input = commentsEditor(col, itemData ? itemData[col.id] : null);
         else input = plainInput(col.type, col.options, value);
-        if (col.type !== 'lookup' && col.type !== 'object') {
+        if (!['lookup', 'object', 'comments'].includes(col.type)) {
             input.id = `field-${col.id}`;
             input.name = col.id;
         }
+        if (col.type === 'boolean') input.dataset.bool = col.id;
         field.appendChild(input);
+        if (col.type === 'number' && col.unit) {
+            field.classList.add('has-unit');
+            field.appendChild(el('span', 'field-unit', col.unit));
+        }
         if (col.description) field.appendChild(el('small', 'field-helptext', col.description));
         row.append(label, field);
         form.appendChild(row);
@@ -344,13 +429,37 @@ export const openItemModal = async (itemId = null) => {
     form.querySelector('input, textarea, select')?.focus();
 };
 
+/** Close the add/edit form, forgetting the list it was on if that was not the open one. */
+export const closeItemModal = () => {
+    document.getElementById('item-modal').classList.add('hidden');
+    const ext = external;
+    external = null;
+    setLookupSpace(null);
+    ext?.onClose?.();
+};
+
 export const saveItem = async () => {
-    const data = state.currentListData;
+    const data = formData();
     const form = document.getElementById('item-modal-form');
     const newItemData = {};
     for (const [key, value] of new FormData(form).entries()) newItemData[key] = value;
     form.querySelectorAll('.lookup-picker').forEach(p => { newItemData[p.dataset.colId] = [...p._values]; });
-    form.querySelectorAll('.group-editor').forEach(g => { newItemData[g.dataset.colId] = g._collect(); });
+    form.querySelectorAll('.group-editor, .comments-editor').forEach(g => { newItemData[g.dataset.colId] = g._collect(); });
+    // A box unticked is absent from FormData; Yes/No is true or false, never a string.
+    form.querySelectorAll('input[data-bool]').forEach(b => { newItemData[b.dataset.bool] = b.checked; });
+    // A number is stored as a number; an empty box is no value.
+    for (const col of data.columns.filter(c => c.type === 'number')) {
+        if (!(col.id in newItemData)) continue;
+        const raw = String(newItemData[col.id]).trim();
+        if (raw === '') { newItemData[col.id] = null; continue; }
+        const n = Number(raw);
+        if (!Number.isFinite(n)) {
+            showToast(t('list.number-invalid', { name: col.name }), 'error');
+            document.getElementById(`field-${col.id}`)?.focus();
+            return;
+        }
+        newItemData[col.id] = n;
+    }
     // New entries are numbered now, from the list's counter: an entry keeps its number
     // however the entries are reordered later, and a removed one's number is never reused.
     if (data.columns.some(c => c.type === 'object' && c.multiple)) {
@@ -381,8 +490,8 @@ export const saveItem = async () => {
         data.items.push(newItemData);
     }
 
-    await saveListData();
-    document.getElementById('item-modal').classList.add('hidden');
+    const saved = external ? await external.save(data) : await saveListData();
+    if (saved !== false) closeItemModal();
 };
 
 export const deleteItem = async (itemId) => {

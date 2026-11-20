@@ -45,6 +45,16 @@
 const WIKI_TPL_MAX_BYTES = 262144;   // a template, not a document
 const WIKI_TPL_MAX_DEPTH = 20;       // nested sections
 
+/**
+ * Markup the *wiki* puts into a context — never data from a list. The one value the escaping
+ * lets through: a page generator's `{{_edit}}` button. It is written as it is where a value
+ * would be text (in HTML mode, the text between tags; in Markdown, anywhere), and as nothing in
+ * an attribute, a link or a page name — no place where markup would mean something else.
+ */
+final class WikiTplMarkup {
+    public function __construct(public readonly string $html) {}
+}
+
 class WikiTemplateError extends RuntimeException {
     /** A stable code the UI translates: unclosed_tag, unclosed_section, unexpected_close,
      *  mismatched_close, partials_unsupported, delimiters_unsupported, bad_name, too_deep,
@@ -473,7 +483,12 @@ function _wiki_tpl_nodes(array $nodes, array $stack, string $mode): string {
                 $out .= $n['v'];
                 break;
             case 'var':
-                $s = _wiki_tpl_str(_wiki_tpl_lookup($n['n'], $stack));
+                $raw_v = _wiki_tpl_lookup($n['n'], $stack);
+                if ($raw_v instanceof WikiTplMarkup) {
+                    if ($mode === 'markdown' || ($mode === 'html' && ($n['ctx'] ?? 'text') === 'text')) $out .= $raw_v->html;
+                    break;
+                }
+                $s = _wiki_tpl_str($raw_v);
                 if ($mode === 'html') {
                     $ctx = $n['ctx'] ?? 'text';
                     if ($ctx === 'url' && !wiki_tpl_url_allowed((string)($n['prefix'] ?? ''), $s)) {
@@ -535,8 +550,12 @@ function _wiki_tpl_truthy($v): bool {
  * summary while {{address.city}} and {{#address}}…{{/address}} reach inside it.
  */
 function _wiki_tpl_str($v): string {
-    if ($v === null || $v === false) return '';
-    if ($v === true) return 'true';
+    // A list's Yes/No field is a boolean, so {{#paid}}…{{/paid}} and {{^paid}} work, and
+    // {{paid}} prints Yes or No. (Mustache would print false as nothing; no boolean reached a
+    // template before Yes/No fields, so nothing depended on that.)
+    if ($v === null) return '';
+    if (is_bool($v)) return $v ? 'Yes' : 'No';
+    if (is_object($v)) return '';
     if (is_array($v)) {
         if (isset($v['_text']) && is_scalar($v['_text'])) return (string)$v['_text'];
         if (array_is_list($v)) {

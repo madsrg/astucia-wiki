@@ -27,6 +27,7 @@ import { icons } from '../core/icons.js';
 import { showToast, confirmModal } from '../core/utils.js';
 import { t } from '../i18n/index.js';
 import { scopeStyles } from '../core/scoped_css.js';
+import { initEditButtons } from './edit_item.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -316,6 +317,8 @@ const createDialog = async () => {
 };
 
 export const init = () => {
+    // {{_edit}} buttons on generated pages (edit_item.js).
+    initEditButtons();
     const viewer = document.getElementById('viewer-content');
     if (viewer && !document.getElementById('generator-banner')) {
         banner = document.createElement('div');

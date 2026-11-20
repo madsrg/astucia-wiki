@@ -3677,10 +3677,28 @@ if (isset($_REQUEST['action'])) {
                     }
                     $content = json_encode($decoded_save, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
                 }
+                // A list's Comments are stamped here, not by the writer: a new comment's id,
+                // author and time come from the server, and an existing one may not change or
+                // be removed by anyone but its author or an administrator (lists.php). Against
+                // the file on disk, read under the save's lock.
+                $list_stamped = false;
+                $list_bad = null;
+                if ($ext_save === 'list') {
+                    $ls_actor = get_current_actor();
+                    $ls_admin = !AUTHENTICATION_ENABLED || get_current_role() === 'admin';
+                    $ls = wiki_list_comments_stamp($content, is_file($file_path) ? (string)file_get_contents($file_path) : null,
+                                                   ['uid' => (int)($ls_actor['uid'] ?? 0), 'name' => (string)($ls_actor['name'] ?? '')], $ls_admin);
+                    if (isset($ls['error'])) {
+                        $list_bad = $ls['error'];
+                    } else {
+                        $content = $ls['content'];
+                        $list_stamped = $ls['stamped'];
+                    }
+                }
                 // A list's groups of fields have a shape everything that reads the list relies
                 // on (lists.php). A save that breaks it is refused — never "fixed" — with the
                 // item and field named, so the writer can see what to correct.
-                if ($ext_save === 'list' && ($list_bad = wiki_list_check($content)) !== null) {
+                if ($ext_save === 'list' && ($list_bad !== null || ($list_bad = wiki_list_check($content)) !== null)) {
                     if ($save_lock) { flock($save_lock, LOCK_UN); fclose($save_lock); $save_lock = false; }
                     wiki_audit_finish($_audit, 'failure', 'invalid list: ' . $list_bad['code'], null, $_audit_space);
                     $_audit = null;
@@ -3747,6 +3765,9 @@ if (isset($_REQUEST['action'])) {
                         'frontmatter' => $fm_meta_out,
                         'frontmatter_nested' => $fm_nest_out,
                         'frontmatter_managed' => $ext_save === 'md' ? (wiki_fm_managed_keys($space_dir) ?: null) : null,
+                        // A list whose comments were stamped, as written: the writer's copy
+                        // lacks the stamps and must be replaced, or its next save re-posts them.
+                        'list'        => $list_stamped ? json_decode($content, true) : null,
                     ]);
                     if ($search_idx && in_array($ext_save, ['md', 'json'], true)) {
                         // Body only: front matter in the index would put YAML in every

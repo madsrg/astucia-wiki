@@ -35,6 +35,16 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 - **List fields are managed in List properties** — adding one included (the toolbar's *Add
   column* is gone), as are a Choice field's choices. The UI now says *field*. Title can be
   renamed but not deleted, and an item needs one.
+- **Number, Yes/No and Comments fields in lists.** A Number has a set number of decimals and
+  an optional unit (`1,250.50 kr`), sorts as a number, and a view can filter it with `> 100` or
+  `<= 5`. Yes/No is a checkbox. Comments is a running log on each item: every comment is saved
+  with who wrote it and when — recorded by the server, so nobody can post in someone else's
+  name — and can be removed by its author or an administrator, never edited. All three reach
+  generated pages: `{{price}}` with its unit, `{{#paid}}…{{/paid}}`, `{{#notes}}…{{/notes}}`.
+- **Edit a row from its generated page.** `{{_edit}}` in a template puts a ✎ button on each
+  generated page that opens the row's item in its list's form, over the page — even when the
+  list is in another Space — and shows the re-generated page once it is saved. Only people who
+  can edit the list see it. New templates have it beside the title.
 - **Selecting several pages in a folder.** The main-area folder listing has a checkbox on
   every page: tick some (Shift for a range, or all on the page — and then all in the
   folder), then **Move…**, **Add tag…** or **Delete** them together. The page names still

@@ -6,6 +6,18 @@ import { showToast } from '../core/utils.js';
 import { renderListView } from './render.js';
 import { t } from '../i18n/index.js';
 
+/** A refusal by the server's check of a list (lists.php), in words: what and where. */
+export const listInvalidText = (why) => {
+    const where = [why.item != null ? t('list.invalid.item', { item: why.item }) : '',
+                   why.field != null ? t('list.invalid.field', { field: why.field }) : ''].filter(Boolean).join(', ');
+    return (where ? where + ': ' : '') + t(`list.invalid.${why.code}`, { detail: why.detail ?? '' });
+};
+
+/**
+ * Save the open list. Returns true when it was written. When the server stamped something
+ * (a new comment's id, author and time — lists.php) it sends the list back as written, and
+ * that replaces ours, or the next save would post the comment again without its stamp.
+ */
 export const saveListData = async () => {
     const path = state.currentPagePath;
     try {
@@ -23,22 +35,19 @@ export const saveListData = async () => {
             showToast(result.modifiedBy
                 ? t('conflict.list-by', { name: result.modifiedBy })
                 : t('conflict.list'), 'info');
-            return;
+            return false;
         }
-        if (!ok && result.list_invalid) {
-            // Refused by the server's check of a list's groups (lists.php): say what and where.
-            const why = result.list_invalid;
-            const where = [why.item != null ? t('list.invalid.item', { item: why.item }) : '',
-                           why.field != null ? t('list.invalid.field', { field: why.field }) : ''].filter(Boolean).join(', ');
-            throw new Error((where ? where + ': ' : '') + t(`list.invalid.${why.code}`, { detail: why.detail ?? '' }));
-        }
+        if (!ok && result.list_invalid) throw new Error(listInvalidText(result.list_invalid));
         if (!ok) throw new Error(result.message || t('list.save-failed'));
+        if (result.list) state.currentListData = result.list;
         showToast(t('list.saved'), 'success');
         // Our own write — re-baseline the watcher so it is not reported as external.
         const { rebaselineFileWatch } = await import('../page_view/index.js');
         rebaselineFileWatch(path, result.lastUpdated, result.size, result.rev);
         renderListView();
+        return true;
     } catch (error) {
         showToast(t('edit.save-failed', { error: error.message }), 'error');
+        return false;
     }
 };

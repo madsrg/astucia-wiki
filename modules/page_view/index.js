@@ -17,7 +17,7 @@ import { t } from '../i18n/index.js';
 import { updateBreadcrumb, trackPageVisit, updateFavoriteBtn } from '../nav/index.js';
 import { extractHeadings, processTocTag, addHeadingIds, updateTocPanel, headingSlug } from '../toc/index.js';
 import { processWikiLinks } from '../wikilinks/index.js';
-import { cellText, cellParts, partsHtml, loadLookupTargets, normalizeList } from '../list/fields.js';
+import { cellText, cellParts, partsHtml, loadLookupTargets, normalizeList, filterMatches, setLookupSpace } from '../list/fields.js';
 import { scopeStyles } from '../core/scoped_css.js';
 
 // ── User comment tag processing ──────────────────────────────────────────────
@@ -160,13 +160,14 @@ const applyViewFilters = (items, view, columns) => {
     return items.filter(item =>
         view.filters.every(f => {
             const col = columns.find(c => c.id === f.colId);
-            const val = (col ? cellText(col, item, columns) : (item[f.colId] ?? '').toString()).toLowerCase();
-            return val.includes(f.value.toLowerCase());
+            if (!col) return (item[f.colId] ?? '').toString().toLowerCase().includes(f.value.toLowerCase());
+            return filterMatches(col, item, f.value, columns);
         })
     );
 };
 
 export const processListTags = async (content) => {
+    setLookupSpace(null);     // an embed is of this Space's lists
     const regex = /{list:(\d+)(?::([^}]*))?}/g;
     const matches = [...content.matchAll(regex)];
     if (!matches.length) return content;
@@ -224,7 +225,7 @@ export const processListTags = async (content) => {
                     const parts = cellParts(col, item, allColumns);
                     html += parts?.length
                         ? `<td class="has-lookup">${partsHtml(parts, escapeHtml, col.type === 'lookup_field', col.type === 'object')}</td>`
-                        : `<td>${escapeHtml(cellText(col, item, allColumns))}</td>`;
+                        : `<td${col.type === 'number' ? ' class="is-number"' : ''}>${escapeHtml(cellText(col, item, allColumns))}</td>`;
                 }
                 html += '</tr>';
             }

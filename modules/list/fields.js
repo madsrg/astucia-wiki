@@ -11,6 +11,15 @@
 // Field types:
 //   autoincrement            the hidden ItemId
 //   text_single, text_multi, date, choice
+//   number                   a JSON number (or null). `decimals` (0–6) is how many it shows,
+//                            `unit` an optional word shown after it ("kr", "kg", "%"). Sorted
+//                            as a number; a view filter may compare: "> 10", "<= 5", "= 3".
+//   boolean                  Yes/No: true / false (no value reads as No).
+//   comments                 an append-only log: [{ id, by, name, at, text }]. The **server**
+//                            stamps id (from `nextEntryId`), by (uid), name and at (ISO time)
+//                            on save; the browser sends a new comment as { text } only, and
+//                            may drop one only if it is the author's or an admin's
+//                            (wiki_list_comments_stamp() in lists.php refuses anything else).
 //   lookup                   items of another list in the same Space. The value is an array
 //                            of that list's item ids; `lookup` = { list: <page id>,
 //                            field: <its field shown>, multiple: bool }
@@ -33,11 +42,11 @@
 // must have one. Lists created before the role existed get it on load (normalizeList).
 import { state } from '../core/state.js';
 import { api } from '../core/api.js';
-import { t } from '../i18n/index.js';
+import { t, getLanguage } from '../i18n/index.js';
 
 // Fields a lookup may display or "also show": plain values. Not another lookup — a chain
 // of lists to resolve for one cell is a second feature.
-export const PROJECTABLE = ['autoincrement', 'text_single', 'text_multi', 'date', 'choice'];
+export const PROJECTABLE = ['autoincrement', 'text_single', 'text_multi', 'date', 'choice', 'number', 'boolean'];
 
 // The types a Group of fields may hold. Plain values only: a lookup or a group inside a
 // group is the second level we decided against.
@@ -85,12 +94,22 @@ export const spaceLists = () => {
 
 const listById = (id) => spaceLists().find(l => l.id === String(id)) || null;
 
+// The Space lookups resolve in. Normally the open one; while an item of a list in another
+// Space is edited from a generated page (modules/generators, {{_edit}}), that list's Space —
+// a lookup is same-Space, and page ids mean nothing across Spaces. The cache is keyed by
+// Space too, or list 12 of one Space would answer for list 12 of another.
+let lookupSpace = null;
+export const setLookupSpace = (space) => { lookupSpace = space ?? null; };
+const lookupSpaceNow = () => lookupSpace ?? state.currentSpace ?? '';
+const foreign = () => lookupSpace !== null && lookupSpace !== (state.currentSpace ?? '');
+const ck = (id) => `${lookupSpaceNow()}:${id}`;
+
 const TTL_MS = 30000;
-const cache = new Map();        // page id → { at, name, data } (data null when unreadable)
+const cache = new Map();        // "space:page id" → { at, name, data } (data null when unreadable)
 
 /** The loaded target list for a page id, or null when it is not (yet) available. */
-export const targetList = (id) => cache.get(String(id))?.data || null;
-export const targetName = (id) => cache.get(String(id))?.name || listById(id)?.name || null;
+export const targetList = (id) => cache.get(ck(id))?.data || null;
+export const targetName = (id) => cache.get(ck(id))?.name || (foreign() ? null : listById(id)?.name) || null;
 
 const lookupFields = (data) => (data?.columns || []).filter(c => c.type === 'lookup' && c.lookup?.list != null);
 
@@ -102,31 +121,90 @@ const lookupFields = (data) => (data?.columns || []).filter(c => c.type === 'loo
 export const loadLookupTargets = async (data, { force = false, extra = [] } = {}) => {
     const ids = [...new Set([...lookupFields(data).map(c => String(c.lookup.list)), ...extra.map(String)])];
     const now = Date.now();
-    const due = ids.filter(id => force || !cache.has(id) || now - cache.get(id).at > TTL_MS);
+    const due = ids.filter(id => force || !cache.has(ck(id)) || now - cache.get(ck(id)).at > TTL_MS);
     if (!due.length) return false;
+    const space = lookupSpaceNow();
+    const away = foreign();
     await Promise.all(due.map(async (id) => {
-        const ref = listById(id);
-        if (!ref) { cache.set(id, { at: now, name: null, data: null }); return; }
-        const res = await api.call('get', { file: ref.path });
+        const key = `${space}:${id}`;
+        let ref = away ? null : listById(id);
+        if (away) {
+            // Another Space's tree is not loaded: ask for the path, in that Space only.
+            const r = await api.call('get_path_from_id', { pageid: id, space });
+            if (r.success && r.path?.endsWith('.list') && (!r.space || r.space === space)) {
+                ref = { path: r.path, name: r.path.split('/').pop().replace(/\.list$/, '') };
+            }
+        }
+        if (!ref) { cache.set(key, { at: now, name: null, data: null }); return; }
+        const res = await api.call('get', away ? { file: ref.path, space } : { file: ref.path });
         let parsed = null;
         if (res.success) { try { parsed = normalizeList(JSON.parse(res.data)); } catch { parsed = null; } }
-        cache.set(id, { at: now, name: ref.name, data: parsed });
+        cache.set(key, { at: now, name: ref.name, data: parsed });
     }));
     return true;
 };
 
 /** Is anything a lookup in `data` points at still unknown to the cache? */
-export const lookupsPending = (data) => lookupFields(data).some(c => !cache.has(String(c.lookup.list)));
+export const lookupsPending = (data) => lookupFields(data).some(c => !cache.has(ck(c.lookup.list)));
 
 // ── Displaying a value ────────────────────────────────────────────────────────
 
 const lookupIds = (value) => (Array.isArray(value) ? value : (value == null || value === '' ? [] : [value]))
     .map(v => parseInt(v, 10)).filter(Number.isFinite);
 
+/** A number or Yes/No value as it reads; anything else as its text. */
+export const formatValue = (col, v) => {
+    if (col?.type === 'number') {
+        if (v == null || v === '' || !Number.isFinite(Number(v))) return '';
+        const d = Math.min(6, Math.max(0, parseInt(col.decimals, 10) || 0));
+        const text = Number(v).toLocaleString(getLanguage() || undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+        return col.unit ? `${text} ${col.unit}` : text;
+    }
+    if (col?.type === 'boolean') return v === true ? t('list.yes') : t('list.no');
+    return v == null ? '' : String(v);
+};
+
 /** The plain text of one field of a target item. */
 const plainValue = (target, fieldId, item) => {
-    const v = item?.[fieldId];
-    return v == null ? '' : String(v);
+    const col = (target?.columns || []).find(c => c.id === fieldId);
+    return formatValue(col, item?.[fieldId]);
+};
+
+/** A Comments field's entries, oldest first: only well-formed ones. */
+export const commentEntries = (value) => (Array.isArray(value) ? value : [])
+    .filter(e => e && typeof e === 'object' && typeof e.text === 'string');
+
+/** A comment's time as the reader's locale writes it. */
+export const commentTime = (at) => {
+    const d = new Date(at);
+    return Number.isNaN(d.getTime()) ? '' : d.toLocaleString(getLanguage() || undefined, { dateStyle: 'medium', timeStyle: 'short' });
+};
+
+/** What a field sorts by: a number as a number, Yes before No, else its text. */
+export const sortValue = (col, item, columns) => {
+    if (col.type === 'number') { const n = Number(item[col.id]); return item[col.id] == null || item[col.id] === '' || !Number.isFinite(n) ? null : n; }
+    if (col.type === 'boolean') return item[col.id] === true ? 0 : 1;
+    if (col.type === 'comments') return commentEntries(item[col.id]).length;
+    return cellText(col, item, columns);
+};
+
+/**
+ * Does an item pass a view filter on this field? Text "contains", as always — except a
+ * Number, where "> 10", ">= 10", "< 10", "<= 10" or "= 10" compares (a bare number is "=").
+ */
+export const filterMatches = (col, item, value, columns) => {
+    const needle = String(value ?? '').trim();
+    if (col?.type === 'number') {
+        const m = needle.replace(',', '.').match(/^(<=|>=|<|>|=)?\s*(-?\d+(?:\.\d+)?)$/);
+        if (m) {
+            const n = Number(item[col.id]);
+            if (item[col.id] == null || item[col.id] === '' || !Number.isFinite(n)) return false;
+            const x = Number(m[2]);
+            return { '<': n < x, '<=': n <= x, '>': n > x, '>=': n >= x, '=': n === x }[m[1] || '='];
+        }
+    }
+    const text = col ? cellText(col, item, columns) : String(item?.[col?.id] ?? '');
+    return text.toLowerCase().includes(needle.toLowerCase());
 };
 
 /**
@@ -159,8 +237,9 @@ export const cellText = (col, item, columns) => {
         return ids.map(id => target.items.find(i => i.id === id))
             .filter(Boolean).map(hit => plainValue(target, col.field, hit)).join('; ');
     }
-    const v = item[col.id];
-    return v == null ? '' : String(v);
+    // Every comment's text, so a filter finds a word in any of them.
+    if (col.type === 'comments') return commentEntries(item[col.id]).map(e => e.text).join('; ');
+    return formatValue(col, item[col.id]);
 };
 
 // ── Group of fields ───────────────────────────────────────────────────────────

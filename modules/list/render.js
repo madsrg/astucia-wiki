@@ -2,7 +2,9 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { state } from '../core/state.js';
-import { cellText, cellParts, partsElement, normalizeList, loadLookupTargets, lookupsPending } from './fields.js';
+import { cellText, cellParts, partsElement, normalizeList, loadLookupTargets, lookupsPending,
+         setLookupSpace, filterMatches, sortValue, commentEntries, commentTime } from './fields.js';
+import { t } from '../i18n/index.js';
 
 export const getFilteredItems = () => {
     const data = state.currentListData;
@@ -10,12 +12,13 @@ export const getFilteredItems = () => {
     if (!activeViewId) return data.items;
     const view = (data.views || []).find(v => v.id === activeViewId);
     if (!view?.filters?.length) return data.items;
-    // Matched against what the field *shows*, so a lookup filters on its titles, not its ids.
+    // Matched against what the field *shows*, so a lookup filters on its titles, not its ids
+    // — except a Number, which may compare (filterMatches in fields.js).
     return data.items.filter(item =>
         view.filters.every(f => {
             const col = data.columns.find(c => c.id === f.colId);
-            const val = (col ? cellText(col, item, data.columns) : (item[f.colId] ?? '').toString()).toLowerCase();
-            return val.includes(f.value.toLowerCase());
+            if (!col) return (item[f.colId] ?? '').toString().toLowerCase().includes(f.value.toLowerCase());
+            return filterMatches(col, item, f.value, data.columns);
         })
     );
 };
@@ -41,11 +44,15 @@ export const sortListItems = () => {
 
     const cols = state.currentListData.columns;
     state.currentListData.items.sort((a, b) => {
-        let valA = cellText(col, a, cols);
-        let valB = cellText(col, b, cols);
+        let valA = sortValue(col, a, cols);
+        let valB = sortValue(col, b, cols);
         let comparison = 0;
 
-        if (col.type === 'autoincrement') {
+        if (['number', 'boolean', 'comments'].includes(col.type)) {
+            // No value sorts last whichever way, as a blank does.
+            if (valA === null || valB === null) return valA === valB ? 0 : (valA === null ? 1 : -1);
+            comparison = valA - valB;
+        } else if (col.type === 'autoincrement') {
             comparison = valA - valB;
         } else if (col.type === 'date') {
             comparison = new Date(valA) - new Date(valB);
@@ -57,8 +64,27 @@ export const sortListItems = () => {
     });
 };
 
+/** A Comments cell: the latest comment, who and when, and how many there are. */
+const commentsCell = (cell, value) => {
+    const entries = commentEntries(value);
+    if (!entries.length) return;
+    const last = entries[entries.length - 1];
+    cell.classList.add('has-comments');
+    const text = document.createElement('div');
+    text.className = 'list-comment-latest';
+    text.textContent = last.text;
+    const meta = document.createElement('div');
+    meta.className = 'list-comment-meta';
+    meta.textContent = [last.name, commentTime(last.at)].filter(Boolean).join(' · ')
+        + (entries.length > 1 ? ' · ' + t('list.comments-count', { n: entries.length }) : '');
+    cell.append(text, meta);
+};
+
 export const renderListView = () => {
     if (!state.currentListData) return;
+    // The open list's lookups are the open Space's, whatever an edit from a generated page
+    // left behind (modals.js clears it on close; a dialog dismissed otherwise may not).
+    setLookupSpace(null);
     normalizeList(state.currentListData);
     // Lookups resolve against other lists: paint now with what is cached, and once more
     // when the rest has arrived. Only when something was actually missing, so this
@@ -99,6 +125,8 @@ export const renderListView = () => {
             // A lookup's values are separate entities — one pill each, stacked so that an
             // "also show" column beside it lines up value for value.
             const parts = cellParts(col, item, state.currentListData.columns);
+            if (col.type === 'number') cell.classList.add('is-number');
+            if (col.type === 'comments') { commentsCell(cell, item[col.id]); return; }
             if (parts?.length) {
                 cell.classList.add('has-lookup');
                 // A group's entries are capped (+N); a lookup's are not, or an "also show"

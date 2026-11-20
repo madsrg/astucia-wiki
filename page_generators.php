@@ -227,6 +227,41 @@ function wiki_gen_rows(array $list, string $source_dir, array $source): array {
         if (($col['type'] ?? '') !== 'object' || !isset($keymap[$col['id'] ?? ''])) continue;
         $groups[$col['id']] = [$col, wiki_gen_sub_keys($col)];
     }
+    // Numbers, Yes/No and Comments are given as what they are, not their export text:
+    //   a Number   — {{price}} "1250.00 kr" (its decimals and unit), {{price.value}} "1250.00",
+    //                {{price.unit}}; no value is null, so {{#price}}…{{/price}} hides;
+    //   a Yes/No   — a boolean: {{#paid}}…{{/paid}} / {{^paid}}…{{/paid}}, {{paid}} Yes or No;
+    //   Comments   — a list, oldest first: {{#notes}}{{name}} {{at}} {{text}}{{/notes}}, each with
+    //                `_index`, `_first`, `_last`; {{notes}} is all of them on one line.
+    $typed = [];    // column id => column
+    foreach ($list['columns'] ?? [] as $col) {
+        if (in_array($col['type'] ?? '', ['number', 'boolean', 'comments'], true) && isset($keymap[$col['id'] ?? ''])) $typed[$col['id']] = $col;
+    }
+    $typed_ctx = function (array $col, $v) {
+        switch ($col['type']) {
+            case 'number':
+                $num = wiki_list_number_text($col, $v);
+                if ($num === '') return null;
+                $unit = trim((string)($col['unit'] ?? ''));
+                return ['_text' => $unit !== '' ? "$num $unit" : $num, 'value' => $num, 'unit' => $unit];
+            case 'boolean':
+                return $v === true;
+            default:
+                $entries = wiki_list_comment_entries($v);
+                $n = count($entries);
+                return array_map(fn($c, $x) => [
+                    'name' => (string)($c['name'] ?? ''), 'at' => wiki_list_comment_time($c['at'] ?? null), 'text' => $c['text'],
+                    '_text' => trim((string)($c['name'] ?? '') . ' (' . wiki_list_comment_time($c['at'] ?? null) . ')') . ': ' . $c['text'],
+                    '_id' => (int)($c['id'] ?? 0), '_index' => $x + 1, '_first' => $x === 0, '_last' => $x === $n - 1,
+                ], $entries, array_keys($entries));
+        }
+    };
+    // {{_edit}}: a button that opens this row's item for editing, over the generated page
+    // (modules/generators). The wiki's own markup, carrying only ids, so it is written as it
+    // is (WikiTplMarkup); the page view shows it only to someone who may edit the list.
+    $edit_space = htmlspecialchars((string)($source['space'] ?? ''), ENT_QUOTES);
+    $edit_list  = (int)($source['id'] ?? 0);
+
     $entry_ctx = function (array $col, array $subkeys, array $entry): array {
         $out = [];
         foreach ($subkeys as $sid => $k) {
@@ -258,9 +293,16 @@ function wiki_gen_rows(array $list, string $source_dir, array $source): array {
                 }
                 continue;
             }
+            if (isset($typed[$cid])) {
+                $ctx[$key] = $typed_ctx($typed[$cid], $raw_items[$i][$cid] ?? null);
+                continue;
+            }
             $v = $item[$cid] ?? '';
             $ctx[$key] = is_array($v) ? implode('; ', array_map('strval', array_filter($v, 'is_scalar'))) : (string)$v;
         }
+        $ctx['_edit']   = $edit_list > 0
+            ? new WikiTplMarkup('<button type="button" class="wk-edit" data-space="' . $edit_space . '" data-list="' . $edit_list . '" data-item="' . $rid . '"></button>')
+            : null;
         $ctx['_row']    = ['id' => $rid];
         $ctx['_title']  = $title !== null ? (string)($item[$title] ?? '') : '';
         $ctx['_source'] = $source;
@@ -483,13 +525,14 @@ function _wiki_gen_render(string $space, int $template_id, ?array $owner, $index
         'space' => $def['source_space'],
         'title' => basename($src_rel, '.list'),
         'url'   => 'index.php?pageid=' . $def['source_id'] . '&space=' . rawurlencode($def['source_space']),
+        'id'    => (int)$def['source_id'],
     ];
     $data = wiki_gen_rows($list, $src_dir, $source_ctx);
     $warnings = $data['warnings'];
     if (count($data['rows']) > WIKI_GEN_MAX_ROWS) {
         return $base + ['status' => 'error', 'error' => 'too_many_rows', 'detail' => (string)count($data['rows'])];
     }
-    $known = array_merge($data['keys'], ['_row', '_title', '_source']);
+    $known = array_merge($data['keys'], ['_row', '_title', '_source', '_edit']);
     $unknown = array_values(array_diff(array_merge(wiki_tpl_names($body_tree), wiki_tpl_names($name_tree)), $known));
     if ($unknown) $warnings[] = ['warning' => 'unknown_field', 'detail' => implode(', ', $unknown)];
 
@@ -1207,7 +1250,8 @@ function wiki_gen_preview(string $space, int $id, ?int $row, ?array $acl): array
     catch (WikiTemplateError $e) { return ['ok' => false, 'error' => 'filename_error', 'detail' => $e->error]; }
 
     $data = wiki_gen_rows($list, $src_dir, ['space' => $def['source_space'], 'title' => basename($src_rel, '.list'),
-        'url' => 'index.php?pageid=' . $def['source_id'] . '&space=' . rawurlencode($def['source_space'])]);
+        'url' => 'index.php?pageid=' . $def['source_id'] . '&space=' . rawurlencode($def['source_space']),
+        'id' => (int)$def['source_id']]);
     $rows = [];
     foreach ($data['rows'] as $rid => $ctx) $rows[] = ['id' => $rid, 'title' => $ctx['_title']];
     if (!$data['rows']) return ['ok' => true, 'rows' => [], 'row' => null, 'name' => '', 'body' => '', 'warnings' => $data['warnings']];
@@ -1215,7 +1259,7 @@ function wiki_gen_preview(string $space, int $id, ?int $row, ?array $acl): array
     $ctx = $data['rows'][$rid];
     $warnings = $data['warnings'];
     $unknown = array_values(array_diff(array_merge(wiki_tpl_names($body_tree), wiki_tpl_names($name_tree)),
-                                       array_merge($data['keys'], ['_row', '_title', '_source'])));
+                                       array_merge($data['keys'], ['_row', '_title', '_source', '_edit'])));
     if ($unknown) $warnings[] = ['warning' => 'unknown_field', 'detail' => implode(', ', $unknown)];
     wiki_tpl_take_warnings();
     $body = wiki_tpl_render($body_tree, $ctx, ['escape' => $html ? 'html' : 'markdown']);
@@ -1281,15 +1325,22 @@ function wiki_gen_starter(string $source, string $folder, string $filename_key, 
     return wiki_fm_set($body, $updates);
 }
 
-/** The Markdown starter: a table of every field but the Title, which is the heading. */
+/** The Markdown starter: a table of every field but the Title, which is the heading (with the
+ *  edit button beside it), and each Comments field as a list of its comments below. */
 function wiki_gen_starter_md(array $fields): string {
-    $body = "# {{_title}}\n\n| | |\n|---|---|\n";
+    $body = "# {{_title}} {{_edit}}\n\n| | |\n|---|---|\n";
+    $logs = '';
     foreach ($fields as $f) {
         if (!empty($f['title'])) continue;
+        if (($f['type'] ?? '') === 'comments') {
+            $logs .= "\n## " . str_replace(['{', '}'], ['\\{', '\\}'], (string)$f['name']) . "\n\n{{#" . $f['key'] . "}}\n"
+                   . "- **{{name}}** · {{at}} — {{text}}\n{{/" . $f['key'] . "}}\n";
+            continue;
+        }
         $label = str_replace('|', '\\|', (string)$f['name']);
         $body .= "| **{$label}** | {{" . $f['key'] . "}} |\n";
     }
-    return $body . "\n";
+    return $body . $logs . "\n";
 }
 
 /**
@@ -1311,6 +1362,9 @@ const WIKI_GEN_STARTER_CSS = <<<'CSS'
 .wk-fields > dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .wk-fields .wk-fields { margin: 0; }
 .wk-muted  { color: #718096; }
+.wk-comment { margin: 0 0 .6rem; }
+.wk-comment > :last-child { white-space: pre-line; }
+.wk-edit   { margin-left: .4rem; vertical-align: middle; }
 @media (max-width: 640px) {
   .wk-fields { grid-template-columns: 1fr; gap: .1rem; }
   .wk-fields > dd { margin-bottom: .4rem; }
@@ -1332,12 +1386,14 @@ function wiki_gen_starter_html(array $fields): string {
         "$indent<dt>" . $label($sf['name']) . "</dt><dd>{{" . $sf['key'] . "}}</dd>\n", $subs));
     $plain = [];
     $several = [];
+    $logs = [];
     foreach ($fields as $f) {
         if (!empty($f['title'])) continue;
         if (($f['type'] ?? '') === 'object' && !empty($f['multiple'])) { $several[] = $f; continue; }
+        if (($f['type'] ?? '') === 'comments') { $logs[] = $f; continue; }
         $plain[] = $f;
     }
-    $out = WIKI_GEN_STARTER_CSS . "<div class=\"wk-card\">\n  <h1>{{_title}}</h1>\n  <dl class=\"wk-fields\">\n";
+    $out = WIKI_GEN_STARTER_CSS . "<div class=\"wk-card\">\n  <h1>{{_title}} {{_edit}}</h1>\n  <dl class=\"wk-fields\">\n";
     foreach ($plain as $f) {
         if (($f['type'] ?? '') === 'object') {
             $out .= "    <dt>" . $label($f['name']) . "</dt>\n    <dd>\n      {{#" . $f['key'] . "}}\n"
@@ -1353,6 +1409,11 @@ function wiki_gen_starter_html(array $fields): string {
               . "    <div class=\"wk-card\">\n      <dl class=\"wk-fields\">\n" . $rows($f['subs'] ?? [], '        ')
               . "      </dl>\n    </div>\n    {{/" . $f['key'] . "}}\n  </div>\n"
               . "  {{^" . $f['key'] . "}}<p class=\"wk-muted\">—</p>{{/" . $f['key'] . "}}\n";
+    }
+    foreach ($logs as $f) {
+        $out .= "\n  <h2>" . $label($f['name']) . "</h2>\n  {{#" . $f['key'] . "}}\n"
+              . "  <div class=\"wk-comment\"><div class=\"wk-muted\">{{name}} · {{at}}</div><div>{{text}}</div></div>\n"
+              . "  {{/" . $f['key'] . "}}\n  {{^" . $f['key'] . "}}<p class=\"wk-muted\">—</p>{{/" . $f['key'] . "}}\n";
     }
     return $out . "</div>\n";
 }
