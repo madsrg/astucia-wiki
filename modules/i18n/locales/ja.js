@@ -26,7 +26,7 @@ export default {
     'nav.new-diagram':    '新しい図',
     'nav.new-list':       '新しいリスト',
     'nav.new-json': '新しい JSON データ',
-    'nav.new-generator': '生成ページ…',
+    'nav.new-generator': '新しいページジェネレーター',
     'nav.new-chat':       '新しいチャット',
     'nav.new-search':     '新しい検索',
     'nav.pane-tree':      'ツリー',

@@ -11,7 +11,7 @@ export default {
     'nav.new-files-lib': 'Nouvelle bibliothèque de fichiers', 'nav.new-diagram': 'Nouveau diagramme',
     'nav.new-list': 'Nouvelle liste', 'nav.new-chat': 'Nouvelle discussion',
     'nav.new-json': 'Nouvelles données JSON',
-    'nav.new-generator': 'Pages générées…',
+    'nav.new-generator': 'Nouveau générateur de pages',
     'nav.pane-tree': 'Arborescence', 'nav.pane-folder': 'Dossier', 'nav.pane-search': 'Rechercher',
     'nav.search-ph': 'Rechercher des pages…', 'nav.search-btn': 'Rechercher', 'nav.logout': 'Se déconnecter',
     'nav.prefs-title': 'Mes préférences', 

@@ -26,7 +26,7 @@ export default {
     'nav.new-diagram':    'New Diagram',
     'nav.new-list':       'New List',
     'nav.new-json': 'New JSON Data',
-    'nav.new-generator': 'Generated Pages…',
+    'nav.new-generator': 'New Page Generator',
     'nav.new-chat':       'New Chat',
     'nav.new-search':     'New Search',
     'nav.pane-tree':      'Tree',

@@ -22,7 +22,7 @@ export default {
     'nav.new-diagram': '新建图表',
     'nav.new-list': '新建列表',
     'nav.new-json': '新建 JSON 数据',
-    'nav.new-generator': '生成的页面…',
+    'nav.new-generator': '新建页面生成器',
     'nav.new-chat': '新建聊天',
     'nav.pane-tree': '目录树',
     'nav.pane-folder': '文件夹',

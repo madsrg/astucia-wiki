@@ -88,7 +88,7 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   row renames its page and keeps its address, and a row that is removed leaves its page
   behind, archived. A generated page cannot be edited directly — change the template or the
   list, or *Detach* the page to make it your own; its tags and other metadata stay editable.
-  Start one from **New → Generated Pages…**; the template goes in the Space's `templates/`
+  Start one from **New → Page Generator**; the template goes in the Space's `templates/`
   folder, has an icon of its own in the file tree, and is not offered as a New Page template.
   A generated page says so with an icon in its header; clicking it shows where the page comes
   from, with Detach. **Admin → Content → Generators** lists every

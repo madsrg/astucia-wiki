@@ -11,7 +11,7 @@ export default {
     'nav.new-files-lib': 'Nyt filbibliotek', 'nav.new-diagram': 'Nyt diagram',
     'nav.new-list': 'Ny liste', 'nav.new-chat': 'Ny chat',
     'nav.new-json': 'Nye JSON-data',
-    'nav.new-generator': 'Genererede sider…',
+    'nav.new-generator': 'Ny sidegenerator',
     'nav.pane-tree': 'Træ', 'nav.pane-folder': 'Mappe', 'nav.pane-search': 'Søg',
     'nav.search-ph': 'Søg i sider…', 'nav.search-btn': 'Søg', 'nav.logout': 'Log ud',
     'nav.prefs-title': 'Mine indstillinger', 

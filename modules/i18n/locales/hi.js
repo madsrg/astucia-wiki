@@ -25,7 +25,7 @@ export default {
     'nav.new-diagram': 'नया आरेख',
     'nav.new-list': 'नई सूची',
     'nav.new-json': 'नया JSON डेटा',
-    'nav.new-generator': 'बनाए गए पेज…',
+    'nav.new-generator': 'नया पेज जनरेटर',
     'nav.new-chat': 'नई चैट',
     'nav.pane-tree': 'ट्री',
     'nav.pane-folder': 'फ़ोल्डर',
