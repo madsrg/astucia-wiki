@@ -18,6 +18,12 @@ graph · **Wiki Pulse**: your mentions, your comments and each Space's broken li
 and empty pages in one place · a **Help** dialog with every keyboard shortcut (Alt+H) ·
 optional git version history.
 
+**Page generators** — one template turns every row of a list into a page of its own, kept up
+to date as the list changes: a customer page per customer, in Markdown or HTML, with cards for
+the groups and linked items each row holds. An edit button on the page opens the row's item,
+comments can be added in place, and the page shows the change as soon as it is saved. Lists
+have text, number, Yes/No, date, choice, lookup and group fields, and a comment log on every item.
+
 **Tags with a taxonomy** — one tree of tags for the whole wiki: folders group, items are the
 tags pages carry (`Department/Finance`). A tree editor to rename, move and merge — every page
 using a tag follows — a tag picker beside the tag field, and a tagging mode from *free* to
@@ -86,7 +92,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.11.3
+    madsrotwitt/astucia-wiki:2026.11.4
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -112,7 +118,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.11.3
+    madsrotwitt/astucia-wiki:2026.11.4
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -122,7 +128,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 ## Podman
 
 The same image runs under Podman — name the registry in full,
-`docker.io/madsrotwitt/astucia-wiki:2026.11.3`. For a rootless install with a host
+`docker.io/madsrotwitt/astucia-wiki:2026.11.4`. For a rootless install with a host
 directory, add `--userns=keep-id:uid=82,gid=82 --user 0` so your files stay yours. The
 repository ships a ready-made Quadlet unit, `docker/astucia-wiki.container`, for running it
 as a systemd service with `podman auto-update`; see *With Podman* in `DOCKER.md`.
@@ -132,7 +138,7 @@ as a systemd service with `podman auto-update`; see *With Podman* in `DOCKER.md`
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.11.3` | moves only if that release is rebuilt |
+| `2026.11.4` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
