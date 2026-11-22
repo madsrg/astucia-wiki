@@ -200,24 +200,37 @@ function wiki_gen_sub_keys(array $col): array {
     return $keys;
 }
 
-function wiki_gen_rows(array $list, string $source_dir, array $source): array {
-    $warnings = [];
-    $flat  = wiki_list_flatten($list, $source_dir);
-    $title = wiki_list_title_field($list);
-
-    $keymap = [];   // column id => template key
+/**
+ * A list's fields as template keys, by column id: wiki_tpl_key of the name (of the id when the
+ * name has none), `f_` in front of one starting with `_` (those are the built-ins'), and `_2`,
+ * `_3`, … on a clash, in column order — each clash added to $warnings. One rule for a list's
+ * own fields, for the fields of the items its lookups point at, and for the New dialog.
+ */
+function wiki_gen_field_keys(array $columns, ?array &$warnings = null): array {
+    $keymap = [];
     $used   = [];
-    foreach ($list['columns'] ?? [] as $col) {
+    foreach ($columns as $col) {
         $id = (string)($col['id'] ?? '');
         if ($id === '') continue;
         $base = wiki_tpl_key((string)($col['name'] ?? '')) ?: wiki_tpl_key($id);
         if ($base === '' || $base[0] === '_') $base = 'f_' . ltrim($base, '_');
         $key = $base;
         for ($n = 2; isset($used[$key]); $n++) $key = $base . '_' . $n;
-        if ($key !== $base) $warnings[] = ['warning' => 'duplicate_field', 'detail' => (string)($col['name'] ?? $id) . ' → ' . $key];
+        if ($key !== $base && $warnings !== null) {
+            $warnings[] = ['warning' => 'duplicate_field', 'detail' => (string)($col['name'] ?? $id) . ' → ' . $key];
+        }
         $used[$key] = true;
         $keymap[$id] = $key;
     }
+    return $keymap;
+}
+
+function wiki_gen_rows(array $list, string $source_dir, array $source): array {
+    $warnings = [];
+    $flat  = wiki_list_flatten($list, $source_dir);
+    $title = wiki_list_title_field($list);
+
+    $keymap = wiki_gen_field_keys($list['columns'] ?? [], $warnings);   // column id => template key
 
     // A Group of fields is given as the structure it is, not its text: its sub-fields under
     // keys of their own (the same rule as fields), `_text` its one-line summary, and — for one
@@ -227,16 +240,80 @@ function wiki_gen_rows(array $list, string $source_dir, array $source): array {
         if (($col['type'] ?? '') !== 'object' || !isset($keymap[$col['id'] ?? ''])) continue;
         $groups[$col['id']] = [$col, wiki_gen_sub_keys($col)];
     }
-    // Numbers, Yes/No and Comments are given as what they are, not their export text:
+    // Numbers and Yes/No are given as what they are, not their export text:
     //   a Number   — {{price}} "1250.00 kr" (its decimals and unit), {{price.value}} "1250.00",
     //                {{price.unit}}; no value is null, so {{#price}}…{{/price}} hides;
-    //   a Yes/No   — a boolean: {{#paid}}…{{/paid}} / {{^paid}}…{{/paid}}, {{paid}} Yes or No;
-    //   Comments   — a list, oldest first: {{#notes}}{{name}} {{at}} {{text}}{{/notes}}, each with
-    //                `_index`, `_first`, `_last`; {{notes}} is all of them on one line.
+    //   a Yes/No   — a boolean: {{#paid}}…{{/paid}} / {{^paid}}…{{/paid}}, {{paid}} Yes or No.
+    // An item's comments are the built-in {{#_comments}}{{name}} {{at}} {{text}}{{/_comments}},
+    // oldest first, each with `_index`, `_first`, `_last`; {{_comments}} alone is all of them on
+    // one line. (Comments are the item's, not a field: lists.php.)
     $typed = [];    // column id => column
     foreach ($list['columns'] ?? [] as $col) {
-        if (in_array($col['type'] ?? '', ['number', 'boolean', 'comments'], true) && isset($keymap[$col['id'] ?? ''])) $typed[$col['id']] = $col;
+        if (in_array($col['type'] ?? '', ['number', 'boolean'], true) && isset($keymap[$col['id'] ?? ''])) $typed[$col['id']] = $col;
     }
+    // A Lookup is given as the items it points at, like a group: each with the target item's
+    // own fields under their keys (as that list shows them), `_id`, `_title` (its Title) and
+    // `_text` (what the lookup displays), `_edit` (a button editing it). One that allows several is a list of them, with
+    // `_index`, `_first`, `_last`; a single one is the item, or null. So {{customer}} is still
+    // the text the list shows, joined with "; ", while {{#customer}}…{{customer.city}}… and
+    // {{#contacts}}<card>{{/contacts}} reach the items. An item since deleted has empty fields,
+    // `_id`, `_text` "(deleted #12)" and `_missing`; a target that cannot be read gives "#12".
+    // The source Space, as the edit buttons' data-space (lookups resolve in it too).
+    $edit_space = htmlspecialchars((string)($source['space'] ?? ''), ENT_QUOTES);
+    $lookups = [];  // column id => [column, target flattened or null, target keymap, display field, title field]
+    $lk_targets = null;
+    foreach ($list['columns'] ?? [] as $col) {
+        if (($col['type'] ?? '') !== 'lookup' || !isset($keymap[$col['id'] ?? ''])) continue;
+        $lk_targets ??= wiki_list_lookup_targets($list, $source_dir);
+        $target = $lk_targets[(string)($col['lookup']['list'] ?? '')] ?? null;
+        $lookups[$col['id']] = $target === null ? [$col, null, [], null, null] : [
+            $col, wiki_list_flatten($target, $source_dir), wiki_gen_field_keys($target['columns'] ?? []),
+            $col['lookup']['field'] ?? wiki_list_title_field($target), wiki_list_title_field($target),
+        ];
+    }
+    $lookup_ctx = function (array $lk, $value) use ($edit_space) {
+        [$col, $target, $tkeys, $show, $tfield] = $lk;
+        $tlist = (int)($col['lookup']['list'] ?? 0);
+        $entries = [];
+        foreach (_wiki_list_ids($value) as $iid) {
+            $hit = $target !== null ? _wiki_list_find_item($target, $iid) : null;
+            if ($hit === null) {
+                // Its fields present and empty: a missing key would be looked up in the row
+                // around it, and {{_title}} in a card would print the row's own title.
+                $entries[] = array_fill_keys(array_values($tkeys), '') + ['_title' => '', '_edit' => null,
+                    '_id' => $iid, '_text' => $target !== null ? "(deleted #$iid)" : '#' . $iid, '_missing' => true];
+                continue;
+            }
+            $e = [];
+            foreach ($tkeys as $cid => $k) {
+                $v = $hit[$cid] ?? '';
+                $e[$k] = is_scalar($v) ? (string)$v : '';
+            }
+            $e['_id']    = $iid;
+            $e['_title'] = $tfield !== null && is_scalar($hit[$tfield] ?? null) ? (string)$hit[$tfield] : '';
+            $e['_text']  = $show !== null && is_scalar($hit[$show] ?? null) ? (string)$hit[$show] : '';
+            // {{_edit}} inside the item's section: a link icon that opens the *linked* item in
+            // its own list's form (same Space — a lookup's target always is). Saving that list
+            // re-renders this page too, since the generator reads it (`deps`).
+            $e['_edit']  = $tlist > 0 ? new WikiTplMarkup('<button type="button" class="wk-edit wk-linked" data-space="'
+                . $edit_space . '" data-list="' . $tlist . '" data-item="' . $iid . '"></button>') : null;
+            $entries[] = $e;
+        }
+        // Single — unless it still holds several, from before "Allow several" was turned off.
+        if (empty($col['lookup']['multiple']) && count($entries) <= 1) return $entries[0] ?? null;
+        $n = count($entries);
+        foreach ($entries as $x => &$e) $e += ['_index' => $x + 1, '_first' => $x === 0, '_last' => $x === $n - 1];
+        return $entries;
+    };
+    $comments_ctx = function ($v): array {
+        $entries = wiki_list_comment_entries($v);
+        $n = count($entries);
+        return array_map(fn($c, $x) => [
+            'name' => (string)($c['name'] ?? ''), 'at' => wiki_list_comment_time($c['at'] ?? null), 'text' => $c['text'],
+            '_text' => trim((string)($c['name'] ?? '') . ' (' . wiki_list_comment_time($c['at'] ?? null) . ')') . ': ' . $c['text'],
+            '_id' => (int)($c['id'] ?? 0), '_index' => $x + 1, '_first' => $x === 0, '_last' => $x === $n - 1,
+        ], $entries, array_keys($entries));
+    };
     $typed_ctx = function (array $col, $v) {
         switch ($col['type']) {
             case 'number':
@@ -244,23 +321,15 @@ function wiki_gen_rows(array $list, string $source_dir, array $source): array {
                 if ($num === '') return null;
                 $unit = trim((string)($col['unit'] ?? ''));
                 return ['_text' => $unit !== '' ? "$num $unit" : $num, 'value' => $num, 'unit' => $unit];
-            case 'boolean':
-                return $v === true;
             default:
-                $entries = wiki_list_comment_entries($v);
-                $n = count($entries);
-                return array_map(fn($c, $x) => [
-                    'name' => (string)($c['name'] ?? ''), 'at' => wiki_list_comment_time($c['at'] ?? null), 'text' => $c['text'],
-                    '_text' => trim((string)($c['name'] ?? '') . ' (' . wiki_list_comment_time($c['at'] ?? null) . ')') . ': ' . $c['text'],
-                    '_id' => (int)($c['id'] ?? 0), '_index' => $x + 1, '_first' => $x === 0, '_last' => $x === $n - 1,
-                ], $entries, array_keys($entries));
+                return $v === true;
         }
     };
     // {{_edit}}: a button that opens this row's item for editing, over the generated page
     // (modules/generators). The wiki's own markup, carrying only ids, so it is written as it
     // is (WikiTplMarkup); the page view shows it only to someone who may edit the list.
-    $edit_space = htmlspecialchars((string)($source['space'] ?? ''), ENT_QUOTES);
     $edit_list  = (int)($source['id'] ?? 0);
+    $comments_allowed = wiki_list_comments_on($list);
 
     $entry_ctx = function (array $col, array $subkeys, array $entry): array {
         $out = [];
@@ -297,11 +366,34 @@ function wiki_gen_rows(array $list, string $source_dir, array $source): array {
                 $ctx[$key] = $typed_ctx($typed[$cid], $raw_items[$i][$cid] ?? null);
                 continue;
             }
+            if (isset($lookups[$cid])) {
+                $ctx[$key] = $lookup_ctx($lookups[$cid], $raw_items[$i][$cid] ?? null);
+                continue;
+            }
             $v = $item[$cid] ?? '';
             $ctx[$key] = is_array($v) ? implode('; ', array_map('strval', array_filter($v, 'is_scalar'))) : (string)$v;
         }
         $ctx['_edit']   = $edit_list > 0
             ? new WikiTplMarkup('<button type="button" class="wk-edit" data-space="' . $edit_space . '" data-list="' . $edit_list . '" data-item="' . $rid . '"></button>')
+            : null;
+        // {{_add.cards}}: a button that adds an entry to one of the row's groups allowing
+        // several — named, since an item may have more than one, and usable anywhere (inside
+        // {{#cards}} it would repeat per entry and vanish with none). A group that does not
+        // allow several, or a name that is not a group, has no button and writes nothing.
+        $ctx['_add'] = [];
+        if ($edit_list > 0) {
+            foreach ($groups as $gid => [$gcol, $_sub]) {
+                if (empty($gcol['multiple'])) continue;
+                $ctx['_add'][$keymap[$gid]] = new WikiTplMarkup('<button type="button" class="wk-edit wk-add" data-space="' . $edit_space
+                    . '" data-list="' . $edit_list . '" data-item="' . $rid . '" data-group="' . htmlspecialchars((string)$gid, ENT_QUOTES) . '"></button>');
+            }
+        }
+        $ctx['_comments'] = $comments_ctx($raw_items[$i][WIKI_LIST_COMMENTS] ?? null);
+        // {{_comment_form}}: a box to add a comment to the row's item, from the generated page
+        // (modules/generators/edit_item.js fills it in, for people who may edit the list). Not
+        // for a list that has turned comments off.
+        $ctx['_comment_form'] = $edit_list > 0 && $comments_allowed
+            ? new WikiTplMarkup('<div class="wk-comment-form" data-space="' . $edit_space . '" data-list="' . $edit_list . '" data-item="' . $rid . '"></div>')
             : null;
         $ctx['_row']    = ['id' => $rid];
         $ctx['_title']  = $title !== null ? (string)($item[$title] ?? '') : '';
@@ -532,7 +624,7 @@ function _wiki_gen_render(string $space, int $template_id, ?array $owner, $index
     if (count($data['rows']) > WIKI_GEN_MAX_ROWS) {
         return $base + ['status' => 'error', 'error' => 'too_many_rows', 'detail' => (string)count($data['rows'])];
     }
-    $known = array_merge($data['keys'], ['_row', '_title', '_source', '_edit']);
+    $known = array_merge($data['keys'], ['_row', '_title', '_source', '_edit', '_add', '_comments', '_comment_form']);
     $unknown = array_values(array_diff(array_merge(wiki_tpl_names($body_tree), wiki_tpl_names($name_tree)), $known));
     if ($unknown) $warnings[] = ['warning' => 'unknown_field', 'detail' => implode(', ', $unknown)];
 
@@ -558,10 +650,20 @@ function _wiki_gen_render(string $space, int $template_id, ?array $owner, $index
 
     foreach ($data['rows'] as $rid => $ctx) {
         $cur = $owned[$rid] ?? null;
+        // A detached row stays out of the generator while its page exists — wherever it has
+        // been moved, found by its id. Once that page is deleted there is nobody's own version
+        // left to protect, and the row is the generator's again: a fresh page is made. (A row
+        // stayed detached for good before, so detaching pages and deleting them to start over
+        // left a generator that made nothing, and said "nothing changed".)
         if (!empty($prev[$rid]['detached']) || !empty($cur['detached'])) {
-            $rows_out[$rid] = ['detached' => true] + (isset($cur['page_id']) ? ['page_id' => $cur['page_id']] : []);
-            $counts['detached']++;
-            continue;
+            $dpid = (int)($cur['page_id'] ?? $prev[$rid]['page_id'] ?? 0);
+            $dpath = $dpid > 0 ? $ix->getPath($dpid) : null;
+            if ($dpath !== null && is_file($target_dir . '/' . $dpath)) {
+                $rows_out[$rid] = ['detached' => true, 'page_id' => $dpid];
+                $counts['detached']++;
+                continue;
+            }
+            $cur = null;
         }
         // A page whose generated_by was removed by hand has left the generator: leave it
         // alone, and do not make another one for its row.
@@ -578,6 +680,16 @@ function _wiki_gen_render(string $space, int $template_id, ?array $owner, $index
         $body = wiki_tpl_render($body_tree, $ctx, ['escape' => $html ? 'html' : 'markdown']);
         foreach (wiki_tpl_take_warnings() as $w) $blocked[$w['detail']][] = $rid;
         $name = wiki_gen_clean_name(wiki_tpl_render($name_tree, $ctx, ['escape' => 'none']), $rid);
+        // The page an earlier, deleted generator made for this row, unedited since: take it
+        // over (it keeps its id, so links to it keep working) rather than write "Ann (1)"
+        // beside it — and drop the "(1)" this generator may already have made.
+        $natural = ($def['folder'] === '' ? '' : $def['folder'] . '/') . $name . '.md';
+        if (($cur === null || $cur['path'] !== $natural) && !isset($reserved[$natural])
+            && wiki_gen_adoptable($ix, $target_dir, $natural, $rid, $def['source_space'] . ':' . $def['source_id'])) {
+            if ($cur !== null) wiki_gen_remove_own($ix, $target_dir, $space, $cur['path'], $touched);
+            $cur = ['path' => $natural, 'page_id' => (int)$ix->getId($natural)];
+            $counts['adopted'] = ($counts['adopted'] ?? 0) + 1;
+        }
         $want = wiki_gen_free_path($ix, $target_dir, $def['folder'], $name, $rid, $template_id,
                                    $reserved, $cur['path'] ?? null);
         if ($want === null) {
@@ -613,7 +725,7 @@ function _wiki_gen_render(string $space, int $template_id, ?array $owner, $index
         if (isset($data['rows'][$rid])) continue;
         if (!empty($cur['detached'])) continue;
         if (wiki_gen_archive($ix, $target_dir, $space, $cur['path'], $template_id, $rid, $sys, $touched,
-                             'row_removed', basename($src_rel, '.list'))) {
+                             'row_removed', basename($src_rel, '.list'), $def['source_space'] . ':' . $def['source_id'])) {
             $counts['archived']++;
         }
     }
@@ -646,8 +758,10 @@ function wiki_gen_retire($ix, string $target_dir, string $space, int $template_i
     $last_path = (string)($state['template_path'] ?? '');
     $sys = $last_path !== '' ? wiki_gen_system_name($last_path) : 'Template #' . $template_id;
     $touched = [];
+    $src = is_array($state['source'] ?? null) && isset($state['source']['space'], $state['source']['id'])
+        ? $state['source']['space'] . ':' . $state['source']['id'] : '';
     foreach ($owned as $rid => $cur) {
-        if (wiki_gen_archive($ix, $target_dir, $space, $cur['path'], $template_id, (int)$rid, $sys, $touched, 'template_gone')) {
+        if (wiki_gen_archive($ix, $target_dir, $space, $cur['path'], $template_id, (int)$rid, $sys, $touched, 'template_gone', '', $src)) {
             $counts['archived']++;
         }
     }
@@ -737,7 +851,8 @@ function wiki_gen_write($ix, string $target_dir, string $space, string $rel, str
     $new = $block === ''
         ? "---\ngenerated_by: $template_id\ngenerated_row: $rid\n" . ($html ? "format: html\n" : '') . "---\n" . $body
         : wiki_fm_set($block . $body, ['generated_by' => (string)$template_id, 'generated_row' => (string)$rid]
-                      + ($html ? ['format' => 'html'] : []), $html ? [] : ['format']);
+                      + ($html ? ['format' => 'html'] : []),
+                      array_merge($html ? [] : ['format'], WIKI_GEN_ARCHIVE_KEYS));
     if ($new === $old) return false;
 
     $dir = dirname($abs);
@@ -758,6 +873,56 @@ function wiki_gen_write($ix, string $target_dir, string $space, string $rel, str
     }
     $touched[$abs] = true;
     return true;
+}
+
+/** The keys an archived page carries — taken off again when a generator adopts it. */
+const WIKI_GEN_ARCHIVE_KEYS = ['archived_from', 'archived_row', 'archived_at', 'archived_reason',
+                               'archived_list', 'archived_source', 'archived_hash'];
+
+/**
+ * May this generator take over the archived page at $rel for row $rid? A template deleted and
+ * made again (the same list, the same folder) otherwise finds its old pages in the way and
+ * writes "Ann (1)" beside "Ann". Only when all of these hold:
+ *  - the page was archived from a template that is gone (deleted, or no longer a generator) —
+ *    not one whose list item was removed, and not one whose template still generates;
+ *  - for the same row, and — where the page says (`archived_source`) — from the same list;
+ *  - nobody has edited it since: its text matches `archived_hash`; a page archived before the
+ *    hash was recorded must not have been modified since `archived_at`.
+ * Anything else stays as it is, and the new page takes a free name as before.
+ */
+function wiki_gen_adoptable($ix, string $target_dir, string $rel, int $rid, string $source): bool {
+    $abs = $target_dir . '/' . $rel;
+    if (!is_file($abs)) return false;
+    $raw = (string)file_get_contents($abs);
+    $meta = wiki_fm_split($raw)['meta'];
+    if (isset($meta['generated_by']) || !isset($meta['archived_from'])) return false;
+    if ((int)($meta['archived_row'] ?? 0) !== $rid) return false;
+    if (($meta['archived_reason'] ?? '') === 'row_removed') return false;
+    $was = isset($meta['archived_source']) ? (string)$meta['archived_source'] : '';
+    if ($was !== '' && $was !== $source) return false;
+    // The template it came from must be gone.
+    $tpl = $ix->getPath((int)$meta['archived_from']);
+    if ($tpl !== null && is_file($target_dir . '/' . $tpl)
+        && isset(wiki_fm_split((string)file_get_contents($target_dir . '/' . $tpl))['meta']['generator_source'])) {
+        return false;
+    }
+    if (isset($meta['archived_hash'])) return hash_equals((string)$meta['archived_hash'], sha1(wiki_fm_body($raw)));
+    $at = strtotime((string)($meta['archived_at'] ?? ''));
+    clearstatcache(true, $abs);
+    return $at !== false && filemtime($abs) <= $at + 2;
+}
+
+/** Remove a page this generator wrote — its duplicate of a page it has just adopted. */
+function wiki_gen_remove_own($ix, string $target_dir, string $space, string $rel, array &$touched): void {
+    $abs = $target_dir . '/' . $rel;
+    if (!is_file($abs) || !@unlink($abs)) return;
+    $ix->removePage($rel);
+    wiki_gen_search(fn($s) => $s->deletePage($space, $rel));
+    if (function_exists('wiki_audit_log')) {
+        wiki_audit_log('delete', 'success', ['object_category' => 'page', 'object' => $rel, 'space' => $space,
+                                             'change_type' => 'generated']);
+    }
+    $touched[$abs] = true;
 }
 
 /** Rename a generated page, keeping its id, attachments and chat thread. */
@@ -790,7 +955,8 @@ function wiki_gen_move($ix, string $target_dir, string $space, string $old, stri
  * locked and nothing regenerates it.
  */
 function wiki_gen_archive($ix, string $target_dir, string $space, string $rel, int $template_id,
-                          int $rid, string $sys, array &$touched, string $reason = '', string $list = ''): bool {
+                          int $rid, string $sys, array &$touched, string $reason = '', string $list = '',
+                          string $source = ''): bool {
     $abs = $target_dir . '/' . $rel;
     if (!is_file($abs)) return false;
     $old = (string)file_get_contents($abs);
@@ -800,6 +966,10 @@ function wiki_gen_archive($ix, string $target_dir, string $space, string $rel, i
     $updates = ['archived_from' => (string)$template_id, 'archived_row' => (string)$rid, 'archived_at' => date('c')];
     if ($reason !== '') $updates['archived_reason'] = $reason;
     if ($list !== '')   $updates['archived_list'] = $list;
+    // Which list it was made from, and its text as archived: what wiki_gen_adoptable() needs
+    // to know a later generator may take the page over (same list, nobody has edited it).
+    if ($source !== '') $updates['archived_source'] = $source;
+    $updates['archived_hash'] = sha1(wiki_fm_body($old));
     $new = wiki_fm_set($old, $updates, ['generated_by', 'generated_row']);
     if (file_put_contents($abs, $new) === false) throw new RuntimeException('Could not write ' . $rel);
     $ix->updateModified($rel, 0, $sys);
@@ -958,6 +1128,21 @@ function wiki_gen_after_response(): void {
     ignore_user_abort(true);
     @set_time_limit(120);
     wiki_gen_run_dirty($keys, WIKI_GEN_INLINE_BUDGET);
+}
+
+/**
+ * The generators this request made dirty, rendered now, before the response — for a save
+ * made from a generated page ({{_edit}}, {{_comment_form}}; modules/generators/edit_item.js),
+ * whose writer wants to show the re-rendered page as soon as the save returns rather than
+ * poll for it. What the budget leaves stays pending for the after-response pass.
+ */
+function wiki_gen_render_pending_now(): void {
+    $keys = array_keys($GLOBALS['_wiki_gen_pending'] ?? []);
+    if (!$keys) return;
+    @set_time_limit(120);
+    wiki_gen_run_dirty($keys, WIKI_GEN_INLINE_BUDGET);
+    $left = array_keys(array_filter(wiki_gen_state_all(), fn($s) => !empty($s['dirty'])));
+    $GLOBALS['_wiki_gen_pending'] = array_fill_keys(array_values(array_intersect($keys, $left)), true);
 }
 
 /**
@@ -1172,6 +1357,49 @@ function wiki_gen_get_info(array $meta, $indexer): ?array {
     return null;
 }
 
+/**
+ * What an AI in a generated page's chat must know about that page (ai_core.php,
+ * wiki_page_context_prompt): that it cannot be written, where its content comes from, and what
+ * to do instead — or '' for an ordinary page. Without it the model is told the page's path "to
+ * update it", tries, and learns only from the refusal, which names the template but not the
+ * list or the row. In this Space the model is pointed at wiki_update_list_item (wiki_ai_tools.php);
+ * the source list's path is given only when it is in this Space: the tools of a chat reach no other, and a template's banner names another Space's list only to people
+ * who may read that Space — the Space name and page id are in the template's front matter
+ * already.
+ */
+function wiki_gen_ai_page_note(string $page_abs, string $space_dir, $indexer): string {
+    $g = wiki_gen_page_generated($page_abs);
+    if ($g === null || !$indexer) return '';
+    $space = basename(rtrim($space_dir, '/'));
+    $tpl_rel = $indexer->getPath($g['template_id']);
+    $tpl = $tpl_rel !== null ? "the template \"{$tpl_rel}\" (page id {$g['template_id']})" : "a template (page id {$g['template_id']})";
+    $src = 'its source list';
+    $read = '';
+    $reach = false;
+    if ($tpl_rel !== null && is_file(rtrim($space_dir, '/') . '/' . $tpl_rel)) {
+        $def = wiki_gen_definition(wiki_fm_split((string)file_get_contents(rtrim($space_dir, '/') . '/' . $tpl_rel))['meta'], $space, $tpl_rel);
+        if (!empty($def['ok'])) {
+            if ($def['source_space'] === $space && ($lp = $indexer->getPath($def['source_id'])) !== null) {
+                $src = "the list \"{$lp}\" (page id {$def['source_id']})";
+                $read = ' You can read that list, and so the item, with wiki_read_page.';
+                $reach = true;
+            } else {
+                $src = "a list in the Space \"{$def['source_space']}\" (page id {$def['source_id']}), which your tools here cannot reach";
+            }
+        }
+    }
+    return "This page is GENERATED: its content is rendered from item id {$g['row']} of {$src} through {$tpl}, "
+         . "and is rewritten whenever that list or the template is saved. It cannot be edited, renamed or appended to "
+         . "— wiki_write_page and wiki_rename_page refuse it, and an edit would be lost at the next render anyway. "
+         . "To change what the page says, that item in the source list has to change; to change its layout, the template.{$read} "
+         . ($reach
+            ? "When asked to update this page's content, change the item with wiki_update_list_item (its fields by name, "
+              . "or a comment on it) — the page is re-rendered from it. A change it cannot make (a group of fields), "
+              . "or one you are not allowed to make, is done in the item's form: the edit button beside the page's title opens it. "
+            : "You cannot reach that list, so when asked to update this page, say exactly what should change in which "
+              . "field of the item, and that the edit button beside the page's title opens that item's form. ");
+}
+
 // =================================================================
 // FOR THE UI — a template's status, a preview, the lists to choose from, a new template
 //
@@ -1259,7 +1487,7 @@ function wiki_gen_preview(string $space, int $id, ?int $row, ?array $acl): array
     $ctx = $data['rows'][$rid];
     $warnings = $data['warnings'];
     $unknown = array_values(array_diff(array_merge(wiki_tpl_names($body_tree), wiki_tpl_names($name_tree)),
-                                       array_merge($data['keys'], ['_row', '_title', '_source', '_edit'])));
+                                       array_merge($data['keys'], ['_row', '_title', '_source', '_edit', '_add', '_comments', '_comment_form'])));
     if ($unknown) $warnings[] = ['warning' => 'unknown_field', 'detail' => implode(', ', $unknown)];
     wiki_tpl_take_warnings();
     $body = wiki_tpl_render($body_tree, $ctx, ['escape' => $html ? 'html' : 'markdown']);
@@ -1285,16 +1513,37 @@ function wiki_gen_sources(?array $acl, int $max = 500): array {
             $list = json_decode((string)file_get_contents($dir . '/' . $rel), true);
             if (!is_array($list)) continue;
             $fields = [];
-            $used = [];
+            $keys = wiki_gen_field_keys($list['columns'] ?? []);    // the keys wiki_gen_rows() gives
+            $targets = null;
             foreach ($list['columns'] ?? [] as $col) {
-                // The same keys wiki_gen_rows() gives the template.
-                $base = wiki_tpl_key((string)($col['name'] ?? '')) ?: wiki_tpl_key((string)($col['id'] ?? ''));
-                if ($base === '' || $base[0] === '_') $base = 'f_' . ltrim($base, '_');
-                $key = $base;
-                for ($n = 2; isset($used[$key]); $n++) $key = $base . '_' . $n;
-                $used[$key] = true;
+                if (!isset($keys[(string)($col['id'] ?? '')])) continue;
+                $key = $keys[(string)$col['id']];
                 $field = ['name' => (string)($col['name'] ?? $key), 'key' => $key, 'type' => (string)($col['type'] ?? ''),
                           'title' => ($col['id'] ?? null) === wiki_list_title_field($list)];
+                // A lookup's items carry their own list's fields: offered like a group's, its
+                // Title marked (a card's heading), lookups of its own left out — they read as
+                // text there, and a chain of cards was not the point.
+                // An "also show" field names its lookup, so a starter drawing that lookup as
+                // cards can leave out what the cards already say.
+                if ($field['type'] === 'lookup_field' && isset($keys[(string)($col['source'] ?? '')])) {
+                    $field['source'] = $keys[(string)$col['source']];
+                }
+                if ($field['type'] === 'lookup') {
+                    $field['multiple'] = !empty($col['lookup']['multiple']);
+                    $targets ??= wiki_list_lookup_targets($list, $dir);
+                    $target = $targets[(string)($col['lookup']['list'] ?? '')] ?? null;
+                    $field['subs'] = [];
+                    if ($target !== null) {
+                        $tkeys = wiki_gen_field_keys($target['columns'] ?? []);
+                        $ttitle = wiki_list_title_field($target);
+                        foreach ($target['columns'] ?? [] as $tc) {
+                            $tid = (string)($tc['id'] ?? '');
+                            if (!isset($tkeys[$tid]) || in_array($tc['type'] ?? '', ['lookup', 'lookup_field'], true)) continue;
+                            $field['subs'][] = ['name' => (string)($tc['name'] ?? $tkeys[$tid]), 'key' => $tkeys[$tid],
+                                                'title' => $tid === $ttitle];
+                        }
+                    }
+                }
                 if ($field['type'] === 'object') {
                     $field['multiple'] = !empty($col['multiple']);
                     $names = array_column($col['fields'] ?? [], 'name', 'id');
@@ -1304,7 +1553,7 @@ function wiki_gen_sources(?array $acl, int $max = 500): array {
                 $fields[] = $field;
             }
             $out[] = ['space' => $space, 'id' => (int)$pid, 'path' => $rel, 'title' => basename($rel, '.list'),
-                      'fields' => $fields, 'rows' => count($list['items'] ?? [])];
+                      'fields' => $fields, 'rows' => count($list['items'] ?? []), 'comments' => wiki_list_comments_on($list)];
             if (count($out) >= $max) return $out;
         }
     }
@@ -1316,8 +1565,9 @@ function wiki_gen_sources(?array $acl, int $max = 500): array {
  * The text of a new template: its generator keys, and a body that shows every field, so
  * the first render already says something and the author edits rather than starts blank.
  */
-function wiki_gen_starter(string $source, string $folder, string $filename_key, array $fields, bool $html = false): string {
-    $body = $html ? wiki_gen_starter_html($fields) : wiki_gen_starter_md($fields);
+function wiki_gen_starter(string $source, string $folder, string $filename_key, array $fields, bool $html = false,
+                          bool $comments = false): string {
+    $body = $html ? wiki_gen_starter_html($fields, $comments) : wiki_gen_starter_md($fields, $comments);
     $updates = [];
     if ($html) $updates['format'] = 'html';
     $updates += ['generator_source' => $source, 'generator_folder' => $folder];
@@ -1325,22 +1575,44 @@ function wiki_gen_starter(string $source, string $folder, string $filename_key, 
     return wiki_fm_set($body, $updates);
 }
 
-/** The Markdown starter: a table of every field but the Title, which is the heading (with the
- *  edit button beside it), and each Comments field as a list of its comments below. */
-function wiki_gen_starter_md(array $fields): string {
-    $body = "# {{_title}} {{_edit}}\n\n| | |\n|---|---|\n";
-    $logs = '';
+/**
+ * The Markdown starter: a table of the plain fields (the Title is the heading, with the edit
+ * button beside it), then a section per field that repeats — a group allowing several, and a
+ * lookup whose list could be read — showing how a template repeats: {{#field}} … {{/field}}
+ * once per entry, {{^field}} … {{/field}} when there are none. A group's entry is headed by its
+ * number and summary, a lookup's item by what the lookup shows and its link to the item; a
+ * lookup's "also show" fields are left out of the table, since its section shows them. Then,
+ * when the list takes comments, the item's comments. Field names are text the list's authors
+ * wrote: `|` would end a table cell, and braces must not become placeholders.
+ */
+function wiki_gen_starter_md(array $fields, bool $comments = false): string {
+    $label = fn(string $s) => strtr($s, ['|' => '\\|', '{' => '&#123;', '}' => '&#125;']);
+    $carded = [];
+    foreach ($fields as $f) {
+        if (($f['type'] ?? '') === 'lookup' && !empty($f['subs'])) $carded[$f['key']] = true;
+    }
+    $table = '';
+    $sections = '';
     foreach ($fields as $f) {
         if (!empty($f['title'])) continue;
-        if (($f['type'] ?? '') === 'comments') {
-            $logs .= "\n## " . str_replace(['{', '}'], ['\\{', '\\}'], (string)$f['name']) . "\n\n{{#" . $f['key'] . "}}\n"
-                   . "- **{{name}}** · {{at}} — {{text}}\n{{/" . $f['key'] . "}}\n";
+        $type = $f['type'] ?? '';
+        if ($type === 'lookup_field' && isset($carded[$f['source'] ?? ''])) continue;
+        $key = $f['key'];
+        $several = $type === 'object' && !empty($f['multiple']);
+        if ($several || isset($carded[$key])) {
+            $lookup = $type === 'lookup';
+            $subs = $lookup ? array_values(array_filter($f['subs'], fn($sf) => empty($sf['title']))) : ($f['subs'] ?? []);
+            $sections .= "\n## " . $label((string)$f['name']) . ($lookup ? '' : " {{_add.{$key}}}") . "\n\n{{#{$key}}}\n"
+                       . ($lookup ? "### {{_text}} {{_edit}}\n\n" : "### {{_index}}. {{_text}}\n\n")
+                       . implode('', array_map(fn($sf) => '- **' . $label((string)$sf['name']) . ":** {{" . $sf['key'] . "}}\n", $subs))
+                       . "\n{{/{$key}}}\n{{^{$key}}}\n_None._\n{{/{$key}}}\n";
             continue;
         }
-        $label = str_replace('|', '\\|', (string)$f['name']);
-        $body .= "| **{$label}** | {{" . $f['key'] . "}} |\n";
+        $table .= '| **' . $label((string)$f['name']) . "** | {{{$key}}} |\n";
     }
-    return $body . $logs . "\n";
+    $body = "# {{_title}} {{_edit}}\n\n" . ($table !== '' ? "| | |\n|---|---|\n" . $table : '');
+    $logs = $comments ? "\n## Comments\n\n{{#_comments}}\n- **{{name}}** · {{at}} — {{text}}\n{{/_comments}}\n\n{{_comment_form}}\n" : '';
+    return $body . $sections . $logs . "\n";
 }
 
 /**
@@ -1355,17 +1627,21 @@ const WIKI_GEN_STARTER_CSS = <<<'CSS'
 /* This template's own styles — edit freely. They apply only to the pages it generates. */
 .wk-card   { border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem 1.25rem; margin: 0 0 1rem; background: #fff; }
 .wk-card > :last-child { margin-bottom: 0; }
-.wk-grid   { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .75rem; margin: 0 0 1rem; }
+.wk-grid   { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; margin: 0 0 1rem; }
 .wk-grid > .wk-card { margin: 0; padding: .75rem 1rem; }
+.wk-grid > .wk-card > h3 { margin: 0 0 .5rem; font-size: 1.05rem; }
 .wk-fields { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1.25rem; margin: 0 0 .5rem; }
-.wk-fields > dt, .wk-label { color: #718096; font-weight: 600; }
+.wk-fields > dt, .wk-label { color: #718096; font-weight: 600; font-size: .9em; }
 .wk-fields > dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .wk-fields .wk-fields { margin: 0; }
 .wk-muted  { color: #718096; }
 .wk-comment { margin: 0 0 .6rem; }
 .wk-comment > :last-child { white-space: pre-line; }
 .wk-edit   { margin-left: .4rem; vertical-align: middle; }
+.wk-cols   { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.wk-cols > .wk-card { margin: 0; }
 @media (max-width: 640px) {
+  .wk-cols { grid-template-columns: 1fr; }
   .wk-fields { grid-template-columns: 1fr; gap: .1rem; }
   .wk-fields > dd { margin-bottom: .4rem; }
 }
@@ -1375,25 +1651,34 @@ CSS;
 
 /**
  * The HTML starter: a card with the fields as label/value rows (`wk-fields`), a single
- * group as a nested block of its own fields, and a group allowing several as a grid of small
- * cards, one per entry — a working for-each from the first render. Field names are text the
+ * group as a nested block of its own fields, and a group allowing several — and a lookup —
+ * as a stack of full-width cards, one per entry (per item looked up) — a working for-each
+ * from the first render. Field names are text the
  * list's authors wrote, so they are escaped here like any value (braces too: a name like
  * "{{x}}" must not become a placeholder).
  */
-function wiki_gen_starter_html(array $fields): string {
+function wiki_gen_starter_html(array $fields, bool $comments = false): string {
     $label = fn(string $s) => strtr(htmlspecialchars($s, ENT_QUOTES), ['{' => '&#123;', '}' => '&#125;']);
     $rows = fn(array $subs, string $indent) => implode('', array_map(fn($sf) =>
         "$indent<dt>" . $label($sf['name']) . "</dt><dd>{{" . $sf['key'] . "}}</dd>\n", $subs));
     $plain = [];
     $several = [];
-    $logs = [];
+    $carded = [];   // lookups drawn as cards, by key
+    foreach ($fields as $f) {
+        if (($f['type'] ?? '') === 'lookup' && !empty($f['subs'])) $carded[$f['key']] = true;
+    }
     foreach ($fields as $f) {
         if (!empty($f['title'])) continue;
+        // A lookup's "also show" fields are in its cards already.
+        if (($f['type'] ?? '') === 'lookup_field' && isset($carded[$f['source'] ?? ''])) continue;
         if (($f['type'] ?? '') === 'object' && !empty($f['multiple'])) { $several[] = $f; continue; }
-        if (($f['type'] ?? '') === 'comments') { $logs[] = $f; continue; }
+        // A lookup whose list could be read: its items as cards, like a group's entries.
+        if (($f['type'] ?? '') === 'lookup' && !empty($f['subs'])) { $several[] = $f; continue; }
         $plain[] = $f;
     }
-    $out = WIKI_GEN_STARTER_CSS . "<div class=\"wk-card\">\n  <h1>{{_title}} {{_edit}}</h1>\n  <dl class=\"wk-fields\">\n";
+    // With comments: the item in a card two thirds wide, its comments in one beside it.
+    $out = WIKI_GEN_STARTER_CSS . ($comments ? "<div class=\"wk-cols\">\n" : '')
+         . "<div class=\"wk-card\">\n  <h1>{{_title}} {{_edit}}</h1>\n  <dl class=\"wk-fields\">\n";
     foreach ($plain as $f) {
         if (($f['type'] ?? '') === 'object') {
             $out .= "    <dt>" . $label($f['name']) . "</dt>\n    <dd>\n      {{#" . $f['key'] . "}}\n"
@@ -1405,17 +1690,25 @@ function wiki_gen_starter_html(array $fields): string {
     }
     $out .= "  </dl>\n";
     foreach ($several as $f) {
-        $out .= "\n  <h2>" . $label($f['name']) . "</h2>\n  <div class=\"wk-grid\">\n    {{#" . $f['key'] . "}}\n"
-              . "    <div class=\"wk-card\">\n      <dl class=\"wk-fields\">\n" . $rows($f['subs'] ?? [], '        ')
+        // A lookup's card is headed by what the lookup shows (`_text` — "(deleted #12)" for an
+        // item since removed) and the linked item's own {{_edit}} (a link icon), its Title not
+        // repeated below; it has no + (an item is picked in the form, not added here).
+        $lookup = ($f['type'] ?? '') === 'lookup';
+        $subs = $lookup ? array_values(array_filter($f['subs'], fn($sf) => empty($sf['title']))) : ($f['subs'] ?? []);
+        $out .= "\n  <h2>" . $label($f['name']) . ($lookup ? '' : " {{_add." . $f['key'] . "}}") . "</h2>\n  <div class=\"wk-grid\">\n    {{#" . $f['key'] . "}}\n"
+              . "    <div class=\"wk-card\">\n" . ($lookup ? "      <h3>{{_text}} {{_edit}}</h3>\n" : '')
+              . "      <dl class=\"wk-fields\">\n" . $rows($subs, '        ')
               . "      </dl>\n    </div>\n    {{/" . $f['key'] . "}}\n  </div>\n"
               . "  {{^" . $f['key'] . "}}<p class=\"wk-muted\">—</p>{{/" . $f['key'] . "}}\n";
     }
-    foreach ($logs as $f) {
-        $out .= "\n  <h2>" . $label($f['name']) . "</h2>\n  {{#" . $f['key'] . "}}\n"
+    $out .= "</div>\n";
+    if ($comments) {
+        $out .= "<aside class=\"wk-card\">\n  <h2>Comments</h2>\n  {{#_comments}}\n"
               . "  <div class=\"wk-comment\"><div class=\"wk-muted\">{{name}} · {{at}}</div><div>{{text}}</div></div>\n"
-              . "  {{/" . $f['key'] . "}}\n  {{^" . $f['key'] . "}}<p class=\"wk-muted\">—</p>{{/" . $f['key'] . "}}\n";
+              . "  {{/_comments}}\n  {{^_comments}}<p class=\"wk-muted\">—</p>{{/_comments}}\n"
+              . "  {{_comment_form}}\n</aside>\n</div>\n";
     }
-    return $out . "</div>\n";
+    return $out;
 }
 
 // =================================================================

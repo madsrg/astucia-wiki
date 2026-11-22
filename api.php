@@ -1046,7 +1046,7 @@ if (isset($_REQUEST['action'])) {
                       'create_filesfolder', 'delete', 'move', 'copy_page', 'upload_attachment',
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'create_library_folder', 'update_tags', 'sync_fm_tags',
                       'save_diagram_svg', 'upload_page', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
-                      'retarget_wikilinks', 'set_frontmatter', 'geocode', 'generator_render', 'generator_detach', 'generator_preview', 'generator_sources', 'generator_create'];
+                      'retarget_wikilinks', 'set_frontmatter', 'geocode', 'generator_render', 'generator_detach', 'generator_preview', 'generator_sources', 'generator_create', 'generator_settings'];
     $admin_actions = ['admin_get_generators', 'admin_chat_retention', 'admin_frontmatter_settings', 'admin_map_settings', 'admin_mention_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
                       'admin_set_space_fm_edit', 'admin_set_space_fm_autostamp', 'admin_set_space_fm_tags_sync', 'admin_set_space_memory',
                       'admin_set_space_skills', 'admin_ai_skills_settings', 'admin_skills_list', 'admin_skill_get', 'admin_skill_save',
@@ -3754,6 +3754,11 @@ if (isset($_REQUEST['action'])) {
                         $fm_meta_out = wiki_fm_ordered(wiki_fm_split($fm_after)['meta']) ?: null;
                         $fm_nest_out = wiki_fm_nested_keys($fm_after) ?: null;
                     }
+                    // A list saved from a generated page asks for its generators to render
+                    // before the reply, so the page on screen can be refreshed at once.
+                    if ($ext_save === 'list' && !empty($_GET['render']) && function_exists('wiki_gen_render_pending_now')) {
+                        try { wiki_gen_render_pending_now(); } catch (\Throwable $_e) {}
+                    }
                     echo json_encode([
                         'success'     => true,
                         'message'     => 'File saved successfully.',
@@ -3863,7 +3868,7 @@ if (isset($_REQUEST['action'])) {
                 // gets Markdown, as it did before the choice existed.
                 $gc_html = ($_POST['format'] ?? '') === 'html';
                 $gc_content = wiki_gen_starter($gc_def['source_space'] . ':' . $gc_def['source_id'], $gc_def['folder'], $gc_key,
-                                               $gc_src_list['fields'], $gc_html);
+                                               $gc_src_list['fields'], $gc_html, !empty($gc_src_list['comments']));
                 if (file_put_contents($gc_abs, $gc_content) === false) throw new Exception('Could not write the template.');
                 $gc_actor = get_current_actor();
                 $gc_id = $indexer->addPage($gc_rel, $gc_actor['uid'], $gc_actor['name']);
@@ -3893,6 +3898,63 @@ if (isset($_REQUEST['action'])) {
                     break;
                 }
                 echo json_encode(['success' => true]);
+                break;
+
+            case 'generator_settings':
+                // A template's folder and page names, from its banner's Settings dialog. Only
+                // those two generator keys are written — the rest of the front matter and the
+                // body as they are — so it does not depend on the Space allowing metadata
+                // editing (set_frontmatter): changing a generator is editing the template,
+                // which an editor may do anyway. Saving it is a template save, so the
+                // generator renders after the response, moving its pages to the new folder or
+                // names (they keep their ids), and the person saving becomes its owner.
+                $gs_rel = ltrim(str_replace('..', '', (string)($_POST['path'] ?? '')), '/');
+                $gs_abs = sanitize_path($gs_rel);
+                $gs_raw = is_file($gs_abs) && strtolower(pathinfo($gs_abs, PATHINFO_EXTENSION)) === 'md'
+                    ? (string)file_get_contents($gs_abs) : null;
+                $gs_meta = $gs_raw !== null ? wiki_fm_split($gs_raw)['meta'] : [];
+                if ($gs_raw === null || !isset($gs_meta['generator_source'])) {
+                    echo json_encode(['success' => false, 'error' => 'not_template', 'message' => 'This page is not a page generator template.']);
+                    break;
+                }
+                $gs_set = [];
+                $gs_drop = [];
+                if (array_key_exists('folder', $_POST)) {
+                    $gs_folder = wiki_gen_clean_folder((string)$_POST['folder']);
+                    if ($gs_folder === null) {
+                        echo json_encode(['success' => false, 'error' => 'bad_folder', 'detail' => (string)$_POST['folder'],
+                                          'message' => 'That folder cannot hold generated pages.']);
+                        break;
+                    }
+                    $gs_set['generator_folder'] = $gs_folder;
+                }
+                if (array_key_exists('filename', $_POST)) {
+                    $gs_name = trim((string)$_POST['filename']);
+                    if ($gs_name === '' || $gs_name === '{{_title}}') {
+                        $gs_drop[] = 'generator_filename';
+                    } else {
+                        try { wiki_tpl_parse($gs_name); }
+                        catch (WikiTemplateError $e) {
+                            echo json_encode(['success' => false, 'error' => 'filename_error', 'detail' => $e->error,
+                                              'message' => 'The page name is not a valid template.']);
+                            break;
+                        }
+                        $gs_set['generator_filename'] = $gs_name;
+                    }
+                }
+                $gs_new = wiki_fm_set($gs_raw, $gs_set, $gs_drop);
+                if ($gs_new === $gs_raw) { echo json_encode(['success' => true, 'unchanged' => true]); break; }
+                if (file_put_contents($gs_abs, $gs_new) === false) throw new Exception('Could not save the template.');
+                $gs_actor = get_current_actor();
+                $indexer->updateModified($gs_rel, $gs_actor['uid'] ?? null, $gs_actor['name'] ?? null);
+                clearstatcache(true, $gs_abs);
+                echo json_encode(['success' => true, 'lastUpdated' => filemtime($gs_abs), 'size' => strlen($gs_new)]);
+                if ($indexer->getGitCommit($gs_rel, true)) {
+                    if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+                    git_auto_commit($gs_abs, $gs_actor['name'] ?? 'Wiki',
+                        (AUTHENTICATION_ENABLED && !empty($_SESSION['user']['email'])) ? $_SESSION['user']['email'] : 'wiki@localhost',
+                        'Change page generator settings of ' . basename($gs_rel));
+                }
                 break;
 
             case 'list_md_templates':

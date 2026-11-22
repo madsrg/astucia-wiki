@@ -5,9 +5,10 @@
 #
 # Number, Yes/No and Comments fields in a browser, and {{_edit}} on a generated page.
 # tests/list_types.test.sh holds the server's rules; this proves what only a browser shows:
-# how the table draws and sorts them, the item form's inputs and its comment log (with ✕ only
-# where the reader may remove), a new comment stamped by the server and adopted by the page so
-# the next save does not post it again, the field types in List properties — and the edit
+# how the table draws and sorts them, the item form's inputs, an item's comments (its own, not
+# a field: a column with a count in the table, a column beside the fields in the item view
+# with ✕ only where the reader may remove, a new one stamped by the server and adopted), the
+# list's switch for them, the field types and their order in List properties — and the edit
 # button on a generated page in another Space, which opens the row's item, saves it, and
 # shows the re-rendered page. A reader gets no button.
 #
@@ -37,9 +38,9 @@ json.dump({
               {"id": "col_2", "name": "Name", "type": "text_single", "role": "title"},
               {"id": "col_3", "name": "Price", "type": "number", "decimals": 2, "unit": "kr"},
               {"id": "col_4", "name": "Paid", "type": "boolean"},
-              {"id": "col_5", "name": "Notes", "type": "comments"}],
+              {"id": "col_5", "name": "Notes", "type": "text_single"}],
   "items": [{"id": 1, "col_1": 1, "col_2": "Ann", "col_3": 1250.5, "col_4": True,
-             "col_5": [{"id": 1, "by": 2, "name": "Eve", "at": "2026-11-01T09:00:00Z", "text": "First call"},
+             "_comments": [{"id": 1, "by": 2, "name": "Eve", "at": "2026-11-01T09:00:00Z", "text": "First call"},
                        {"id": 2, "by": 3, "name": "Carl", "at": "2026-11-02T10:30:00Z", "text": "<b>Sent</b> the offer"}]},
             {"id": 2, "col_1": 2, "col_2": "Bo", "col_3": None, "col_4": False},
             {"id": 3, "col_1": 3, "col_2": "Cy", "col_3": 30}],
@@ -57,12 +58,33 @@ generator_folder: Out
 # {{_title}} {{_edit}}
 
 PRICE={{price}} PAID={{paid}}
+
+COMMENTS={{#_comments}}{{text}};{{/_comments}}
+
+{{_comment_form}}
 EOF
 curl -s "$WIKI_URL/api.php?action=indexfiles&space=Pages" > /dev/null
 TPL=$(id_in Pages Order.md)
 curl -s -X POST -d "id=$TPL" "$WIKI_URL/api.php?action=generator_render&space=Pages" > /dev/null
 curl -s "$WIKI_URL/api.php?action=indexfiles&space=Pages" > /dev/null
 ANNPAGE=$(id_in Pages Out/Ann.md)
+# {{_add.cards}}: a list whose items have several cards, and a page per item.
+cat > "$WIKI_PAGES/CRM/Wallets.list" <<'JSON'
+{"columns":[{"id":"col_1","name":"ItemId","type":"autoincrement"},
+  {"id":"col_2","name":"Name","type":"text_single","role":"title"},
+  {"id":"col_3","name":"Cards","type":"object","multiple":true,"fields":[{"id":"sf_n","name":"Number","type":"text_single"},{"id":"sf_k","name":"Kind","type":"choice","options":["Debit","Credit"]}]}],
+ "items":[{"id":1,"col_1":1,"col_2":"Ann","col_3":[{"id":1,"sf_n":"1111","sf_k":"Debit"}]}],
+ "nextItemId":2,"nextEntryId":2}
+JSON
+curl -s "$WIKI_URL/api.php?action=indexfiles&space=CRM" > /dev/null
+WALLETS=$(id_in CRM Wallets.list)
+printf -- '---\ngenerator_source: "CRM:%s"\ngenerator_folder: Wallets\n---\n# {{_title}}\n\nCards {{_add.cards}}\n\nCARDS={{#cards}}{{number}};{{/cards}}\n' "$WALLETS" \
+    > "$WIKI_PAGES/Pages/Wallet.md"
+curl -s "$WIKI_URL/api.php?action=indexfiles&space=Pages" > /dev/null
+WTPL=$(id_in Pages Wallet.md)
+curl -s -X POST -d "id=$WTPL" "$WIKI_URL/api.php?action=generator_render&space=Pages" > /dev/null
+curl -s "$WIKI_URL/api.php?action=indexfiles&space=Pages" > /dev/null
+WALLETPAGE=$(id_in Pages Wallets/Ann.md)
 
 cat > "$WIKI_APP/__router.php" <<'R'
 <?php
@@ -79,13 +101,13 @@ if ($p !== '/' && is_file($f)) {
 return false;
 R
 
-python3 - "$WIKI_APP/index.php" "$ANNPAGE" <<'PY'
+python3 - "$WIKI_APP/index.php" "$ANNPAGE" "$WALLETPAGE" <<'PY'
 import io, sys
 p = sys.argv[1]
 s = io.open(p, encoding='utf-8', newline='').read()
 # Reported through document.title. No backslashes and no percent signs in here: this lives
 # in a Python heredoc, formatted with the percent operator.
-probe = """<script>window.ANN_PAGE = %s;</script><script type="module">
+probe = """<script>window.ANN_PAGE = %s; window.WALLET_PAGE = %s;</script><script type="module">
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -107,10 +129,10 @@ const run = async () => {
   // ── The table (the start URL opened the list) ──
   out += ' price=' + w(cellOf('Ann', 'Price').textContent) + ',' + (cellOf('Ann', 'Price').classList.contains('is-number') ? 'right' : 'left');
   out += ' paid=' + cellOf('Ann', 'Paid').textContent + ',' + cellOf('Bo', 'Paid').textContent + ',' + cellOf('Cy', 'Paid').textContent;
-  const notes = cellOf('Ann', 'Notes');
-  out += ' latest=' + w(notes.querySelector('.list-comment-latest').textContent);
-  out += ' meta=' + w(notes.querySelector('.list-comment-meta').textContent.split(' · ').filter((x, i) => i !== 1).join('|'));
-  out += ' asText=' + (notes.querySelector('b') ? 'no' : 'yes');
+  // An item's comments: a column of their own at the right edge, the count on those with any.
+  const badge = (name) => (rowOf(name).querySelector('td.list-comments-col .list-comments-badge') || { textContent: '-' }).textContent;
+  out += ' commentsCol=' + ($('#list-items-table th.list-comments-col') && $('#list-items-table th:last-child').classList.contains('list-comments-col') ? 'last' : 'none');
+  out += ' badges=' + badge('Ann') + ',' + badge('Bo');
   click($$('#list-items-table th')[colIx('Price')]);           await sleep(300);
   out += ' sortUp=' + $$('#list-items-table tbody tr').map(r => r.children[colIx('Name')].textContent).join('|');
   click($$('#list-items-table th')[colIx('Price')]);           await sleep(300);
@@ -128,28 +150,62 @@ const run = async () => {
   const form = $('#item-modal-form');
   out += ' numIn=' + $('#field-col_3').type + ':' + $('#field-col_3').value + ' unit=' + (form.querySelector('.field-unit') || {}).textContent;
   out += ' box=' + $('#field-col_4').type + ':' + $('#field-col_4').checked;
-  out += ' log=' + form.querySelectorAll('.comment-entry').length + ' xs=' + form.querySelectorAll('.comment-remove').length;
-  out += ' logText=' + (form.querySelector('.comment-entry .comment-text b') ? 'markup' : 'text');
+  out += ' formComments=' + (form.querySelector('.comment-new, .comment-entry') ? 'shown' : 'none');
   $('#field-col_3').value = '99';
   $('#field-col_4').checked = false;
-  form.querySelector('.comment-new').value = 'Hello from the form';
   click($('#item-modal-save-btn'));
   await waitFor(() => !shown($('#item-modal')));                await sleep(500);
   const ann = state.currentListData.items.find(i => i.id === 1);
-  const last = ann.col_5[ann.col_5.length - 1];
-  out += ' saved=' + ann.col_3 + ',' + ann.col_4 + ' stamped=' + (Number.isInteger(last.id) && last.at ? 'yes' : 'no') + ' count=' + ann.col_5.length;
-  out += ' tableLatest=' + w(cellOf('Ann', 'Notes').querySelector('.list-comment-latest').textContent);
-  // Saving again posts nothing new: the page holds the stamped copy.
-  await m.openItemModal(1);                                     await sleep(300);
-  click($('#item-modal-save-btn'));
-  await waitFor(() => !shown($('#item-modal')));                await sleep(500);
+  out += ' saved=' + ann.col_3 + ',' + ann.col_4;
   const disk = JSON.parse((await (await fetch('api.php?action=get&space=CRM&file=Orders.list')).json()).data);
-  out += ' again=' + disk.items[0].col_5.length + ' badNumber=';
+  out += ' keptComments=' + disk.items[0]._comments.length + ' badNumber=';
   await m.openItemModal(3);                                     await sleep(300);
   $('#field-col_3').value = '';
   click($('#item-modal-save-btn'));                             await sleep(800);
   const cy = JSON.parse((await (await fetch('api.php?action=get&space=CRM&file=Orders.list')).json()).data).items[2];
   out += (cy.col_3 === null ? 'null' : String(cy.col_3));
+
+  // Cancel leaves the form without saving.
+  await m.openItemModal(1);                                     await sleep(300);
+  $('#field-col_2').value = 'Changed and cancelled';
+  click($('#item-modal-cancel-btn'));                           await sleep(400);
+  const afterCancel = JSON.parse((await (await fetch('api.php?action=get&space=CRM&file=Orders.list')).json()).data);
+  out += ' cancel=' + (shown($('#item-modal')) ? 'open' : 'closed') + ',' + afterCancel.items[0].col_2;
+
+  // Comments straight from the item's view, without editing the item.
+  const viewAnn = async () => { await m.openItemViewModal(state.currentListData.items.find(i => i.id === 1)); await sleep(300); };
+  await viewAnn();
+  const vlog = () => Array.from($$('#item-view-modal-content .comment-thread .comment-entry'));
+  out += ' viewLog=' + vlog().length + ' viewXs=' + $$('#item-view-modal-content .comment-remove').length;
+  const vbox80 = $('#item-view-modal .lightbox-content').getBoundingClientRect().height / window.innerHeight;
+  out += ' viewHeight=' + (Math.abs(vbox80 - 0.8) < 0.01 ? '80' : Math.round(vbox80 * 100));
+  const aside = $('#item-view-modal-content aside.item-view-comments');
+  const fieldsBox = $('#item-view-modal-content .item-view-fields');
+  out += ' viewAside=' + (aside && fieldsBox && aside.getBoundingClientRect().left > fieldsBox.getBoundingClientRect().right - 1 ? 'right' : 'no');
+  out += ' viewAsText=' + (aside && !aside.querySelector('.comment-text b') && aside.textContent.includes('<b>Sent</b>') ? 'yes' : 'no');
+  const vbox = $('#item-view-modal-content .comment-new');
+  out += ' viewBox=' + (vbox ? 'yes' : 'no');
+  click($('#item-view-modal-content .comment-add'));            await sleep(300);
+  out += ' viewEmpty=' + vlog().length;
+  vbox.value = 'From the view';
+  click($('#item-view-modal-content .comment-add'));            await sleep(1500);
+  const afterAdd = JSON.parse((await (await fetch('api.php?action=get&space=CRM&file=Orders.list')).json()).data);
+  const lastC = afterAdd.items[0]._comments[afterAdd.items[0]._comments.length - 1];
+  out += ' viewAdded=' + vlog().length + ',' + (shown($('#item-view-modal')) ? 'open' : 'closed') + ',' + (vbox.value === '' ? 'cleared' : 'kept');
+  out += ' viewStamped=' + (lastC.text === 'From the view' && Number.isInteger(lastC.id) && lastC.at ? 'yes' : 'no');
+  out += ' viewTable=' + badge('Ann');
+  // Eve removes her own comment from the view, after a confirmation.
+  click($('#item-view-modal-content .comment-remove'));
+  await waitFor(() => shown($('#confirm-modal')));
+  click($('#confirm-modal-ok'));                                await sleep(1500);
+  const afterRemove = JSON.parse((await (await fetch('api.php?action=get&space=CRM&file=Orders.list')).json()).data);
+  out += ' viewRemoved=' + vlog().length + ',' + afterRemove.items[0]._comments.some(c => c.text === 'First call');
+  click($('#item-view-modal-close-btn'));                       await sleep(200);
+  // A reader reads the comments and nothing else.
+  window.WIKI_ROLE = 'reader';
+  await viewAnn();
+  out += ' readerView=' + vlog().length + ',' + ($('#item-view-modal-content .comment-new') ? 'box' : 'nobox') + ',' + $$('#item-view-modal-content .comment-remove').length;
+  click($('#item-view-modal-close-btn'));                       await sleep(200);
   window.WIKI_ROLE = 'admin';
 
   // ── List properties ──
@@ -158,9 +214,40 @@ const run = async () => {
   const row = $$('#list-props-columns .list-props-row').slice(-1)[0];
   const sel = row.querySelector('.list-props-type-select');
   out += ' types=' + ['number', 'boolean', 'comments'].filter(v => [...sel.options].some(o => o.value === v)).join('|');
+  out += ' allowSwitch=' + ($('#list-props-comments-on') ? ($('#list-props-comments-on').checked ? 'on' : 'off') : 'none');
   sel.value = 'number'; sel.dispatchEvent(new Event('change'));  await sleep(100);
   out += ' numCfg=' + (row.querySelector('.list-props-decimals') ? 'decimals' : '-') + ',' + (row.querySelector('.list-props-unit') ? 'unit' : '-');
   click($('#list-props-modal-close-btn'));                      await sleep(200);
+  // Field order: up and down in List properties, written by Save.
+  click($('#list-props-btn'));                                  await sleep(800);
+  const propRow = (id) => $('#list-props-columns .list-props-row[data-col-id="' + id + '"]');
+  const order = () => $$('#list-props-columns .list-props-row').map(r => r.dataset.colId).join('|');
+  click(propRow('col_2').querySelectorAll('.list-props-move')[0]);  await sleep(100);
+  out += ' topUp=' + order();
+  click(propRow('col_4').querySelectorAll('.list-props-move')[0]);  await sleep(100);
+  out += ' moved=' + order() + ',' + (document.activeElement === propRow('col_4').querySelectorAll('.list-props-move')[0] ? 'focus' : 'lost');
+  click($('#list-props-save-btn'));                             await sleep(1500);
+  const reordered = JSON.parse((await (await fetch('api.php?action=get&space=CRM&file=Orders.list')).json()).data);
+  out += ' saved=' + reordered.columns.map(c => c.id).join('|');
+  out += ' heads=' + $$('#list-items-table th').map(th => w(th.textContent)).join('|');
+  await m.openItemModal(1);                                     await sleep(300);
+  out += ' formOrder=' + Array.from($$('#item-modal-form > .form-item-row > label')).map(l => w(l.textContent)).join('|');
+  click($('#item-modal-cancel-btn'));                           await sleep(200);
+  // The list's switch: off hides the comments (nothing is deleted), on shows them again.
+  const switchTo = async (on) => {
+    click($('#list-props-btn'));                                await sleep(800);
+    $('#list-props-comments-on').checked = on;
+    click($('#list-props-save-btn'));                           await sleep(1500);
+  };
+  await switchTo(false);
+  let lst = JSON.parse((await (await fetch('api.php?action=get&space=CRM&file=Orders.list')).json()).data);
+  out += ' off=' + lst.comments + ',' + ($('#list-items-table th.list-comments-col') ? 'col' : 'nocol') + ',' + lst.items[0]._comments.length;
+  await m.openItemViewModal(state.currentListData.items.find(i => i.id === 1));  await sleep(300);
+  out += ',' + ($('#item-view-modal-content aside') ? 'aside' : 'noaside');
+  click($('#item-view-modal-close-btn'));                       await sleep(200);
+  await switchTo(true);
+  lst = JSON.parse((await (await fetch('api.php?action=get&space=CRM&file=Orders.list')).json()).data);
+  out += ' on=' + ('comments' in lst ? 'key' : 'nokey') + ',' + ($('#list-items-table th.list-comments-col') ? 'col' : 'nocol');
 
   // ── {{_edit}} on a generated page in another Space ──
   const g = await import('./modules/generators/index.js');
@@ -181,16 +268,57 @@ const run = async () => {
   const crm = JSON.parse((await (await fetch('api.php?action=get&space=CRM&file=Orders.list')).json()).data);
   out += ' listNow=' + crm.items[0].col_3;
 
+  // {{_comment_form}}: a comment added on the page itself.
+  const cform = vc.querySelector('.wk-comment-form');
+  out += ' cform=' + (cform && cform.querySelector('textarea') && cform.querySelector('button') ? w(cform.querySelector('button').textContent) : 'empty');
+  const countC = async () => JSON.parse((await (await fetch('api.php?action=get&space=CRM&file=Orders.list')).json()).data).items[0]._comments.length;
+  const cBefore = await countC();
+  click(cform.querySelector('button'));                         await sleep(500);
+  out += ' cformEmpty=' + ((await countC()) === cBefore ? 'nothing' : 'added');
+  cform.querySelector('textarea').value = 'From the page';
+  click(cform.querySelector('button'));
+  await waitFor(() => vc.textContent.includes('From the page;'), 4000);
+  out += ' cformShown=' + (vc.textContent.includes('From the page;') ? 'yes' : 'no');
+  const crmC = JSON.parse((await (await fetch('api.php?action=get&space=CRM&file=Orders.list')).json()).data).items[0]._comments;
+  const cLast = crmC[crmC.length - 1];
+  out += ' cformStored=' + (cLast.text === 'From the page' && Number.isInteger(cLast.id) && cLast.at ? 'stamped' : 'no');
+
   // A reader gets no button.
   window.WIKI_ROLE = 'reader';
   const { loadPage } = await import('./modules/page_view/index.js');
   await loadPage(state.currentPagePath, state.currentPageId, []);   await sleep(1200);
   const rb = $('#viewer-content .wk-edit');
   out += ' reader=' + (rb ? (shown(rb) ? 'shown' : 'hidden') : 'none');
+  const rform = $('#viewer-content .wk-comment-form');
+  out += ' readerForm=' + (rform ? (rform.querySelector('textarea') ? 'box' : 'empty') : 'none');
+  window.WIKI_ROLE = 'admin';
+
+  // ── {{_add.cards}}: the item form, with a new card already added ──
+  await g.openPage('Pages', window.WALLET_PAGE);                await sleep(1500);
+  const add = $('#viewer-content .wk-add');
+  out += ' addBtn=' + (add && shown(add) ? w(add.textContent) + ',' + w(add.getAttribute('aria-label')) : 'none');
+  out += ' addBefore=' + ((vc.textContent.match(/CARDS=[^ ]*/) || [''])[0]).split(String.fromCharCode(10))[0];
+  click(add);
+  await waitFor(() => shown($('#item-modal')));                 await sleep(300);
+  const addForm = $('#item-modal-form');
+  out += ' addForm=' + ($('#field-col_2') ? $('#field-col_2').value : 'none');
+  const entries = addForm.querySelectorAll('.group-editor[data-col-id="col_3"] .group-entry');
+  const fresh = entries[entries.length - 1];
+  out += ' addEntries=' + entries.length + ' addOpen=' + (fresh && fresh.classList.contains('is-open') ? 'yes' : 'no')
+      + ' addFocus=' + (fresh && fresh.contains(document.activeElement) ? 'yes' : 'no');
+  fresh.querySelector('input').value = '9999';
+  fresh.querySelector('select').value = 'Credit';
+  click($('#item-modal-save-btn'));
+  await waitFor(() => !shown($('#item-modal')));
+  await waitFor(() => /CARDS=1111;9999;/.test(vc.textContent), 4000);
+  out += ' addAfter=' + ((vc.textContent.match(/CARDS=[^ ]*/) || [''])[0]).split(String.fromCharCode(10))[0];
+  const wl = JSON.parse((await (await fetch('api.php?action=get&space=CRM&file=Wallets.list')).json()).data);
+  const stored = wl.items[0].col_3[1] || {};
+  out += ' addStored=' + JSON.stringify(stored, Object.keys(stored).sort()) + ',' + wl.nextEntryId;
 };
 setTimeout(() => run().then(() => report(out)).catch(e => report(out + ' fatal=' + (e && e.message || e))), 4000);
 </script>
-</body>""" % (sys.argv[2],)
+</body>""" % (sys.argv[2], sys.argv[3])
 assert s.count('</body>') == 1
 io.open(p, 'w', encoding='utf-8', newline='').write(s.replace('</body>', probe))
 PY
@@ -207,7 +335,7 @@ until curl -s --max-time 2 "$WIKI_URL/api.php?action=ping" > /dev/null 2>&1; do
 done
 
 "$CHROME" --headless=new --disable-gpu --no-sandbox --window-size=1280,900 \
-    --virtual-time-budget=90000 \
+    --virtual-time-budget=150000 \
     --dump-dom "$WIKI_URL/index.php?space=CRM&pageid=$ORDERS" > "$WIKI_ROOT/dom.html" 2>/dev/null
 PROBE=$(grep -o '<title>PROBE[^<]*</title>' "$WIKI_ROOT/dom.html" \
         | python3 -c 'import html,sys; sys.stdout.write(html.unescape(sys.stdin.read()))' || true)
@@ -218,9 +346,8 @@ assert_not_contains "the probe ran without throwing" 'fatal' "$PROBE"
 section 'the table'
 assert_contains "a number with its decimals and unit, right-aligned" 'price=1,250.50_kr,right ' "$PROBE"
 assert_contains "Yes/No reads Yes or No (no value is No)"   'paid=Yes,No,No '       "$PROBE"
-assert_contains "Comments: the latest one"                  'latest=<b>Sent</b>_the_offer ' "$PROBE"
-assert_contains "  who wrote it, and how many"              'meta=Carl|2_comments ' "$PROBE"
-assert_contains "  as text, never markup"                   'asText=yes '           "$PROBE"
+assert_contains "comments have a column of their own, at the right" 'commentsCol=last '  "$PROBE"
+assert_contains "  the count on an item that has some, nothing on one without" 'badges=2,- ' "$PROBE"
 assert_contains "Price sorts as a number, no value last"    'sortUp=Cy|Ann|Bo '     "$PROBE"
 assert_contains "  both ways"                               'sortDown=Ann|Cy|Bo '   "$PROBE"
 assert_contains "a filter compares a number"                'gt=Ann le=Cy eq=Cy '   "$PROBE"
@@ -229,18 +356,36 @@ assert_contains "  and still finds text otherwise"          'text=Ann|Cy '      
 section 'the item form'
 assert_contains "a number box, with the unit beside it"     'numIn=number:1250.5 unit=kr ' "$PROBE"
 assert_contains "Yes/No is a checkbox"                      'box=checkbox:true '    "$PROBE"
-assert_contains "the comments are listed"                   'log=2 '                "$PROBE"
-assert_contains "  ✕ only on Eve's own"                     'xs=1 '                 "$PROBE"
-assert_contains "  as text"                                 'logText=text '         "$PROBE"
+assert_contains "the edit form has no comments"             'formComments=none '    "$PROBE"
 assert_contains "the values are saved as a number and a boolean" 'saved=99,false '  "$PROBE"
-assert_contains "the new comment came back stamped"         'stamped=yes count=3 '  "$PROBE"
-assert_contains "  and the table shows it"                  'tableLatest=Hello_from_the_form ' "$PROBE"
-assert_contains "saving again does not post it twice"       'again=3 '              "$PROBE"
+assert_contains "  and saving it keeps the item's comments"  'keptComments=2 '       "$PROBE"
 assert_contains "an emptied number is no value"             'badNumber=null'        "$PROBE"
 
+section 'Cancel, and comments from the item view'
+assert_contains "Cancel closes the form without saving"     'cancel=closed,Ann '    "$PROBE"
+assert_contains "the view lists the comments, ✕ on Eve's own" 'viewLog=2 viewXs=1 ' "$PROBE"
+assert_contains "  in a column to the right of the fields"  'viewAside=right '      "$PROBE"
+assert_contains "the details box is 80% of the window's height" 'viewHeight=80 '    "$PROBE"
+assert_contains "  as text"                                 'viewAsText=yes '       "$PROBE"
+assert_contains "  with a box to add one"                   'viewBox=yes '          "$PROBE"
+assert_contains "  an empty one is not added"               'viewEmpty=2 '          "$PROBE"
+assert_contains "adding one saves it at once, the view stays open" 'viewAdded=3,open,cleared ' "$PROBE"
+assert_contains "  stamped by the server"                   'viewStamped=yes '      "$PROBE"
+assert_contains "  and the table's count follows"           'viewTable=3 '          "$PROBE"
+assert_contains "removing her own, after confirming"        'viewRemoved=2,false '  "$PROBE"
+assert_contains "a reader sees them but cannot add or remove" 'readerView=2,nobox,0' "$PROBE"
+
 section 'List properties'
-assert_contains "offers the three new types"                'types=number|boolean|comments ' "$PROBE"
+assert_contains "offers Number and Yes/No — Comments is no field type" 'types=number|boolean ' "$PROBE"
+assert_contains "the list's comments switch, on by default" 'allowSwitch=on '       "$PROBE"
 assert_contains "a Number has decimals and a unit"          'numCfg=decimals,unit ' "$PROBE"
+assert_contains "the first field cannot move further up"   'topUp=col_2|col_3|col_4|col_5 ' "$PROBE"
+assert_contains "moving a field up, the focus stays on it" 'moved=col_2|col_4|col_3|col_5,focus ' "$PROBE"
+assert_contains "Save writes the order, ItemId first"       'saved=col_1|col_2|col_4|col_3|col_5 ' "$PROBE"
+assert_contains "  All items follows it"                   'heads=ItemId|Name|Paid|Price|Notes| ' "$PROBE"
+assert_contains "  and so does the item form"              'formOrder=Name_*|Paid|Price|Notes ' "$PROBE"
+assert_contains "comments off: saved, no column, nothing deleted, none in the view" 'off=false,nocol,2,noaside ' "$PROBE"
+assert_contains "  on again: the key goes, the column is back" 'on=nokey,col ' "$PROBE"
 
 section '{{_edit}} on a generated page'
 assert_contains "the button is shown, labelled"             'btn=shown label=Edit_this_item ' "$PROBE"
@@ -250,6 +395,22 @@ assert_contains "after Save the page shows the new value"   'after=PRICE=777.00'
 assert_contains "  without leaving the page"                'stillHere=Out/Ann.md@Pages ' "$PROBE"
 assert_contains "the list in the other Space has it"        'listNow=777'           "$PROBE"
 assert_contains "a reader gets no button"                   'reader=hidden'         "$PROBE"
+
+section '{{_comment_form}} on a generated page'
+assert_contains "a box and Add comment"                     'cform=Add_comment '    "$PROBE"
+assert_contains "  nothing is added without text"           'cformEmpty=nothing '   "$PROBE"
+assert_contains "a comment added there shows on the page"   'cformShown=yes '       "$PROBE"
+assert_contains "  stored on the item, stamped by the server" 'cformStored=stamped ' "$PROBE"
+assert_contains "a reader gets no form"                     'readerForm=empty'      "$PROBE"
+
+section '{{_add.cards}} on a generated page'
+assert_contains "a + button, labelled"                      'addBtn=+,Add_an_entry ' "$PROBE"
+assert_contains "  the page lists the one card"             'addBefore=CARDS=1111; ' "$PROBE"
+assert_contains "it opens the item's own form"              'addForm=Ann '          "$PROBE"
+assert_contains "  with a new card added to the group"      'addEntries=2 '         "$PROBE"
+assert_contains "  open and focused"                        'addOpen=yes addFocus=yes ' "$PROBE"
+assert_contains "after Save the page shows the new card"    'addAfter=CARDS=1111;9999; ' "$PROBE"
+assert_contains "  stored with the next entry number"       'addStored={"id":2,"sf_k":"Credit","sf_n":"9999"},3' "$PROBE"
 
 printf '\n'
 exit $(( ASSERT_FAIL > 0 ))

@@ -16,8 +16,10 @@
 //   keeps a lookup from reading another Space's list: a page id from elsewhere is simply
 //   not found there, and the cell falls back to the bare ids.
 // - A `number` reads with its decimals ("12.50") — no unit and no thousands separator, so
-//   a spreadsheet takes it as a number; a `boolean` reads "Yes" / "No"; `comments` reads
-//   "Name (2026-11-19 14:05): text", joined with "; " (XML writes each as an element).
+//   a spreadsheet takes it as a number; a `boolean` reads "Yes" / "No".
+// - **Comments** are not a field: every item may carry `_comments` (a list's `comments: false`
+//   turns them off), read as "Name (2026-11-19 14:05): text" joined with "; " — a last
+//   "Comments" column in CSV, a <comments> element in XML.
 // =================================================================
 
 /**
@@ -101,7 +103,21 @@ function wiki_list_number_text(array $col, $v): string {
     return number_format((float)$v, $d, '.', '');
 }
 
-/** A Comments field's well-formed entries, oldest first. */
+/** An item's comments are kept under this key — beside its fields, never one of them. */
+const WIKI_LIST_COMMENTS = '_comments';
+
+/** Does this list take comments? On unless the list says `comments: false`. */
+function wiki_list_comments_on(array $list): bool {
+    return ($list['comments'] ?? true) !== false;
+}
+
+/** An item's comments as one line of text: "Name (2026-11-19 14:05): text; …". */
+function wiki_list_comments_text(array $item): string {
+    return implode('; ', array_map(fn($c) => trim((string)($c['name'] ?? '') . ' (' . wiki_list_comment_time($c['at'] ?? null) . ')')
+        . ': ' . $c['text'], wiki_list_comment_entries($item[WIKI_LIST_COMMENTS] ?? null)));
+}
+
+/** A list of comments' well-formed entries, oldest first. */
 function wiki_list_comment_entries($value): array {
     if (!is_array($value) || !array_is_list($value)) return [];
     return array_values(array_filter($value, fn($e) => is_array($e) && is_string($e['text'] ?? null)));
@@ -130,10 +146,6 @@ function wiki_list_cell(array $col, array $item, array $columns, array $targets)
     $type = $col['type'] ?? '';
     if ($type === 'number')  return wiki_list_number_text($col, $item[$col['id'] ?? ''] ?? null);
     if ($type === 'boolean') return ($item[$col['id'] ?? ''] ?? null) === true ? 'Yes' : 'No';
-    if ($type === 'comments') {
-        return implode('; ', array_map(fn($c) => trim((string)($c['name'] ?? '') . ' (' . wiki_list_comment_time($c['at'] ?? null) . ')')
-            . ': ' . $c['text'], wiki_list_comment_entries($item[$col['id'] ?? ''] ?? null)));
-    }
     if ($type === 'object') {
         return implode('; ', array_map(fn($e) => wiki_list_group_summary($col, $e),
                                        wiki_list_group_entries($col, $item[$col['id'] ?? ''] ?? null)));
@@ -211,16 +223,6 @@ function wiki_list_xml(array $raw, array $flat): string {
         $xml_item = $xml->addChild('item');
         foreach ($columns as $col) {
             $tag = wiki_list_xml_tag((string)($col['name'] ?? ''));
-            if (($col['type'] ?? '') === 'comments') {
-                $log = $xml_item->addChild($tag);
-                foreach (wiki_list_comment_entries($raw_items[$i][$col['id']] ?? null) as $c) {
-                    $node = $log->addChild('comment', htmlspecialchars($c['text']));
-                    $node->addAttribute('id', (string)($c['id'] ?? ''));
-                    $node->addAttribute('by', (string)($c['name'] ?? ''));
-                    $node->addAttribute('at', (string)($c['at'] ?? ''));
-                }
-                continue;
-            }
             if (($col['type'] ?? '') !== 'object') {
                 $xml_item->addChild($tag, htmlspecialchars((string)($item[$col['id']] ?? '')));
                 continue;
@@ -239,6 +241,17 @@ function wiki_list_xml(array $raw, array $flat): string {
                 }
             }
         }
+        // The item's comments, after its fields: <comments><comment id by at>text</comment>…
+        $log = wiki_list_comment_entries($raw_items[$i][WIKI_LIST_COMMENTS] ?? null);
+        if ($log) {
+            $node = $xml_item->addChild('comments');
+            foreach ($log as $c) {
+                $one = $node->addChild('comment', htmlspecialchars($c['text']));
+                $one->addAttribute('id', (string)($c['id'] ?? ''));
+                $one->addAttribute('by', (string)($c['name'] ?? ''));
+                $one->addAttribute('at', (string)($c['at'] ?? ''));
+            }
+        }
     }
     return $xml->asXML();
 }
@@ -249,9 +262,9 @@ function wiki_list_xml(array $raw, array $flat): string {
 // reading a list — the table, the form, the exports, page generators — relies on. A save that
 // breaks it (a hand edit, another tool posting to `save`) is refused rather than "fixed":
 // fixing would mean dropping data without saying so. Only what groups, numbers, Yes/No and
-// comments add is checked: the file being a list at all, each group's definition, the values'
-// shapes, and the entry counter (shared by group entries and comments). Text, date and choice
-// fields are as lenient as they always were.
+// an item's comments add is checked: the file being a list at all, each group's definition,
+// the values' shapes, and the entry counter (shared by group entries and comments). Text, date
+// and choice fields are as lenient as they always were.
 
 const WIKI_LIST_GROUP_TYPES = ['text_single', 'text_multi', 'date', 'choice'];
 
@@ -287,14 +300,13 @@ function wiki_list_check(string $raw): ?array {
         }
         $groups[] = ['id' => (string)($col['id'] ?? ''), 'name' => $name, 'multiple' => !empty($col['multiple']), 'ids' => $ids];
     }
-    $typed = [];    // number / boolean / comments columns: [id, name, type]
+    $typed = [];    // number / boolean columns: [id, name, type]
     foreach ($list['columns'] as $col) {
         $type = is_array($col) ? ($col['type'] ?? '') : '';
-        if (in_array($type, ['number', 'boolean', 'comments'], true)) {
+        if (in_array($type, ['number', 'boolean'], true)) {
             $typed[] = [(string)($col['id'] ?? ''), (string)($col['name'] ?? ($col['id'] ?? '')), $type];
         }
     }
-    if (!$groups && !$typed) return null;
 
     $entry_ids = [];
     $values_ok = function (array $values, array $allowed, $item, string $name, bool $with_id) use ($no) {
@@ -314,16 +326,18 @@ function wiki_list_check(string $raw): ?array {
             // A number is a JSON number; '' (an emptied box from an older client) is no value.
             if ($type === 'number' && !is_int($value) && !is_float($value) && $value !== '') return $no('value_not_number', $item_ref, $cname);
             if ($type === 'boolean' && !is_bool($value)) return $no('value_not_boolean', $item_ref, $cname);
-            if ($type === 'comments') {
-                if (!is_array($value) || !array_is_list($value)) return $no('comment_bad', $item_ref, $cname);
-                foreach ($value as $c) {
-                    if (!is_array($c) || !is_int($c['id'] ?? null) || $c['id'] < 1 || !is_string($c['text'] ?? null)
-                        || !is_int($c['by'] ?? null) || !is_string($c['name'] ?? null) || !is_string($c['at'] ?? null)) {
-                        return $no('comment_bad', $item_ref, $cname);
-                    }
-                    if (isset($entry_ids[$c['id']])) return $no('entry_id_taken', $item_ref, $cname, (string)$c['id']);
-                    $entry_ids[$c['id']] = true;
+        }
+        // The item's comments: every one stamped (wiki_list_comments_stamp() ran first).
+        $log = $item[WIKI_LIST_COMMENTS] ?? null;
+        if ($log !== null) {
+            if (!is_array($log) || !array_is_list($log)) return $no('comment_bad', $item_ref, null);
+            foreach ($log as $c) {
+                if (!is_array($c) || !is_int($c['id'] ?? null) || $c['id'] < 1 || !is_string($c['text'] ?? null)
+                    || !is_int($c['by'] ?? null) || !is_string($c['name'] ?? null) || !is_string($c['at'] ?? null)) {
+                    return $no('comment_bad', $item_ref, null);
                 }
+                if (isset($entry_ids[$c['id']])) return $no('entry_id_taken', $item_ref, null, (string)$c['id']);
+                $entry_ids[$c['id']] = true;
             }
         }
         foreach ($groups as $g) {
@@ -374,22 +388,25 @@ function wiki_list_check_message(array $why): string {
         'comment_changed'  => 'an existing comment cannot be changed — remove it and add a new one.',
         'comment_remove_denied' => 'only its author or an administrator may remove a comment by ' . $why['detail'] . '.',
         'comment_empty'    => 'a new comment needs some text.',
+        'comments_off'     => 'this list does not take comments.',
     ][$why['code']] ?? $why['code'];
     return 'The list was not saved: ' . $where . $what;
 }
 
 // ── Comments: stamped by the server ──────────────────────────────────────────────────────
 //
-// A Comments field is a log — who said what, when. The browser saves a list as a whole file,
+// An item's comments (`_comments`) are a log — who said what, when, on that item; not a field,
+// as SharePoint has them. A list without them says `comments: false`. The browser saves a list as a whole file,
 // so if it wrote the stamps a comment could be posted in anybody's name, or an old one quietly
 // reworded. It therefore sends a new comment as { "text": … } alone, and this stamps it: an id
 // from the list's `nextEntryId` (shared with group entries, list-wide, never reused), `by` (the
 // uid), `name` and `at` (UTC, ISO 8601). Against the file as it is on disk:
-//   - an entry carrying an id must be exactly the one stored under that id, in the same item
-//     and field — not reworded, re-dated or re-attributed (comment_changed);
+//   - an entry carrying an id must be exactly the one stored under that id, on the same item
+//     — not reworded, re-dated or re-attributed (comment_changed);
 //   - an entry no longer there was removed: allowed for its author, or an administrator
-//     (comment_remove_denied otherwise). Deleting the whole item or field is not checked —
-//     that is an editor's right over the item, not over one comment.
+//     (comment_remove_denied otherwise). Deleting the whole item is not checked — that is an
+//     editor's right over the item, not over one comment;
+//   - a list that has turned comments off takes no new one (comments_off); removing still works.
 // Called by the `save` action before wiki_list_check(), under the save's lock.
 
 const WIKI_LIST_COMMENT_MAX = 10000;
@@ -404,11 +421,8 @@ function wiki_list_comments_stamp(string $new_raw, ?string $old_raw, array $acto
     $keep = ['content' => $new_raw, 'stamped' => false];
     $new = json_decode($new_raw, true);
     if (!is_array($new) || !is_array($new['columns'] ?? null) || !is_array($new['items'] ?? null)) return $keep;
-    $fields = [];
-    foreach ($new['columns'] as $col) {
-        if (is_array($col) && ($col['type'] ?? '') === 'comments' && is_string($col['id'] ?? null)) $fields[$col['id']] = (string)($col['name'] ?? $col['id']);
-    }
-    if (!$fields) return $keep;
+    $fields = [WIKI_LIST_COMMENTS => null];     // one log per item, reported without a field name
+    $on = wiki_list_comments_on($new);
     $no = fn(string $code, $item, $field, string $detail = '') =>
         ['error' => ['code' => $code, 'item' => $item, 'field' => $field, 'detail' => $detail]];
 
@@ -462,6 +476,7 @@ function wiki_list_comments_stamp(string $new_raw, ?string $old_raw, array $acto
                     continue;
                 }
                 // A new comment: text only, stamped here.
+                if (!$on) return $no('comments_off', $ref, $fname);
                 $text = is_string($c['text'] ?? null) ? trim($c['text']) : '';
                 if ($text === '' || array_diff(array_keys($c), ['text'])) return $no($text === '' ? 'comment_empty' : 'comment_bad', $ref, $fname);
                 if (function_exists('mb_substr')) $text = mb_substr($text, 0, WIKI_LIST_COMMENT_MAX);

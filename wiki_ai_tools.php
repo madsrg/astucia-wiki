@@ -67,7 +67,7 @@ function wiki_tool_definitions(bool $with_memory = true, bool $with_skills = fal
         ],
         [
             'name'        => 'wiki_read_page',
-            'description' => 'Read the full content of a wiki page by its relative path. Not only Markdown: ".md" returns the markdown source, ".json" returns the raw JSON document — use this to read stored data such as sales figures before summarising or charting it — ".list" returns the structured list file (its "columns" are the fields of the list; a field of type "lookup" stores an array of item ids from the list whose page id is in its "lookup.list" — read that list to see what they are — and a "lookup_field" column is a read-only copy of another field of those items; a "number" holds a JSON number, a "boolean" (Yes/No) true or false, and "comments" a log of {id, by (user id), name, at (UTC time), text} entries, oldest first), and ".chat" returns the thread as JSON. Anything else is refused.',
+            'description' => 'Read the full content of a wiki page by its relative path. Not only Markdown: ".md" returns the markdown source, ".json" returns the raw JSON document — use this to read stored data such as sales figures before summarising or charting it — ".list" returns the structured list file (its "columns" are the fields of the list; a field of type "lookup" stores an array of item ids from the list whose page id is in its "lookup.list" — read that list to see what they are — and a "lookup_field" column is a read-only copy of another field of those items; a "number" holds a JSON number, a "boolean" (Yes/No) true or false; "_comments" on an item is the comment log of that item — {id, by (user id), name, at (UTC time), text} entries, oldest first — not a field; wiki_update_list_item changes one item\'s fields or adds a comment to it), and ".chat" returns the thread as JSON. Anything else is refused.',
             'params'      => [
                 'type'       => 'object',
                 'properties' => ['path' => ['type' => 'string', 'description' => 'Relative path to the page, e.g. Notes/Meeting.md']],
@@ -96,6 +96,20 @@ function wiki_tool_definitions(bool $with_memory = true, bool $with_skills = fal
                     'content' => ['type' => 'string', 'description' => 'REQUIRED: the complete JSON document as a string. Must be valid JSON (object or array) and must not be empty.'],
                 ],
                 'required'   => ['path', 'content'],
+            ],
+        ],
+        [
+            'name'        => 'wiki_update_list_item',
+            'description' => 'Change one existing item of a .list in the current space: set some of its fields, and/or add a comment to it. Read the list with wiki_read_page first to see its fields and items. Name fields as the list does ("Status", "Account manager") or by column id. Values by field type: text, date ("YYYY-MM-DD") and choice (one of the field\'s options) are strings; a number is a number; Yes/No is true or false; a lookup is an item id, or an array of ids, from the list it looks up. null or "" clears a field (not the Title). ItemId, "also show" fields (lookup_field) and groups of fields cannot be set here. A comment is saved with your name and the time. Any pages generated from this list are re-rendered with the change. Only available when the AI user has editor role.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => [
+                    'path'    => ['type' => 'string', 'description' => 'Relative path of the list, ending in .list'],
+                    'item_id' => ['type' => 'integer', 'description' => 'The item\'s "id" in the list file'],
+                    'fields'  => ['type' => 'object', 'description' => 'Field name (or column id) => new value. Fields left out are not changed.'],
+                    'comment' => ['type' => 'string', 'description' => 'A comment to add to the item.'],
+                ],
+                'required'   => ['path', 'item_id'],
             ],
         ],
         [
@@ -477,7 +491,7 @@ function parse_search_query(string $raw): array {
 // an install with SEARCH_ENGINE=sqlite and invisible on one without it.
 const WIKI_AI_SEARCH_EXTS = ['md', 'json'];
 
-const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_add_tags', 'wiki_set_tags', 'wiki_mention_users', 'wiki_post_chat', 'wiki_rename_page', 'wiki_remember', 'wiki_forget'];
+const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_update_list_item', 'wiki_add_tags', 'wiki_set_tags', 'wiki_mention_users', 'wiki_post_chat', 'wiki_rename_page', 'wiki_remember', 'wiki_forget'];
 
 // Longer than a person's 2000-character chat limit: a review of a page is the point of
 // wiki_post_chat, and that is often longer than a chat line. Still a ceiling, since every
@@ -491,6 +505,7 @@ const WIKI_AI_CHAT_MAX_CHARS = 20000;
 const WIKI_AI_AUDIT_TOOLS = [
     'wiki_write_page'    => ['page',       'path'],
     'wiki_write_json'    => ['page',       'path'],
+    'wiki_update_list_item' => ['page',    'path'],
     'wiki_add_tags'      => ['tags',       'path'],
     'wiki_set_tags'      => ['tags',       'path'],
     'wiki_rename_page'   => ['page',       'path'],
@@ -817,6 +832,9 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
                             ($is_new ? 'Create ' : 'Update ') . basename($rel), $space_dir);
             if ($is_new) return "Page created: {$rel}";
             return "Page updated: {$rel}";
+
+        case 'wiki_update_list_item':
+            return wiki_ai_update_list_item($tool_input, $ai_user, $indexer, $space_dir);
 
         case 'wiki_write_json':
             if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot write pages.';
@@ -1201,3 +1219,135 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
             return 'Error: unknown tool.';
     }
 }
+
+/**
+ * wiki_update_list_item: one item of a .list changed by an AI — some fields set, a comment
+ * added. The same rules a person's save goes through (api.php `save`): under the file's own
+ * lock, comments stamped by wiki_list_comments_stamp() (as the AI user, never an admin's
+ * rights), the result refused unless wiki_list_check() passes, and `updateModified` — which
+ * is what re-renders the pages generated from the list and fires workflows. Values are
+ * converted by the field's type here, since a model sends "12" for a number and "yes" for a
+ * boolean, and a list stores what its form would. Groups of fields (list-wide entry numbers),
+ * ItemId and "also show" columns are refused rather than half-handled: the form does those.
+ * Not committed to git, like a person's list save.
+ */
+function wiki_ai_update_list_item(array $input, $ai_user, $indexer, string $space_dir): string {
+    if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot change lists.';
+    $rel = ltrim(str_replace('..', '', (string)($input['path'] ?? '')), '/');
+    if ($rel === '' || strtolower(pathinfo($rel, PATHINFO_EXTENSION)) !== 'list') return 'Error: path must name a .list file.';
+    $abs = rtrim($space_dir, '/') . '/' . $rel;
+    if (!is_file($abs)) return "Error: there is no list \"{$rel}\" in this space.";
+    $item_id = $input['item_id'] ?? null;
+    if (!is_numeric($item_id) || (int)$item_id != $item_id) return 'Error: item_id must be the item\'s numeric "id".';
+    $item_id = (int)$item_id;
+    $fields  = $input['fields'] ?? [];
+    if (is_string($fields)) $fields = json_decode($fields, true) ?? [];
+    if (!is_array($fields)) return 'Error: fields must be an object of field name => value.';
+    $comment = trim((string)($input['comment'] ?? ''));
+    if (!$fields && $comment === '') return 'Error: give fields to change, a comment, or both.';
+
+    $lock = @fopen($abs, 'r');
+    if (!$lock) return 'Error: could not open the list.';
+    flock($lock, LOCK_EX);
+    $done = function (string $msg) use ($lock) { flock($lock, LOCK_UN); fclose($lock); return $msg; };
+    $old_raw = (string)file_get_contents($abs);
+    $list = json_decode($old_raw, true);
+    if (!is_array($list) || !is_array($list['columns'] ?? null)) return $done('Error: that file is not a readable list.');
+    $at = null;
+    foreach ($list['items'] ?? [] as $n => $it) if ((int)($it['id'] ?? -1) === $item_id) { $at = $n; break; }
+    if ($at === null) return $done("Error: the list has no item with id {$item_id}.");
+    $item  = $list['items'][$at];
+    $title = wiki_list_title_field($list);
+    $targets = null;
+    $changed = [];
+
+    foreach ($fields as $name => $value) {
+        $col = null;
+        foreach ($list['columns'] as $c) if (($c['id'] ?? null) === $name) { $col = $c; break; }
+        if (!$col) foreach ($list['columns'] as $c) if (mb_strtolower(trim((string)($c['name'] ?? ''))) === mb_strtolower(trim((string)$name))) { $col = $c; break; }
+        if (!$col) {
+            $names = implode(', ', array_map(fn($c) => '"' . ($c['name'] ?? $c['id']) . '"', $list['columns']));
+            return $done("Error: the list has no field \"{$name}\". Its fields are: {$names}. Nothing was changed.");
+        }
+        $cid = (string)$col['id'];
+        $cname = (string)($col['name'] ?? $cid);
+        $type = (string)($col['type'] ?? 'text_single');
+        $empty = $value === null || $value === '' || $value === [];
+        if (in_array($type, ['autoincrement', 'lookup_field', 'object'], true)) {
+            $why = ['autoincrement' => 'is numbered by the list', 'lookup_field' => 'is shown from the item its lookup points at — change that lookup, or that item',
+                    'object' => 'is a group of fields, which only the item form can change'][$type];
+            return $done("Error: \"{$cname}\" {$why}. Nothing was changed.");
+        }
+        if ($empty && $cid === $title) return $done("Error: \"{$cname}\" is the list's Title, which an item must have. Nothing was changed.");
+        if ($empty) { $new = null; }
+        elseif (in_array($type, ['text_single', 'text_multi'], true)) {
+            if (!is_scalar($value)) return $done("Error: \"{$cname}\" takes text. Nothing was changed.");
+            $new = (string)$value;
+            if ($type === 'text_single') $new = trim(preg_replace('/\s*\R\s*/u', ' ', $new) ?? $new);
+        } elseif ($type === 'date') {
+            $d = is_string($value) ? DateTime::createFromFormat('!Y-m-d', trim($value)) : false;
+            if (!$d || $d->format('Y-m-d') !== trim($value)) return $done("Error: \"{$cname}\" takes a date as YYYY-MM-DD. Nothing was changed.");
+            $new = trim($value);
+        } elseif ($type === 'choice') {
+            $opts = array_map('strval', $col['options'] ?? []);
+            $hit = null;
+            foreach ($opts as $o) if (mb_strtolower($o) === mb_strtolower(trim((string)$value))) { $hit = $o; break; }
+            if ($hit === null) return $done("Error: \"{$cname}\" is one of: " . implode(', ', array_map(fn($o) => "\"{$o}\"", $opts)) . '. Nothing was changed.');
+            $new = $hit;
+        } elseif ($type === 'number') {
+            if (is_string($value)) $value = str_replace([' ', ','], ['', '.'], trim($value));
+            if (!is_numeric($value)) return $done("Error: \"{$cname}\" takes a number. Nothing was changed.");
+            $new = round((float)$value, max(0, min(6, (int)($col['decimals'] ?? 0))));
+            if ((int)($col['decimals'] ?? 0) === 0) $new = (int)$new;
+        } elseif ($type === 'boolean') {
+            $b = is_bool($value) ? $value : (is_string($value) || is_int($value)
+                ? (in_array(mb_strtolower(trim((string)$value)), ['1', 'true', 'yes', 'ja', 'y'], true) ? true
+                  : (in_array(mb_strtolower(trim((string)$value)), ['0', 'false', 'no', 'nej', 'n'], true) ? false : null)) : null);
+            if ($b === null) return $done("Error: \"{$cname}\" is Yes/No: give true or false. Nothing was changed.");
+            $new = $b;
+        } elseif ($type === 'lookup') {
+            $ids = is_array($value) ? $value : [$value];
+            $clean = [];
+            foreach ($ids as $v) {
+                if (!is_numeric($v) || (int)$v != $v) return $done("Error: \"{$cname}\" takes item ids (numbers) from the list it looks up. Nothing was changed.");
+                $clean[] = (int)$v;
+            }
+            $clean = array_values(array_unique($clean));
+            if (empty($col['lookup']['multiple']) && count($clean) > 1) return $done("Error: \"{$cname}\" takes one item. Nothing was changed.");
+            $targets ??= wiki_list_lookup_targets($list, $space_dir);
+            $target = $targets[(string)($col['lookup']['list'] ?? '')] ?? null;
+            if ($target === null) return $done("Error: the list \"{$cname}\" looks up cannot be read. Nothing was changed.");
+            foreach ($clean as $i) {
+                if (!_wiki_list_find_item($target, $i)) return $done("Error: the list \"{$cname}\" looks up has no item {$i}. Nothing was changed.");
+            }
+            $new = $clean;
+        } else {
+            return $done("Error: \"{$cname}\" cannot be set here. Nothing was changed.");
+        }
+        if (($item[$cid] ?? null) === $new) continue;
+        if ($new === null) unset($item[$cid]); else $item[$cid] = $new;
+        $changed[] = $cname;
+    }
+    if ($comment !== '') {
+        if (!wiki_list_comments_on($list)) return $done('Error: this list has comments turned off. Nothing was changed.');
+        $item[WIKI_LIST_COMMENTS] = array_merge(is_array($item[WIKI_LIST_COMMENTS] ?? null) ? $item[WIKI_LIST_COMMENTS] : [], [['text' => $comment]]);
+    }
+    if (!$changed && $comment === '') return $done("Nothing to change: item {$item_id} already has those values.");
+    $list['items'][$at] = $item;
+    $raw = json_encode($list, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    // Who and when, by the server — the same stamp a person's save gets, never an admin's rights.
+    $st = wiki_list_comments_stamp($raw, $old_raw, ['uid' => (int)($ai_user['uid'] ?? 0), 'name' => (string)($ai_user['name'] ?? 'AI')], false);
+    if (isset($st['error'])) return $done('Error: ' . wiki_list_check_message($st['error']) . ' Nothing was changed.');
+    $raw = $st['content'];
+    if (($bad = wiki_list_check($raw)) !== null) return $done('Error: ' . wiki_list_check_message($bad) . ' Nothing was changed.');
+    if (file_put_contents($abs, $raw) === false) return $done('Error: could not write the list.');
+    clearstatcache(true, $abs);
+    flock($lock, LOCK_UN);
+    fclose($lock);
+    $indexer->updateModified($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
+    $what = [];
+    if ($changed) $what[] = 'set ' . implode(', ', array_map(fn($n) => "\"{$n}\"", $changed));
+    if ($comment !== '') $what[] = 'added a comment';
+    return "Item {$item_id} of {$rel} updated: " . implode(' and ', $what) . '. Pages generated from this list are re-rendered with the change.';
+}
+

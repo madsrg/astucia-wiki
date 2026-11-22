@@ -28,6 +28,7 @@ import { showToast, confirmModal } from '../core/utils.js';
 import { t } from '../i18n/index.js';
 import { scopeStyles } from '../core/scoped_css.js';
 import { initEditButtons } from './edit_item.js';
+import { openTemplateHelp, templateFields } from './help.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -124,6 +125,9 @@ const templateBanner = (g) => {
     const buttons = [];
     if (src?.readable) buttons.push(`<button type="button" class="btn btn-secondary btn-sm" data-gen="preview">${esc(t('generators.preview'))}</button>`);
     if (canEdit()) buttons.push(`<button type="button" class="btn btn-blue btn-sm" data-gen="render">${esc(t('generators.render-now'))}</button>`);
+    if (canEdit()) buttons.push(`<button type="button" class="btn btn-secondary btn-sm" data-gen="settings">${esc(t('generators.settings'))}</button>`);
+    // What the template may say ({{_title}}, sections, repeats …) — help.js.
+    buttons.push(`<button type="button" class="btn btn-secondary btn-sm gen-help-btn" data-gen="help" title="${esc(t('generators.help-title'))}" aria-label="${esc(t('generators.help-title'))}">?</button>`);
     return `${lines.join('')}<div class="generator-actions">${buttons.join('')}</div>`;
 };
 
@@ -144,7 +148,31 @@ const pageBanner = (g) => {
     return `<div>${t('generators.banner-detached', { template: templateLink(g) })}</div>`;
 };
 
+/**
+ * While a template is edited its banner is hidden (it describes the saved page), so the help
+ * is offered in the editor toolbar instead — a button of ours, there only for a template.
+ */
+const syncToolbarHelp = () => {
+    const toolbar = document.getElementById('editor-toolbar');
+    if (!toolbar) return;
+    let btn = document.getElementById('gen-template-help-btn');
+    if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'gen-template-help-btn';
+        btn.type = 'button';
+        btn.className = 'btn btn-sm btn-secondary gen-toolbar-help hidden';
+        btn.textContent = '{{ }} ?';
+        btn.addEventListener('mousedown', e => e.preventDefault());
+        btn.addEventListener('click', (e) => { e.preventDefault(); openTemplateHelp(dialog); });
+        toolbar.appendChild(btn);
+    }
+    btn.title = t('generators.help-title');
+    btn.setAttribute('aria-label', t('generators.help-title'));
+    btn.classList.toggle('hidden', !(state.isEditing && state.currentPageType === 'md' && state.currentPageGenerator));
+};
+
 export const renderBanner = () => {
+    syncToolbarHelp();
     if (!banner) return;
     const md = state.currentPageType === 'md' && !state.isEditing;
     const gen = md ? state.currentPageGenerated : null;
@@ -154,6 +182,10 @@ export const renderBanner = () => {
         banner.classList.add('hidden');
         banner.innerHTML = '';
         badge?.classList.add('hidden');
+        // Another page is open: forget that the header was unfolded, or coming back to a
+        // generated page (a link, a tab) would show it open. Not while editing, which hides
+        // the banner without leaving the page.
+        if (!state.isEditing) openFor = null;
         return;
     }
     // A page newly opened: a template's header open, any other's folded away.
@@ -261,6 +293,112 @@ const preview = async () => {
 
 // ── New → Generated pages… ───────────────────────────────────────────────────
 
+// Folders a generator may write into: the open Space's, from the tree data the sidebar
+// already holds — not a files library (it takes files, not pages), nothing dot-named, and not
+// the top-level folders page_generators.php reserves (WIKI_GEN_RESERVED_DIRS).
+const GEN_RESERVED = ['skills', 'memory', 'templates'];
+const pickableFolders = () => {
+    const out = [];
+    const walk = (items, depth) => (items || [])
+        .filter(i => i.type === 'folder' && !i.name.startsWith('.'))
+        .filter(i => depth > 0 || !GEN_RESERVED.includes(i.name.toLowerCase()))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }))
+        .forEach(i => { out.push({ path: i.path, name: i.name, depth }); walk(i.children, depth + 1); });
+    walk(state.fullFileTree, 0);
+    return out;
+};
+
+/**
+ * The Space's folders under "Pages go in folder", always shown: the Space root first, the rest
+ * indented by depth. Clicking one fills the box; the folder the box names is highlighted, as it
+ * is typed too. A name that is not a folder yet still works — the generator creates it.
+ */
+const folderPicker = (overlay, input, onPick) => {
+    const box = overlay.querySelector('[data-gen-folder-tree]');
+    const mark = () => {
+        const want = input.value.trim().replace(/^\/+|\/+$/g, '');
+        box.querySelectorAll('.gen-folder-row').forEach(r => {
+            const on = r.dataset.path === want;
+            r.classList.toggle('is-current', on);
+            r.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        box.querySelector('.is-current')?.scrollIntoView({ block: 'nearest' });
+    };
+    const row = (path, label, depth) => {
+        const r = document.createElement('button');
+        r.type = 'button';
+        r.className = 'gen-folder-row';
+        r.dataset.path = path;
+        r.style.paddingLeft = `${0.5 + depth * 1.1}rem`;
+        r.setAttribute('role', 'option');
+        r.innerHTML = `${icons.folder}<span></span>`;
+        r.querySelector('span').textContent = label;
+        r.addEventListener('click', () => {
+            input.value = path;
+            onPick();
+            mark();
+        });
+        return r;
+    };
+    box.appendChild(row('', t('fileops.root'), 0));
+    pickableFolders().forEach(f => box.appendChild(row(f.path, f.name, f.depth + 1)));
+    input.addEventListener('input', mark);
+    mark();
+    return mark;
+};
+
+/**
+ * Settings… on a template: where its pages go and what they are called — the two
+ * generator keys a person most often wants to change, without editing front matter (which a
+ * Space may not even allow by hand). Saved by `generator_settings`; the render that follows
+ * moves or renames the pages, which keep their ids. The list and the output format are not
+ * here: changing either is rewriting the template, not adjusting it.
+ */
+const settingsDialog = async () => {
+    const g = state.currentPageGenerator;
+    if (!g) return;
+    const mine = await templateFields();
+    // The same choices as the New dialog: any field but the Title, which is the default.
+    const fields = (mine?.fields || []).filter(f => !f.title);
+    const current = String(state.currentPageFrontmatter?.generator_filename ?? '').trim();
+    const options = [['', t('generators.new-name-title')], ...fields.map(f => [`{{${f.key}}}`, f.name])];
+    // A name the dialog cannot express (several fields, words around them) is kept as it is.
+    if (current && current !== '{{_title}}' && !options.some(([v]) => v === current)) {
+        options.push([current, t('generators.settings-name-custom', { x: current })]);
+    }
+    const { overlay, close } = dialog(t('generators.settings-title'), `
+        <div class="form-group"><label class="form-label">${esc(t('generators.new-folder'))}</label>
+            <input type="text" class="form-control" data-gen-folder>
+            <div class="gen-folder-tree" data-gen-folder-tree role="listbox"></div></div>
+        <div class="form-group"><label class="form-label">${esc(t('generators.new-name-from'))}</label>
+            <select class="form-control" data-gen-name>${options.map(([v, l]) =>
+                `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select></div>
+        <p class="generator-hint">${esc(t('generators.settings-hint'))}</p>`, { okLabel: t('btn.save') });
+    const folderEl = overlay.querySelector('[data-gen-folder]');
+    const nameEl = overlay.querySelector('[data-gen-name]');
+    folderEl.value = g.folder || '';
+    nameEl.value = current === '{{_title}}' ? '' : current;
+    folderPicker(overlay, folderEl, () => {});
+    overlay.querySelector('[data-gen-ok]').addEventListener('click', async () => {
+        const r = await api.call('generator_settings',
+            { path: state.currentPagePath, folder: folderEl.value.trim(), filename: nameEl.value }, 'POST');
+        if (!r.success) {
+            showToast(r.error === 'bad_folder' ? t('generators.error.bad_folder', { detail: r.detail || '' })
+                : (r.message || t('generators.error.other', { detail: '' })), 'error');
+            return;
+        }
+        close();
+        if (r.unchanged) return;
+        showToast(t('generators.settings-saved'), 'success');
+        // The template changed on disk under us: re-read it (no "changed on disk" reload), then
+        // follow the render that moves the pages.
+        const { refreshPageContent } = await import('../page_view/index.js');
+        await refreshPageContent();
+        followPending();
+    });
+    folderEl.focus();
+};
+
 const createDialog = async () => {
     const res = await api.call('generator_sources');
     const lists = res.success ? res.data : [];
@@ -273,7 +411,8 @@ const createDialog = async () => {
         <div class="form-group"><label class="form-label">${esc(t('generators.new-template'))}</label>
             <input type="text" class="form-control" data-gen-path></div>
         <div class="form-group"><label class="form-label">${esc(t('generators.new-folder'))}</label>
-            <input type="text" class="form-control" data-gen-folder></div>
+            <input type="text" class="form-control" data-gen-folder>
+            <div class="gen-folder-tree" data-gen-folder-tree role="listbox"></div></div>
         <div class="form-group"><label class="form-label">${esc(t('generators.new-name-from'))}</label>
             <select class="form-control" data-gen-name></select></div>
         <div class="form-group"><label class="form-label">${esc(t('generators.new-output'))}</label>
@@ -295,8 +434,9 @@ const createDialog = async () => {
         nameEl.innerHTML = `<option value="">${esc(t('generators.new-name-title'))}</option>`
             + l.fields.filter(f => !f.title).map(f => `<option value="${esc(f.key)}">${esc(f.name)}</option>`).join('');
     };
-    src.addEventListener('change', fill);
     fill();
+    const markFolder = folderPicker(overlay, folderEl, () => typed.add(folderEl));
+    src.addEventListener('change', () => { fill(); markFolder(); });
     overlay.querySelector('[data-gen-ok]').addEventListener('click', async () => {
         const l = lists[Number(src.value)];
         const r = await api.call('generator_create', {
@@ -332,6 +472,8 @@ export const init = () => {
             if (action === 'render') renderNow();
             else if (action === 'detach') detach();
             else if (action === 'preview') preview();
+            else if (action === 'help') openTemplateHelp(dialog);
+            else if (action === 'settings') settingsDialog();
         });
     }
     // The icon in the page header that opens and closes it, beside the Metadata badge.

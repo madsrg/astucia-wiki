@@ -82,7 +82,13 @@ switch ($format) {
         $output = fopen('php://output', 'w');
         
         // Headers
+        // The items' comments as a last column, when any item has some (lists.php).
+        $raw_by_id = [];
+        foreach (($list_raw['items'] ?? []) as $raw_item) if (isset($raw_item['id'])) $raw_by_id[(string)$raw_item['id']] = $raw_item;
+        $with_comments = false;
+        foreach ($raw_by_id as $raw_item) if (wiki_list_comment_entries($raw_item[WIKI_LIST_COMMENTS] ?? null)) { $with_comments = true; break; }
         $headers = array_map(function($col) { return $col['name']; }, $columns);
+        if ($with_comments) $headers[] = 'Comments';
         fputcsv($output, $headers);
         
         // Rows
@@ -91,6 +97,7 @@ switch ($format) {
             foreach ($columns as $col) {
                 $row[] = $item[$col['id']] ?? '';
             }
+            if ($with_comments) $row[] = wiki_list_comments_text($raw_by_id[(string)($item['id'] ?? '')] ?? []);
             fputcsv($output, $row);
         }
         fclose($output);

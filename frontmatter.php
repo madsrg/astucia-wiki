@@ -105,9 +105,10 @@ function wiki_fm_body(string $raw): string {
 function wiki_fm_search_text(string $raw): string {
     $split = wiki_fm_split($raw);
     $format = $split['meta']['format'] ?? null;
-    // A generated page's {{_edit}} button (page_generators.php) is markup, not text.
+    // A generated page's {{_edit}} / {{_add.…}} buttons and {{_comment_form}} (page_generators.php)
+    // are markup, not text.
     if (!is_string($format) || strtolower(trim($format)) !== 'html') {
-        return preg_replace('#<button type="button" class="wk-edit"[^>]*></button>#', '', $split['body']) ?? $split['body'];
+        return preg_replace('#<button type="button" class="wk-edit[^"]*"[^>]*></button>|<div class="wk-comment-form"[^>]*></div>#', '', $split['body']) ?? $split['body'];
     }
     return wiki_html_search_text($split['body']);
 }

@@ -4,7 +4,14 @@
 /**
  * `{{_edit}}` in a page generator's template: a button on the generated page that opens the
  * row's item in the list's own add/edit form, over the page — and once it is saved, the
- * page re-rendered by the generator replaces the one on screen.
+ * page re-rendered by the generator (before the save replies) replaces the one on screen. `{{_add.cards}}` is the same
+ * button for one group allowing several (`data-group`): the same form, with a new entry of
+ * that group already added and open — one form everywhere, the button only saves a click.
+ * `{{_edit}}` inside a lookup's item (`wk-linked`, a link icon) is the same button for the
+ * *linked* item: its own list, opened in that list's form; to someone who may not edit that
+ * list it stays as a disabled icon, so linked data is still marked as such.
+ * `{{_comment_form}}` is an empty <div class="wk-comment-form"> filled in here with a box and
+ * Add comment, which adds a comment to the row's item and shows the re-rendered page.
  *
  * The server writes `<button class="wk-edit" data-space data-list data-item>` with no label
  * (page_generators.php, WikiTplMarkup); everything a person sees is added here, in their
@@ -39,21 +46,41 @@ const mayEdit = async (space) => {
 };
 
 const wire = async (root) => {
+    const forms = [...root.querySelectorAll('.wk-comment-form:not([data-ready])')];
+    forms.forEach(f => { f.dataset.ready = '1'; });
+    for (const f of forms) {
+        if (f.dataset.list && f.dataset.item && await mayEdit(f.dataset.space || '')) fillCommentForm(f);
+    }
     const buttons = [...root.querySelectorAll('.wk-edit:not([data-ready])')];
     if (!buttons.length) return;
     buttons.forEach(b => { b.dataset.ready = '1'; });
     for (const b of buttons) {
-        if (!b.dataset.list || !b.dataset.item || !(await mayEdit(b.dataset.space || ''))) continue;
-        b.innerHTML = icons.pencil;
-        b.title = t('generators.edit-item');
-        b.setAttribute('aria-label', t('generators.edit-item'));
+        if (!b.dataset.list || !b.dataset.item) continue;
+        const linked = b.classList.contains('wk-linked');
+        if (!(await mayEdit(b.dataset.space || ''))) {
+            // A linked item's icon still says "this is linked data" to someone who cannot
+            // edit it — as a mark, not a button.
+            if (linked) {
+                b.innerHTML = icons.link;
+                b.title = t('generators.linked-item');
+                b.setAttribute('aria-label', b.title);
+                b.disabled = true;
+                b.classList.add('is-ready', 'is-static');
+            }
+            continue;
+        }
+        const adding = !!b.dataset.group;
+        b.innerHTML = adding ? '+' : linked ? icons.link : icons.pencil;
+        b.title = t(adding ? 'generators.add-entry' : linked ? 'generators.edit-linked' : 'generators.edit-item');
+        b.setAttribute('aria-label', b.title);
         b.classList.add('is-ready');
     }
 };
 
 /** Save a list that is not the open page, against the rev it was read at. */
 const saveList = async (space, path, rev, data) => {
-    const qs = new URLSearchParams({ action: 'save', file: path, space, base: rev });
+    // `render`: the server renders this list's generators before it replies (api.php save).
+    const qs = new URLSearchParams({ action: 'save', file: path, space, base: rev, render: '1' });
     let res, body;
     try {
         res = await fetch(`api.php?${qs}`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -75,13 +102,14 @@ const saveList = async (space, path, rev, data) => {
 };
 
 /**
- * After the list is saved the generator re-renders its pages once the response has gone
- * (page_generators.php). Watch the open page for a new revision for a little while, and show
+ * The save asked the server to render the list's generators before replying, so the open
+ * page usually has its new revision already: look at once. When the render ran out of time
+ * (a long list) it finishes after the response — keep watching for a little while, and show
  * it when it comes; an edit that changes nothing on this page simply never does.
  */
 const followRender = async (path, before) => {
-    for (let i = 0; i < 20; i++) {
-        await new Promise(r => setTimeout(r, 500));
+    for (let i = 0; i < 21; i++) {
+        if (i) await new Promise(r => setTimeout(r, 500));
         if (state.currentPagePath !== path || state.isEditing) return;
         const r = await api.call('get', { file: path });
         if (r.success && r.rev && r.rev !== before) {
@@ -92,33 +120,77 @@ const followRender = async (path, before) => {
     }
 };
 
-const open = async (b) => {
-    const space = b.dataset.space || '';
-    const listId = Number(b.dataset.list);
-    const itemId = Number(b.dataset.item);
-    const where = await api.call('get_path_from_id', { pageid: listId, space });
+/**
+ * Read the list a button or form names, in its own Space: { path, data, rev }, or null (with a
+ * toast) when the list or the row's item is gone.
+ */
+const loadList = async (el) => {
+    const space = el.dataset.space || '';
+    const itemId = Number(el.dataset.item);
+    const where = await api.call('get_path_from_id', { pageid: Number(el.dataset.list), space });
     if (!where.success || !where.path?.endsWith('.list') || (where.space && where.space !== space)) {
         showToast(t('generators.edit-item-gone'), 'error');
-        return;
+        return null;
     }
     const got = await api.call('get', { file: where.path, space });
     let data = null;
     try { data = got.success ? JSON.parse(got.data) : null; } catch { data = null; }
     if (!data || !(data.items || []).some(i => i.id === itemId)) {
         showToast(t('generators.edit-item-gone'), 'error');
-        return;
+        return null;
     }
+    return { space, itemId, path: where.path, data, rev: got.rev };
+};
+
+/** {{_comment_form}}: a box and Add comment; the comment is saved on the row's item. */
+const fillCommentForm = (f) => {
+    const box = document.createElement('textarea');
+    box.className = 'form-control';
+    box.rows = 2;
+    box.placeholder = t('list.comment-add-ph');
+    box.setAttribute('aria-label', t('list.comment-add'));
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-sm btn-blue';
+    btn.textContent = t('list.comment-add');
+    btn.addEventListener('click', async () => {
+        const text = box.value.trim();
+        if (!text) { box.focus(); return; }
+        btn.disabled = true;
+        const list = await loadList(f);
+        if (list) {
+            const page = state.currentPagePath;
+            const pageRev = state.currentPageRev;
+            const item = list.data.items.find(i => i.id === list.itemId);
+            // Text only: the server stamps who and when (lists.php).
+            item._comments = [...(Array.isArray(item._comments) ? item._comments : []), { text }];
+            // Kept until it is saved, so a refusal loses nothing.
+            if (await saveList(list.space, list.path, list.rev, list.data)) {
+                box.value = '';
+                followRender(page, pageRev);
+            }
+        }
+        btn.disabled = false;
+    });
+    f.append(box, btn);
+};
+
+const open = async (b) => {
+    const list = await loadList(b);
+    if (!list) return;
+    const { space, itemId, data } = list;
     const page = state.currentPagePath;
     const pageRev = state.currentPageRev;
-    const { openItemModal } = await import('../list/modals.js');
-    await openItemModal(itemId, {
+    const ext = {
         data, space,
         save: async (changed) => {
-            const ok = await saveList(space, where.path, got.rev, changed);
+            const ok = await saveList(space, list.path, list.rev, changed);
             if (ok) followRender(page, pageRev);
             return ok;
         },
-    });
+    };
+    const { openItemModal } = await import('../list/modals.js');
+    await openItemModal(itemId, ext, { addTo: b.dataset.group || null });
 };
 
 export const initEditButtons = () => {
@@ -126,7 +198,7 @@ export const initEditButtons = () => {
     if (!viewer) return;
     new MutationObserver(() => { wire(viewer); }).observe(viewer, { childList: true, subtree: true });
     viewer.addEventListener('click', (e) => {
-        const b = e.target.closest('.wk-edit.is-ready');
+        const b = e.target.closest('.wk-edit.is-ready:not(.is-static)');
         if (!b) return;
         e.preventDefault();
         open(b);

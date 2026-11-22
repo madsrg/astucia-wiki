@@ -15,11 +15,6 @@
 //                            `unit` an optional word shown after it ("kr", "kg", "%"). Sorted
 //                            as a number; a view filter may compare: "> 10", "<= 5", "= 3".
 //   boolean                  Yes/No: true / false (no value reads as No).
-//   comments                 an append-only log: [{ id, by, name, at, text }]. The **server**
-//                            stamps id (from `nextEntryId`), by (uid), name and at (ISO time)
-//                            on save; the browser sends a new comment as { text } only, and
-//                            may drop one only if it is the author's or an admin's
-//                            (wiki_list_comments_stamp() in lists.php refuses anything else).
 //   lookup                   items of another list in the same Space. The value is an array
 //                            of that list's item ids; `lookup` = { list: <page id>,
 //                            field: <its field shown>, multiple: bool }
@@ -58,6 +53,9 @@ export const GROUP_TYPES = ['text_single', 'text_multi', 'date', 'choice'];
  */
 export const normalizeList = (data) => {
     if (!data || !Array.isArray(data.columns)) return data;
+    // A Comments *field* existed briefly before comments became the items' own (never in a
+    // release): it is dropped, and goes from the file with the list's next save.
+    if (data.columns.some(c => c.type === 'comments')) data.columns = data.columns.filter(c => c.type !== 'comments');
     if (!data.columns.some(c => c.role === 'title')) {
         // A new list has always had Title as col_2; a list built by hand or by an AI may
         // not, and then its first single-line text field is the closest thing.
@@ -170,7 +168,21 @@ const plainValue = (target, fieldId, item) => {
     return formatValue(col, item?.[fieldId]);
 };
 
-/** A Comments field's entries, oldest first: only well-formed ones. */
+// ── Comments ──────────────────────────────────────────────────────────────────
+//
+// Comments belong to the item, not to a field — as in SharePoint: every item of a list that
+// takes them (on unless the list says `comments: false`) may carry `_comments`, an
+// append-only log [{ id, by, name, at, text }]. The **server** stamps id (from
+// `nextEntryId`), by (uid), name and at on save; the browser sends a new comment as { text }
+// only, and may drop one only if it is the author's or an admin's
+// (wiki_list_comments_stamp() in lists.php refuses anything else).
+
+export const COMMENTS = '_comments';
+
+/** Does this list take comments? */
+export const commentsOn = (data) => data?.comments !== false;
+
+/** A log of comments, oldest first: only well-formed entries. */
 export const commentEntries = (value) => (Array.isArray(value) ? value : [])
     .filter(e => e && typeof e === 'object' && typeof e.text === 'string');
 
@@ -184,7 +196,6 @@ export const commentTime = (at) => {
 export const sortValue = (col, item, columns) => {
     if (col.type === 'number') { const n = Number(item[col.id]); return item[col.id] == null || item[col.id] === '' || !Number.isFinite(n) ? null : n; }
     if (col.type === 'boolean') return item[col.id] === true ? 0 : 1;
-    if (col.type === 'comments') return commentEntries(item[col.id]).length;
     return cellText(col, item, columns);
 };
 
@@ -237,8 +248,6 @@ export const cellText = (col, item, columns) => {
         return ids.map(id => target.items.find(i => i.id === id))
             .filter(Boolean).map(hit => plainValue(target, col.field, hit)).join('; ');
     }
-    // Every comment's text, so a filter finds a word in any of them.
-    if (col.type === 'comments') return commentEntries(item[col.id]).map(e => e.text).join('; ');
     return formatValue(col, item[col.id]);
 };
 

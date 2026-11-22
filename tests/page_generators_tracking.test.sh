@@ -201,5 +201,69 @@ assert_contains '  because the template went, not the row' 'archived_reason: tem
 assert_not_contains '  so no list is named'                'archived_list' "$(page Acme)"
 assert_not_contains '  no longer generated'              'generated_by' "$(page Acme)"
 assert_eq '  and the generator is forgotten'             '' "$(state space)"
+assert_contains '  it records the list it came from'      "archived_source: CRM:$ACCOUNTS" "$(page Acme)"
+assert_contains '  and a fingerprint of its text'        'archived_hash: ' "$(page Acme)"
+
+section 'A new generator takes over the pages a deleted one left'
+ACME_ID=$(id_of Customers Accounts/Acme.md)
+# Beta's archived page is edited by hand: that one is somebody's now.
+BETA_BODY=$(python3 -c 'import sys; s = open(sys.argv[1]).read(); print(s.split("---\n", 2)[2], end="")' "$WIKI_PAGES/Customers/Accounts/Beta.md")
+save "$CARL" Customers Accounts/Beta.md "${BETA_BODY}
+Edited by Carl after it was archived." > /dev/null
+C=$(post_as "$CARL" 'api.php?action=generator_create&space=Customers' "source=CRM:$ACCOUNTS&path=Templates/Again&folder=Accounts")
+AGAIN=$(echo "$C" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id", ""))')
+assert_contains 'a template for the same list and folder is created' '"success":true' "$C"
+sleep 1
+assert_contains "  it takes over the unedited page"      "generated_by: $AGAIN" "$(page Acme)"
+assert_not_contains '  which is no longer archived'      'archived_' "$(page Acme)"
+assert_eq '  and keeps its page id, so links to it still work' "$ACME_ID" "$(id_of Customers Accounts/Acme.md)"
+assert_file_missing '  with no copy beside it'          "$WIKI_PAGES/Customers/Accounts/Acme (1).md"
+assert_contains 'the edited page is left alone'          'Edited by Carl' "$(page Beta)"
+assert_contains '  still archived'                       'archived_from' "$(page Beta)"
+assert_file_exists '  and the new page takes a free name' "$WIKI_PAGES/Customers/Accounts/Beta (2).md"
+
+section 'A copy already made beside an old page is folded back into it'
+# As an earlier version left things: an archived page with no fingerprint, unchanged since
+# it was archived, and the new generator's "(1)" copy beside it.
+post_as "$CARL" 'api.php?action=delete&space=Customers' 'path=Templates/Again.md' > /dev/null
+legacy() {
+    python3 -c '
+import os, re, sys
+from datetime import datetime
+p, keep_time = sys.argv[1], sys.argv[2] == "keep"
+s = re.sub(r"^archived_(hash|source):.*\n", "", open(p).read(), flags=re.M)
+open(p, "w").write(s)
+if keep_time:
+    t = datetime.fromisoformat(re.search(r"^archived_at: (.*)$", s, re.M).group(1)).timestamp()
+    os.utime(p, (t, t))
+' "$WIKI_PAGES/Customers/Accounts/Acme.md" "$1"
+}
+legacy keep
+printf -- "---\ngenerator_source: CRM:%s\ngenerator_folder: Accounts\n---\nTHIRD {{name}}\n" "$ACCOUNTS" \
+    > "$WIKI_PAGES/Customers/Templates/Third.md"
+get_as "$ADMIN" 'api.php?action=indexfiles&space=Customers' > /dev/null
+THIRD=$(id_of Customers Templates/Third.md)
+printf -- "---\ngenerated_by: %s\ngenerated_row: 1\n---\nTHIRD Acme\n" "$THIRD" > "$WIKI_PAGES/Customers/Accounts/Acme (1).md"
+get_as "$ADMIN" 'api.php?action=indexfiles&space=Customers' > /dev/null
+R=$(post_as "$CARL" 'api.php?action=generator_render&space=Customers' "id=$THIRD")
+assert_contains 'the generator renders'                  '"status":"ok"' "$R"
+assert_contains '  the old page is its own again'        "generated_by: $THIRD" "$(page Acme)"
+assert_contains '  with the new text'                    'THIRD Acme' "$(page Acme)"
+assert_eq '  the same page id as ever'                   "$ACME_ID" "$(id_of Customers Accounts/Acme.md)"
+assert_file_missing '  and the copy is gone'             "$WIKI_PAGES/Customers/Accounts/Acme (1).md"
+assert_eq '  from the index too'                         '' "$(id_of Customers 'Accounts/Acme (1).md')"
+# Positive control for the time check: an old-style page modified after it was archived is
+# somebody's edit, and is not taken.
+post_as "$CARL" 'api.php?action=delete&space=Customers' 'path=Templates/Third.md' > /dev/null
+# Past the check's two seconds of slack between archived_at and the file's own time.
+sleep 4
+legacy now
+printf -- "---\ngenerator_source: CRM:%s\ngenerator_folder: Accounts\n---\nFOURTH {{name}}\n" "$ACCOUNTS" \
+    > "$WIKI_PAGES/Customers/Templates/Fourth.md"
+get_as "$ADMIN" 'api.php?action=indexfiles&space=Customers' > /dev/null
+FOURTH=$(id_of Customers Templates/Fourth.md)
+post_as "$CARL" 'api.php?action=generator_render&space=Customers' "id=$FOURTH" > /dev/null
+assert_not_contains 'an old-style page changed since it was archived is not taken' 'FOURTH' "$(page Acme)"
+assert_file_exists '  the new page goes beside it'      "$WIKI_PAGES/Customers/Accounts/Acme (1).md"
 
 exit $(( ASSERT_FAIL > 0 ))

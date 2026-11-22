@@ -10,7 +10,7 @@
 # that bypasses the button (the button's own handler, as Ctrl+E uses it) is refused too;
 # the template link opens the template, whose banner reports the last render; Preview
 # renders a row with data shown as text; Re-render reports what it did; Detach makes the
-# page editable; and New → Generated pages writes a template and opens it.
+# page editable; and New → Page Generator writes a template and opens it.
 #
 # Chrome is not a test dependency — no chrome means skip, not fail.
 
@@ -46,6 +46,10 @@ print(next((k for k, v in ix.items() if v.get("path") == sys.argv[2]), ""))' "$W
 }
 ACCOUNTS=$(id_of CRM Accounts.list)
 mkdir -p "$WIKI_PAGES/Customers/Templates"
+# Folders for the New dialog's folder picker: a nested one, and a files library it must leave out.
+mkdir -p "$WIKI_PAGES/Customers/Clients/Nordic" "$WIKI_PAGES/Customers/Scans"
+printf '# Oslo\n' > "$WIKI_PAGES/Customers/Clients/Nordic/Oslo.md"
+touch "$WIKI_PAGES/Customers/Scans/.filesfolder"
 printf -- "---\ngenerator_source: CRM:%s\ngenerator_folder: Accounts\n---\n# {{name}}\n\nNotes: {{notes}}\n" "$ACCOUNTS" \
     > "$WIKI_PAGES/Customers/Templates/Account.md"
 curl -s "$WIKI_URL/api.php?action=indexfiles&space=Customers" > /dev/null
@@ -139,6 +143,27 @@ const run = async () => {
   click(dlg.querySelector('[data-gen-close]'));        await sleep(200);
   out += ' dlgclosed=' + ($('.generator-dialog') ? 'no' : 'yes');
 
+  // Template tags help: from the banner, and from the editor toolbar while the template is edited.
+  click($('#generator-banner [data-gen=help]'));       await sleep(800);
+  const help = $('.generator-dialog.gen-help');
+  out += ' help=' + (help ? w(help.querySelector('h3').textContent) : 'none');
+  const fieldRows = help ? Array.from(help.querySelectorAll('.gen-help-fields tbody tr')) : [];
+  out += ' helpFields=' + fieldRows.map(r => r.querySelector('code').textContent).join('|');
+  out += ' helpTitleBadge=' + (fieldRows[0] && fieldRows[0].querySelector('.gen-help-badge') ? 'yes' : 'no');
+  out += ' helpSections=' + (help ? help.querySelectorAll('.gen-help-section').length : 0);
+  out += ' helpBuiltins=' + (help ? ['{{_title}}', '{{_edit}}', '{{_index}}', '{{^field}} … {{/field}}'].filter(x => help.textContent.includes(x)).length : 0);
+  if (help) click(help.querySelector('[data-gen-close]'));  await sleep(200);
+  const tbHelp = () => $('#gen-template-help-btn');
+  out += ' tbHelpRead=' + (shown(tbHelp()) ? 'shown' : 'hidden');
+  click($('#edit-btn'));                                await sleep(600);
+  out += ' tbHelpEdit=' + (shown(tbHelp()) ? 'shown' : 'hidden');
+  click(tbHelp());                                      await sleep(800);
+  out += ' tbHelpOpens=' + ($('.generator-dialog.gen-help') ? 'yes' : 'no');
+  if ($('.generator-dialog.gen-help')) click($('.generator-dialog.gen-help [data-gen-close]'));  await sleep(200);
+  click($('#cancel-btn'));                              await sleep(500);
+  if (shown($('#confirm-modal'))) { click($('#confirm-modal-ok')); await sleep(400); }
+  out += ' tbHelpAfter=' + (shown(tbHelp()) ? 'shown' : 'hidden');
+
   click($('#generator-banner [data-gen=render]'));   await sleep(1500);
   out += ' rendered=' + w(toast());
 
@@ -161,6 +186,27 @@ const run = async () => {
   out += ' sources=' + w(Array.from(nd.querySelectorAll('[data-gen-source] option')).map(o => o.textContent.split(' (')[0]).join('|'));
   out += ' defaults=' + nd.querySelector('[data-gen-path]').value + ',' + nd.querySelector('[data-gen-folder]').value;
   out += ' formatDefault=' + (nd.querySelector('[data-gen-format]:checked') || {}).value;
+  out += ' dialogTitle=' + w(nd.querySelector('h3').textContent);
+  // The Space's folders, shown under the box from the start: the root first, nested ones
+  // indented, the folder the box names highlighted.
+  const tree = nd.querySelector('[data-gen-folder-tree]');
+  const current = () => (tree.querySelector('.gen-folder-row.is-current') || { dataset: { path: 'none' } }).dataset.path || '(root)';
+  out += ' treeShown=' + (shown(tree) ? 'yes' : 'no') + ' current=' + current();
+  const fbox = nd.querySelector('[data-gen-folder]');
+  fbox.value = 'Clients'; fbox.dispatchEvent(new Event('input'));
+  out += ' typedCurrent=' + current();
+  fbox.value = 'Nowhere'; fbox.dispatchEvent(new Event('input'));
+  out += ' newName=' + current();
+  const rows = Array.from(tree.querySelectorAll('.gen-folder-row'));
+  out += ' folders=' + rows.map(r => r.dataset.path || '(root)').join('|');
+  const pad = (p) => parseFloat((rows.find(r => r.dataset.path === p) || { style: {} }).style.paddingLeft || '0');
+  out += ' nested=' + (pad('Clients/Nordic') > pad('Clients') ? 'indented' : 'flat');
+  click(rows.find(r => r.dataset.path === 'Clients/Nordic'));  await sleep(100);
+  out += ' picked=' + fbox.value + ',' + current();
+  // A list chosen afterwards no longer overwrites a folder picked by hand.
+  const srcSel = nd.querySelector('[data-gen-source]');
+  srcSel.dispatchEvent(new Event('change'));
+  out += ' keptPick=' + nd.querySelector('[data-gen-folder]').value;
   nd.querySelector('[data-gen-path]').value = 'Templates/Fresh';
   nd.querySelector('[data-gen-folder]').value = 'Fresh';
   click(nd.querySelector('[data-gen-ok]'));           await sleep(3000);
@@ -185,6 +231,33 @@ const run = async () => {
   click(genRows[0].querySelector('.gen-open'));                 await sleep(1800);
   out += ' adminclosed=' + (shown($('#admin-lightbox')) ? 'no' : 'yes');
   out += ' opened=' + w($('#current-page-title').textContent);
+
+  // A generated page's header starts folded however it is reached — Beta, still generated.
+  const { loadPage: lp } = await import('./modules/page_view/index.js');
+  await lp('Templates/Account.md', null, []);                    await sleep(1200);
+  out += ' tplOpen=' + (shown(banner()) ? 'shown' : 'hidden');
+  await lp('Accounts/Beta.md', window.BETA_ID, []);              await sleep(1200);
+  out += ' fromTemplate=' + (shown(banner()) ? 'shown' : 'hidden');
+  click(gbadge());                                              await sleep(200);
+  out += ' unfolded=' + (shown(banner()) ? 'shown' : 'hidden');
+  await lp('Main.md', null, []);                                 await sleep(1000);
+  await lp('Accounts/Beta.md', window.BETA_ID, []);              await sleep(1200);
+  out += ' afterReturn=' + (shown(banner()) ? 'shown' : 'hidden');
+
+  // Settings… on the template: the folder and the page names, without editing front matter.
+  await lp('Templates/Account.md', null, []);                    await sleep(1200);
+  click($('#generator-banner [data-gen=settings]'));             await sleep(1000);
+  const sd = $('.generator-dialog');
+  out += ' settings=' + (sd ? w(sd.querySelector('h3').textContent) : 'none');
+  const sFolder = sd.querySelector('[data-gen-folder]');
+  out += ' sFolder=' + sFolder.value + ',' + ((sd.querySelector('.gen-folder-row.is-current') || { dataset: {} }).dataset.path || 'none');
+  out += ' sName=' + (sd.querySelector('[data-gen-name]').value || 'title') + ',' + sd.querySelector('[data-gen-name]').options.length;
+  click(Array.from(sd.querySelectorAll('.gen-folder-row')).find(r => r.dataset.path === 'Clients'));
+  click(sd.querySelector('[data-gen-ok]'));                      await sleep(3500);
+  out += ' sClosed=' + ($('.generator-dialog') ? 'no' : 'yes');
+  const moved = await (await fetch('api.php?action=get_path_from_id&space=Customers&pageid=' + window.BETA_ID)).json();
+  out += ' sMoved=' + moved.path;
+  out += ' sBanner=' + (($('#generator-banner') || {}).textContent || '').includes('Clients');
   return out;
 };
 setTimeout(async () => {
@@ -196,10 +269,10 @@ assert s.count('</body>') == 1
 io.open(p, 'w', encoding='utf-8', newline='').write(s.replace('</body>', probe))
 PY
 # The probe needs Acme's id to reopen it after visiting the template.
-python3 - "$WIKI_APP/index.php" "$ACME" <<'PY'
+python3 - "$WIKI_APP/index.php" "$ACME" "$(id_of Customers Accounts/Beta.md)" <<'PY'
 import io, sys
 p = sys.argv[1]; s = io.open(p, encoding='utf-8', newline='').read()
-s = s.replace('<script type="module">', '<script>window.ACME_ID = ' + str(int(sys.argv[2])) + ';</script><script type="module">', 1)
+s = s.replace('<script type="module">', '<script>window.ACME_ID = ' + str(int(sys.argv[2])) + '; window.BETA_ID = ' + str(int(sys.argv[3])) + ';</script><script type="module">', 1)
 io.open(p, 'w', encoding='utf-8', newline='').write(s)
 PY
 
@@ -219,11 +292,22 @@ done
     --dump-dom "$WIKI_URL/index.php?space=Customers&pageid=$ACME" > "$WIKI_ROOT/dom.html" 2>/dev/null
 PROBE=$(grep -o '<title>PROBE.*</title>' "$WIKI_ROOT/dom.html" \
         | python3 -c 'import html,sys; sys.stdout.write(html.unescape(sys.stdin.read()))' || true)
+[ -n "${GEN_UI_DEBUG:-}" ] && echo "$PROBE" >&2
 [ -n "$PROBE" ] || _fail "the page never reported (probe did not run)" ""
 assert_not_contains "the probe ran without throwing" 'fatal' "$PROBE"
 
 section 'a generated page'
 assert_contains "its header starts folded away"            'genStart=hidden '                "$PROBE"
+assert_contains "  …also when reached from its template"   'tplOpen=shown fromTemplate=hidden ' "$PROBE"
+assert_contains "  …and when it is opened again after being unfolded" 'unfolded=shown afterReturn=hidden' "$PROBE"
+
+section "a template's Settings"
+assert_contains "Settings… opens on the template"          'settings=Page_Generator_settings ' "$PROBE"
+assert_contains "  …with its folder, highlighted in the list" 'sFolder=Accounts,Accounts '     "$PROBE"
+assert_contains "  …and its pages named after the Title, or a field" 'sName=title,2 '          "$PROBE"
+assert_contains "choosing another folder and saving closes it" 'sClosed=yes '                  "$PROBE"
+assert_contains "  …the pages move there, keeping their ids" 'sMoved=Clients/Beta.md'        "$PROBE"
+assert_contains "  …and the banner says where they go now"   'sBanner=true'                    "$PROBE"
 assert_contains "  a coloured icon in the page header says it is generated" 'badge=colour '  "$PROBE"
 assert_contains "the icon opens the header"                 'gen=generator-banner.is-generated' "$PROBE"
 assert_contains "  lined up with the page text"             'aligned=yes '                     "$PROBE"
@@ -239,6 +323,14 @@ assert_contains "  …and says why"                           'locked=said'     
 section 'its template'
 assert_contains "the link opens the template"               'tplpage=Account '                 "$PROBE"
 assert_contains "  …whose banner is the template's, open from the start" 'tpl=generator-banner.is-template' "$PROBE"
+assert_contains "its ? opens the template tags help"        'help=Template_tags '              "$PROBE"
+assert_contains "  …listing this list's fields with their tags" 'helpFields={{name}}|{{notes}} ' "$PROBE"
+assert_contains "  …the Title marked"                       'helpTitleBadge=yes '              "$PROBE"
+assert_contains "  …and the general reference"              'helpSections=8 helpBuiltins=4 '   "$PROBE"
+assert_contains "the toolbar's help is not there while reading" 'tbHelpRead=hidden '           "$PROBE"
+assert_contains "  …but is while the template is edited"    'tbHelpEdit=shown '                "$PROBE"
+assert_contains "  …and opens the same help"                'tbHelpOpens=yes '                 "$PROBE"
+assert_contains "  …and goes when the editing ends"         'tbHelpAfter=hidden '              "$PROBE"
 assert_contains "  …and which has the icon too"             'tplBadge=shown '                  "$PROBE"
 assert_contains "  …reporting the last render"              'status=ok'                        "$PROBE"
 assert_contains "  …and naming its list"                    'reads=CRM_/_Accounts '            "$PROBE"
@@ -259,8 +351,19 @@ assert_contains "  and opens on 'detached'"                 'detached=generator-
 assert_contains "  …and the page is editable again"         'editbtn2=shown'                   "$PROBE"
 assert_contains "  …with its editor switch back"             'modebtn2=shown'                   "$PROBE"
 
-section 'New → Generated pages'
-assert_contains "the New menu offers it"                    'menu=Generated_Pages…'            "$PROBE"
+section 'New → Page Generator'
+assert_contains "the New menu offers it"                    'menu=New_Page_Generator '         "$PROBE"
+assert_contains "  …in a dialog called Page Generator"      'dialogTitle=Page_Generator '      "$PROBE"
+assert_contains "the Space's folders are shown from the start, the default highlighted" 'treeShown=yes current=Accounts ' "$PROBE"
+assert_contains "  …the highlight follows what is typed"    'typedCurrent=Clients '            "$PROBE"
+assert_contains "  …and a new name highlights nothing"      'newName=none '                    "$PROBE"
+assert_contains "  …lists the root and the Space's folders, nested ones too" \
+                'folders=(root)|Accounts|Clients|Clients/Nordic ' "$PROBE"
+assert_not_contains "  …but not templates/ or a files library" 'Templates' "$(echo "$PROBE" | grep -o 'folders=[^ ]*')"
+assert_not_contains "  …(no Scans)"                          'Scans' "$(echo "$PROBE" | grep -o 'folders=[^ ]*')"
+assert_contains "  …a nested folder indented"               'nested=indented '                 "$PROBE"
+assert_contains "clicking one fills the box and highlights it" 'picked=Clients/Nordic,Clients/Nordic ' "$PROBE"
+assert_contains "  …and is kept when the list changes"      'keptPick=Clients/Nordic '         "$PROBE"
 assert_contains "  …listing the lists of every Space"       'sources=CRM_/_Accounts '          "$PROBE"
 assert_contains "  …with defaults from the chosen list"     'defaults=templates/Accounts,Accounts' "$PROBE"
 assert_contains "  …offering HTML by default"               'formatDefault=html '              "$PROBE"

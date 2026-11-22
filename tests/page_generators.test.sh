@@ -362,6 +362,19 @@ assert_eq 'the next render leaves it alone'              '0' "$(echo "$OUT" | fi
 assert_contains '  and keeps the edit'                   'mine now' "$(cat "$DELTA")"
 assert_contains 'detaching an ordinary page is refused'  'not_generated' \
     "$(post_as "$CARL" 'api.php?action=generator_detach&space=Customers' 'path=Linker.md')"
+# A detached page moved elsewhere is still somebody's own: its row stays out.
+post_as "$CARL" 'api.php?action=move&space=Customers' 'old_path=Accounts/Delta.md&new_path=Mine/Delta.md' > /dev/null
+OUT=$(render "$CARL")
+assert_file_exists 'a detached page that was moved'       "$WIKI_PAGES/Customers/Mine/Delta.md"
+assert_eq '  still keeps its row out of the generator' '1' "$(echo "$OUT" | field counts.detached)"
+assert_file_missing '  no new page in its place'          "$DELTA"
+# Deleted, there is nobody's version left: the row is the generator's again.
+assert_contains 'the detached page is deleted'           '"success":true' \
+    "$(post_as "$CARL" 'api.php?action=delete&space=Customers' 'path=Mine/Delta.md')"
+OUT=$(render "$CARL")
+assert_eq '  and the next render makes its page afresh' '1' "$(echo "$OUT" | field counts.created)"
+assert_eq '  a generated one'                         "$TPL" "$(fm Accounts/Delta.md generated_by)"
+assert_eq '  and no longer counts it as detached'     '0' "$(echo "$OUT" | field counts.detached)"
 
 section 'For the UI: status, preview, sources, create'
 G=$(get_as "$CARL" "api.php?action=get&space=Customers&file=Templates/Account.md")
@@ -404,7 +417,9 @@ assert_contains 'Carl creates one'                       '"success":true' "$C"
 NEWT="$WIKI_PAGES/Customers/Templates/Cards.md"
 assert_contains '  its source'                           "generator_source: CRM:$ACCOUNTS" "$(cat "$NEWT")"
 assert_contains '  pages named after the chosen field'   'generator_filename: "{{e_mail}}"' "$(cat "$NEWT")"
-assert_contains '  a starter body listing the fields'    '| **Account manager** | {{account_manager}} |' "$(cat "$NEWT")"
+assert_contains '  a starter body listing the fields'    '| **E-mail** | {{e_mail}} |' "$(cat "$NEWT")"
+assert_contains '  a lookup in a section of its own, repeated per item' '## Account manager' "$(cat "$NEWT")"
+assert_contains '    its items repeat'                   '{{#account_manager}}' "$(cat "$NEWT")"
 assert_file_exists '  rendered once the response had gone' "$WIKI_PAGES/Customers/Cards/new@acme.test.md"
 assert_eq '  owned by its creator'                       'Carl' \
     "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["generators"]["Customers:"+sys.argv[2]]["owner"]["name"])' "$WIKI_SYS/generators.json" "$(echo "$C" | gj id)")"
@@ -614,5 +629,158 @@ rm -f "$WIKI_SYS/generators.json"
 OUT=$(render "$CARL")
 assert_eq 'without state: nothing created again'              '0' "$(echo "$OUT" | field counts.created)"
 assert_file_missing '  no "(1)" duplicate'                    "$WIKI_PAGES/Customers/Accounts/Acme Ltd (1).md"
+
+section 'Settings: where the pages go, what they are called'
+CARDS_T="$WIKI_PAGES/Customers/Templates/Cards.md"
+settings() { post_as "$1" 'api.php?action=generator_settings&space=Customers' "path=Templates/Cards.md&$2"; }
+listing() { (cd "$WIKI_PAGES/Customers/$1" 2>/dev/null && ls *.md 2>/dev/null | sort | tr '\n' '|'); }
+BEFORE=$(listing Cards)
+FIRST=$(cd "$WIKI_PAGES/Customers/Cards" && ls *.md | sort | head -1)
+FIRST_ID=$(id_of Customers "Cards/$FIRST")
+BODY_BEFORE=$(python3 -c 'import sys; print(open(sys.argv[1]).read().split("---\n", 2)[2], end="")' "$CARDS_T")
+assert_contains 'the template has pages to move (control)'  '@' "$BEFORE"
+
+R=$(settings "$RITA" 'folder=Elsewhere')
+assert_not_contains 'a reader may not change them'          '"success":true' "$R"
+R=$(settings "$CARL" 'folder=templates/Inside')
+assert_eq 'a reserved folder is refused'                   'bad_folder' "$(echo "$R" | gj error)"
+R=$(settings "$CARL" 'folder=../Out')
+assert_eq 'a folder outside the Space is refused'          'bad_folder' "$(echo "$R" | gj error)"
+R=$(settings "$CARL" 'filename={{#oops}}')
+assert_eq 'a page name that is not a template is refused'  'filename_error' "$(echo "$R" | gj error)"
+assert_contains '  and the template is as it was'          'generator_folder: Cards' "$(cat "$CARDS_T")"
+R=$(post_as "$CARL" 'api.php?action=generator_settings&space=Customers' 'path=Main.md&folder=X')
+assert_eq 'a page that is not a template is refused'       'not_template' "$(echo "$R" | gj error)"
+
+R=$(settings "$CARL" 'folder=Team/Cards')
+assert_contains 'Carl moves the pages to another folder'    '"success":true' "$R"
+sleep 1
+assert_contains '  the template says so'                   'generator_folder: Team/Cards' "$(cat "$CARDS_T")"
+assert_eq '  its body untouched'                           "$BODY_BEFORE" "$(python3 -c 'import sys; print(open(sys.argv[1]).read().split("---\n", 2)[2], end="")' "$CARDS_T")"
+assert_eq '  every page moved'                             "$BEFORE" "$(listing Team/Cards)"
+assert_eq '  none left behind'                             '' "$(listing Cards)"
+assert_eq '  each keeps its page id'                       "$FIRST_ID" "$(id_of Customers "Team/Cards/$FIRST")"
+
+R=$(settings "$CARL" 'filename=')
+assert_contains 'naming after the Title again'             '"success":true' "$R"
+sleep 1
+assert_not_contains '  drops the key'                      'generator_filename' "$(cat "$CARDS_T")"
+assert_contains '  and the pages take their titles'        'Acme' "$(listing Team/Cards)"
+assert_not_contains '  not the e-mails'                    '@' "$(listing Team/Cards)"
+R=$(settings "$CARL" 'filename={{e_mail}}&folder=Team/Cards')
+assert_contains 'a field as the name'                      'generator_filename: "{{e_mail}}"' "$(cat "$CARDS_T")"
+R=$(settings "$CARL" 'filename={{e_mail}}&folder=Team/Cards')
+assert_eq 'saving the same again changes nothing'          'True' "$(echo "$R" | gj unchanged)"
+
+section 'Lookups as items, like a group'
+# A lookup reaches the items it points at, each with its own list's fields — single and several,
+# a deleted item, and {{x}} on its own still the text the list shows.
+cat > "$WIKI_PAGES/CRM/People.list" <<'JSON'
+{"columns":[{"id":"col_1","name":"ItemId","type":"autoincrement"},
+            {"id":"col_2","name":"Name","type":"text_single","role":"title"},
+            {"id":"col_3","name":"City","type":"text_single"},
+            {"id":"col_4","name":"Age","type":"number","decimals":0}],
+ "items":[{"id":1,"col_1":1,"col_2":"Ann","col_3":"Oslo","col_4":41},
+          {"id":2,"col_1":2,"col_2":"Bo","col_3":"Bergen","col_4":33}],"nextItemId":3}
+JSON
+get_as "$ADMIN" 'api.php?action=indexfiles&space=CRM' > /dev/null
+PEOPLE=$(id_of CRM People.list)
+cat > "$WIKI_PAGES/CRM/Deals.list" <<JSON
+{"columns":[{"id":"col_1","name":"ItemId","type":"autoincrement"},
+            {"id":"col_2","name":"Deal","type":"text_single","role":"title"},
+            {"id":"col_3","name":"Contacts","type":"lookup","lookup":{"list":$PEOPLE,"multiple":true}},
+            {"id":"col_4","name":"Owner","type":"lookup","lookup":{"list":$PEOPLE,"field":"col_3","multiple":false}},
+            {"id":"col_5","name":"Contacts: City","type":"lookup_field","source":"col_3","field":"col_3"}],
+ "items":[{"id":1,"col_2":"Big","col_3":[1,2,9],"col_4":[2]},
+          {"id":2,"col_2":"Small","col_3":[],"col_4":[]}],"nextItemId":3}
+JSON
+get_as "$ADMIN" 'api.php?action=indexfiles&space=CRM' > /dev/null
+DEALS=$(id_of CRM Deals.list)
+cat > "$WIKI_PAGES/Customers/Templates/Deal.md" <<TPL
+---
+generator_source: CRM:$DEALS
+generator_folder: Deals
+---
+TEXT={{contacts}}|
+CARDS={{#contacts}}[{{_index}}:{{_title}}/{{city}}/{{age}}/{{_text}}{{#_missing}}!{{/_missing}}]{{/contacts}}{{^contacts}}none{{/contacts}}|
+OWNER={{owner}}/{{owner.name}}/{{#owner}}{{_id}}{{/owner}}{{^owner}}nobody{{/owner}}|
+LINKS={{#contacts}}<{{_edit}}>{{/contacts}}|
+TPL
+get_as "$ADMIN" 'api.php?action=indexfiles&space=Customers' > /dev/null
+OUT=$(render "$CARL" "$(id_of Customers Templates/Deal.md)")
+assert_eq 'a template with lookups renders'                 'ok' "$(echo "$OUT" | field status)"
+BIG=$(cat "$WIKI_PAGES/Customers/Deals/Big.md")
+assert_contains '{{contacts}} alone is the text the list shows' 'TEXT=Ann; Bo; (deleted &#35;9)|' "$BIG"
+assert_contains '  a section repeats per item, with its own fields' 'CARDS=[1:Ann/Oslo/41/Ann][2:Bo/Bergen/33/Bo]' "$BIG"
+assert_contains '  a deleted item: its text, marked, nothing of the row'   '[3:///(deleted &#35;9)!]|' "$BIG"
+assert_contains 'a single lookup is the item: its display field, a dotted field, its id' 'OWNER=Bergen/Bo/2|' "$BIG"
+assert_contains "{{_edit}} in a lookup's item edits the linked item, in its own list" \
+    "<<button type=\"button\" class=\"wk-edit wk-linked\" data-space=\"CRM\" data-list=\"$PEOPLE\" data-item=\"1\"></button>>" "$BIG"
+assert_contains "  a deleted item has none — not the row's own button either" \
+    'data-item="2"></button>><>|' "$BIG"
+SMALL=$(cat "$WIKI_PAGES/Customers/Deals/Small.md")
+assert_contains 'no items: the inverted section shows'         'CARDS=none|' "$SMALL"
+assert_contains '  and for a single lookup'                     'OWNER=//nobody|' "$SMALL"
+
+S=$(get_as "$CARL" 'api.php?action=generator_sources')
+assert_contains "the New dialog knows a lookup's item fields" '"key":"contacts","type":"lookup","title":false,"multiple":true,"subs":[{"name":"ItemId","key":"itemid","title":false},{"name":"Name","key":"name","title":true},{"name":"City","key":"city","title":false}' "$S"
+C=$(post_as "$CARL" 'api.php?action=generator_create&space=Customers' "source=CRM:$DEALS&path=Templates/DealCards&folder=DealCards&format=html")
+assert_contains 'an HTML starter with a lookup'              '"success":true' "$C"
+DC=$(cat "$WIKI_PAGES/Customers/Templates/DealCards.md")
+assert_contains '  shows its items as cards'                 '{{#contacts}}' "$DC"
+assert_contains '  each headed by what the lookup shows, and its link' '<h3>{{_text}} {{_edit}}</h3>' "$DC"
+assert_not_contains "  its \"also show\" fields not repeated in the main table" 'Contacts: City' "$DC"
+assert_contains "  with the item's fields"                   '<dt>City</dt><dd>{{city}}</dd>' "$DC"
+assert_not_contains '  its Title not repeated'               '<dt>Name</dt>' "$DC"
+assert_not_contains '  and no + (an item is picked, not added)' '{{_add.contacts}}' "$DC"
+C=$(post_as "$CARL" 'api.php?action=generator_create&space=Customers' "source=CRM:$DEALS&path=Templates/DealMd&folder=DealMd")
+assert_contains 'a Markdown starter with a lookup'           '"success":true' "$C"
+DM=$(cat "$WIKI_PAGES/Customers/Templates/DealMd.md")
+assert_contains '  repeats a section per item'               $'{{#contacts}}\n### {{_text}} {{_edit}}' "$DM"
+assert_contains "  the item's fields as a list"              '- **City:** {{city}}' "$DM"
+assert_contains '  and says when there are none'             $'{{^contacts}}\n_None._\n{{/contacts}}' "$DM"
+assert_not_contains '  its "also show" field not in the table' 'Contacts: City' "$DM"
+sleep 2
+DMP=$(cat "$WIKI_PAGES/Customers/DealMd/Big.md")
+assert_contains '  rendered: one heading per item, with its link' '### Ann <button type="button" class="wk-edit wk-linked"' "$DMP"
+assert_contains '  …each with its fields'                    '- **City:** Bergen' "$DMP"
+assert_contains '  a deleted item still has its heading'     '### (deleted &#35;9)' "$DMP"
+assert_contains '  no items: the none line'                  '_None._' "$(cat "$WIKI_PAGES/Customers/DealMd/Small.md")"
+
+section 'What an AI in a generated page’s chat is told'
+# wiki_page_context_prompt (ai_core.php) — the page's chat names the page and its path; a
+# generated one must say it cannot be written, and where its content comes from instead.
+ctx_prompt() {
+    (cd "$WIKI_APP" && php -r '
+require_once "config.php"; require_once "indexer.php"; require_once "space_settings.php"; require_once "ai_core.php";
+$dir = PAGES_DIR . $argv[1];
+echo wiki_page_context_prompt($dir . "/" . $argv[2], $dir, new PageIndexer($dir));
+' "$1" "$2" 2>&1)
+}
+P=$(ctx_prompt Customers Deals/Big.chat)
+assert_contains 'a generated page is said to be generated'   'This page is GENERATED' "$P"
+assert_contains '  from which item, through which template'   'item id 1 of a list in the Space "CRM"' "$P"
+assert_contains '  the template by path'                     'the template "Templates/Deal.md"' "$P"
+assert_contains "  another Space's list: no path, and out of reach" 'which your tools here cannot reach' "$P"
+assert_not_contains '  its path is not named'                 'Deals.list' "$P"
+assert_not_contains '  never told to update it with wiki_write_page' 'use this exact value when calling wiki_write_page' "$P"
+assert_contains '  told what to do instead'                  'the edit button beside the page' "$P"
+cat > "$WIKI_PAGES/Customers/Local.list" <<'JSON'
+{"columns":[{"id":"col_2","name":"Name","type":"text_single","role":"title"}],"items":[{"id":5,"col_2":"Lo"}],"nextItemId":6}
+JSON
+get_as "$ADMIN" 'api.php?action=indexfiles&space=Customers' > /dev/null
+LOCAL=$(id_of Customers Local.list)
+printf -- '---\ngenerator_source: Customers:%s\ngenerator_folder: Locals\n---\n# {{name}}\n' "$LOCAL" > "$WIKI_PAGES/Customers/Templates/Local.md"
+get_as "$ADMIN" 'api.php?action=indexfiles&space=Customers' > /dev/null
+render "$CARL" "$(id_of Customers Templates/Local.md)" > /dev/null
+P=$(ctx_prompt Customers Locals/Lo.chat)
+assert_contains "a list in the page's own Space is named, and readable" \
+    "item id 5 of the list \"Local.list\" (page id $LOCAL)" "$P"
+assert_contains '  with wiki_read_page'                      'with wiki_read_page' "$P"
+assert_contains '  and pointed at the tool that changes the item' 'change the item with wiki_update_list_item' "$P"
+printf '# Plain\n' > "$WIKI_PAGES/Customers/Plain.md"
+P=$(ctx_prompt Customers Plain.chat)
+assert_contains 'control: an ordinary page is still the one to write'  'use this exact value when calling wiki_write_page' "$P"
+assert_not_contains '  and not called generated'          'GENERATED' "$P"
 
 exit $(( ASSERT_FAIL > 0 ))

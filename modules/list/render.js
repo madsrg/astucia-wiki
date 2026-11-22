@@ -3,7 +3,8 @@
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { state } from '../core/state.js';
 import { cellText, cellParts, partsElement, normalizeList, loadLookupTargets, lookupsPending,
-         setLookupSpace, filterMatches, sortValue, commentEntries, commentTime } from './fields.js';
+         setLookupSpace, filterMatches, sortValue, commentEntries, commentsOn, COMMENTS } from './fields.js';
+import { icons } from '../core/icons.js';
 import { t } from '../i18n/index.js';
 
 export const getFilteredItems = () => {
@@ -48,7 +49,7 @@ export const sortListItems = () => {
         let valB = sortValue(col, b, cols);
         let comparison = 0;
 
-        if (['number', 'boolean', 'comments'].includes(col.type)) {
+        if (['number', 'boolean'].includes(col.type)) {
             // No value sorts last whichever way, as a blank does.
             if (valA === null || valB === null) return valA === valB ? 0 : (valA === null ? 1 : -1);
             comparison = valA - valB;
@@ -64,20 +65,22 @@ export const sortListItems = () => {
     });
 };
 
-/** A Comments cell: the latest comment, who and when, and how many there are. */
-const commentsCell = (cell, value) => {
-    const entries = commentEntries(value);
-    if (!entries.length) return;
-    const last = entries[entries.length - 1];
-    cell.classList.add('has-comments');
-    const text = document.createElement('div');
-    text.className = 'list-comment-latest';
-    text.textContent = last.text;
-    const meta = document.createElement('div');
-    meta.className = 'list-comment-meta';
-    meta.textContent = [last.name, commentTime(last.at)].filter(Boolean).join(' · ')
-        + (entries.length > 1 ? ' · ' + t('list.comments-count', { n: entries.length }) : '');
-    cell.append(text, meta);
+/**
+ * The comments column, at the table's right edge when the list takes comments: a speech
+ * bubble and the count on an item that has any — as SharePoint shows it. Clicking the row
+ * opens the item, where the comments are.
+ */
+const commentsCell = (row, item) => {
+    const cell = row.insertCell();
+    cell.className = 'list-comments-col';
+    const n = commentEntries(item[COMMENTS]).length;
+    if (!n) return;
+    const badge = document.createElement('span');
+    badge.className = 'list-comments-badge';
+    badge.title = t('list.comments-count', { n });
+    badge.innerHTML = icons.chat;
+    badge.appendChild(document.createTextNode(String(n)));
+    cell.appendChild(badge);
 };
 
 export const renderListView = () => {
@@ -115,6 +118,15 @@ export const renderListView = () => {
         }
         headerRow.appendChild(th);
     });
+    const withComments = commentsOn(state.currentListData);
+    if (withComments) {
+        const th = document.createElement('th');
+        th.className = 'list-comments-col';
+        th.title = t('list.comments-title');
+        th.setAttribute('aria-label', t('list.comments-title'));
+        th.innerHTML = icons.chat;
+        headerRow.appendChild(th);
+    }
 
     const tbody = table.createTBody();
     getFilteredItems().forEach(item => {
@@ -126,7 +138,6 @@ export const renderListView = () => {
             // "also show" column beside it lines up value for value.
             const parts = cellParts(col, item, state.currentListData.columns);
             if (col.type === 'number') cell.classList.add('is-number');
-            if (col.type === 'comments') { commentsCell(cell, item[col.id]); return; }
             if (parts?.length) {
                 cell.classList.add('has-lookup');
                 // A group's entries are capped (+N); a lookup's are not, or an "also show"
@@ -138,6 +149,7 @@ export const renderListView = () => {
                 cell.textContent = cellText(col, item, state.currentListData.columns);
             }
         });
+        if (withComments) commentsCell(row, item);
     });
 
     listItemsTable.appendChild(table);

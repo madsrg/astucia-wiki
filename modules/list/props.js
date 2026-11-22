@@ -36,7 +36,7 @@ import { saveListData } from './data.js';
 import { confirmModal, showToast } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { t } from '../i18n/index.js';
-import { normalizeList, spaceLists, loadLookupTargets, targetList, targetName, projectableFields, titleField, GROUP_TYPES, groupEntries, ensureEntryCounter } from './fields.js';
+import { normalizeList, spaceLists, loadLookupTargets, targetList, targetName, projectableFields, titleField, GROUP_TYPES, groupEntries, ensureEntryCounter, commentsOn } from './fields.js';
 
 const el = (tag, cls, text) => {
     const n = document.createElement(tag);
@@ -45,11 +45,11 @@ const el = (tag, cls, text) => {
     return n;
 };
 
-const TYPES = ['text_single', 'text_multi', 'date', 'choice', 'number', 'boolean', 'comments', 'lookup', 'object'];
+const TYPES = ['text_single', 'text_multi', 'date', 'choice', 'number', 'boolean', 'lookup', 'object'];
 const typeLabel = (type) => t({
     autoincrement: 'list.type-auto', text_single: 'list.type-text', text_multi: 'list.type-multi',
     date: 'list.type-date', choice: 'list.type-choice', lookup: 'list.type-lookup', object: 'list.type-group',
-    number: 'list.type-number', boolean: 'list.type-boolean', comments: 'list.type-comments',
+    number: 'list.type-number', boolean: 'list.type-boolean',
 }[type] || 'list.type-text');
 
 const chevron = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
@@ -354,8 +354,6 @@ const drawRow = (d, container) => {
             config.appendChild(choicesEditor(d));
         } else if (d.type === 'number') {
             config.appendChild(numberConfig(d));
-        } else if (d.type === 'comments') {
-            config.appendChild(el('p', 'field-helptext', t('list.comments-help')));
         } else if (d.type === 'lookup') {
             lookupConfig(d, config);
         } else if (d.type === 'object') {
@@ -383,6 +381,19 @@ const drawRow = (d, container) => {
     } else {
         head.appendChild(el('span', 'list-props-type-badge', typeLabel(d.type)));
     }
+
+    // ↑ ↓: the order of the fields — the item form's, the item view's, All items' and the
+    // exports'. The draft's order is what Save writes.
+    const mover = (label, text, by) => {
+        const b = el('button', 'btn btn-sm btn-secondary list-props-move');
+        b.type = 'button';
+        b.textContent = text;
+        b.title = t(label);
+        b.setAttribute('aria-label', t(label));
+        b.addEventListener('click', () => moveDraft(d, by, row));
+        return b;
+    };
+    head.append(mover('list.field-up', '↑', -1), mover('list.field-down', '↓', 1));
 
     if (d.role === 'title') {
         // Renamed, never deleted: it is what an item is called, and what a Lookup in
@@ -423,6 +434,20 @@ const drawRow = (d, container) => {
     return row;
 };
 
+/** Move a field one place up or down, in the draft and on screen. */
+const moveDraft = (d, by, row) => {
+    const i = draft.indexOf(d);
+    const j = i + by;
+    if (i < 0 || j < 0 || j >= draft.length) return;
+    [draft[i], draft[j]] = [draft[j], draft[i]];
+    const container = row.parentNode;
+    const rows = [...container.querySelectorAll(':scope > .list-props-row')];
+    const other = rows.find(r => r.dataset.colId === draft[i].id);
+    if (by < 0) container.insertBefore(row, other); else container.insertBefore(other, row);
+    // Keep the focus on the button pressed, so the field can be moved again from the keyboard.
+    row.querySelectorAll('.list-props-move')[by < 0 ? 0 : 1]?.focus();
+};
+
 export const openListPropsModal = async () => {
     const data = normalizeList(state.currentListData);
     await loadLookupTargets(data);
@@ -446,6 +471,20 @@ export const openListPropsModal = async () => {
     const container = document.getElementById('list-props-columns');
     container.innerHTML = '';
     draft.forEach(d => drawRow(d, container));
+    // Comments are the items', not a field (fields.js): one switch for the list, above the fields.
+    let box = document.getElementById('list-props-comments');
+    if (!box) {
+        box = el('label', 'list-props-comments');
+        box.id = 'list-props-comments';
+        const cb = el('input');
+        cb.type = 'checkbox';
+        cb.id = 'list-props-comments-on';
+        const text = el('span');
+        text.append(el('strong', '', t('list.allow-comments')), el('small', 'field-helptext', t('list.allow-comments-help')));
+        box.append(cb, text);
+        container.parentNode.insertBefore(box, container);
+    }
+    box.querySelector('input').checked = commentsOn(data);
     document.getElementById('list-props-modal').classList.remove('hidden');
 };
 
@@ -529,26 +568,23 @@ export const saveListProps = async () => {
     }
 
     const data = state.currentListData;
-    const byId = new Map(draft.map(d => [d.id, d]));
     const out = [];
-    // Existing fields keep their place (View settings orders All items); deleted ones
-    // drop out, with the "also show" fields of a lookup that went or was unticked.
-    for (const c of data.columns) {
-        if (c.type === 'autoincrement') { out.push(c); continue; }
-        if (c.type === 'lookup_field') {
-            const src = byId.get(c.source);
-            if (!src || !src._show.includes(c.field)) continue;
+    // The fields in the dialog's order (↑ ↓). The hidden ItemId stays first; a lookup's
+    // "also show" fields follow their lookup, as they always have; deleted fields drop out,
+    // with the "also show" fields of a lookup that went or was unticked.
+    data.columns.filter(c => c.type === 'autoincrement').forEach(c => out.push(c));
+    for (const d of draft) {
+        out.push(clean(d));
+        if (d._new || d.type !== 'lookup') continue;
+        for (const c of data.columns) {
+            if (c.type !== 'lookup_field' || c.source !== d.id || !d._show.includes(c.field)) continue;
             // Named after their lookup ("Customer: City"), so a rename carries over —
             // unless somebody renamed the field to something else of their own.
-            const prefix = src._orig + ': ';
-            out.push(c.name.startsWith(prefix) && src.name.trim() !== src._orig
-                ? { ...c, name: src.name.trim() + ': ' + c.name.slice(prefix.length) } : c);
-            continue;
+            const prefix = d._orig + ': ';
+            out.push(c.name.startsWith(prefix) && d.name.trim() !== d._orig
+                ? { ...c, name: d.name.trim() + ': ' + c.name.slice(prefix.length) } : c);
         }
-        const d = byId.get(c.id);
-        if (d && !d._new) out.push(clean(d));
     }
-    draft.filter(d => d._new).forEach(d => out.push(clean(d)));
 
     // "Also show" fields that do not exist yet go right after their lookup.
     draft.filter(d => d.type === 'lookup').forEach(d => {
@@ -585,6 +621,10 @@ export const saveListProps = async () => {
     }
     applyGroupChanges(data, out);
     data.columns = out;
+    // Off is written as `comments: false`; on is the default, so the key goes. Nothing is
+    // deleted either way — turning comments off hides them.
+    if (document.getElementById('list-props-comments-on')?.checked === false) data.comments = false;
+    else delete data.comments;
 
     await loadLookupTargets(data);
     await saveListData();

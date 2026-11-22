@@ -270,14 +270,15 @@ assert_contains "  and its projection keeps the line blank" 'partsCity=Bergen|_|
 assert_contains "the item view shows the pills too"        'viewPills=Beta Corp|Acme|Bergen|Oslo ' "$PROBE"
 
 section 'extra fields shown with each value'
-assert_contains "the column goes from All items"            'inlineHeads=ItemId|Title|Status|Customer ' "$PROBE"
+# (The trailing | is the comments column's heading, which has an icon and no text.)
+assert_contains "the column goes from All items"            'inlineHeads=ItemId|Title|Status|Customer| ' "$PROBE"
 assert_contains "  and each value reads 'title · extra'"   'inlinePills=Beta_Corp_·_Bergen|Acme_·_Oslo ' "$PROBE"
 assert_contains "  the extra in its own muted span"        'inlineMuted=2 '      "$PROBE"
 assert_contains "  the choice is stored on the lookup"     'inlineStored="inline" ' "$PROBE"
 assert_contains "  and the extra field is still a field, hidden" 'stillField=yes,false ' "$PROBE"
 assert_contains "the item view shows it once, with the value" 'inlineView=ItemId|Title|Status|Customer ' "$PROBE"
 assert_contains "  inside the lookup's pills"              'inlineViewPills=Beta_Corp_·_Bergen|Acme_·_Oslo ' "$PROBE"
-assert_contains "switching back gives the column back"     'backToColumns=ItemId|Title|Status|Customer|Customer:_City ' "$PROBE"
+assert_contains "switching back gives the column back"     'backToColumns=ItemId|Title|Status|Customer|Customer:_City| ' "$PROBE"
 
 section 'values are text, never markup'
 assert_contains "the table shows the markup as text"       'cellTitleLiteral=true imgInTable=0' "$PROBE"

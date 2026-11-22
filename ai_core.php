@@ -264,8 +264,12 @@ function wiki_page_context_prompt(string $chat_file, string $space_dir, $indexer
         if ($page_id !== null) $ids .= "Its page id is {$page_id}. ";
         if ($chat_id !== null) $ids .= "This chat thread is \"" . wiki_page_chat_sidecar($rel) . "\", page id {$chat_id}. ";
     }
+    // A generated page cannot be written (page_generators.php): say so, and where its content
+    // comes from, instead of handing over its path "to update it".
+    $gen_note = function_exists('wiki_gen_ai_page_note') ? wiki_gen_ai_page_note($linked_md, $space_dir, $indexer) : '';
     return "The following is the current content of the wiki page \"{$chat_name}\" that this chat is attached to. "
-         . "Its full path (use this exact value when calling wiki_write_page to update it) is: \"{$rel}\". "
+         . ($gen_note !== '' ? "Its full path is: \"{$rel}\". " . $gen_note
+                             : "Its full path (use this exact value when calling wiki_write_page to update it) is: \"{$rel}\". ")
          . $ids
          . "Use it as context when answering questions:\n\n```markdown\n"
          . (wiki_fm_expose_to_ai() ? (string)file_get_contents($linked_md)

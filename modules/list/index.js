@@ -83,6 +83,7 @@ export const init = () => {
     document.getElementById('add-item-btn').addEventListener('click', () => openItemModal());
     document.getElementById('item-modal-save-btn').addEventListener('click', saveItem);
     document.getElementById('item-modal-close-btn').addEventListener('click', closeItemModal);
+    document.getElementById('item-modal-cancel-btn').addEventListener('click', closeItemModal);
     // Fields are managed in List properties only — adding one included.
     document.getElementById('list-props-btn').addEventListener('click', () => openListPropsModal());
     document.getElementById('list-props-add-btn').addEventListener('click', addDraftField);

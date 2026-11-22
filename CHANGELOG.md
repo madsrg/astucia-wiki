@@ -6,6 +6,8 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.11.4] — 2026-11-22
+
 ### Added
 - **One Space's settings, applied to others.** Space settings → Advanced → *Use these
   settings elsewhere* copies the Content and/or AI settings (page metadata, stamping, tags in
@@ -35,16 +37,55 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 - **List fields are managed in List properties** — adding one included (the toolbar's *Add
   column* is gone), as are a Choice field's choices. The UI now says *field*. Title can be
   renamed but not deleted, and an item needs one.
-- **Number, Yes/No and Comments fields in lists.** A Number has a set number of decimals and
-  an optional unit (`1,250.50 kr`), sorts as a number, and a view can filter it with `> 100` or
-  `<= 5`. Yes/No is a checkbox. Comments is a running log on each item: every comment is saved
-  with who wrote it and when — recorded by the server, so nobody can post in someone else's
-  name — and can be removed by its author or an administrator, never edited. All three reach
-  generated pages: `{{price}}` with its unit, `{{#paid}}…{{/paid}}`, `{{#notes}}…{{/notes}}`.
+- **Field order in List properties**, with ↑ ↓ on each field: the order of the item form,
+  the item's details, All Items and the exports.
+- **Comments on list items**, as in SharePoint: not a field, but part of every item. Open an
+  item and its comments are in a column beside its fields — add one there, saved at once,
+  without editing the item. Every comment is saved with who wrote it and when, recorded by the
+  server so nobody can post in someone else's name, and can be removed by its author or an
+  administrator, never edited. The list shows a speech bubble with a count on items that have
+  comments; a list can turn them off in List properties. In generated pages they are
+  `{{#_comments}}…{{/_comments}}`, and `{{_comment_form}}` puts a box to add one on the page
+  itself; a new HTML template shows the item and its comments side by side (two thirds and
+  one third). Exports add a Comments column. The item form has a **Cancel** button.
+- **Number and Yes/No fields in lists.** A Number has a set number of decimals and an
+  optional unit (`1,250.50 kr`), sorts as a number, and a view can filter it with `> 100` or
+  `<= 5`. Yes/No is a checkbox. Both reach generated pages: `{{price}}` with its unit,
+  `{{#paid}}…{{/paid}}`.
+- **The Markdown starter shows how to repeat.** A new Markdown page generator template gives
+  each group that allows several entries, and each lookup, a section of its own:
+  `{{#cards}} … {{/cards}}` repeated per entry (a heading and a list of its fields) and
+  `{{^cards}}_None._{{/cards}}` when there are none — the plain fields stay in the table.
+- **AI users can change a list item.** A new tool, `wiki_update_list_item`, sets fields of
+  one item in a list and/or adds a comment to it, with the same checks as saving the item form:
+  values must fit their field (a choice one of its options, a date a date, a lookup an item
+  that exists), comments are stamped with the AI user's name, and read-only Spaces and reader
+  AI users are refused. Pages generated from the list are re-rendered. Groups of fields,
+  ItemId and "also show" fields are left to the form. Available to MCP clients too.
+- **Lookups as cards in generated pages.** A lookup now reaches the items it points at, the
+  way a group of fields does: inside `{{#contacts}}…{{/contacts}}` each item's own fields
+  (`{{city}}`), `{{_title}}` and `{{_text}}`, repeated per item when the lookup allows several;
+  a single one also reads `{{owner.city}}`. `{{contacts}}` alone prints what it always did.
+  A new HTML template shows each lookup as a stack of cards, one per item, headed by what the
+  lookup shows — and leaves its "also show" fields out of the main table, since the cards say
+  it. `{{_edit}}` inside a lookup's item is a link icon that marks it as linked data and, for
+  someone who may edit that list, opens the linked item in its own list's form; saved, the
+  page shows the change at once.
+- **Settings… on a page generator template.** Change where its pages go (picked from a list
+  of the Space's folders) and what they are named after, from the template's header —
+  without editing metadata, which a Space may not allow by hand. Existing pages move or are
+  renamed and keep their page ids.
+- **Help for template tags.** The **?** in a page generator template's header, and a
+  **{{ }} ?** button in the editor while the template is edited, explain what a template can
+  say — starting with the fields of its own list and the exact tag for each — then `{{_title}}`,
+  `{{_edit}}`, shown-if / shown-unless sections, repeats, and the kinds of field.
 - **Edit a row from its generated page.** `{{_edit}}` in a template puts a ✎ button on each
   generated page that opens the row's item in its list's form, over the page — even when the
-  list is in another Space — and shows the re-generated page once it is saved. Only people who
-  can edit the list see it. New templates have it beside the title.
+  list is in another Space — and shows the re-generated page as soon as it is saved: the save
+  renders the page before it returns, so there is no wait. Only people who
+  can edit the list see it. New templates have it beside the title. `{{_add.cards}}` does the
+  same for a group of fields that allows several entries: a **+** that opens the form with a
+  new card already added to that group.
 - **Selecting several pages in a folder.** The main-area folder listing has a checkbox on
   every page: tick some (Shift for a range, or all on the page — and then all in the
   folder), then **Move…**, **Add tag…** or **Delete** them together. The page names still
@@ -52,7 +93,7 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   is listed afterwards and stays selected; a move asks once about updating `[[wikilinks]]`.
 - **Generated pages in HTML.** A page generator can now write its pages in HTML — the
   default in New → Page Generator — for layouts Markdown cannot do: cards, label/value
-  rows, a grid of cards per entry of a group. The starter template does all three, styled by a
+  rows, a full-width card per entry of a group. The starter template does all three, styled by a
   few new classes (`wk-card`, `wk-grid`, `wk-fields`, `wk-muted`). Values from the list are
   escaped for where they land in the HTML: as text, in an attribute, or in a link, where only
   http, https, mailto and relative links are allowed and anything else (`javascript:`…) is
@@ -88,7 +129,8 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   row renames its page and keeps its address, and a row that is removed leaves its page
   behind, archived. A generated page cannot be edited directly — change the template or the
   list, or *Detach* the page to make it your own; its tags and other metadata stay editable.
-  Start one from **New → Page Generator**; the template goes in the Space's `templates/`
+  Start one from **New → Page Generator** — the Space's folders are listed under *Pages go
+  in folder* to click; the template goes in the Space's `templates/`
   folder, has an icon of its own in the file tree, and is not offered as a New Page template.
   A generated page says so with an icon in its header; clicking it shows where the page comes
   from, with Detach. **Admin → Content → Generators** lists every
@@ -105,6 +147,10 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   already exist keep the templates they have.
 - **Shorter Content tabs in Admin**: *Index*, *Deleted*, *Retention* and *Metadata* (were Index
   Pages, Deleted Pages, Retention Policies and Page Metadata), to make room for Generators.
+- **AI users in a generated page's chat know the page is generated.** They are no longer
+  handed its path "to update it": they are told it cannot be edited and which list item and
+  template it comes from — and, when the list is in the same Space, to change the item
+  instead (below); otherwise to say what should change and point to the page's edit button.
 
 ### Deprecated
 - **The static site export** (`export_static_site.php`) is no longer maintained and will probably
@@ -112,6 +158,17 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
   fields — are not added to it. It prints a notice when run.
 
 ### Fixed
+- **A page generator made nothing for rows whose pages had been detached and then
+  deleted.** A detached row now stays out only while its detached page exists; delete that
+  page and the next render makes a fresh one. (Before, Re-render said "Nothing changed".)
+- **A generated page's header came back unfolded.** Unfolding it, going to another page and
+  coming back (by a link or a tab) showed it open; it starts folded every time now.
+- **A new page generator wrote "Ann (1)" beside the pages a deleted one left.** Deleting a
+  template and making a new one for the same list and folder found the archived pages on the
+  names it wanted, so it wrote copies beside them (and Re-render then said "Nothing
+  changed"). It now takes those pages over — same names, same page ids — when nobody has
+  edited them since they were archived, and folds copies an earlier version made back into
+  them. An archived page someone edited is left as it is.
 - **A page generator that had stopped showed "Rendering…" for good** on its template, instead
   of why it stopped — a missing list, an owner without access, a broken template. It says why.
 - **A list item's value could run script.** The item view and item form inserted values as

@@ -16,21 +16,23 @@
 // no `name`, so the form's FormData never sees them; each group editor collects its own
 // value (`_collect()`), as the lookup picker keeps its own (`_values`).
 //
-// A **Comments** field is a log: earlier comments are shown, read-only, with ✕ on those the
-// reader may remove (their own; an admin's, any), and a box for a new one. The new comment is
-// sent as { text } alone — the server stamps who and when (lists.php), so a comment cannot be
-// posted in somebody else's name.
+// **Comments** are the item's, not a field: the item view shows them in a column of their own
+// beside the fields (commentThread) — earlier ones read-only, ✕ on those the reader may remove
+// (their own; an admin's, any), and a box to add one, saved at once. A new comment is sent as
+// { text } alone — the server stamps who and when (lists.php). The edit form does not show
+// them: commenting is not editing the item.
 //
 // The add/edit form normally edits the open list. `openItemModal(id, external)` edits another
 // one — a list behind a generated page, possibly in another Space ({{_edit}},
 // modules/generators): `external` = { data, space, save(data) → Promise<bool>, onClose }.
 import { state } from '../core/state.js';
 import { saveListData } from './data.js';
-import { confirmModal, showToast } from '../core/utils.js';
+import { confirmModal, showToast, canUpload } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { t } from '../i18n/index.js';
 import { cellText, cellParts, partsElement, loadLookupTargets, pickerOptions, titleField, normalizeList,
-         groupEntries, groupSummary, ensureEntryCounter, commentEntries, commentTime, setLookupSpace } from './fields.js';
+         groupEntries, groupSummary, ensureEntryCounter, commentEntries, commentTime, setLookupSpace,
+         commentsOn, COMMENTS } from './fields.js';
 
 // The list the add/edit form is working on when it is not the open one (see above).
 let external = null;
@@ -54,6 +56,12 @@ export const openItemViewModal = async (itemData) => {
     await loadLookupTargets(data);
     const content = document.getElementById('item-view-modal-content');
     content.innerHTML = '';
+    // The fields, and beside them the item's comments when the list takes them.
+    const withComments = commentsOn(data);
+    content.classList.toggle('has-comments', withComments);
+    content.closest('.lightbox-content')?.classList.toggle('item-view-wide', withComments);
+    const fieldsBox = el('div', 'item-view-fields');
+    content.appendChild(fieldsBox);
     const inlineLookups = new Set(data.columns.filter(c => c.type === 'lookup' && c.lookup?.extras === 'inline').map(c => c.id));
     data.columns.forEach(col => {
         // Shown beside its lookup's values already.
@@ -63,21 +71,21 @@ export const openItemViewModal = async (itemData) => {
         if (col.type === 'object') {
             groupView(col, itemData[col.id], value);
             row.append(el('label', '', col.name), value);
-            content.appendChild(row);
-            return;
-        }
-        if (col.type === 'comments') {
-            value.appendChild(commentLog(itemData[col.id]));
-            row.append(el('label', '', col.name), value);
-            content.appendChild(row);
+            fieldsBox.appendChild(row);
             return;
         }
         const parts = cellParts(col, itemData, data.columns);
         if (parts?.length) { value.classList.add('has-lookup'); value.appendChild(partsElement(parts, col.type === 'lookup_field')); }
         else value.textContent = cellText(col, itemData, data.columns);
         row.append(el('label', '', col.name), value);
-        content.appendChild(row);
+        fieldsBox.appendChild(row);
     });
+    if (withComments) {
+        const aside = el('aside', 'item-view-comments');
+        aside.appendChild(el('h4', '', t('list.comments-title')));
+        aside.appendChild(commentThread(itemData.id));
+        content.appendChild(aside);
+    }
     const modal = document.getElementById('item-view-modal');
     modal.dataset.id = itemData.id;
     modal.classList.remove('hidden');
@@ -104,25 +112,58 @@ const commentLog = (value, remove = null) => {
     return ul;
 };
 
-/** The form's Comments editor: the log (removable where allowed) and a box for a new one. */
-const commentsEditor = (col, initial) => {
-    const wrap = el('div', 'comments-editor');
-    wrap.dataset.colId = col.id;
-    let kept = commentEntries(initial);
-    wrap.appendChild(commentLog(kept, (c, li) => {
-        kept = kept.filter(k => k !== c);
-        li.remove();
-    }));
-    const box = el('textarea', 'form-control comment-new');
-    box.id = `field-${col.id}`;
-    box.rows = 2;
-    box.placeholder = t('list.comment-add-ph');
-    wrap.appendChild(box);
-    // Kept entries exactly as they were (the server compares them), the new one as text only.
-    wrap._collect = () => {
-        const text = box.value.trim();
-        return text ? [...kept, { text }] : [...kept];
+/**
+ * A Comments field in the item *view*: the log, and — for someone who may change the list —
+ * a box to add a comment and ✕ on those they may remove, each saved at once, without opening
+ * the item for editing. Changed on a copy of the list that replaces the open one only for
+ * the save: a refused save must not leave an unstamped comment in memory, to be posted by the
+ * next save of anything. On success the list comes back stamped (saveListData adopts it) and
+ * the thread is drawn again from it.
+ */
+const commentThread = (itemId) => {
+    const wrap = el('div', 'comment-thread');
+    const editable = canUpload();
+    const current = () => state.currentListData?.items.find(i => i.id === itemId) || {};
+    const save = async (change) => {
+        const before = state.currentListData;
+        const next = structuredClone(before);
+        const item = next.items.find(i => i.id === itemId);
+        if (!item) return false;
+        item[COMMENTS] = change(commentEntries(item[COMMENTS]));
+        state.currentListData = next;
+        const ok = await saveListData();
+        if (!ok && state.currentListData === next) state.currentListData = before;
+        draw();
+        return ok;
     };
+    const draw = () => {
+        wrap.querySelector('.comment-log')?.remove();
+        const log = commentLog(current()[COMMENTS], editable ? async (c) => {
+            if (!await confirmModal(t('list.comment-remove-confirm'), { confirmLabel: t('btn.delete'), dangerous: true, icon: icons.trash })) return;
+            await save(list => list.filter(k => k.id !== c.id));
+        } : null);
+        wrap.insertBefore(log, wrap.firstChild);
+        if (!log.children.length) log.appendChild(el('li', 'comment-none', t('list.comments-none')));
+    };
+    if (editable) {
+        const box = el('textarea', 'form-control comment-new');
+        box.rows = 2;
+        box.placeholder = t('list.comment-add-ph');
+        const add = el('button', 'btn btn-sm btn-blue comment-add', t('list.comment-add'));
+        add.type = 'button';
+        add.addEventListener('click', async () => {
+            const text = box.value.trim();
+            if (!text) { box.focus(); return; }
+            add.disabled = true;
+            // The text stays in the box until the comment is saved, so a refusal loses nothing.
+            if (await save(list => [...list, { text }])) box.value = '';
+            add.disabled = false;
+        });
+        const bar = el('div', 'comment-add-bar');
+        bar.appendChild(add);
+        wrap.append(box, bar);
+    }
+    draw();
     return wrap;
 };
 
@@ -383,7 +424,7 @@ const groupEditor = (col, initial) => {
 
 // ── Adding or editing an item ─────────────────────────────────────────────────
 
-export const openItemModal = async (itemId = null, ext = null) => {
+export const openItemModal = async (itemId = null, ext = null, { addTo = null } = {}) => {
     external = ext;
     setLookupSpace(ext ? ext.space : null);
     const data = normalizeList(formData());
@@ -409,9 +450,8 @@ export const openItemModal = async (itemId = null, ext = null) => {
         let input;
         if (col.type === 'lookup') input = lookupPicker(col, value);
         else if (col.type === 'object') input = groupEditor(col, itemData ? itemData[col.id] : null);
-        else if (col.type === 'comments') input = commentsEditor(col, itemData ? itemData[col.id] : null);
         else input = plainInput(col.type, col.options, value);
-        if (!['lookup', 'object', 'comments'].includes(col.type)) {
+        if (!['lookup', 'object'].includes(col.type)) {
             input.id = `field-${col.id}`;
             input.name = col.id;
         }
@@ -426,7 +466,15 @@ export const openItemModal = async (itemId = null, ext = null) => {
         form.appendChild(row);
     });
     document.getElementById('item-modal').classList.remove('hidden');
-    form.querySelector('input, textarea, select')?.focus();
+    // `{{_add.cards}}` on a generated page: the same form, with a new entry already added to
+    // that group — its own "+ Add entry", which opens the entry and focuses its first field.
+    const adder = addTo ? form.querySelector(`.group-editor[data-col-id="${CSS.escape(addTo)}"] .group-add-entry`) : null;
+    if (adder) {
+        adder.click();
+        adder.closest('.form-item-row')?.scrollIntoView({ block: 'nearest' });
+    } else {
+        form.querySelector('input, textarea, select')?.focus();
+    }
 };
 
 /** Close the add/edit form, forgetting the list it was on if that was not the open one. */
@@ -444,7 +492,7 @@ export const saveItem = async () => {
     const newItemData = {};
     for (const [key, value] of new FormData(form).entries()) newItemData[key] = value;
     form.querySelectorAll('.lookup-picker').forEach(p => { newItemData[p.dataset.colId] = [...p._values]; });
-    form.querySelectorAll('.group-editor, .comments-editor').forEach(g => { newItemData[g.dataset.colId] = g._collect(); });
+    form.querySelectorAll('.group-editor').forEach(g => { newItemData[g.dataset.colId] = g._collect(); });
     // A box unticked is absent from FormData; Yes/No is true or false, never a string.
     form.querySelectorAll('input[data-bool]').forEach(b => { newItemData[b.dataset.bool] = b.checked; });
     // A number is stored as a number; an empty box is no value.
