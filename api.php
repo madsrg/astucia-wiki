@@ -30,6 +30,8 @@ require_once __DIR__ . '/skills.php';
 require_once __DIR__ . '/remember_me.php';
 require_once __DIR__ . '/accounts.php';
 require_once __DIR__ . '/passwords.php';
+require_once __DIR__ . '/setup.php';      // the setup checklist (modules/setup)
+require_once __DIR__ . '/ai_handoff.php'; // an AI's reply mentioning another AI user hands off to it
 
 session_start();
 wiki_remember_restore();   // OTP "keep me signed in" — before anything reads $_SESSION['user']
@@ -462,21 +464,6 @@ if (isset($_REQUEST['action'])) {
     }
 
     require_once __DIR__ . '/wiki_ai_tools.php';
-
-    function trigger_ai_mentions($chat_file, $message_text, $chat_data) {
-        global $indexer, $space_dir;
-        if (!defined('WIKI_SYSTEM_DATA') || !file_exists(WIKI_SYSTEM_DATA . 'users.json')) return;
-        $all_users = json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true)['users'] ?? [];
-        // Same resolver as post_chat_message, so this can never disagree with it about
-        // who was addressed. (Nothing calls this function today.)
-        $u = wiki_match_ai_mention($message_text, $all_users);
-        if ($u === null) return;
-        ignore_user_abort(true);
-        set_time_limit(0);
-        if (session_id()) session_write_close();
-        if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
-        trigger_ai_response($u, $chat_file, $chat_data, $indexer, $space_dir);
-    }
 
     function trigger_ai_response($ai_user, $chat_file, $chat_data, $indexer, $space_dir, $placeholder_id = null) {
         $config        = wiki_ai_effective_config($ai_user);   // connection fields laid over ai_config
@@ -974,6 +961,7 @@ if (isset($_REQUEST['action'])) {
         if ($fresh_raw === false) { @unlink($status_file); return; }
         $fresh = json_decode($fresh_raw, true);
         if (!$fresh) { @unlink($status_file); return; }
+        $reply_msg_id = null;   // the message the reply became, for the hand-off below
         if ($placeholder_id !== null) {
             $replaced = false;
             foreach ($fresh['messages'] as &$_m) {
@@ -983,15 +971,18 @@ if (isset($_REQUEST['action'])) {
                     $_m['timestamp'] = date('c');
                     unset($_m['pending']);
                     $replaced = true;
+                    $reply_msg_id = $placeholder_id;
                     break;
                 }
             }
             unset($_m);
             if (!$replaced) {
+                $reply_msg_id = (int)$fresh['nextMessageId'];
                 $fresh['messages'][] = ['id' => $fresh['nextMessageId'], 'uid' => (int)($ai_user['uid'] ?? 0), 'name' => $ai_user['name'] ?? 'AI', 'timestamp' => date('c'), 'text' => $reply];
                 $fresh['nextMessageId']++;
             }
         } else {
+            $reply_msg_id = (int)$fresh['nextMessageId'];
             $fresh['messages'][] = ['id' => $fresh['nextMessageId'], 'uid' => (int)($ai_user['uid'] ?? 0), 'name' => $ai_user['name'] ?? 'AI', 'timestamp' => date('c'), 'text' => $reply];
             $fresh['nextMessageId']++;
         }
@@ -1039,6 +1030,20 @@ if (isset($_REQUEST['action'])) {
         }
         wiki_chat_write($chat_file, $fresh);
         @unlink($status_file);
+
+        // The reply mentions another AI user: hand the thread on (ai_handoff.php). Inline
+        // here, in the request that already detached for this reply, unless that AI always
+        // works in the background — the hop limit is what bounds the recursion.
+        if ($reply_msg_id !== null) {
+            $handoff = wiki_ai_handoff_prepare($chat_file, $reply_msg_id, $ai_user);
+            if ($handoff !== null) {
+                if (!empty($handoff['target']['ai_config']['always_background'])) {
+                    wiki_ai_handoff_queue($handoff, $chat_file, $space_dir);
+                } else {
+                    trigger_ai_response($handoff['target'], $chat_file, $handoff['data'], $indexer, $space_dir, $handoff['placeholder_id']);
+                }
+            }
+        }
     }
 
     $edit_actions  = ['save', 'create_file', 'save_message_page', 'create_folder', 'create_diagram', 'create_list', 'create_chat', 'create_search',
@@ -1047,7 +1052,7 @@ if (isset($_REQUEST['action'])) {
                       'delete_attachment', 'upload_to_folder', 'delete_folder_file', 'create_library_folder', 'update_tags', 'sync_fm_tags',
                       'save_diagram_svg', 'upload_page', 'create_space', 'rename_space', 'set_git_commit', 'commit_snapshot', 'git_restore',
                       'retarget_wikilinks', 'set_frontmatter', 'geocode', 'generator_render', 'generator_detach', 'generator_preview', 'generator_sources', 'generator_create', 'generator_settings'];
-    $admin_actions = ['admin_get_generators', 'admin_chat_retention', 'admin_frontmatter_settings', 'admin_map_settings', 'admin_mention_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
+    $admin_actions = ['admin_setup_status', 'admin_setup_startup', 'admin_mail_settings', 'admin_mail_test', 'admin_mail_save', 'admin_mail_remove', 'admin_get_generators', 'admin_chat_retention', 'admin_frontmatter_settings', 'admin_map_settings', 'admin_mention_settings', 'admin_ai_memory_settings', 'admin_system_info', 'admin_prompt_gallery',
                       'admin_set_space_fm_edit', 'admin_set_space_fm_autostamp', 'admin_set_space_fm_tags_sync', 'admin_set_space_memory',
                       'admin_set_space_skills', 'admin_ai_skills_settings', 'admin_skills_list', 'admin_skill_get', 'admin_skill_save',
                       'admin_skill_delete', 'admin_skill_import_stage', 'admin_skill_import_commit',
@@ -3698,6 +3703,11 @@ if (isset($_REQUEST['action'])) {
                 // A list's groups of fields have a shape everything that reads the list relies
                 // on (lists.php). A save that breaks it is refused — never "fixed" — with the
                 // item and field named, so the writer can see what to correct.
+                // A value a Choice bound to a taxonomy folder gains must be an item of that
+                // folder (lists.php, taxonomy_lists.php) — values it already held pass.
+                if ($ext_save === 'list' && $list_bad === null) {
+                    $list_bad = wiki_list_taxonomy_check($content, is_file($file_path) ? (string)file_get_contents($file_path) : null);
+                }
                 if ($ext_save === 'list' && ($list_bad !== null || ($list_bad = wiki_list_check($content)) !== null)) {
                     if ($save_lock) { flock($save_lock, LOCK_UN); fclose($save_lock); $save_lock = false; }
                     wiki_audit_finish($_audit, 'failure', 'invalid list: ' . $list_bad['code'], null, $_audit_space);
@@ -5043,8 +5053,9 @@ if (isset($_REQUEST['action'])) {
                             // The address they may change, not the one they log in with.
                             'email'       => wiki_user_notify_email($pu),
                             'loginEmail'  => $pu['email']      ?? '',
-                            'fontFamily'  => $pu['fontFamily'] ?? 'sans',
-                            'fontSize'    => $pu['fontSize']   ?? '11pt',
+                            'fontFamily'  => wiki_display_prefs($pu)['font'],
+                            'uiScale'     => wiki_display_prefs($pu)['ui'],
+                            'textScale'   => wiki_display_prefs($pu)['text'],
                             'dailyDigest' => !empty($pu['dailyDigest']),
                             'notifyAgentJobs' => !empty($pu['notifyAgentJobs']),
                             'avatar'      => (string)($pu['avatar'] ?? ''),
@@ -5062,7 +5073,9 @@ if (isset($_REQUEST['action'])) {
                 if ($me_uid2 <= 0) throw new Exception('Not authenticated.');
                 $new_email      = trim($_POST['email']      ?? '');
                 $new_font       = trim($_POST['fontFamily'] ?? 'sans');
-                $new_font_size  = trim($_POST['fontSize']   ?? 'normal');
+                // A size not sent, or not one of the steps, keeps what is stored.
+                $new_ui_scale   = wiki_scale_valid($_POST['uiScale']   ?? null, WIKI_UI_SCALE);
+                $new_text_scale = wiki_scale_valid($_POST['textScale'] ?? null, WIKI_TEXT_SCALE);
                 $new_digest     = (($_POST['dailyDigest'] ?? '') === '1');
                 $new_job_notify = (($_POST['notifyAgentJobs'] ?? '') === '1');
                 // null = not sent (keep), '' = none (the initial), else one of the vendored set.
@@ -5070,8 +5083,7 @@ if (isset($_REQUEST['action'])) {
                 if ($new_avatar !== null && $new_avatar !== '' && !in_array($new_avatar, wiki_ai_avatar_ids(), true)) {
                     throw new Exception('Unknown avatar.');
                 }
-                if (!in_array($new_font,      ['sans','serif','mono']))                          $new_font      = 'sans';
-                if (!in_array($new_font_size, ['10pt','11pt','12pt','14pt','16pt']))          $new_font_size = '11pt';
+                if (!in_array($new_font, WIKI_FONTS, true)) $new_font = 'sans';
                 if ($new_email && !filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
                     throw new Exception('Please enter a valid email address.');
                 }
@@ -5085,7 +5097,12 @@ if (isset($_REQUEST['action'])) {
                         if ($new_email) $pu2['notifyEmail'] = $new_email;
                         else            unset($pu2['notifyEmail']);
                         $pu2['fontFamily']  = $new_font;
-                        $pu2['fontSize']    = $new_font_size;
+                        // Points, from before the two sizes: read until the account saves.
+                        $prev_display = wiki_display_prefs($pu2);
+                        $pu2['uiScale']     = $new_ui_scale   ?? $prev_display['ui'];
+                        $pu2['textScale']   = $new_text_scale ?? $prev_display['text'];
+                        unset($pu2['fontSize']);
+                        $saved_display = wiki_display_prefs($pu2);
                         $pu2['dailyDigest'] = $new_digest;
                         $pu2['notifyAgentJobs'] = $new_job_notify;
                         if ($new_avatar === '')       unset($pu2['avatar']);
@@ -5098,7 +5115,9 @@ if (isset($_REQUEST['action'])) {
                 if (!$found_pref) throw new Exception('User not found.');
                 file_put_contents(WIKI_SYSTEM_DATA . 'users.json', json_encode($pref_data2, JSON_PRETTY_PRINT));
                 $_SESSION['user']['fontFamily'] = $new_font;
-                $_SESSION['user']['fontSize']   = $new_font_size;
+                $_SESSION['user']['uiScale']    = $saved_display['ui'];
+                $_SESSION['user']['textScale']  = $saved_display['text'];
+                unset($_SESSION['user']['fontSize']);
                 echo json_encode(['success' => true]);
                 break;
 
@@ -5323,18 +5342,13 @@ if (isset($_REQUEST['action'])) {
 
             case 'admin_send_test_email':
                 if (!is_mail_configured()) {
-                    throw new Exception('Email is not configured. Add SENDGRID_API_KEY or MAILGUN_API_KEY (+ related constants) to config.php.');
+                    throw new Exception('Email is not configured. Set it up from the setup checklist, or in config.php.');
                 }
                 $test_to   = $_SESSION['user']['email'] ?? '';
                 $test_name = $_SESSION['user']['name']  ?? 'Admin';
                 if (!$test_to) throw new Exception('No email address found for your account.');
-                $test_ok = send_email(
-                    $test_to, $test_name,
-                    APP_TITLE . ' — test email',
-                    '<p>This is a test email from <strong>' . htmlspecialchars(APP_TITLE) . '</strong>.</p>'
-                    . '<p>If you received this, your ' . mail_provider_name() . ' email configuration is working correctly.</p>'
-                );
-                if (!$test_ok) throw new Exception('Email was not accepted by ' . mail_provider_name() . '. Check your API key and sending domain in config.php.');
+                $test_res = wiki_mail_send(wiki_mail_config(), $test_to, $test_name, APP_TITLE . ' — test email', wiki_mail_test_body());
+                if (!$test_res['ok']) throw new Exception('Email was not accepted by ' . mail_provider_name() . ': ' . $test_res['error']);
                 echo json_encode(['success' => true, 'message' => "Test email sent to {$test_to} via " . mail_provider_name()]);
                 break;
 
@@ -5743,6 +5757,10 @@ if (isset($_REQUEST['action'])) {
                                   'counts' => (object)$_tx_counts, 'unclassified' => wiki_tax_unclassified(),
                                   // Pages using each value of each bound field, from the blocks.
                                   'field_counts' => (object)wiki_tax_field_usage(),
+                                  // List values naming each item (lc path), and the list fields
+                                  // taking their values from each folder (taxonomy_lists.php).
+                                  'list_counts'  => (object)wiki_tax_list_usage(),
+                                  'list_refs'    => (object)wiki_tax_list_refs(),
                                   // Folders inside an item, from before that was refused.
                                   'misplaced' => wiki_tax_misplaced_folders()]);
                 break;
@@ -6510,6 +6528,15 @@ if (isset($_REQUEST['action'])) {
                     throw new Exception('Unknown avatar.');
                 }
                 $uf_sai = file_exists(WIKI_SYSTEM_DATA . 'users.json') ? (json_decode(file_get_contents(WIKI_SYSTEM_DATA . 'users.json'), true) ?? ['users' => []]) : ['users' => []];
+                // Unique among AI users, ignoring case — on create and on rename alike. A mention
+                // is matched case-insensitively (wiki_match_ai_mention), so "Atlas" and "atlas"
+                // would answer to the same #Atlas and only one of them would ever be reached.
+                foreach ($uf_sai['users'] as $eu) {
+                    if (empty($eu['is_ai']) || ($ai_uid !== null && (int)($eu['uid'] ?? -1) === $ai_uid)) continue;
+                    if (mb_strtolower(trim((string)($eu['name'] ?? ''))) === mb_strtolower($ai_name)) {
+                        throw new Exception('Another AI user is already called "' . trim((string)$eu['name']) . '".');
+                    }
+                }
                 if ($ai_uid !== null) {
                     $found_ai = false;
                     foreach ($uf_sai['users'] as &$u) {
@@ -7472,6 +7499,76 @@ if (isset($_REQUEST['action'])) {
                     'description' => $t['description'] ?? '',
                 ], $raw_tools);
                 echo json_encode(['success' => true, 'tool_count' => count($tools_out), 'tools' => $tools_out]);
+                break;
+
+            // ── Email settings (mailer.php): the setup checklist's email wizard ───────────
+            // config.php, when it configures a provider, is in charge and these only report
+            // it. The key is never sent to the browser: a hint of its last characters is.
+            case 'admin_mail_settings':
+                $ms_const = _wiki_mail_from_constants();
+                $ms_stored = wiki_mail_stored();
+                echo json_encode(['success' => true,
+                    'current'        => wiki_mail_public(wiki_mail_config()),
+                    'stored'         => $ms_stored ? wiki_mail_public($ms_stored + ['source' => 'wiki']) : null,
+                    // config.php names a provider but leaves something out: worth saying,
+                    // since it is easy to think it is what is sending.
+                    'config_partial' => $ms_const !== null && wiki_mail_incomplete($ms_const) !== '',
+                    'test_to'        => (string)($_SESSION['user']['email'] ?? ''),
+                    'app_title'      => APP_TITLE]);
+                break;
+
+            case 'admin_mail_test':
+            case 'admin_mail_save':
+                if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new Exception('POST required.');
+                if ($_REQUEST['action'] === 'admin_mail_save' && wiki_mail_config()['source'] === 'config') {
+                    throw new Exception('Email is set in config.php, which takes precedence. Change it there.');
+                }
+                $mt_cfg = wiki_mail_normalize($_POST);
+                // A blank key is "the one already stored", for the same provider only — a key
+                // for one service is never tried against another.
+                $mt_prev = wiki_mail_stored();
+                if ($mt_cfg['api_key'] === '' && $mt_prev && $mt_prev['provider'] === $mt_cfg['provider']) $mt_cfg['api_key'] = $mt_prev['api_key'];
+                $mt_missing = wiki_mail_incomplete($mt_cfg);
+                if ($mt_missing !== '') {
+                    echo json_encode(['success' => false, 'missing' => $mt_missing, 'message' => 'Missing or invalid: ' . $mt_missing]);
+                    break;
+                }
+                if ($_REQUEST['action'] === 'admin_mail_test') {
+                    $mt_to = trim((string)($_POST['to'] ?? ''));
+                    if (!filter_var($mt_to, FILTER_VALIDATE_EMAIL)) throw new Exception('Enter an address to send the test to.');
+                    $mt_res = wiki_mail_send($mt_cfg, $mt_to, '', APP_TITLE . ' — test email', wiki_mail_test_body());
+                    echo json_encode($mt_res['ok'] ? ['success' => true, 'to' => $mt_to]
+                                                   : ['success' => false, 'message' => $mt_res['error']]);
+                    break;
+                }
+                if (!wiki_mail_store($mt_cfg)) throw new Exception('Could not write mail_settings.json.');
+                echo json_encode(['success' => true, 'current' => wiki_mail_public(wiki_mail_config())]);
+                break;
+
+            case 'admin_mail_remove':
+                if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new Exception('POST required.');
+                if (!wiki_mail_store(['provider' => ''])) throw new Exception('Could not remove mail_settings.json.');
+                echo json_encode(['success' => true, 'current' => wiki_mail_public(wiki_mail_config())]);
+                break;
+
+            // ── The setup checklist (setup.php, modules/setup) ───────────────────────────
+            case 'admin_setup_status':
+                // Worked out from the configuration on every call: an item undone later
+                // shows as undone again. The provider cards come with it — the wizard is
+                // reached only from here, and only an administrator sees either.
+                wiki_setup_pin_default();
+                $ss_items = wiki_setup_status();
+                echo json_encode(['success' => true, 'items' => $ss_items,
+                    'complete' => wiki_setup_complete($ss_items),
+                    'startup'  => wiki_setup_startup_pref(),
+                    'presets'  => llm_presets()]);
+                break;
+
+            case 'admin_setup_startup':
+                if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new Exception('POST required.');
+                $ss_on = ($_POST['on'] ?? '') === '1';
+                if (!wiki_setup_set_startup_pref($ss_on)) throw new Exception('Could not save the setting.');
+                echo json_encode(['success' => true, 'startup' => $ss_on]);
                 break;
 
             case 'admin_test_llm_connection':

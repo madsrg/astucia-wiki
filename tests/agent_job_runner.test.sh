@@ -150,5 +150,46 @@ assert_contains "the thread travels"          'the Q3 numbers look off'   "$job"
 assert_contains "the typed prompt is last"    'The request: investigate that' "$job"
 assert_contains "effort from the AI user"     '"effort": "medium"'        "$job"
 
+section 'a scheduled job (no thinking key) uses the AI user effort'
+# The scheduler, the admin test run and a workflow's AI action pass a job with no
+# 'thinking' key. They used to run without reasoning and with a 120 s call timeout
+# whatever the AI user said; now the AI user's own effort applies. A queued job's
+# explicit null still means off.
+cat > "$WIKI_APP/__test_llm_body.php" <<'PHP'
+<?php
+file_put_contents(dirname(__DIR__) . '/llm-body.json', file_get_contents('php://input'));
+header('Content-Type: application/json');
+echo json_encode(['choices' => [['finish_reason' => 'stop',
+                                 'message' => ['role' => 'assistant', 'content' => 'Done.']]]]);
+PHP
+sent_body() {  # sent_body <effort or ''> <job json fragment>
+    rm -f "$WIKI_ROOT/llm-body.json"
+    (cd "$WIKI_APP" && STUB_URL="$WIKI_URL/__test_llm_body.php" EFFORT="$1" EXTRA="$2" php -r '
+require_once "config.php"; require_once "indexer.php"; require_once "space_settings.php";
+require_once "ai_core.php"; require_once "mailer.php"; require_once "agent_jobs.php";
+$space_dir = rtrim(PAGES_DIR, "/") . "/Main";
+$cfg = ["provider" => "openai", "model" => "gpt-5", "api_key" => "k", "max_tokens" => 4096,
+        "api_url" => getenv("STUB_URL")];
+if (getenv("EFFORT") !== "") $cfg["reasoning_effort"] = getenv("EFFORT");
+$ai  = ["uid" => -9, "name" => "Bot", "role" => "editor", "is_ai" => true, "ai_config" => $cfg];
+$job = array_merge(["id" => "s1", "prompt" => "hi", "space" => "Main"], json_decode(getenv("EXTRA") ?: "{}", true));
+run_agent_job($job, $ai, new PageIndexer($space_dir), $space_dir);' >/dev/null 2>&1)
+    python3 -c "
+import json
+b=json.load(open('$WIKI_ROOT/llm-body.json'))
+print(b.get('reasoning_effort','none'), b.get('max_completion_tokens', b.get('max_tokens')))"
+}
+assert_eq "scheduled, effort high -> reasoning, 16k floor" 'high 16000'  "$(sent_body high '')"
+assert_eq "scheduled, effort off -> none"                  'none 4096'   "$(sent_body '' '')"
+assert_eq "queued with explicit null stays off"            'none 4096'   "$(sent_body high '{"thinking":null}')"
+assert_eq "queued with its own effort keeps it"            'low 16000'   "$(sent_body high '{"thinking":{"enabled":true,"effort":"low"}}')"
+
+section 'the per-call timeout follows Max Tokens'
+timeouts=$(cd "$WIKI_APP" && php -r '
+require_once "config.php"; require_once "ai_core.php";
+echo implode(" ", [wiki_ai_call_timeout(4096), wiki_ai_call_timeout(8000), wiki_ai_call_timeout(20000),
+                   wiki_ai_call_timeout(50000), wiki_ai_call_timeout(1000, true)]);')
+assert_eq "4k/8k/20k/50k plain, then reasoning" '120 200 500 900 900' "$timeouts"
+
 printf '\n'
 exit $(( ASSERT_FAIL > 0 ))

@@ -108,6 +108,9 @@ define('WIKI_SYSTEM_DATA', '');
 define('SEARCH_ENGINE', 'basic');
 
 // --- Email (optional) ---
+// Easier: leave these out and set email up from the wiki — the setup checklist (an
+// administrator's sidebar icon) has a wizard that tests and saves it. Anything set here,
+// when it configures a provider completely, takes precedence over that.
 // Set MAIL_PROVIDER to 'sendgrid' or 'mailgun'. If omitted, the provider is
 // auto-detected from whichever API key is present below.
 // define('MAIL_PROVIDER', 'sendgrid');
@@ -116,6 +119,8 @@ define('SEARCH_ENGINE', 'basic');
 // define('SENDGRID_API_KEY',    'SG.xxxxxxxxxxxxxxxxxxxxxxxx');
 // define('SENDGRID_FROM_EMAIL', 'no-reply@your-domain.example.com');
 // define('SENDGRID_FROM_NAME',  APP_TITLE);
+// SENDGRID_REGION: 'eu' (default, for an account in SendGrid's EU region) or 'global'
+// define('SENDGRID_REGION',     'global');
 
 // Mailgun (Sinch) — https://app.mailgun.com/settings/api_security
 // MAILGUN_REGION: 'us' (default) or 'eu'
@@ -124,6 +129,10 @@ define('SEARCH_ENGINE', 'basic');
 // define('MAILGUN_REGION',     'eu');
 // define('MAILGUN_FROM_EMAIL', 'no-reply@your-domain.example.com');
 // define('MAILGUN_FROM_NAME',  APP_TITLE);
+
+// Optional: send the provider API calls to a relay that speaks the same API (a proxy) instead
+// of api.sendgrid.com / api.mailgun.net. Applies to the settings from either place.
+// define('MAIL_API_BASE_URL', 'https://mail-relay.internal.example.com');
 
 // --- Access log (optional) ---
 // Directory where daily access logs are written. Must be writable by the web

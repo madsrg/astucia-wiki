@@ -6,6 +6,96 @@ Versions follow [CalVer](https://calver.org/) — `YYYY.M.MICRO`.
 
 ## [Unreleased]
 
+## [2026.11.5] — 2026-11-25
+
+### Added
+- **AI users can hand off to each other.** When an AI user's chat reply mentions another AI
+  user as `#Name`, that AI reads the thread and answers next — a writer asking a reviewer to
+  check its draft, and the reviewer handing it back. Up to 3 hand-offs in a row, so two AI
+  users mentioning each other cannot reply back and forth for ever; never to itself, never
+  from an error, and not for a `#Name` inside code. AI users are told about it in their
+  instructions. Queued hand-offs count against the queue limit of the person who started the
+  conversation, and notify them.
+- **AI users can create lists and add items to them.** Two new tools:
+  - `wiki_create_list` creates a new, empty list with the fields the AI names: text, multi-line
+    text, date, choice (its own options, or the items of a taxonomy folder), number (decimals and
+    unit), Yes/No, and lookup (another list in the same Space). One text field is the Title. It
+    never replaces anything: a path that already exists is refused, even when two creates race
+    for it.
+  - `wiki_add_list_item` adds an item to an existing list. Values are given by field name and
+    only the Title is required. The checks are the item form's and `wiki_update_list_item`'s, so
+    a wrong value names its field and adds nothing. It returns the new item's id, so the AI can
+    comment on the item or point a lookup at it. Two adds at the same moment each get their own
+    id and neither is lost. Pages generated from the list are re-rendered.
+
+  Both are in the audit log and available to MCP clients. Reader AI users and read-only Spaces
+  are refused. Removing items is not part of this.
+- **Setup checklist.** Administrators get a new sidebar icon that opens a checklist of what is
+  set up and what is left: LLM provider, AI users, email, taxonomy, workflows, the background
+  runner and sign-in. A green check means it is really in place — every item is worked out from
+  the configuration each time, so something undone later shows as undone again. An item that is
+  not set up says what it brings, and its details have a **Set it up** button straight into the
+  right place and a link to the documentation; for the background runner, the exact crontab line
+  for this install. On a new wiki it opens by itself once per browser session while **Show at
+  startup** is ticked — a choice each administrator makes for themselves — and stops once
+  everything is done.
+- **Connect an LLM provider in a minute.** A wizard in the checklist (and Admin → LLM Providers →
+  *Quick setup…*): pick OpenAI, Anthropic, Google Gemini, Mistral, OpenRouter, Groq or Ollama,
+  paste the API key, and *Test and save* — the provider is saved only once the model has
+  answered, otherwise the service's own error is shown. Then create an AI user that uses it.
+  The cards are presets in `llm_providers.json`.
+- **Set up email from the wiki.** The checklist's email item opens a wizard: pick SendGrid,
+  Mailgun, Postmark, Brevo or Resend — the last three new, and only set up this way — paste the
+  API key and the sender address, and *Send test and save* — a test email
+  goes to your address first, and the settings are saved only once the provider accepts it
+  (otherwise its own error is shown, such as a wrong key or an unverified sender). *Change*
+  and *Remove* later; the key never returns to the browser. The settings live in
+  `mail_settings.json` beside the other system data; email set in `config.php` (or the
+  container's environment) still takes precedence and is changed there.
+- **Choice fields from the taxonomy.** A list's Choice field — and a Choice inside a group of
+  fields — can take its values from a taxonomy folder instead of choices typed by hand: List
+  properties → *Terms from the taxonomy*, then the folder. The item form lists the folder's
+  items under their subfolders' headings, and *Allow several values* lets an item pick more
+  than one (also for typed choices). The taxonomy stays in charge: renaming or merging a term
+  renames it in every list that uses it, renaming or moving the folder keeps the field
+  pointing at it, and deleting a term or folder a list uses is refused. Only items of the
+  folder can be saved as new values — by people and by AI users alike — and a view filter
+  naming a term or subfolder also finds the items below it. Admin → Taxonomy shows how often
+  a term is used in lists and which list fields use a folder.
+- **Interface size and text size, separately.** My Preferences replaces the five point sizes
+  with two sliders, in steps of 5%: *Interface size* for the sidebar, labels, buttons and
+  dialogs, and *Text size* for pages, lists, item details and the item form, chat, comments,
+  JSON data, search results, folder listings and the editor — relative to the interface, so
+  enlarging the interface enlarges both. Both preview live, and closing without saving puts
+  them back. The defaults are 100% and 90%; an existing choice carries over (11pt is 100%).
+- **Source Sans, the wiki's own font.** A new font choice, served by the wiki itself, so it
+  looks the same on Windows, macOS and Linux — where the system font makes every size look
+  larger. *System* (the former *Sans-serif*) stays the default.
+
+### Changed
+- **One-off jobs have their own tab.** Admin → AI → **One-off Jobs** lists the `/aiJob` queue, with a Refresh button; the tab that held them below the scheduled jobs is now **Scheduled Jobs**. Both show whether the background runner is running.
+- **SendGrid outside the EU.** `SENDGRID_REGION` (`'eu'` by default, as before, or `'global'`)
+  picks the API endpoint; until now every SendGrid account was sent to the EU one. The email
+  wizard asks for the region.
+- **A failed test email says why.** Admin → Diagnostics' test email reports the provider's own
+  error instead of "check your API key".
+- **Content always follows the text size.** List views, lookup pills, chat bubbles (the page
+  chat panel's too), page comments, the editor, JSON data, search previews, folder listings
+  and List Item details all had their own smaller fixed sizes; on a phone a page ignored the
+  preference altogether. The item form is larger, and its labels and values match Item
+  details.
+
+### Fixed
+- **Scheduled AI jobs use the AI user's Reasoning effort.** A scheduled job, its *Test run*
+  and a workflow's AI action ran without extended reasoning whatever the AI user was set to —
+  only chat replies and `/aiJob` used it. They now use it too, along with the longer per-call
+  timeout and the 16,000-token minimum Max Tokens that reasoning runs get.
+- **A high Max Tokens no longer times out after 120 seconds.** In a background run each call
+  to the model is now allowed time in proportion to Max Tokens (about 40 tokens a second, from
+  120 s up to 900 s), so raising Max Tokens to get past *Response truncated* doesn't just turn
+  the failure into a timeout. A timeout now says how long the call was allowed at which
+  Max Tokens setting.
+
 ## [2026.11.4] — 2026-11-22
 
 ### Added

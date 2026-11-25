@@ -15,6 +15,9 @@
 // - The target is resolved only through the **same Space's** index.json, which is what
 //   keeps a lookup from reading another Space's list: a page id from elsewhere is simply
 //   not found there, and the cell falls back to the bare ids.
+// - A `choice` may take its values from a taxonomy folder (`taxonomy`), and with `multiple`
+//   hold several — a JSON array, read joined with "; " (in a group's summary, with ", ").
+//   See taxonomy_lists.php.
 // - A `number` reads with its decimals ("12.50") — no unit and no thousands separator, so
 //   a spreadsheet takes it as a number; a `boolean` reads "Yes" / "No".
 // - **Comments** are not a field: every item may carry `_comments` (a list's `comments: false`
@@ -91,6 +94,7 @@ function wiki_list_group_summary(array $col, $entry): string {
     $vals = [];
     foreach ($picked ?: array_slice($ids, 0, 2) as $id) {
         $v = is_array($entry) ? ($entry[$id] ?? null) : null;
+        if (is_array($v)) $v = implode(', ', array_filter($v, fn($x) => is_scalar($x) && trim((string)$x) !== ''));
         if (is_scalar($v) && trim((string)$v) !== '') $vals[] = (string)$v;
     }
     return implode(', ', $vals);
@@ -176,6 +180,8 @@ function wiki_list_cell(array $col, array $item, array $columns, array $targets)
         return implode('; ', $vals);
     }
     $v = $item[$col['id'] ?? ''] ?? '';
+    // A choice allowing several values holds a list of them.
+    if (is_array($v) && array_is_list($v)) return implode('; ', array_map('strval', array_filter($v, 'is_scalar')));
     return is_scalar($v) ? (string)$v : '';
 }
 
@@ -237,6 +243,7 @@ function wiki_list_xml(array $raw, array $flat): string {
                 }
                 foreach ($col['fields'] ?? [] as $sub) {
                     $v = $entry[$sub['id']] ?? '';
+                    if (is_array($v) && array_is_list($v)) $v = implode('; ', array_map('strval', array_filter($v, 'is_scalar')));
                     $node->addChild(wiki_list_xml_tag((string)($sub['name'] ?? '')), htmlspecialchars(is_scalar($v) ? (string)$v : ''));
                 }
             }
@@ -296,7 +303,8 @@ function wiki_list_check(string $raw): ?array {
             $fid = is_array($f) ? ($f['id'] ?? null) : null;
             if (!is_string($fid) || $fid === '' || $fid === 'id' || isset($ids[$fid])) return $no('bad_group', null, $name, 'field ids');
             if (!in_array($f['type'] ?? '', WIKI_LIST_GROUP_TYPES, true)) return $no('bad_group', null, $name, (string)($f['type'] ?? ''));
-            $ids[$fid] = true;
+            // true: a plain value; 'multi': a choice allowing several, which holds a list of them.
+            $ids[$fid] = ($f['type'] ?? '') === 'choice' && !empty($f['multiple']) ? 'multi' : true;
         }
         $groups[] = ['id' => (string)($col['id'] ?? ''), 'name' => $name, 'multiple' => !empty($col['multiple']), 'ids' => $ids];
     }
@@ -313,6 +321,8 @@ function wiki_list_check(string $raw): ?array {
         foreach ($values as $k => $v) {
             if ($with_id && $k === 'id') continue;
             if (!isset($allowed[$k])) return $no('unknown_subfield', $item, $name, (string)$k);
+            if ($allowed[$k] === 'multi' && is_array($v) && array_is_list($v)
+                && count(array_filter($v, fn($x) => !is_scalar($x))) === 0) continue;
             if ($v !== null && !is_scalar($v)) return $no('value_not_text', $item, $name, (string)$k);
         }
         return null;
@@ -389,6 +399,9 @@ function wiki_list_check_message(array $why): string {
         'comment_remove_denied' => 'only its author or an administrator may remove a comment by ' . $why['detail'] . '.',
         'comment_empty'    => 'a new comment needs some text.',
         'comments_off'     => 'this list does not take comments.',
+        'not_in_taxonomy'  => '"' . $why['detail'] . '" is not an item of the field\'s taxonomy folder.',
+        'tax_one_value'    => 'the field takes one value.',
+        'tax_folder_gone'  => 'its taxonomy folder "' . $why['detail'] . '" no longer exists.',
     ][$why['code']] ?? $why['code'];
     return 'The list was not saved: ' . $where . $what;
 }
@@ -498,3 +511,52 @@ function wiki_list_comments_stamp(string $new_raw, ?string $old_raw, array $acto
     $new['nextEntryId'] = $next;
     return ['content' => json_encode($new, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 'stamped' => true];
 }
+
+/**
+ * A save's new taxonomy values, checked: every value a Choice field bound to a taxonomy folder
+ * (taxonomy_lists.php) holds after the save and did not hold before — in that item, that field
+ * — must be the name of an item in its folder; and a field that takes one value may not be
+ * given several. A value already there passes, so a value since moved out of the folder does
+ * not make the list unsaveable. Returns null, or a wiki_list_check()-shaped refusal.
+ */
+function wiki_list_taxonomy_check(string $new_raw, ?string $old_raw): ?array {
+    if (strpos($new_raw, '"taxonomy"') === false || !function_exists('wiki_tax_list_fields')) return null;
+    $new = json_decode($new_raw, true);
+    if (!is_array($new)) return null;
+    $old = $old_raw !== null ? json_decode($old_raw, true) : null;
+    $old_items = [];
+    foreach ((is_array($old) ? $old['items'] ?? [] : []) as $it) if (is_array($it) && isset($it['id'])) $old_items[(string)$it['id']] = $it;
+    $cells = function (array $item, string $cid, ?string $sid): array {
+        $out = [];
+        _wiki_tax_item_cells($item, $cid, $sid, function ($v) use (&$out) { $out[] = $v; return $v; });
+        return $out;
+    };
+    foreach (wiki_tax_list_fields($new) as [$cid, $sid, $name, $folder, $multiple]) {
+        $vals = wiki_tax_branch_values($folder);
+        foreach ($new['items'] ?? [] as $n => $item) {
+            if (!is_array($item)) continue;
+            $ref = $item['id'] ?? ($n + 1);
+            $had = [];
+            if (isset($old_items[(string)($item['id'] ?? '')])) {
+                foreach ($cells($old_items[(string)$item['id']], $cid, $sid) as $v) foreach (_wiki_tax_cell_values($v) as $x) $had[wiki_tax_lc($x)] = true;
+            }
+            foreach ($cells($item, $cid, $sid) as $v) {
+                $xs = _wiki_tax_cell_values($v);
+                if (!$multiple && count($xs) > 1) {
+                    return ['code' => 'tax_one_value', 'item' => $ref, 'field' => $name, 'detail' => ''];
+                }
+                foreach ($xs as $x) {
+                    if (isset($had[wiki_tax_lc($x)])) continue;
+                    if ($vals === null) {
+                        return ['code' => 'tax_folder_gone', 'item' => $ref, 'field' => $name, 'detail' => $folder];
+                    }
+                    if (!isset($vals[wiki_tax_lc($x)])) {
+                        return ['code' => 'not_in_taxonomy', 'item' => $ref, 'field' => $name, 'detail' => $x];
+                    }
+                }
+            }
+        }
+    }
+    return null;
+}
+

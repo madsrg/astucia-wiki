@@ -1,5 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&display=swap');
 
+/* The wiki's own sans-serif (My Preferences → Source Sans; the default is the system's), served
+   from here rather than a font service, so it looks the same on every system — `system-ui` is Segoe UI on Windows but something with much larger
+   lowercase on Linux, and the same size read very differently. Variable weight, upright and
+   italic. Source Sans 3 by Adobe, SIL Open Font License (fonts/source-sans-3/LICENSE.md). */
+@font-face { font-family: 'Source Sans 3'; font-style: normal; font-weight: 200 900; font-display: swap;
+             src: url('fonts/source-sans-3/SourceSans3-Upright.woff2') format('woff2'); }
+@font-face { font-family: 'Source Sans 3'; font-style: italic; font-weight: 200 900; font-display: swap;
+             src: url('fonts/source-sans-3/SourceSans3-Italic.woff2') format('woff2'); }
+
 :root {
     --font-body: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
     --sidebar-bg: #2d3748;
@@ -30,21 +39,23 @@
 }
 
 /* ── Font family ────────────────────────────────────────────────────────── */
+[data-font="source"] { --font-body: 'Source Sans 3', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; }
 [data-font="serif"] { --font-body: Georgia, Cambria, 'Times New Roman', Times, serif; }
 [data-font="mono"]  { --font-body: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace; }
 
 /* ── Font size ──────────────────────────────────────────────────────────── */
-html[data-font-size="10pt"] { font-size: 10pt; }
-html[data-font-size="11pt"] { font-size: 11pt; }
-html[data-font-size="12pt"] { font-size: 12pt; }
-html[data-font-size="14pt"] { font-size: 14pt; }
-html[data-font-size="16pt"] { font-size: 16pt; }
+/* Two sizes from My Preferences, set on <html> by index.php (modules/preferences while the
+   sliders move). --ui-scale is the root size, so everything in rem follows it: the sidebar,
+   labels, buttons, dialogs. --text-scale applies on top of it to content only — pages,
+   lists, item values, chat, comments, the editor — which use var(--content-size) rather than
+   1rem. A rem size inside content therefore ignores the text size: content uses em. */
+html { --ui-scale: 1; --text-scale: 0.9; --content-size: calc(1rem * var(--text-scale)); }
 
 /* ── Space switcher sizing (was in [data-theme="office"]) ───────────────── */
 .space-switcher-header { font-size: 0.9rem; padding: 0.45rem 0.65rem; }
 .space-switcher { margin-bottom: 5px; }
 
-html { height: 100%; font-size: 11pt; }
+html { height: 100%; font-size: calc(11pt * var(--ui-scale)); }
 body {
     height: 100%; margin: 0;
     font-family: var(--font-body);
@@ -217,6 +228,9 @@ body {
 .space-settings-pane { display: flex; flex-direction: column; gap: 1.9rem; }
 .space-settings-section { display: flex; flex-direction: column; gap: 0.35rem; }
 .space-settings-title { margin: 0; font-size: 0.85rem; font-weight: 600; }
+/* The one form label in the dialog (Delete's confirmation) at the titles' size, as in the
+   admin settings forms — not the generic full-size bold `.form-group label`. */
+.space-settings-content .form-group label { font-size: 0.85rem; font-weight: 600; }
 .space-settings-hint { margin: 0; font-size: 0.78rem; color: var(--accent-gray); line-height: 1.45; }
 .space-settings-row { display: flex; gap: 0.5rem; align-items: center; }
 .space-settings-row .form-control { flex: 1; min-width: 0; }
@@ -277,7 +291,7 @@ body {
 }
 .sidebar-icon-btn:hover { color: var(--sidebar-text); background: var(--accent-gray-hover); }
 
-.admin-ai-switch-row { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; cursor: pointer; }
+.admin-ai-switch-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
 
 /* Audit log viewer */
 .audit-table td { vertical-align: middle; font-size: 0.8rem; }
@@ -505,7 +519,7 @@ body {
 .editor-wrapper { flex-grow: 1; overflow: hidden; position: relative; background-color: white; }
 
 .viewer-wrapper { display: flex; flex-direction: column; height: 100%; }
-#viewer-content { flex-grow: 1; padding: 1rem 2rem; overflow-y: auto; margin-left: 24px; line-height: 1.6; }
+#viewer-content { flex-grow: 1; padding: 1rem 2rem; overflow-y: auto; margin-left: 24px; line-height: 1.6; font-size: var(--content-size); }
 /* Shown when a space has no Main.md start page — see showBlankPage(). */
 .page-blank-state { color: var(--accent-gray); font-style: italic; font-size: 0.9rem; padding: 2rem 0; }
 #diagram-viewer { flex-grow: 1; display: flex; min-height: 0; }
@@ -632,7 +646,7 @@ body {
     padding: 1rem 2rem;
     margin-left: 24px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.95rem;
+    font-size: var(--content-size);
     line-height: 1.6;
     tab-size: var(--tab-size);
     resize: none;
@@ -745,12 +759,12 @@ body {
 .tax-tree .tax-row { min-height: 1.6rem; padding-top: 0.05rem; padding-bottom: 0.05rem; gap: 0.3rem; }
 .tax-tree .tax-icon svg { width: 14px; height: 14px; }
 .tax-tree .tax-twisty { width: 0.9rem; }
-/* The details panel's labels at the tree's size (13.5px). The four field labels are bold
-   — "Type" too, which as a <span> had missed the label rule — and the choices under them
-   (Folder, Item, Allow several values) are plain, since `.form-group label` made them
-   bold as well and they read as headings. */
-.tax-details .form-group > .form-label { display: block; font-size: 0.92em; font-weight: bold; margin-bottom: 0.35rem; }
-.tax-details .form-group label.tax-type { font-size: 0.92em; font-weight: normal; margin-bottom: 0; }
+/* The details panel's labels take their size from the admin label rule (by .form-group
+   label); here only the layout — "Type" is a <span>. The choices under them (Folder, Item,
+   Allow several values) the same size but plain, since `.form-group label` made them bold
+   as well and they read as headings. */
+.tax-details .form-group > .form-label { display: block; margin-bottom: 0.35rem; }
+.tax-details .form-group label.tax-type { font-size: 0.85rem; font-weight: normal; margin-bottom: 0; }
 .tax-toolbar { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; margin: 1rem 0 0.5rem; }
 .tax-tb-btn { display: inline-flex; align-items: center; gap: 0.35rem; }
 .tax-tb-btn svg { width: 14px; height: 14px; flex: none; }
@@ -844,7 +858,7 @@ body {
 .sr-card:hover { border-color: var(--accent-blue); box-shadow: 0 2px 8px rgba(66,153,225,0.12); }
 
 .sr-card-top { display: flex; align-items: center; gap: 0.6rem; }
-.sr-title { font-size: 1rem; font-weight: 600; color: var(--accent-blue); text-decoration: none; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sr-title { font-size: calc(var(--content-size) * 1.05); font-weight: 600; color: var(--accent-blue); text-decoration: none; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sr-title:hover { text-decoration: underline; }
 
 .sr-type-badge { font-size: 0.68rem; font-weight: 600; padding: 0.15em 0.55em; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
@@ -854,8 +868,8 @@ body {
 .sr-type-chat    { background: #faf5ff; color: #6b46c1; }
 
 .sr-path    { font-size: 0.75rem; color: #718096; }
-.sr-heading { font-size: 0.85rem; color: #4a5568; font-style: italic; }
-.sr-preview { font-size: 0.85rem; color: #4a5568; line-height: 1.5; }
+.sr-heading { font-size: var(--content-size); color: #4a5568; font-style: italic; }
+.sr-preview { font-size: var(--content-size); color: #4a5568; line-height: 1.5; }
 .sr-preview mark { background: #fef9c3; color: inherit; border-radius: 2px; padding: 0 1px; }
 
 .sr-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; padding-top: 0.4rem; border-top: 1px solid var(--border-color); font-size: 0.72rem; color: #718096; }
@@ -1044,7 +1058,15 @@ body {
    body scrolls under that, and min-height: 0 is what lets a flex child shrink to scroll. */
 .lightbox-content.prefs-content { max-width: 600px; height: auto; max-height: 85vh; box-sizing: border-box; }
 .prefs-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.25rem; }
+/* Labels as in the admin settings forms (.admin-ai-form): smaller than the generic bold
+   `.form-group label`, the checkbox ones included. */
+.prefs-body .form-group label { font-size: 0.85rem; font-weight: 600; }
 .pref-hint.pref-hint-flush { margin-left: 0; }
+.pref-slider-row { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.25rem; }
+.pref-slider { flex: 1; min-width: 0; accent-color: var(--accent-blue); }
+.pref-slider-val { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+/* The Text slider's sample, at the size content will have. */
+.pref-text-sample { margin: 0.5rem 0 0; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: 6px; background: #fff; font-size: var(--content-size); line-height: 1.5; }
 /* My Preferences → Sign-in methods */
 .pref-signin-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.875rem; }
 .pref-signin-name { flex: 0 0 8.5rem; font-weight: 500; }
@@ -1088,6 +1110,12 @@ body {
 .link-file-tree .file-item-content:hover { background-color: #e2e8f0; }
 .form-group { margin-bottom: 1rem; }
 .form-group label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+/* Form labels in the admin panel and the taxonomy editor (which opens outside it): smaller
+   and semi-bold rather than the generic full-size bold. `:where()` adds no specificity, so
+   this is level with the rule above and wins by order — and anything more specific, like
+   the taxonomy's plain choices (`label.tax-type`), still wins over it. */
+:where(#admin-lightbox, #tax-editor-modal) .form-group label,
+:where(#admin-lightbox, #tax-editor-modal) .form-group > .form-label { font-size: 0.85rem; font-weight: 600; }
 .form-control { width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; }
 .lightbox-footer { margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border-color); text-align: right; display: flex; justify-content: flex-end; gap: 0.5rem; }
 #copy-file-tree .file-item-content.active,
@@ -1189,7 +1217,7 @@ body {
 .list-actions #export-dropdown { right: 0; left: auto; min-width: max-content; }
 .list-actions #export-dropdown a { white-space: nowrap; }
 .list-table-wrapper { overflow: auto; flex-grow: 1; padding: 0 2rem 0 52px; box-sizing: border-box; }
-.list-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.list-table { width: 100%; border-collapse: collapse; font-size: var(--content-size); }
 .list-table th, .list-table td { border: 1px solid var(--border-color); padding: 8px 12px; text-align: left; }
 .list-table th { background-color: #f7fafc; }
 .list-table th.sortable-header { cursor: pointer; }
@@ -1205,7 +1233,7 @@ body {
    line for the same reason. */
 .list-table td.has-lookup { vertical-align: top; padding-top: 6px; padding-bottom: 6px; }
 .lookup-values { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
-.lookup-value { box-sizing: border-box; height: 1.45rem; line-height: 1.45rem; padding: 0 0.55rem; border-radius: 999px; background: #e0ecff; color: #1e3a8a; font-size: 0.8rem; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.lookup-value { box-sizing: border-box; height: 1.6em; line-height: 1.6em; padding: 0 0.55rem; border-radius: 999px; background: #e0ecff; color: #1e3a8a; font-size: inherit; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .lookup-value.is-deleted { background: #f1f5f9; color: var(--accent-gray); font-style: italic; }
 /* After .is-deleted: the blank an "also show" column keeps for a deleted item is both. */
 .lookup-value.is-blank { background: transparent; box-shadow: none; }
@@ -1248,8 +1276,30 @@ body {
 .group-add-entry { align-self: flex-start; }
 /* (B) halve spacing between view-item rows */
 #item-view-modal-content .view-item-row { display: grid; grid-template-columns: 120px 1fr; gap: 0.5rem; margin-bottom: 0.375rem; align-items: start; }
-#item-view-modal-content .view-item-row label { font-weight: bold; text-align: right; padding-top: 3px; color: var(--accent-gray); }
-#item-view-modal-content .view-item-row div { background-color: #f7fafc; padding: 4px 8px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; border: 1px solid var(--border-color); min-height: 18px; }
+/* Every value at the reader's own font size (My Preferences sets it on <html>, so 1rem), whatever
+   the field type — text, a lookup's pills, a group's entries. Labels a tick smaller, bold and
+   grey, a group's sub-field labels included. */
+#item-view-modal-content .view-item-row label,
+#item-view-modal-content .group-view-label { font-size: 0.9rem; font-weight: bold; color: var(--accent-gray); }
+#item-view-modal-content .view-item-row > label { text-align: right; padding-top: 5px; }
+#item-view-modal-content .view-item-value { font-size: var(--content-size); background-color: #f7fafc; padding: 4px 8px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; border: 1px solid var(--border-color); min-height: 18px; }
+#item-view-modal-content .group-view-line { align-items: baseline; }
+/* The item form (add / edit) the same way: what is typed or chosen at the reader's font size,
+   labels a tick smaller, bold and grey. Inputs do not inherit a font size by themselves. Larger
+   than a default dialog, since a list can have many fields and long values. */
+#item-modal .lightbox-content { box-sizing: border-box; width: min(900px, 94vw); max-width: none; height: 85vh; max-height: 85vh; }
+#item-modal-form .form-item-row { grid-template-columns: 150px 1fr; }
+#item-modal-form .form-item-row > label,
+#item-modal-form .group-field-row label { font-size: 0.9rem; font-weight: bold; color: var(--accent-gray); }
+#item-modal-form .form-item-row > label { padding-top: 0.45rem; }
+#item-modal-form .form-control,
+#item-modal-form .dd-btn,
+#item-modal-form .lookup-chip,
+#item-modal-form .lookup-suggest-item,
+#item-modal-form .group-entry-summary,
+#item-modal-form .field-unit { font-family: inherit; font-size: var(--content-size); }
+#item-modal-form .group-field-row { grid-template-columns: 120px 1fr; }
+.dd-menu.dd-menu-pref .dd-item { font-size: var(--content-size); }
 /* (C) List Properties modal */
 .list-props-columns { gap: 0.6rem; }
 .list-props-row { background: var(--hover-bg); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.65rem 0.75rem; display: flex; flex-direction: column; gap: 0.4rem; }
@@ -1266,6 +1316,10 @@ body {
 .list-props-config:empty { display: none; }
 .list-props-config { display: flex; flex-direction: column; gap: 0.4rem; }
 .list-props-field { display: flex; flex-direction: column; }
+.list-props-choice { gap: 0.45rem; }
+.list-props-choice-srcs { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; }
+.list-props-choice-src, .list-props-choice-multi { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; cursor: pointer; }
+.list-props-choice-tax .dd { display: block; }
 .list-props-choices { resize: vertical; font-size: 0.82rem; }
 .list-props-also { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
 .list-props-check { font-size: 0.8rem; }
@@ -1409,7 +1463,7 @@ body {
     border: none;
     padding: 4px 6px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.95rem;
+    font-size: var(--content-size);
     line-height: 1.6;
     tab-size: var(--tab-size);
     resize: none;
@@ -1700,7 +1754,7 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 .ff-icon-item.ff-selected { background: #ebf4ff; box-shadow: inset 0 0 0 1px #90cdf4; }
 .ff-simple-item.ff-selected:hover, .ff-detail-table tbody tr.ff-selected:hover { background: #dbeafe; }
 .ff-icon-item { border-radius: 6px; padding: 4px 2px; }
-.ff-detail-name .ff-file-name { color: var(--text-color); font-size: 0.9rem; }
+.ff-detail-name .ff-file-name { color: var(--text-color); font-size: var(--content-size); }
 
 /* What to do with the marked files: always shown in a library, disabled until a mark. */
 .ff-selection { display: flex; align-items: center; gap: 0.4rem; }
@@ -1709,7 +1763,7 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 .ff-sel-count { font-size: 0.8rem; color: var(--accent-gray); white-space: nowrap; margin-left: 0.25rem; }
 .ff-sel-clear { background: none; border: none; color: var(--accent-gray); font-size: 1rem; line-height: 1; padding: 0 0.25rem; cursor: pointer; }
 .ff-sel-clear:hover { color: var(--text-color); }
-.ff-detail-name .ff-dir-link { color: var(--text-color); font-size: 0.9rem; }
+.ff-detail-name .ff-dir-link { color: var(--text-color); font-size: var(--content-size); }
 .ff-detail-name .ff-dir-link:hover, .ff-icon-item.fv-row:hover .ff-icon-name { color: var(--accent-blue); }
 .ff-empty { padding: 2rem 1.5rem 2rem 52px; color: var(--accent-gray); font-style: italic; }
 
@@ -1717,7 +1771,7 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 .ff-simple-list { list-style: none; margin: 0; padding: 0.5rem 1.5rem 0.5rem 52px; overflow-y: auto; }
 .ff-simple-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border-radius: 4px; }
 .ff-simple-item:hover { background: #f0f4f8; }
-.ff-filename { flex: 1; color: var(--text-color); text-decoration: none; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ff-filename { flex: 1; color: var(--text-color); text-decoration: none; font-size: var(--content-size); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ff-filename:hover { color: var(--accent-blue); text-decoration: underline; }
 .ff-del-btn { opacity: 0; background: none; border: none; cursor: pointer; color: var(--accent-danger); font-size: 11px; padding: 2px 5px; border-radius: 3px; flex-shrink: 0; }
 .ff-simple-item:hover .ff-del-btn { opacity: 1; }
@@ -1730,7 +1784,7 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 .ff-detail-table tbody tr:hover { background: #f7fafc; }
 .ff-detail-table tbody td { padding: 0.35rem 1rem; border-bottom: 1px solid #f0f4f8; }
 .ff-detail-name { display: flex; align-items: center; gap: 0.5rem; }
-.ff-detail-name a { color: var(--text-color); text-decoration: none; font-size: 0.9rem; }
+.ff-detail-name a { color: var(--text-color); text-decoration: none; font-size: var(--content-size); }
 .ff-detail-name a:hover { color: var(--accent-blue); text-decoration: underline; }
 .ff-detail-meta { color: var(--accent-gray); font-size: 0.85rem; white-space: nowrap; }
 .ff-detail-table tbody tr:hover .ff-del-btn { opacity: 1; }
@@ -1948,7 +2002,7 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 .chat-time { font-size: 0.72rem; color: var(--accent-gray); }
 
 /* Bubbles */
-.chat-bubble { position: relative; background: #f0f4f8; color: var(--text-color); border-radius: 0 12px 12px 12px; padding: 0.45rem 0.75rem; font-size: 0.9rem; line-height: 1.45; word-break: break-word; white-space: pre-wrap; max-width: 100%; }
+.chat-bubble { position: relative; background: #f0f4f8; color: var(--text-color); border-radius: 0 12px 12px 12px; padding: 0.45rem 0.75rem; font-size: var(--content-size); line-height: 1.45; word-break: break-word; white-space: pre-wrap; max-width: 100%; }
 .chat-bubble-mine { background: #ebf8ff; border-radius: 12px 0 12px 12px; }
 .chat-bubble-md { white-space: normal; }
 .chat-bubble-md p  { margin: 0 0 .4em; }
@@ -2099,7 +2153,7 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 
 /* Input area */
 .chat-input-area { position: relative; display: flex; align-items: flex-end; gap: 0.5rem; padding: 0.75rem 1rem; border-top: 1px solid var(--border-color); background: white; flex-shrink: 0; }
-.chat-input { flex: 1; resize: none; border: 1px solid var(--border-color); border-radius: 8px; padding: 0.45rem 0.65rem; font-size: 0.9rem; font-family: inherit; line-height: 1.4; overflow-y: hidden; min-height: 36px; max-height: 120px; }
+.chat-input { flex: 1; resize: none; border: 1px solid var(--border-color); border-radius: 8px; padding: 0.45rem 0.65rem; font-size: var(--content-size); font-family: inherit; line-height: 1.4; overflow-y: hidden; min-height: 36px; max-height: 120px; }
 .chat-input:focus { outline: none; border-color: var(--accent-blue); }
 .chat-send-btn { flex-shrink: 0; }
 .chat-emoji-btn { flex-shrink: 0; }
@@ -2141,7 +2195,7 @@ body.mobile #viewer-content .code-copy-btn { opacity: 1; }
 .page-comment-avatar-img { background: var(--border-color); }
 .page-comment-avatar-img img { width: 80%; height: 80%; display: block; }
 .page-comment-author { font-size: 0.8rem; font-weight: 600; color: #2d3748; }
-.page-comment-body { font-size: 0.9rem; color: #2d3748; line-height: 1.5; white-space: pre-wrap; }
+.page-comment-body { font-size: var(--content-size); color: #2d3748; line-height: 1.5; white-space: pre-wrap; }
 
 /* Git history lightbox */
 #git-history-lightbox .lightbox-content { overflow: hidden; display: flex; flex-direction: column; }
@@ -2487,7 +2541,7 @@ button.avatar-circle:hover, button.avatar-circle:focus-visible { border-color: v
 /* Page Chat's avatars are 20px rather than 32px, so the glyph scales with them. */
 #pc-messages .chat-avatar.pc-avatar.chat-avatar-ai svg { width: 13px; height: 13px; }
 #pc-messages .chat-meta { font-size: 0.72rem; }
-#pc-messages .chat-bubble { font-size: 0.79rem; padding: 0.3rem 0.5rem; }
+#pc-messages .chat-bubble { padding: 0.3rem 0.5rem; }
 #pc-messages .chat-del-btn { font-size: 0.8rem; top: 0.1rem; right: 0.25rem; }
 #pc-messages .chat-empty { font-size: 0.79rem; }
 
@@ -2516,7 +2570,7 @@ body.mobile .app-container.sidebar-mobile-open .mobile-sidebar-backdrop { displa
 
 /* Content spans the full width (sidebar is out of flow) */
 body.mobile .main-content { width: 100%; }
-body.mobile #viewer-content { padding: 1rem; margin-left: 0; font-size: 16px; }
+body.mobile #viewer-content { padding: 1rem; margin-left: 0; }
 body.mobile #viewer-content table { display: block; overflow-x: auto; }
 body.mobile #viewer-content pre { overflow-x: auto; }
 
@@ -2532,7 +2586,7 @@ body.mobile .med-btn { min-width: 38px; height: 34px; padding: 0 8px; border: 1p
 body.mobile .med-btn:active { background: #e2e8f0; }
 body.mobile .med-btn-danger { color: #e53e3e; margin-left: auto; }
 body.mobile #line-indicator { display: none !important; }
-body.mobile #editor-container { padding-left: 12px; font-size: 16px; }
+body.mobile #editor-container { padding-left: 12px; font-size: max(var(--content-size), 16px); }
 /* Keep the header + compact toolbar fixed while editing; only the textarea
    scrolls. min-height:0 lets the flex chain bound the editor (so the textarea,
    not the page, is the scroll region); the sticky header guards against mobile
@@ -2707,7 +2761,7 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 .json-view { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0.75rem 1rem; }
 .json-toolbar { display: flex; gap: 0.4rem; margin-bottom: 0.5rem; flex: 0 0 auto; }
 .json-toolbar .btn-sm { padding: 0.25rem 0.7rem; font-size: 0.8rem; }
-.json-editor-target { flex: 1; min-height: 0; }
+.json-editor-target { flex: 1; min-height: 0; --jse-font-size: var(--content-size); --jse-font-size-mono: 1rem; }
 /* Full-screen overlay toggled from the toolbar. */
 #json-view-container.json-fullscreen {
     position: fixed; inset: 0; z-index: 2000; background: var(--main-bg); padding: 0.5rem 0.75rem;
@@ -2716,7 +2770,7 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 .json-error { color: var(--accent-danger); font-weight: 600; margin-bottom: 0.5rem; }
 .json-raw {
     flex: 1; min-height: 0; overflow: auto; white-space: pre-wrap; word-break: break-word;
-    font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.85rem;
+    font-family: 'SFMono-Regular', Consolas, monospace; font-size: var(--content-size);
     background: var(--border-color); padding: 0.75rem; border-radius: 6px;
 }
 
@@ -2911,6 +2965,7 @@ body.mobile #chat-messages .chat-bubble { max-width: 88%; }
 .dd-chevron { display: flex; flex-shrink: 0; color: var(--accent-gray); }
 .dd-menu { position: fixed; z-index: 1200; background: white; border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); max-height: 260px; overflow-y: auto; padding: 3px 0; }
 .dd-item { display: flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.75rem; font-size: 0.82rem; cursor: pointer; color: var(--text-color); white-space: nowrap; }
+.dd-heading { padding: 0.45rem 0.75rem 0.2rem; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--accent-gray); white-space: nowrap; cursor: default; }
 .dd-item.is-active { background: #f0f4f8; }
 .dd-item.is-selected { font-weight: 600; color: var(--accent-blue); background: #ebf8ff; }
 .dd-item.is-selected.is-active { background: #dbeafe; }
@@ -3031,7 +3086,7 @@ body.mobile .generator-banner { margin: 1rem 1rem 0; }
 #viewer-content .wk-card > :last-child, .generator-preview .wk-card > :last-child { margin-bottom: 0; }
 #viewer-content .wk-grid, .generator-preview .wk-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; margin: 0 0 1rem; }
 #viewer-content .wk-grid > .wk-card, .generator-preview .wk-grid > .wk-card { margin: 0; padding: 0.75rem 1rem; }
-#viewer-content .wk-grid > .wk-card > h3, .generator-preview .wk-grid > .wk-card > h3 { margin: 0 0 0.5rem; font-size: 1.05rem; }
+#viewer-content .wk-grid > .wk-card > h3, .generator-preview .wk-grid > .wk-card > h3 { margin: 0 0 0.5rem; font-size: 1.05em; }
 #viewer-content .wk-fields, .generator-preview .wk-fields { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1.25rem; margin: 0 0 0.5rem; }
 #viewer-content .wk-fields > dt, .generator-preview .wk-fields > dt,
 #viewer-content .wk-label, .generator-preview .wk-label { color: var(--accent-gray); font-weight: 600; font-size: 0.9em; }
@@ -3059,7 +3114,7 @@ body.mobile #viewer-content .wk-cols { grid-template-columns: 1fr; }
 #viewer-content .wk-edit.is-ready:hover { color: #3182ce; border-color: #3182ce; }
 /* A linked item's mark for someone who may not edit it: the icon, not a button. */
 #viewer-content .wk-edit.is-static, #viewer-content .wk-edit.is-static:hover { cursor: default; border-color: transparent; color: var(--accent-gray); background: transparent; }
-#viewer-content .wk-edit.wk-add.is-ready { font-size: 1.05rem; font-weight: 700; line-height: 1; }
+#viewer-content .wk-edit.wk-add.is-ready { font-size: 1.05em; font-weight: 700; line-height: 1; }
 body.mobile #viewer-content .wk-fields { grid-template-columns: 1fr; gap: 0.1rem; }
 body.mobile #viewer-content .wk-fields > dd { margin-bottom: 0.4rem; }
 
@@ -3118,3 +3173,50 @@ body.mobile .item-view-comments { border-left: none; padding-left: 0; border-top
 .list-props-comments input { margin-top: 0.2rem; }
 .list-props-comments span { display: flex; flex-direction: column; gap: 0.15rem; }
 .comment-add-bar { display: flex; justify-content: flex-end; }
+
+/* ── Setup checklist and LLM provider wizard (modules/setup) ──────────────── */
+.lightbox-content.setup-content { box-sizing: border-box; width: 640px; max-width: 94vw; height: auto; max-height: 86vh; }
+.setup-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 0.25rem; }
+.setup-intro { margin: 0 0 0.9rem; color: var(--accent-gray); font-size: 0.9rem; line-height: 1.45; }
+.setup-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.setup-row { display: flex; align-items: center; gap: 0.75rem; width: 100%; text-align: left; padding: 0.6rem 0.75rem;
+             border: 1px solid var(--border-color); border-radius: 8px; background: #fff; cursor: pointer; font: inherit; color: var(--text-color); }
+.setup-row:hover, .setup-row:focus-visible { border-color: var(--accent-blue); outline: none; background: #f8fbff; }
+.setup-state { display: flex; flex: none; }
+.is-done > .setup-state, .is-done .setup-state { color: #2f855a; }
+.is-todo > .setup-state, .is-todo .setup-state { color: #a0aec0; }
+.is-warn > .setup-state, .is-warn .setup-state { color: #c05621; }
+.setup-row-text { display: flex; flex-direction: column; gap: 0.1rem; flex: 1; min-width: 0; }
+.setup-row-title { font-weight: 600; }
+.setup-row-summary { font-size: 0.85rem; color: var(--accent-gray); line-height: 1.4; }
+.setup-row.is-warn .setup-row-summary { color: #9c4221; }
+.setup-row-next { display: flex; flex: none; color: var(--accent-gray); }
+.setup-detail-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
+.setup-detail-title { margin: 0 0 0.35rem; font-size: 1.05rem; }
+.setup-detail-head .setup-detail-title { margin: 0; }
+.setup-detail-status { margin: 0 0 0.75rem; font-size: 0.9rem; color: var(--accent-gray); }
+.setup-detail-body { margin: 0 0 0.9rem; line-height: 1.55; }
+.setup-code-wrap { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0 0 0.9rem; }
+.setup-code { flex: 1; min-width: 0; margin: 0; padding: 0.5rem 0.7rem; background: #f6f8fa; border: 1px solid var(--border-color);
+              border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; }
+.setup-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+.setup-more { text-decoration: none; }
+.setup-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.5rem; }
+.setup-card { display: flex; flex-direction: column; gap: 0.15rem; text-align: left; padding: 0.65rem 0.75rem; border: 1px solid var(--border-color);
+              border-radius: 8px; background: #fff; cursor: pointer; font: inherit; color: var(--text-color); }
+.setup-card:hover, .setup-card:focus-visible { border-color: var(--accent-blue); outline: none; background: #f8fbff; }
+.setup-card-name { font-weight: 600; }
+.setup-card-note { font-size: 0.78rem; color: var(--accent-gray); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup-card-custom { border-style: dashed; }
+.setup-field { margin-bottom: 0.75rem; }
+.setup-field label { font-size: 0.85rem; font-weight: 600; }
+.setup-field .form-hint { margin: 0.25rem 0 0; }
+.setup-advanced { margin: 0 0 0.75rem; }
+.setup-advanced summary { cursor: pointer; font-size: 0.85rem; color: var(--accent-gray); margin-bottom: 0.5rem; }
+.setup-result { min-height: 1.2em; font-size: 0.88rem; color: var(--accent-gray); white-space: pre-wrap; overflow-wrap: anywhere; }
+.setup-result.is-error { color: var(--accent-danger); }
+.setup-reply { margin: 0.25rem 0 0.75rem; padding: 0.5rem 0.75rem; border-left: 3px solid #48bb78; background: #f0fff4; border-radius: 0 6px 6px 0; white-space: pre-wrap; }
+.setup-footer { align-items: center; }
+.setup-startup { display: flex; align-items: center; gap: 0.4rem; margin-right: auto; font-size: 0.85rem; cursor: pointer; }
+.setup-footer [data-act="back"]:not(.hidden) { margin-right: auto; }
+.setup-note { margin: 0 0 0.9rem; padding: 0.5rem 0.75rem; border-left: 3px solid #dd6b20; background: #fffaf0; border-radius: 0 6px 6px 0; font-size: 0.88rem; }

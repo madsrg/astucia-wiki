@@ -290,10 +290,23 @@ function wiki_page_context_prompt(string $chat_file, string $space_dir, $indexer
  * "let Alice know when the report is done", it writes "Done, Alice!" into a page nobody
  * is watching. ~45 tokens; `/debug` prices it inside "Wiki instructions".
  */
+/**
+ * How many AI-to-AI hand-offs may follow one another in a chat before the chain stops
+ * (ai_handoff.php). A reply that mentions another AI user as #Name makes that AI answer
+ * next; each such answer is one hop. The cap is what keeps two AI users that mention each
+ * other from replying back and forth for ever, each reply an LLM call.
+ */
+const WIKI_AI_HANDOFF_MAX = 3;
+
 function wiki_mentions_prompt(): string {
     return "To notify a person, mention them as @Name — # addresses an AI user, not a person. "
          . "wiki_list_people gives the exact names, and wiki_mention_users posts the mention "
-         . "into a chat thread or page so it reaches their My Mentions list. ";
+         . "into a chat thread or page so it reaches their My Mentions list. "
+         // The hand-off: without being told, a model has no way to know a #Name in its
+         // reply sets another AI to work — and might write one in passing.
+         . "In a chat reply, mentioning another AI user as #Name hands the conversation to it: "
+         . "it reads the thread and answers after you. Do that only when you want it to act, "
+         . "and mention at most one. Hand-offs stop after " . WIKI_AI_HANDOFF_MAX . " in a row. ";
 }
 
 /**
@@ -1056,6 +1069,24 @@ function wiki_ai_thinking_config(array $ai_config): ?array {
 }
 
 /**
+ * How long one LLM call in a background run may take, in seconds.
+ *
+ * Requests are not streamed, so curl waits for the whole response, and that takes about
+ * as long as the output it is allowed to produce. The timeout used to be 120 s unless the
+ * run asked for reasoning — so raising Max Tokens on a plain run only moved the failure
+ * from "Max Tokens reached" to "timed out", since 50,000 tokens at 50–100 tokens a second
+ * is many minutes. It now follows the ceiling: a floor of 120 s, about 40 tokens a second
+ * above that, and 900 s at most — the PHP/nginx limit the Docker image ships. A reasoning
+ * run gets the maximum, as before: its thinking is output nobody sees arriving.
+ */
+const WIKI_AI_CALL_TIMEOUT_MIN = 120;
+const WIKI_AI_CALL_TIMEOUT_MAX = 900;
+function wiki_ai_call_timeout(int $max_tokens, bool $is_thinking = false): int {
+    if ($is_thinking) return WIKI_AI_CALL_TIMEOUT_MAX;
+    return max(WIKI_AI_CALL_TIMEOUT_MIN, min(WIKI_AI_CALL_TIMEOUT_MAX, (int)ceil($max_tokens / 40)));
+}
+
+/**
  * Model-aware sampling / reasoning request parameters, to merge into a payload.
  *
  * Both concerns are per model rather than per provider (see llm_model_rules()):
@@ -1336,13 +1367,19 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
     $temperature   = (float)($config['temperature'] ?? 0.7);
     $extra_lines   = _extra_header_lines($config['extra_headers'] ?? []);
 
-    // A job may ask for extended reasoning: ['enabled' => true, 'effort' => …].
-    // Thinking runs are slow by design, so they also get a longer per-call
-    // timeout, more tool iterations and more output headroom than a chat reply.
-    $thinking      = is_array($job['thinking'] ?? null) ? $job['thinking'] : null;
+    // Extended reasoning: ['enabled' => true, 'effort' => …], or null for off.
+    // A queued job carries the effort it was queued with (an explicit null included). A
+    // job that does not say — a scheduled job, its test run, a workflow's AI action —
+    // gets the AI user's own Reasoning effort. Those routes used to ask for none at all,
+    // so an AI user set to "high" ran its daily job as a plain call with a 120 s timeout.
+    $thinking      = array_key_exists('thinking', $job)
+        ? (is_array($job['thinking']) ? $job['thinking'] : null)
+        : wiki_ai_thinking_config($ai_user['ai_config'] ?? []);
     $is_thinking   = !empty($thinking['enabled']);
-    $call_timeout  = $is_thinking ? 900 : 120;
+    // Thinking runs are slow by design, so they also get more tool iterations and more
+    // output headroom than a chat reply.
     if ($is_thinking) $max_tokens = max($max_tokens, 16000);
+    $call_timeout  = wiki_ai_call_timeout($max_tokens, $is_thinking);
 
     if (!empty($config['connection_missing'])) return ['reply' => null, 'error' => 'The LLM provider this AI user names no longer exists.'];
     if (!$api_key)              return ['reply' => null, 'error' => 'AI user has no api_key configured.'];
@@ -1607,11 +1644,18 @@ function run_agent_job(array $job, array $ai_user, PageIndexer $indexer, string 
         ]);
         $raw      = curl_exec($ch);
         $curl_err = curl_error($ch);
+        $curl_no  = curl_errno($ch);
         $http     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
         if (!$raw) {
             $api_error = ($curl_err ?: 'No response from the API (connection failed or timed out).')
                 . ($http ? " (HTTP {$http})" : '');
+            // Say which limit it was: the per-call timeout follows Max Tokens (see
+            // wiki_ai_call_timeout()), so the run log should name both numbers.
+            if ($curl_no === CURLE_OPERATION_TIMEDOUT) {
+                $api_error .= ' — one call may take ' . $call_timeout . ' s at Max Tokens '
+                    . number_format($max_tokens) . ($is_thinking ? ' with extended reasoning' : '') . '.';
+            }
             break;
         }
         $data = json_decode($raw, true);

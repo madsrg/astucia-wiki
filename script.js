@@ -55,6 +55,7 @@ import { init as initMcpExplorer } from './modules/mcp_explorer/index.js';
 import { init as initGraph } from './modules/graph/index.js';
 import { init as initPulse } from './modules/pulse/index.js';
 import { init as initHelp } from './modules/help/index.js';
+import { init as initSetup } from './modules/setup/index.js';
 import { init as initSelectionActions } from './modules/selection_actions/index.js';
 import { init as initTabs, onSpaceChange as tabsOnSpaceChange, resumeTarget as tabsResumeTarget } from './modules/tabs/index.js';
 import { initRealtime } from './modules/realtime/index.js';
@@ -210,6 +211,7 @@ const init = async () => {
     initSelectionActions();
     initGraph({ onNavigate: navigateToPageId });
     initPulse({ onNavigate: navigateToPageId });
+    initSetup();  // administrators: the setup checklist and the LLM provider wizard
     initHelp();   // the ? icon and Alt+H: keyboard shortcuts and a way to the online docs   // Wiki Pulse: mentions, comments, content health
     initNav({
         onNavigate: async (id, space, path) => {

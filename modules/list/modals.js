@@ -30,6 +30,8 @@ import { saveListData } from './data.js';
 import { confirmModal, showToast, canUpload } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { t } from '../i18n/index.js';
+import { enhanceSelect } from '../core/dropdown.js';
+import { choiceOptions, choiceValues, loadTaxonomy } from './fields.js';
 import { cellText, cellParts, partsElement, loadLookupTargets, pickerOptions, titleField, normalizeList,
          groupEntries, groupSummary, ensureEntryCounter, commentEntries, commentTime, setLookupSpace,
          commentsOn, COMMENTS } from './fields.js';
@@ -271,12 +273,23 @@ const lookupPicker = (col, initial) => {
 
 // ── Inputs ────────────────────────────────────────────────────────────────────
 
+/** Dress the choices that asked for it as the wiki's dropdown — once they are in the DOM. Its
+ *  menu hangs off <body>, outside the form, so it is told to take the form's font size too. */
+const enhanceInputs = (root) => root.querySelectorAll('select[data-enhance]:not([data-dd])')
+    .forEach(sel => enhanceSelect(sel, { placeholder: '—', menuClass: 'dd-menu-pref' }));
+
 /**
- * The input for a plain value — a field, or a group's sub-field. `blankChoice` gives a Choice
- * an empty first option, which a group's sub-field needs: an untouched group must stay empty,
- * not be saved holding the first choice.
+ * The input for a plain value — a field `f`, or a group's sub-field. `blankChoice` gives a
+ * Choice an empty first option, which a group's sub-field needs: an untouched group must stay
+ * empty, not be saved holding the first choice.
+ *
+ * A Choice from a taxonomy folder (`f.taxonomy`) lists the folder's items under their
+ * subfolders' headings, and starts empty rather than on its first item; `f.multiple` makes it
+ * a multi-select. Either is dressed as the wiki's dropdown once it is in the form
+ * (`data-enhance`, see enhanceInputs). A value no longer offered is kept, marked.
  */
-const plainInput = (type, options, value, { blankChoice = false } = {}) => {
+const plainInput = (f, value, { blankChoice = false } = {}) => {
+    const type = f.type;
     let input;
     switch (type) {
         case 'text_multi':
@@ -301,16 +314,34 @@ const plainInput = (type, options, value, { blankChoice = false } = {}) => {
             break;
         case 'choice': {
             input = el('select', 'form-control');
-            const opts = [...(options || [])];
+            const offered = choiceOptions(f) || [];
+            const have = choiceValues(value);
+            const known = new Set(offered.filter(o => !o.heading).map(o => o.value));
+            const fancy = !!(f.taxonomy || f.multiple);
+            if (fancy) input.dataset.enhance = '1';
+            if (f.multiple) input.multiple = true;
+            // Nothing chosen: a row for it, except in a multi-select (unpick instead).
+            if (!f.multiple && (blankChoice || f.taxonomy)) input.appendChild(Object.assign(el('option', '', fancy ? '—' : ''), { value: '' }));
             // A value no longer among the choices is kept, not silently replaced by the first.
-            if (value && !opts.includes(value)) opts.unshift(value);
-            if (blankChoice) opts.unshift('');
-            opts.forEach(opt => {
-                const o = el('option', '', opt);
-                o.value = opt;
+            have.filter(v => !known.has(v)).forEach(v => {
+                const o = el('option', '', f.taxonomy ? t('list.choice-not-in-taxonomy', { value: v }) : v);
+                o.value = v;
+                o.dataset.note = '1';
                 input.appendChild(o);
             });
-            input.value = blankChoice ? (value || '') : (value || opts[0] || '');
+            offered.forEach(opt => {
+                const o = el('option', '', opt.label);
+                o.value = opt.value;
+                if (opt.heading) o.disabled = true;
+                if (opt.depth) o.dataset.depth = String(opt.depth);
+                input.appendChild(o);
+            });
+            if (f.multiple) {
+                [...input.options].forEach(o => { o.selected = !o.disabled && o.value !== '' && have.includes(o.value); });
+            } else {
+                const first = [...input.options].find(o => !o.disabled && o.value !== '')?.value || '';
+                input.value = have[0] ?? (blankChoice || f.taxonomy ? '' : first);
+            }
             break;
         }
         default:
@@ -333,18 +364,24 @@ const subFieldRows = (col, entry) => {
     const key = ++groupSeq;
     (col.fields || []).forEach(sf => {
         const row = el('div', 'group-field-row');
-        const input = plainInput(sf.type, sf.options, entry?.[sf.id] ?? '', { blankChoice: true });
+        const input = plainInput(sf, entry?.[sf.id] ?? '', { blankChoice: true });
         input.id = `field-${col.id}-${key}-${sf.id}`;
         input.dataset.subId = sf.id;
         const label = el('label', '', sf.name);
         label.htmlFor = input.id;
         row.append(label, input);
         box.appendChild(row);
+        enhanceInputs(row);
         inputs.push([sf.id, input]);
     });
     const read = () => {
         const out = {};
-        inputs.forEach(([id, input]) => { if (input.value !== '') out[id] = input.value; });
+        inputs.forEach(([id, input]) => {
+            if (input.multiple) {
+                const vals = [...input.selectedOptions].map(o => o.value).filter(v => v !== '');
+                if (vals.length) out[id] = vals;
+            } else if (input.value !== '') out[id] = input.value;
+        });
         return out;
     };
     return [box, read];
@@ -430,8 +467,8 @@ export const openItemModal = async (itemId = null, ext = null, { addTo = null } 
     const data = normalizeList(formData());
     state.editingItemId = itemId;
     // The picker needs the target lists' items, fresh: somebody may have added the one
-    // you are about to pick a moment ago.
-    await loadLookupTargets(data, { force: true });
+    // you are about to pick a moment ago. The same for a choice's taxonomy folder.
+    await Promise.all([loadLookupTargets(data, { force: true }), loadTaxonomy(data, { force: true })]);
 
     const form = document.getElementById('item-modal-form');
     form.innerHTML = '';
@@ -450,13 +487,14 @@ export const openItemModal = async (itemId = null, ext = null, { addTo = null } 
         let input;
         if (col.type === 'lookup') input = lookupPicker(col, value);
         else if (col.type === 'object') input = groupEditor(col, itemData ? itemData[col.id] : null);
-        else input = plainInput(col.type, col.options, value);
+        else input = plainInput(col, value);
         if (!['lookup', 'object'].includes(col.type)) {
             input.id = `field-${col.id}`;
             input.name = col.id;
         }
         if (col.type === 'boolean') input.dataset.bool = col.id;
         field.appendChild(input);
+        enhanceInputs(field);
         if (col.type === 'number' && col.unit) {
             field.classList.add('has-unit');
             field.appendChild(el('span', 'field-unit', col.unit));
@@ -491,6 +529,10 @@ export const saveItem = async () => {
     const form = document.getElementById('item-modal-form');
     const newItemData = {};
     for (const [key, value] of new FormData(form).entries()) newItemData[key] = value;
+    // A multi-select gives FormData one entry per value: the field's value is the list.
+    form.querySelectorAll('select[multiple][name]').forEach(sel => {
+        newItemData[sel.name] = [...sel.selectedOptions].map(o => o.value).filter(v => v !== '');
+    });
     form.querySelectorAll('.lookup-picker').forEach(p => { newItemData[p.dataset.colId] = [...p._values]; });
     form.querySelectorAll('.group-editor').forEach(g => { newItemData[g.dataset.colId] = g._collect(); });
     // A box unticked is absent from FormData; Yes/No is true or false, never a string.

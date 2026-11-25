@@ -13,6 +13,7 @@ require_once __DIR__ . '/space_settings.php';
 require_once __DIR__ . '/ai_core.php';
 require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/agent_jobs.php';
+require_once __DIR__ . '/ai_handoff.php';
 require_once __DIR__ . '/workflow_runner.php';
 require_once __DIR__ . '/schedule.php';
 
@@ -181,6 +182,20 @@ function oneoff_deliver(array $job, ?string $reply, ?string $error): bool {
     // Chat delivery failed → email regardless of the user's opt-in, since the
     // result would otherwise be lost entirely.
     agent_job_notify_requester($job, $reply, $error, !$delivered);
+    // The reply mentions another AI user: hand the thread on (ai_handoff.php). Always as a
+    // queued job here — this runner has no inline path — with the job's requester still
+    // the one who started the chain.
+    if ($delivered && $error === null) {
+        $from = wiki_handoff_ai_user((int)($job['ai_user_uid'] ?? 0));
+        $chat = agent_job_chat_path($job);
+        if ($from !== null && $chat !== null) {
+            $handoff = wiki_ai_handoff_prepare($chat, (int)($job['reply_to']['message_id'] ?? 0), $from, $job['requested_by'] ?? null);
+            if ($handoff !== null) {
+                wiki_ai_handoff_queue($handoff, $chat, agent_job_space_dir((string)($job['space'] ?? '')));
+                echo date('c') . " [agent-jobs]   hand-off from {$from['name']} to {$handoff['target']['name']} (hop {$handoff['hop']})\n";
+            }
+        }
+    }
     return $delivered;
 }
 

@@ -114,6 +114,17 @@ const run = async () => {
   out += ' stored2=' + JSON.stringify(job.schedule);
   const row2 = $('#admin-jobs-list tbody tr');
   out += ' summary2=' + (row2 ? row2.children[3].textContent : '?');
+
+  // One-off jobs have their own tab: not in the scheduled jobs' list any more, which keeps
+  // the runner's status, since both wait on it.
+  out += ' oneoffInJobs=' + !!$('#admin-jobs-list .admin-oneoff-section')
+       + ' runnerInJobs=' + !!$('#admin-jobs-list .admin-jobs-runner');
+  out += ' tabs=' + $$('.admin-tab:not(.hidden)').map(b => b.dataset.tab).join(',');
+  click($('.admin-tab[data-tab="oneoff"]'));                  await sleep(1000);
+  out += ' oneoffTab=' + !!$('#admin-oneoff-list .admin-oneoff-section')
+       + ',runner:' + !!$('#admin-oneoff-list .admin-jobs-runner')
+       + ',refresh:' + !$('#admin-footer-oneoff').classList.contains('hidden')
+       + ',addHidden:' + $('#admin-footer-jobs').classList.contains('hidden');
   return out;
 };
 
@@ -163,6 +174,13 @@ assert_contains "  …with a next run"               'nextcol=set'          "$PR
 assert_contains "edit reopens on it"               'reopened=cron/0 9 * * 1-5' "$PROBE"
 assert_contains "the nth-weekday rule is stored"   'stored2={"type":"monthly","interval":2,"time":"09:30","nth":2,"weekday":2}' "$PROBE"
 assert_contains "  …and summarised"                'summary2=The second Tue every 2 months at 09:30' "$PROBE"
+
+section 'one-off jobs have their own tab'
+assert_contains "it sits after the scheduled jobs" 'tabs=ai,llm,jobs,oneoff,mcp,skills' "$PROBE"
+assert_contains "the scheduled jobs' list no longer holds them" 'oneoffInJobs=false' "$PROBE"
+assert_contains "  …but still shows the runner"    'runnerInJobs=true' "$PROBE"
+assert_contains "their tab: the list, the runner, Refresh — and not New Agent Job" \
+    'oneoffTab=true,runner:true,refresh:true,addHidden:true' "$PROBE"
 
 printf '\n'
 exit $(( ASSERT_FAIL > 0 ))

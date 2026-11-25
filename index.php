@@ -6,6 +6,7 @@ require_once 'config.php';
 require_once 'mailer.php';
 require_once 'remember_me.php';
 require_once __DIR__ . '/maps.php';   // window.WIKI_MAPS below
+require_once __DIR__ . '/setup.php';  // window.WIKI_SETUP_AUTOSHOW below
 session_start();
 wiki_remember_restore();
 
@@ -19,16 +20,17 @@ if (AUTHENTICATION_ENABLED && !$isAnonymous && !isset($_SESSION['user'])) {
 }
 
 $userRole     = $isAnonymous ? 'reader' : ((AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? ($_SESSION['user']['role']  ?? 'editor') : 'admin');
-$userFont     = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? ($_SESSION['user']['fontFamily'] ?? 'sans') : 'sans';
-$userFontSize = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? ($_SESSION['user']['fontSize']   ?? '11pt') : '11pt';
-if (!in_array($userFont,     ['sans','serif','mono']))                            $userFont     = 'sans';
-if (!in_array($userFontSize, ['10pt','11pt','12pt','14pt','16pt']))               $userFontSize = '11pt';
+// Font and the two sizes (accounts.php → wiki_display_prefs); defaults without a session.
+$userDisplay  = wiki_display_prefs((AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? $_SESSION['user'] : null);
+$userFont     = $userDisplay['font'];
 $mailConfigured = is_mail_configured() ? '1' : '0';
 $currentUserUid  = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? (int)($_SESSION['user']['uid'] ?? 0) : 0;
 $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlspecialchars($_SESSION['user']['name'] ?? '') : '';
+// The setup checklist opens by itself only for an administrator, and only while something is left (setup.php).
+$setupAutoshow = $userRole === 'admin' && !$isAnonymous && wiki_setup_autoshow();
 ?>
 <!DOCTYPE html>
-<html lang="en" data-font="<?php echo htmlspecialchars($userFont); ?>" data-font-size="<?php echo htmlspecialchars($userFontSize); ?>">
+<html lang="en" data-font="<?php echo htmlspecialchars($userFont); ?>" style="--ui-scale:<?php echo $userDisplay['ui'] / 100; ?>;--text-scale:<?php echo $userDisplay['text'] / 100; ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -170,6 +172,9 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                     </button>
                     <?php endif; ?>
                     <?php if ($userRole === 'admin'): ?>
+                    <button id="setup-btn" class="sidebar-icon-btn" data-i18n-title="setup.btn-title" title="Set up Astucia Wiki">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>
+                    </button>
                     <button id="admin-btn" class="sidebar-icon-btn" data-i18n-title="nav.admin-title" title="Administration">
                         <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                     </button>
@@ -1210,20 +1215,32 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <div class="form-group">
                 <label data-i18n="prefs.font-label">Font</label>
                 <div style="display:flex;gap:0.5rem;margin-top:0.25rem">
-                    <button class="btn btn-sm" data-font-val="sans" data-i18n="prefs.font-sans">Sans-serif</button>
+                    <button class="btn btn-sm" data-font-val="sans" data-i18n="prefs.font-system">System</button>
+                    <button class="btn btn-sm" data-font-val="source" data-i18n="prefs.font-source">Source Sans</button>
                     <button class="btn btn-sm" data-font-val="serif" data-i18n="prefs.font-serif">Serif</button>
                     <button class="btn btn-sm" data-font-val="mono" data-i18n="prefs.font-mono">Mono</button>
                 </div>
             </div>
+            <!-- Two sizes, applied live while a slider moves (modules/preferences); Cancel
+                 puts back what was there. Interface = the root size; Text = content, on top. -->
             <div class="form-group">
-                <label data-i18n="prefs.size-label">Text Size</label>
-                <div style="display:flex;gap:0.5rem;margin-top:0.25rem">
-                    <button class="btn btn-sm pref-size-btn" data-size-val="10pt" style="font-size:10pt">10pt</button>
-                    <button class="btn btn-sm pref-size-btn" data-size-val="11pt" style="font-size:11pt">11pt</button>
-                    <button class="btn btn-sm pref-size-btn" data-size-val="12pt" style="font-size:12pt">12pt</button>
-                    <button class="btn btn-sm pref-size-btn" data-size-val="14pt" style="font-size:14pt">14pt</button>
-                    <button class="btn btn-sm pref-size-btn" data-size-val="16pt" style="font-size:16pt">16pt</button>
+                <label for="pref-ui-scale" data-i18n="prefs.ui-size-label">Interface size</label>
+                <div class="pref-slider-row">
+                    <input type="range" id="pref-ui-scale" class="pref-slider" min="80" max="150" step="5" value="100">
+                    <output id="pref-ui-scale-val" class="pref-slider-val" for="pref-ui-scale">100%</output>
+                    <button type="button" class="btn btn-sm btn-secondary" data-scale-reset="ui" data-i18n="prefs.size-reset">Reset</button>
                 </div>
+                <p class="pref-hint pref-hint-flush" data-i18n="prefs.ui-size-hint">The sidebar, labels, buttons and dialogs.</p>
+            </div>
+            <div class="form-group">
+                <label for="pref-text-scale" data-i18n="prefs.size-label">Text size</label>
+                <div class="pref-slider-row">
+                    <input type="range" id="pref-text-scale" class="pref-slider" min="70" max="150" step="5" value="90">
+                    <output id="pref-text-scale-val" class="pref-slider-val" for="pref-text-scale">90%</output>
+                    <button type="button" class="btn btn-sm btn-secondary" data-scale-reset="text" data-i18n="prefs.size-reset">Reset</button>
+                </div>
+                <p class="pref-text-sample" data-i18n="prefs.text-sample">Pages, lists, chat and the editor show their text at this size.</p>
+                <p class="pref-hint pref-hint-flush" data-i18n="prefs.text-size-hint">Relative to the interface size, so making the interface larger makes the text larger too.</p>
             </div>
             <div class="form-group">
                 <label data-i18n="prefs.lang-label">Language</label>
@@ -1280,6 +1297,7 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <button class="admin-tab hidden" data-tab="ai" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></svg><span data-i18n="admin.tab.ai">AI Users</span></button>
                 <button class="admin-tab hidden" data-tab="llm" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg><span data-i18n="admin.tab.llm">LLM Providers</span></button>
                 <button class="admin-tab hidden" data-tab="jobs" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span data-i18n="admin.tab.jobs">Agent Jobs</span></button>
+                <button class="admin-tab hidden" data-tab="oneoff" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span data-i18n="admin.tab.oneoff">One-off Jobs</span></button>
                 <button class="admin-tab hidden" data-tab="mcp" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/></svg><span data-i18n="admin.tab.mcp">MCP Servers</span></button>
                 <button class="admin-tab hidden" data-tab="skills" data-group="ai"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><span data-i18n="admin.tab.skills">Skills</span></button>
                 <button class="admin-tab hidden" data-tab="logs" data-group="monitoring"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span data-i18n="admin.tab.logs">Access Log</span></button>
@@ -1362,6 +1380,11 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
             <!-- Agent Jobs pane -->
             <div id="admin-pane-jobs" class="admin-pane hidden">
                 <div id="admin-jobs-list" class="admin-scroll-area"></div>
+            </div>
+
+            <!-- One-off jobs pane: /aiJob and background AI replies, read-only (modules/admin) -->
+            <div id="admin-pane-oneoff" class="admin-pane hidden">
+                <div id="admin-oneoff-list" class="admin-scroll-area"></div>
             </div>
 
             <!-- LLM Providers pane -->
@@ -1535,8 +1558,12 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
                 <div id="admin-footer-jobs" class="admin-footer-pane hidden">
                     <button id="admin-jobs-add-btn" class="btn btn-blue btn-sm" data-i18n="admin.jobs.add-btn">+ New Agent Job</button>
                 </div>
+                <div id="admin-footer-oneoff" class="admin-footer-pane hidden">
+                    <button id="admin-oneoff-refresh-btn" class="btn btn-secondary btn-sm" data-i18n="btn.refresh">&#8635; Refresh</button>
+                </div>
                 <div id="admin-footer-llm" class="admin-footer-pane hidden">
                     <button id="admin-llm-add-btn" class="btn btn-blue btn-sm" data-i18n="admin.llm.new-btn">+ New LLM Provider</button>
+                    <button id="admin-llm-quick-btn" class="btn btn-secondary btn-sm" data-i18n="setup.llm.quick-btn">Quick setup…</button>
                 </div>
                 <div id="admin-footer-skills" class="admin-footer-pane hidden">
                     <button id="admin-skills-import-btn" class="btn btn-secondary btn-sm" data-i18n="admin.skills.import-btn">Import…</button>
@@ -1565,8 +1592,10 @@ $currentUserName = (AUTHENTICATION_ENABLED && isset($_SESSION['user'])) ? htmlsp
         window.WIKI_USER_UID   = <?php echo (int)($_SESSION['user']['uid'] ?? 0); ?>;
         window.WIKI_USER_NAME  = '<?php echo htmlspecialchars($_SESSION['user']['name']  ?? ''); ?>';
         window.WIKI_USER_FONT      = '<?php echo htmlspecialchars($userFont); ?>';
-        window.WIKI_USER_FONT_SIZE = '<?php echo htmlspecialchars($userFontSize); ?>';
+        window.WIKI_USER_UI_SCALE   = <?php echo (int)$userDisplay['ui']; ?>;
+        window.WIKI_USER_TEXT_SCALE = <?php echo (int)$userDisplay['text']; ?>;
         window.WIKI_USER_SPACES  = <?php echo json_encode($_SESSION['user']['spaces'] ?? null); ?>; // null = all spaces
+        window.WIKI_SETUP_AUTOSHOW = <?php echo $setupAutoshow ? 'true' : 'false'; ?>; // open the setup checklist on load (setup.php)
         // Whether ```map blocks are drawn, and the tile layer for each map type (maps.php).
         window.WIKI_MAPS = <?php echo json_encode(wiki_map_client_config(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_SLASHES); ?>;
         // The largest upload PHP will accept: the smaller of upload_max_filesize and post_max_size.

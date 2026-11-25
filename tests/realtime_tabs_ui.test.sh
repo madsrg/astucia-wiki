@@ -37,6 +37,10 @@ fixture_start off || exit 1
 trap fixture_stop EXIT
 fixture_space Main
 fixture_page 'Main/Main.md' '# Welcome'
+# Sign-in off makes every visitor an administrator, and on a new wiki the setup checklist
+# would open in every tab — requests to the single-threaded server that slow the handoff past
+# the probe's patience. Not what this measures: Show at startup off.
+php -r '$f = $argv[1]; $d = is_file($f) ? (json_decode(file_get_contents($f), true) ?: []) : []; $d["setup_startup"] = false; file_put_contents($f, json_encode($d));' "$WIKI_SYS/settings.json"
 curl -s "$WIKI_URL/api.php?action=list_spaces" > /dev/null
 
 # Realtime on, so the ticket says "enabled"; the hub URL points nowhere, so a publish from
@@ -61,6 +65,9 @@ if ($p !== '/' && is_file($f)) {
     if ($e === 'css')  { header('Content-Type: text/css');        readfile($f); return true; }
     if ($e === 'svg')  { header('Content-Type: image/svg+xml');   readfile($f); return true; }
     if ($e === 'html') { header('Content-Type: text/html');       readfile($f); return true; }
+    // Fonts are not what this measures, and every tab fetching them slows the handoff
+    // past the probe's patience under virtual time: refused at once, the fallback is used.
+    if ($e === 'woff2') { http_response_code(404); return true; }
     return false;
 }
 return false;

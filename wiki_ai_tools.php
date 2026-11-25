@@ -67,7 +67,7 @@ function wiki_tool_definitions(bool $with_memory = true, bool $with_skills = fal
         ],
         [
             'name'        => 'wiki_read_page',
-            'description' => 'Read the full content of a wiki page by its relative path. Not only Markdown: ".md" returns the markdown source, ".json" returns the raw JSON document — use this to read stored data such as sales figures before summarising or charting it — ".list" returns the structured list file (its "columns" are the fields of the list; a field of type "lookup" stores an array of item ids from the list whose page id is in its "lookup.list" — read that list to see what they are — and a "lookup_field" column is a read-only copy of another field of those items; a "number" holds a JSON number, a "boolean" (Yes/No) true or false; "_comments" on an item is the comment log of that item — {id, by (user id), name, at (UTC time), text} entries, oldest first — not a field; wiki_update_list_item changes one item\'s fields or adds a comment to it), and ".chat" returns the thread as JSON. Anything else is refused.',
+            'description' => 'Read the full content of a wiki page by its relative path. Not only Markdown: ".md" returns the markdown source, ".json" returns the raw JSON document — use this to read stored data such as sales figures before summarising or charting it — ".list" returns the structured list file (its "columns" are the fields of the list; a field of type "lookup" stores an array of item ids from the list whose page id is in its "lookup.list" — read that list to see what they are — and a "lookup_field" column is a read-only copy of another field of those items; a "number" holds a JSON number, a "boolean" (Yes/No) true or false; a "choice" with "taxonomy" takes the names of the items in that taxonomy folder (see wiki_get_taxonomy), and with "multiple" an array of them; "_comments" on an item is the comment log of that item — {id, by (user id), name, at (UTC time), text} entries, oldest first — not a field; wiki_update_list_item changes one item\'s fields or adds a comment to it, wiki_add_list_item adds a new item, and wiki_create_list creates a new list), and ".chat" returns the thread as JSON. Anything else is refused.',
             'params'      => [
                 'type'       => 'object',
                 'properties' => ['path' => ['type' => 'string', 'description' => 'Relative path to the page, e.g. Notes/Meeting.md']],
@@ -100,7 +100,7 @@ function wiki_tool_definitions(bool $with_memory = true, bool $with_skills = fal
         ],
         [
             'name'        => 'wiki_update_list_item',
-            'description' => 'Change one existing item of a .list in the current space: set some of its fields, and/or add a comment to it. Read the list with wiki_read_page first to see its fields and items. Name fields as the list does ("Status", "Account manager") or by column id. Values by field type: text, date ("YYYY-MM-DD") and choice (one of the field\'s options) are strings; a number is a number; Yes/No is true or false; a lookup is an item id, or an array of ids, from the list it looks up. null or "" clears a field (not the Title). ItemId, "also show" fields (lookup_field) and groups of fields cannot be set here. A comment is saved with your name and the time. Any pages generated from this list are re-rendered with the change. Only available when the AI user has editor role.',
+            'description' => 'Change one existing item of a .list in the current space: set some of its fields, and/or add a comment to it. Read the list with wiki_read_page first to see its fields and items. Name fields as the list does ("Status", "Account manager") or by column id. Values by field type: text, date ("YYYY-MM-DD") and choice (one of the field\'s options — for a choice with "taxonomy", the name of an item in that taxonomy folder; with "multiple", an array of them) are strings; a number is a number; Yes/No is true or false; a lookup is an item id, or an array of ids, from the list it looks up. null or "" clears a field (not the Title). ItemId, "also show" fields (lookup_field) and groups of fields cannot be set here. A comment is saved with your name and the time. Any pages generated from this list are re-rendered with the change. Only available when the AI user has editor role.',
             'params'      => [
                 'type'       => 'object',
                 'properties' => [
@@ -110,6 +110,43 @@ function wiki_tool_definitions(bool $with_memory = true, bool $with_skills = fal
                     'comment' => ['type' => 'string', 'description' => 'A comment to add to the item.'],
                 ],
                 'required'   => ['path', 'item_id'],
+            ],
+        ],
+        [
+            'name'        => 'wiki_create_list',
+            'description' => 'Create a new, empty structured list (.list) in the current space, with the fields you name. Refused if anything already exists at the path — it never replaces a list. Each field has a "name" and a "type": "text" (one line), "multiline", "date", "choice" (give "options", or "taxonomy" with a taxonomy folder path to take its values from there; "multiple": true allows several), "number" (optional "decimals" 0-6 and "unit"), "yesno", or "lookup" (give "list": the path or page id of another .list in this space; "multiple": true allows several items). One field is the list\'s Title — what an item is called, and what a lookup in another list shows. It must be a "text" field: name it in "title", or the first "text" field is used. An ItemId field is added and numbered by the list. Add items afterwards with wiki_add_list_item. Only available when the AI user has editor role.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => [
+                    'path'   => ['type' => 'string', 'description' => 'Relative path ending in .list, e.g. Registers/Risks.list. Folders that do not exist are created.'],
+                    'fields' => ['type' => 'array', 'description' => 'The fields, in the order they are shown.',
+                                 'items' => ['type' => 'object', 'properties' => [
+                                     'name'        => ['type' => 'string'],
+                                     'type'        => ['type' => 'string', 'enum' => ['text', 'multiline', 'date', 'choice', 'number', 'yesno', 'lookup']],
+                                     'description' => ['type' => 'string'],
+                                     'options'     => ['type' => 'array', 'items' => ['type' => 'string']],
+                                     'taxonomy'    => ['type' => 'string'],
+                                     'multiple'    => ['type' => 'boolean'],
+                                     'decimals'    => ['type' => 'integer'],
+                                     'unit'        => ['type' => 'string'],
+                                     'list'        => ['type' => 'string'],
+                                 ], 'required' => ['name', 'type']]],
+                    'title'  => ['type' => 'string', 'description' => 'Name of the field that is the Title. Optional: the first "text" field otherwise.'],
+                ],
+                'required'   => ['path', 'fields'],
+            ],
+        ],
+        [
+            'name'        => 'wiki_add_list_item',
+            'description' => 'Add a new item to an existing .list in the current space. Read the list with wiki_read_page first to see its fields. Give values by field name ("Status", "Account manager") or column id, with the same value rules as wiki_update_list_item: text, date ("YYYY-MM-DD") and choice (one of its options; for a choice with "taxonomy", an item of that taxonomy folder; with "multiple", an array) are strings; a number is a number; Yes/No is true or false; a lookup is an item id, or an array of ids, from the list it looks up. Only the list\'s Title field is required; fields left out stay empty. ItemId is numbered by the list, and "also show" fields (lookup_field) and groups of fields cannot be set. Returns the new item\'s id — use it with wiki_update_list_item to change or comment on the item later, or as a lookup value in another list. Any pages generated from this list are re-rendered. Only available when the AI user has editor role.',
+            'params'      => [
+                'type'       => 'object',
+                'properties' => [
+                    'path'    => ['type' => 'string', 'description' => 'Relative path of the list, ending in .list'],
+                    'fields'  => ['type' => 'object', 'description' => 'Field name (or column id) => value. Must include the Title field.'],
+                    'comment' => ['type' => 'string', 'description' => 'Optional first comment on the new item.'],
+                ],
+                'required'   => ['path', 'fields'],
             ],
         ],
         [
@@ -491,7 +528,7 @@ function parse_search_query(string $raw): array {
 // an install with SEARCH_ENGINE=sqlite and invisible on one without it.
 const WIKI_AI_SEARCH_EXTS = ['md', 'json'];
 
-const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_update_list_item', 'wiki_add_tags', 'wiki_set_tags', 'wiki_mention_users', 'wiki_post_chat', 'wiki_rename_page', 'wiki_remember', 'wiki_forget'];
+const WIKI_AI_WRITE_TOOLS = ['wiki_write_page', 'wiki_write_json', 'wiki_update_list_item', 'wiki_add_list_item', 'wiki_create_list', 'wiki_add_tags', 'wiki_set_tags', 'wiki_mention_users', 'wiki_post_chat', 'wiki_rename_page', 'wiki_remember', 'wiki_forget'];
 
 // Longer than a person's 2000-character chat limit: a review of a page is the point of
 // wiki_post_chat, and that is often longer than a chat line. Still a ceiling, since every
@@ -506,6 +543,8 @@ const WIKI_AI_AUDIT_TOOLS = [
     'wiki_write_page'    => ['page',       'path'],
     'wiki_write_json'    => ['page',       'path'],
     'wiki_update_list_item' => ['page',    'path'],
+    'wiki_add_list_item' => ['page',       'path'],
+    'wiki_create_list'   => ['page',       'path'],
     'wiki_add_tags'      => ['tags',       'path'],
     'wiki_set_tags'      => ['tags',       'path'],
     'wiki_rename_page'   => ['page',       'path'],
@@ -719,6 +758,7 @@ function _wiki_ai_audit(string $tool, array $input, $ai_user, $indexer, string $
     elseif (in_array($tool, ['wiki_write_page', 'wiki_write_json'], true)) {
         $verb = $existed ? 'update' : 'create';
     }
+    elseif ($tool === 'wiki_create_list') $verb = 'create';
     elseif ($tool === 'wiki_post_chat') $verb = 'create';
 
     $ctx = $GLOBALS['_wiki_audit_context'] ?? [];
@@ -835,6 +875,12 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
 
         case 'wiki_update_list_item':
             return wiki_ai_update_list_item($tool_input, $ai_user, $indexer, $space_dir);
+
+        case 'wiki_add_list_item':
+            return wiki_ai_add_list_item($tool_input, $ai_user, $indexer, $space_dir);
+
+        case 'wiki_create_list':
+            return wiki_ai_create_list($tool_input, $ai_user, $indexer, $space_dir);
 
         case 'wiki_write_json':
             if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot write pages.';
@@ -1220,6 +1266,303 @@ function _execute_ai_tool_dispatch($tool_name, $tool_input, $ai_user, $indexer, 
     }
 }
 
+/** A list's column named as the list does ("Status", case-insensitive) or by its id. */
+function _wiki_ai_list_column(array $list, string $name): ?array {
+    foreach ($list['columns'] as $c) if (($c['id'] ?? null) === $name) return $c;
+    foreach ($list['columns'] as $c) if (mb_strtolower(trim((string)($c['name'] ?? ''))) === mb_strtolower(trim($name))) return $c;
+    return null;
+}
+
+function _wiki_ai_list_no_field(array $list, string $name): string {
+    $names = implode(', ', array_map(fn($c) => '"' . ($c['name'] ?? $c['id']) . '"', $list['columns']));
+    return "Error: the list has no field \"{$name}\". Its fields are: {$names}.";
+}
+
+/**
+ * One value an AI gives for a list field, converted the way the item form would store it —
+ * shared by wiki_update_list_item and wiki_add_list_item, so the two cannot disagree about
+ * what a field accepts. A model sends "12" for a number and "yes" for a boolean.
+ *
+ * @param array|null $targets the lists this one looks up, read on first need and cached
+ * @return array ['value' => mixed] — null means "no value" — or ['error' => message]
+ */
+function _wiki_ai_list_value(array $col, $value, array $list, string $space_dir, ?array &$targets, bool $is_title): array {
+    $cid   = (string)$col['id'];
+    $cname = (string)($col['name'] ?? $cid);
+    $type  = (string)($col['type'] ?? 'text_single');
+    $empty = $value === null || $value === '' || $value === [];
+    if (in_array($type, ['autoincrement', 'lookup_field', 'object'], true)) {
+        $why = ['autoincrement' => 'is numbered by the list', 'lookup_field' => 'is shown from the item its lookup points at — change that lookup, or that item',
+                'object' => 'is a group of fields, which only the item form can change'][$type];
+        return ['error' => "\"{$cname}\" {$why}."];
+    }
+    if ($empty && $is_title) return ['error' => "\"{$cname}\" is the list's Title, which an item must have."];
+    if ($empty) return ['value' => null];
+    if (in_array($type, ['text_single', 'text_multi'], true)) {
+        if (!is_scalar($value)) return ['error' => "\"{$cname}\" takes text."];
+        $new = (string)$value;
+        if ($type === 'text_single') $new = trim(preg_replace('/\s*\R\s*/u', ' ', $new) ?? $new);
+        if ($is_title && $new === '') return ['error' => "\"{$cname}\" is the list's Title, which an item must have."];
+        return ['value' => $new];
+    }
+    if ($type === 'date') {
+        $d = is_string($value) ? DateTime::createFromFormat('!Y-m-d', trim($value)) : false;
+        if (!$d || $d->format('Y-m-d') !== trim($value)) return ['error' => "\"{$cname}\" takes a date as YYYY-MM-DD."];
+        return ['value' => trim($value)];
+    }
+    if ($type === 'choice') {
+        // A choice bound to a taxonomy folder takes the names of the items in it
+        // (taxonomy_lists.php); with `multiple`, several of them.
+        $bound = is_string($col['taxonomy'] ?? null) && $col['taxonomy'] !== '';
+        $opts = $bound ? array_column(wiki_tax_branch_values($col['taxonomy']) ?? [], 'value') : array_map('strval', $col['options'] ?? []);
+        $given = is_array($value) ? $value : [$value];
+        if (count($given) > 1 && empty($col['multiple'])) return ['error' => "\"{$cname}\" takes one value."];
+        $picked = [];
+        foreach ($given as $g) {
+            $hit = null;
+            foreach ($opts as $o) if (is_scalar($g) && mb_strtolower($o) === mb_strtolower(trim((string)$g))) { $hit = $o; break; }
+            if ($hit === null) {
+                return ['error' => "\"{$cname}\" " . ($bound ? "takes items of the taxonomy folder \"{$col['taxonomy']}\": " : 'is one of: ')
+                    . implode(', ', array_map(fn($o) => "\"{$o}\"", $opts)) . '.'];
+            }
+            if (!in_array($hit, $picked, true)) $picked[] = $hit;
+        }
+        return ['value' => !empty($col['multiple']) ? $picked : $picked[0]];
+    }
+    if ($type === 'number') {
+        if (is_string($value)) $value = str_replace([' ', ','], ['', '.'], trim($value));
+        if (!is_numeric($value)) return ['error' => "\"{$cname}\" takes a number."];
+        $new = round((float)$value, max(0, min(6, (int)($col['decimals'] ?? 0))));
+        if ((int)($col['decimals'] ?? 0) === 0) $new = (int)$new;
+        return ['value' => $new];
+    }
+    if ($type === 'boolean') {
+        $b = is_bool($value) ? $value : (is_string($value) || is_int($value)
+            ? (in_array(mb_strtolower(trim((string)$value)), ['1', 'true', 'yes', 'ja', 'y'], true) ? true
+              : (in_array(mb_strtolower(trim((string)$value)), ['0', 'false', 'no', 'nej', 'n'], true) ? false : null)) : null);
+        if ($b === null) return ['error' => "\"{$cname}\" is Yes/No: give true or false."];
+        return ['value' => $b];
+    }
+    if ($type === 'lookup') {
+        $ids = is_array($value) ? $value : [$value];
+        $clean = [];
+        foreach ($ids as $v) {
+            if (!is_numeric($v) || (int)$v != $v) return ['error' => "\"{$cname}\" takes item ids (numbers) from the list it looks up."];
+            $clean[] = (int)$v;
+        }
+        $clean = array_values(array_unique($clean));
+        if (empty($col['lookup']['multiple']) && count($clean) > 1) return ['error' => "\"{$cname}\" takes one item."];
+        $targets ??= wiki_list_lookup_targets($list, $space_dir);
+        $target = $targets[(string)($col['lookup']['list'] ?? '')] ?? null;
+        if ($target === null) return ['error' => "the list \"{$cname}\" looks up cannot be read."];
+        foreach ($clean as $i) {
+            if (!_wiki_list_find_item($target, $i)) return ['error' => "the list \"{$cname}\" looks up has no item {$i}."];
+        }
+        return ['value' => $clean];
+    }
+    return ['error' => "\"{$cname}\" cannot be set here."];
+}
+
+/** The field types wiki_create_list takes, by the name a model is given => the stored type. */
+const WIKI_AI_LIST_TYPES = [
+    'text' => 'text_single', 'multiline' => 'text_multi', 'date' => 'date', 'choice' => 'choice',
+    'number' => 'number', 'yesno' => 'boolean', 'lookup' => 'lookup',
+];
+
+/**
+ * wiki_create_list: a new, empty .list made by an AI. The structure the person's
+ * *New → List* writes (api.php `create_list`) — `git_commit: false`, the hidden ItemId first,
+ * `nextItemId` 1 — with the fields the AI names, cleaned the way List properties cleans them
+ * (modules/list/props.js `clean()`), so the list opens in the editor as if made there.
+ *
+ * - **Never replaces anything**: the file is opened with mode `x`, which fails if the path
+ *   exists — an atomic check-and-create, so two creates racing for one path cannot both win.
+ * - The Title is a single-line text field (`role: 'title'`), as the form requires.
+ * - A lookup names its target by path or page id; it must be a readable .list **in this
+ *   Space** (lookups are same-Space, see lists.md), and shows the target's Title.
+ * - Groups of fields and "also show" fields are not offered — the List properties dialog
+ *   does those. Items are added afterwards with wiki_add_list_item.
+ */
+function wiki_ai_create_list(array $input, $ai_user, $indexer, string $space_dir): string {
+    if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot create lists.';
+    $rel = ltrim(str_replace('..', '', (string)($input['path'] ?? '')), '/');
+    if ($rel === '' || strtolower(pathinfo($rel, PATHINFO_EXTENSION)) !== 'list' || pathinfo($rel, PATHINFO_FILENAME) === '') {
+        return 'Error: path must end in .list, e.g. Registers/Risks.list.';
+    }
+    if (wiki_is_memory_path($rel)) return 'Error: a list cannot be created in the memory folder.';
+    $abs = rtrim($space_dir, '/') . '/' . $rel;
+    if (file_exists($abs)) return "Error: \"{$rel}\" already exists. wiki_create_list never replaces a list — use wiki_add_list_item to add to it, or choose another path.";
+    $fields = $input['fields'] ?? null;
+    if (is_string($fields)) $fields = json_decode($fields, true);
+    if (!is_array($fields) || !$fields || !array_is_list($fields)) return 'Error: fields must be a non-empty array of {name, type} objects.';
+
+    $types = implode(', ', array_map(fn($t) => "\"{$t}\"", array_keys(WIKI_AI_LIST_TYPES)));
+    $columns = [['id' => 'col_1', 'name' => 'ItemId', 'type' => 'autoincrement', 'showInListView' => true]];
+    $seen = ['itemid' => true];
+    $n = 1;
+    foreach ($fields as $f) {
+        if (!is_array($f)) return 'Error: each field must be an object with "name" and "type". Nothing was created.';
+        $name = trim(preg_replace('/\s+/u', ' ', (string)($f['name'] ?? '')) ?? '');
+        if ($name === '') return 'Error: every field needs a name. Nothing was created.';
+        $key = mb_strtolower($name);
+        if (isset($seen[$key])) {
+            return $key === 'itemid' ? 'Error: "ItemId" is added by the list itself; give your field another name. Nothing was created.'
+                                     : "Error: two fields are named \"{$name}\". Nothing was created.";
+        }
+        $seen[$key] = true;
+        $given = mb_strtolower(trim((string)($f['type'] ?? '')));
+        $type = WIKI_AI_LIST_TYPES[$given] ?? (in_array($given, WIKI_AI_LIST_TYPES, true) ? $given : null);
+        if ($type === null) return "Error: field \"{$name}\" has type \"{$given}\"; the types are {$types}. Nothing was created.";
+        $col = ['id' => 'col_' . (++$n), 'name' => $name, 'type' => $type,
+                'description' => trim((string)($f['description'] ?? '')), 'showInListView' => true];
+
+        if ($type === 'choice') {
+            $tax = trim((string)($f['taxonomy'] ?? ''));
+            if ($tax !== '') {
+                if (wiki_tax_branch_values($tax) === null) {
+                    return "Error: field \"{$name}\": \"{$tax}\" is not a folder of the taxonomy (see wiki_get_taxonomy). Nothing was created.";
+                }
+                $col['taxonomy'] = wiki_tax_normalize($tax);
+            } else {
+                $opts = [];
+                foreach ((array)($f['options'] ?? []) as $o) {
+                    if (!is_scalar($o)) continue;
+                    $o = trim((string)$o);
+                    if ($o !== '' && !in_array(mb_strtolower($o), array_map('mb_strtolower', $opts), true)) $opts[] = $o;
+                }
+                if (!$opts) return "Error: field \"{$name}\" is a choice: give its \"options\", or a \"taxonomy\" folder. Nothing was created.";
+                $col['options'] = $opts;
+            }
+            if (!empty($f['multiple'])) $col['multiple'] = true;
+        } elseif ($type === 'number') {
+            $col['decimals'] = max(0, min(6, (int)($f['decimals'] ?? 0)));
+            $unit = mb_substr(trim((string)($f['unit'] ?? '')), 0, 12);
+            if ($unit !== '') $col['unit'] = $unit;
+        } elseif ($type === 'lookup') {
+            $ref = trim((string)($f['list'] ?? ''));
+            if ($ref === '') return "Error: field \"{$name}\" is a lookup: give \"list\", the path or page id of a list in this space. Nothing was created.";
+            $tpath = ctype_digit($ref) ? $indexer->getPath((int)$ref) : ltrim(str_replace('..', '', $ref), '/');
+            $tid   = $tpath ? $indexer->getId($tpath) : null;
+            $tlist = ($tpath && $tid !== null && strtolower(pathinfo($tpath, PATHINFO_EXTENSION)) === 'list')
+                ? json_decode((string)@file_get_contents(rtrim($space_dir, '/') . '/' . $tpath), true) : null;
+            if (!is_array($tlist) || !is_array($tlist['columns'] ?? null)) {
+                return "Error: field \"{$name}\" looks up \"{$ref}\", which is not a list in this space. A lookup can only point at a list in the same space. Nothing was created.";
+            }
+            $col['lookup'] = ['list' => (int)$tid, 'field' => (string)(wiki_list_title_field($tlist) ?? 'col_2'), 'multiple' => !empty($f['multiple'])];
+        }
+        $columns[] = $col;
+    }
+
+    // The Title: named, or the first single-line text field.
+    $want = trim((string)($input['title'] ?? ''));
+    $at = null;
+    foreach ($columns as $i => $c) {
+        if ($c['type'] === 'autoincrement') continue;
+        if ($want !== '' ? mb_strtolower($c['name']) === mb_strtolower($want) : $c['type'] === 'text_single') { $at = $i; break; }
+    }
+    if ($at === null) {
+        return $want !== '' ? "Error: there is no field \"{$want}\" to be the Title. Nothing was created."
+                            : 'Error: the list needs a Title — a "text" field naming each item. Add one. Nothing was created.';
+    }
+    if ($columns[$at]['type'] !== 'text_single') return "Error: the Title \"{$columns[$at]['name']}\" must be a \"text\" field. Nothing was created.";
+    $columns[$at]['role'] = 'title';
+
+    $raw = json_encode(['git_commit' => false, 'columns' => $columns, 'items' => [], 'nextItemId' => 1],
+                       JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if (($bad = wiki_list_check($raw)) !== null) return 'Error: ' . wiki_list_check_message($bad) . ' Nothing was created.';
+
+    $dir = dirname($abs);
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) return 'Error: could not create the folder.';
+    $fh = @fopen($abs, 'x');   // fails if the path exists — also when another create just won
+    if (!$fh) return file_exists($abs) ? "Error: \"{$rel}\" already exists. wiki_create_list never replaces a list." : 'Error: could not create the list file.';
+    $ok = fwrite($fh, $raw) === strlen($raw);
+    fclose($fh);
+    if (!$ok) { @unlink($abs); return 'Error: could not write the list.'; }
+    $indexer->addPage($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
+    wiki_ai_fts_upsert($space_dir, $rel, '');
+    $id = $indexer->getId($rel);
+    $names = implode(', ', array_map(fn($c) => '"' . $c['name'] . '"' . (($c['role'] ?? '') === 'title' ? ' (Title)' : ''), array_slice($columns, 1)));
+    return "List created: {$rel}" . ($id !== null ? " (page id {$id})" : '') . ", with the fields {$names}. It has no items yet — add them with wiki_add_list_item.";
+}
+
+/**
+ * wiki_add_list_item: a new item added to a .list by an AI (US-0002). Built on the same rules
+ * as wiki_update_list_item — values through _wiki_ai_list_value(), comments stamped by the
+ * server, wiki_list_check(), `updateModified` for generators and workflows — plus the one thing
+ * only an add has: a new item id.
+ *
+ * The id is allocated **under the file's lock**, from the list as it is on disk at that moment,
+ * so two adds at once (two AI jobs, or an AI and a person) are serialised: each reads the
+ * other's result and neither can get the same id or overwrite the other's item. api.php's
+ * `save` takes the same lock and compares the page's `rev`, so a person saving from a copy
+ * older than the add gets the conflict dialog instead of silently dropping the AI's item.
+ *
+ * The id is past `nextItemId` *and* past every id in the file, since a list edited by hand can
+ * have a counter that is behind — the same defensive rule as the entry counter. An
+ * autoincrement (ItemId) column gets the same number, which is what the item form writes.
+ */
+function wiki_ai_add_list_item(array $input, $ai_user, $indexer, string $space_dir): string {
+    if (($ai_user['role'] ?? 'reader') === 'reader') return 'Error: this AI user has read-only (reader) role and cannot change lists.';
+    $rel = ltrim(str_replace('..', '', (string)($input['path'] ?? '')), '/');
+    if ($rel === '' || strtolower(pathinfo($rel, PATHINFO_EXTENSION)) !== 'list') return 'Error: path must name a .list file.';
+    $abs = rtrim($space_dir, '/') . '/' . $rel;
+    if (!is_file($abs)) return "Error: there is no list \"{$rel}\" in this space. wiki_add_list_item adds to an existing list; it does not create one.";
+    $fields = $input['fields'] ?? [];
+    if (is_string($fields)) $fields = json_decode($fields, true) ?? [];
+    if (!is_array($fields) || !$fields) return 'Error: fields must be an object of field name => value, including the Title field.';
+    $comment = trim((string)($input['comment'] ?? ''));
+
+    $lock = @fopen($abs, 'r');
+    if (!$lock) return 'Error: could not open the list.';
+    flock($lock, LOCK_EX);
+    $done = function (string $msg) use ($lock) { flock($lock, LOCK_UN); fclose($lock); return $msg; };
+    $old_raw = (string)file_get_contents($abs);
+    $list = json_decode($old_raw, true);
+    if (!is_array($list) || !is_array($list['columns'] ?? null)) return $done('Error: that file is not a readable list.');
+    if (!is_array($list['items'] ?? null)) $list['items'] = [];
+    $title   = wiki_list_title_field($list);
+    $targets = null;
+    $item    = [];
+
+    foreach ($fields as $name => $value) {
+        $col = _wiki_ai_list_column($list, (string)$name);
+        if (!$col) return $done(_wiki_ai_list_no_field($list, (string)$name) . ' Nothing was added.');
+        $cid  = (string)$col['id'];
+        $conv = _wiki_ai_list_value($col, $value, $list, $space_dir, $targets, $cid === $title);
+        if (isset($conv['error'])) return $done('Error: ' . $conv['error'] . ' Nothing was added.');
+        if ($conv['value'] !== null) $item[$cid] = $conv['value'];
+    }
+    if ($title !== null && !array_key_exists($title, $item)) {
+        $tcol = _wiki_ai_list_column($list, $title);
+        $tname = (string)($tcol['name'] ?? $title);
+        return $done("Error: \"{$tname}\" is the list's Title, which an item must have. Nothing was added.");
+    }
+    if ($comment !== '') {
+        if (!wiki_list_comments_on($list)) return $done('Error: this list has comments turned off. Nothing was added.');
+        $item[WIKI_LIST_COMMENTS] = [['text' => $comment]];
+    }
+
+    $max = 0;
+    foreach ($list['items'] as $it) $max = max($max, (int)($it['id'] ?? 0));
+    $new_id = max(is_int($list['nextItemId'] ?? null) ? $list['nextItemId'] : 1, $max + 1);
+    $head = ['id' => $new_id];
+    foreach ($list['columns'] as $c) if (($c['type'] ?? '') === 'autoincrement') $head[(string)$c['id']] = $new_id;
+    $list['items'][]    = $head + $item;
+    $list['nextItemId'] = $new_id + 1;
+
+    $raw = json_encode($list, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $st = wiki_list_comments_stamp($raw, $old_raw, ['uid' => (int)($ai_user['uid'] ?? 0), 'name' => (string)($ai_user['name'] ?? 'AI')], false);
+    if (isset($st['error'])) return $done('Error: ' . wiki_list_check_message($st['error']) . ' Nothing was added.');
+    $raw = $st['content'];
+    if (($bad = wiki_list_check($raw)) !== null) return $done('Error: ' . wiki_list_check_message($bad) . ' Nothing was added.');
+    if (file_put_contents($abs, $raw) === false) return $done('Error: could not write the list.');
+    clearstatcache(true, $abs);
+    flock($lock, LOCK_UN);
+    fclose($lock);
+    $indexer->updateModified($rel, $ai_user['uid'] ?? null, $ai_user['name'] ?? null);
+    return "Item {$new_id} added to {$rel}. Its id is {$new_id}. Pages generated from this list are re-rendered with the change.";
+}
+
 /**
  * wiki_update_list_item: one item of a .list changed by an AI — some fields set, a comment
  * added. The same rules a person's save goes through (api.php `save`): under the file's own
@@ -1262,68 +1605,13 @@ function wiki_ai_update_list_item(array $input, $ai_user, $indexer, string $spac
     $changed = [];
 
     foreach ($fields as $name => $value) {
-        $col = null;
-        foreach ($list['columns'] as $c) if (($c['id'] ?? null) === $name) { $col = $c; break; }
-        if (!$col) foreach ($list['columns'] as $c) if (mb_strtolower(trim((string)($c['name'] ?? ''))) === mb_strtolower(trim((string)$name))) { $col = $c; break; }
-        if (!$col) {
-            $names = implode(', ', array_map(fn($c) => '"' . ($c['name'] ?? $c['id']) . '"', $list['columns']));
-            return $done("Error: the list has no field \"{$name}\". Its fields are: {$names}. Nothing was changed.");
-        }
+        $col = _wiki_ai_list_column($list, (string)$name);
+        if (!$col) return $done(_wiki_ai_list_no_field($list, (string)$name) . ' Nothing was changed.');
         $cid = (string)$col['id'];
+        $conv = _wiki_ai_list_value($col, $value, $list, $space_dir, $targets, $cid === $title);
+        if (isset($conv['error'])) return $done('Error: ' . $conv['error'] . ' Nothing was changed.');
+        $new = $conv['value'];
         $cname = (string)($col['name'] ?? $cid);
-        $type = (string)($col['type'] ?? 'text_single');
-        $empty = $value === null || $value === '' || $value === [];
-        if (in_array($type, ['autoincrement', 'lookup_field', 'object'], true)) {
-            $why = ['autoincrement' => 'is numbered by the list', 'lookup_field' => 'is shown from the item its lookup points at — change that lookup, or that item',
-                    'object' => 'is a group of fields, which only the item form can change'][$type];
-            return $done("Error: \"{$cname}\" {$why}. Nothing was changed.");
-        }
-        if ($empty && $cid === $title) return $done("Error: \"{$cname}\" is the list's Title, which an item must have. Nothing was changed.");
-        if ($empty) { $new = null; }
-        elseif (in_array($type, ['text_single', 'text_multi'], true)) {
-            if (!is_scalar($value)) return $done("Error: \"{$cname}\" takes text. Nothing was changed.");
-            $new = (string)$value;
-            if ($type === 'text_single') $new = trim(preg_replace('/\s*\R\s*/u', ' ', $new) ?? $new);
-        } elseif ($type === 'date') {
-            $d = is_string($value) ? DateTime::createFromFormat('!Y-m-d', trim($value)) : false;
-            if (!$d || $d->format('Y-m-d') !== trim($value)) return $done("Error: \"{$cname}\" takes a date as YYYY-MM-DD. Nothing was changed.");
-            $new = trim($value);
-        } elseif ($type === 'choice') {
-            $opts = array_map('strval', $col['options'] ?? []);
-            $hit = null;
-            foreach ($opts as $o) if (mb_strtolower($o) === mb_strtolower(trim((string)$value))) { $hit = $o; break; }
-            if ($hit === null) return $done("Error: \"{$cname}\" is one of: " . implode(', ', array_map(fn($o) => "\"{$o}\"", $opts)) . '. Nothing was changed.');
-            $new = $hit;
-        } elseif ($type === 'number') {
-            if (is_string($value)) $value = str_replace([' ', ','], ['', '.'], trim($value));
-            if (!is_numeric($value)) return $done("Error: \"{$cname}\" takes a number. Nothing was changed.");
-            $new = round((float)$value, max(0, min(6, (int)($col['decimals'] ?? 0))));
-            if ((int)($col['decimals'] ?? 0) === 0) $new = (int)$new;
-        } elseif ($type === 'boolean') {
-            $b = is_bool($value) ? $value : (is_string($value) || is_int($value)
-                ? (in_array(mb_strtolower(trim((string)$value)), ['1', 'true', 'yes', 'ja', 'y'], true) ? true
-                  : (in_array(mb_strtolower(trim((string)$value)), ['0', 'false', 'no', 'nej', 'n'], true) ? false : null)) : null);
-            if ($b === null) return $done("Error: \"{$cname}\" is Yes/No: give true or false. Nothing was changed.");
-            $new = $b;
-        } elseif ($type === 'lookup') {
-            $ids = is_array($value) ? $value : [$value];
-            $clean = [];
-            foreach ($ids as $v) {
-                if (!is_numeric($v) || (int)$v != $v) return $done("Error: \"{$cname}\" takes item ids (numbers) from the list it looks up. Nothing was changed.");
-                $clean[] = (int)$v;
-            }
-            $clean = array_values(array_unique($clean));
-            if (empty($col['lookup']['multiple']) && count($clean) > 1) return $done("Error: \"{$cname}\" takes one item. Nothing was changed.");
-            $targets ??= wiki_list_lookup_targets($list, $space_dir);
-            $target = $targets[(string)($col['lookup']['list'] ?? '')] ?? null;
-            if ($target === null) return $done("Error: the list \"{$cname}\" looks up cannot be read. Nothing was changed.");
-            foreach ($clean as $i) {
-                if (!_wiki_list_find_item($target, $i)) return $done("Error: the list \"{$cname}\" looks up has no item {$i}. Nothing was changed.");
-            }
-            $new = $clean;
-        } else {
-            return $done("Error: \"{$cname}\" cannot be set here. Nothing was changed.");
-        }
         if (($item[$cid] ?? null) === $new) continue;
         if ($new === null) unset($item[$cid]); else $item[$cid] = $new;
         $changed[] = $cname;

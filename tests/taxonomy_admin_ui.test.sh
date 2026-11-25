@@ -316,8 +316,8 @@ assert_contains "  Delete stays off while it is in use" 'delInUse=true' "$PROBE"
 assert_contains "  and says how to get rid of it instead" 'merge it into another item instead' "$PROBE"
 
 section 'the details panel matches the tree'
-assert_contains "its field labels are bold at 13.5px" 'labels=13.5/700,13.5/700,13.5/700,13.5/700 ' "$PROBE"
-assert_contains "  and the choices plain at 13.5px"   'choices=13.5/400,13.5/400,13.5/400 ' "$PROBE"
+assert_contains "its field labels semi-bold at 12.5px, as in the admin forms" 'labels=12.5/600,12.5/600,12.5/600,12.5/600 ' "$PROBE"
+assert_contains "  and the choices plain at 12.5px"   'choices=12.5/400,12.5/400,12.5/400 ' "$PROBE"
 
 section 'keyboard'
 assert_contains "Down moves to the next row"        'kDown=Department/HR' "$PROBE"

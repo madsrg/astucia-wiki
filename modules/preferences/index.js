@@ -7,8 +7,15 @@ import { t } from '../i18n/index.js';
 import { avatarPickerHtml, wireAvatarPicker } from '../core/avatars.js';
 import { invalidateUsers } from '../core/users.js';
 
-const FONTS      = ['sans', 'serif', 'mono'];
-const FONT_SIZES = ['10pt', '11pt', '12pt', '14pt', '16pt'];
+// 'sans' is the system's sans-serif (the default); 'source' the bundled Source Sans 3.
+const FONTS = ['sans', 'source', 'serif', 'mono'];
+// Two sizes in percent, steps of 5 (accounts.php → wiki_display_prefs holds the same rules).
+// `ui` is the root font size, 100% = 11pt; `text` is content's, relative to it.
+const SCALES = { ui: { min: 80, max: 150, def: 100 }, text: { min: 70, max: 150, def: 90 } };
+const validScale = (kind, v) => {
+    const n = Number(v), { min, max } = SCALES[kind];
+    return Number.isInteger(n) && n >= min && n <= max && n % 5 === 0 ? n : SCALES[kind].def;
+};
 
 // ── Sign-in methods ─────────────────────────────────────────────────────────────
 // The site has one security level (auth_modes.php) and an account uses ONE method. Here a
@@ -120,8 +127,8 @@ const renderPasswordChange = (group, box) => {
             <input type="password" class="form-control" id="pref-pw-new" autocomplete="new-password" minlength="12" placeholder="${esc(t('prefs.pw-new'))}">
             <input type="password" class="form-control" id="pref-pw-new2" autocomplete="new-password" minlength="12" placeholder="${esc(t('prefs.pw-repeat'))}">
             <button type="button" class="btn btn-sm btn-blue" id="pref-pw-save">${esc(t('prefs.pw-change'))}</button>
-            <p class="pref-hint pref-hint-flush">${esc(t('prefs.pw-hint'))}</p>
-        </div>`;
+        </div>
+        <p class="pref-hint pref-hint-flush">${esc(t('prefs.pw-hint'))}</p>`;
     box.querySelector('#pref-pw-save').addEventListener('click', async (e) => {
         const val = (id) => box.querySelector(id).value;
         e.target.disabled = true;
@@ -134,8 +141,9 @@ const renderPasswordChange = (group, box) => {
     });
 };
 
-const applyFont     = (f) => document.documentElement.setAttribute('data-font', f);
-const applyFontSize = (s) => document.documentElement.setAttribute('data-font-size', s);
+const applyFont  = (f) => document.documentElement.setAttribute('data-font', f);
+const applyScale = (kind, pct) => document.documentElement.style.setProperty(`--${kind}-scale`, String(pct / 100));
+const storedScales = () => ({ ui: validScale('ui', window.WIKI_USER_UI_SCALE), text: validScale('text', window.WIKI_USER_TEXT_SCALE) });
 
 export const init = () => {
     const btn      = document.getElementById('preferences-btn');
@@ -148,17 +156,22 @@ export const init = () => {
     const digestCb   = document.getElementById('pref-daily-digest');
     const jobNotifyCb = document.getElementById('pref-notify-agent-jobs');
     const fontBtns   = lightbox.querySelectorAll('[data-font-val]');
-    const sizeBtns   = lightbox.querySelectorAll('[data-size-val]');
+    const sliders    = { ui: document.getElementById('pref-ui-scale'), text: document.getElementById('pref-text-scale') };
+    const sliderVals = { ui: document.getElementById('pref-ui-scale-val'), text: document.getElementById('pref-text-scale-val') };
 
-    let selectedFont     = window.WIKI_USER_FONT      || 'sans';
-    let selectedFontSize = window.WIKI_USER_FONT_SIZE || '11pt';
+    let selectedFont   = window.WIKI_USER_FONT || 'sans';
+    let selectedScales = storedScales();
 
     const updateFontBtns = (f) => fontBtns.forEach(b => {
         b.className = `btn btn-sm ${b.dataset.fontVal === f ? 'btn-blue' : 'btn-secondary'}`;
     });
-    const updateSizeBtns = (s) => sizeBtns.forEach(b => {
-        b.className = `btn btn-sm pref-size-btn ${b.dataset.sizeVal === s ? 'btn-blue' : 'btn-secondary'}`;
-    });
+    // The slider, its percentage, and the page itself — the preview is the wiki around the dialog.
+    const setScale = (kind, pct) => {
+        selectedScales[kind] = validScale(kind, pct);
+        if (sliders[kind]) sliders[kind].value = String(selectedScales[kind]);
+        if (sliderVals[kind]) sliderVals[kind].textContent = `${selectedScales[kind]}%`;
+        applyScale(kind, selectedScales[kind]);
+    };
 
     fontBtns.forEach(b => b.addEventListener('click', () => {
         selectedFont = b.dataset.fontVal;
@@ -166,11 +179,9 @@ export const init = () => {
         applyFont(selectedFont);
     }));
 
-    sizeBtns.forEach(b => b.addEventListener('click', () => {
-        selectedFontSize = b.dataset.sizeVal;
-        updateSizeBtns(selectedFontSize);
-        applyFontSize(selectedFontSize);
-    }));
+    Object.entries(sliders).forEach(([kind, el]) => el?.addEventListener('input', () => setScale(kind, el.value)));
+    lightbox.querySelectorAll('[data-scale-reset]').forEach(b => b.addEventListener('click', () =>
+        setScale(b.dataset.scaleReset, SCALES[b.dataset.scaleReset].def)));
 
     // Rebuilt on each open from the server's options, so it can never offer an id the save
     // refuses and always starts from what is stored rather than from the last unsaved pick.
@@ -188,21 +199,23 @@ export const init = () => {
         lightbox.classList.remove('hidden');
         emailInput.value = '';
         saveBtn.disabled = true;
-        selectedFont     = window.WIKI_USER_FONT      || 'sans';
-        selectedFontSize = window.WIKI_USER_FONT_SIZE || '11pt';
+        selectedFont = window.WIKI_USER_FONT || 'sans';
         updateFontBtns(selectedFont);
-        updateSizeBtns(selectedFontSize);
+        const stored = storedScales();
+        setScale('ui', stored.ui);
+        setScale('text', stored.text);
         if (digestCb) digestCb.checked = false;
         if (jobNotifyCb) jobNotifyCb.checked = false;
         const result = await api.call('user_get_preferences');
         if (result.success) {
             emailInput.value = result.data.email || '';
-            if (FONTS.includes(result.data.fontFamily))      selectedFont     = result.data.fontFamily;
-            if (FONT_SIZES.includes(result.data.fontSize))   selectedFontSize = result.data.fontSize;
+            if (FONTS.includes(result.data.fontFamily)) selectedFont = result.data.fontFamily;
             if (digestCb) digestCb.checked = !!result.data.dailyDigest;
             if (jobNotifyCb) jobNotifyCb.checked = !!result.data.notifyAgentJobs;
             updateFontBtns(selectedFont);
-            updateSizeBtns(selectedFontSize);
+            applyFont(selectedFont);
+            setScale('ui', result.data.uiScale);
+            setScale('text', result.data.textScale);
             renderAvatarPicker(result.data);
             renderSignin(result.data.signin, reloadSignin);
         }
@@ -217,7 +230,14 @@ export const init = () => {
         if (res.success) renderSignin(res.data.signin, reloadSignin);
     };
 
-    const close = () => lightbox.classList.add('hidden');
+    // Closing without saving puts back what is stored: the font and sizes were only a preview.
+    const close = () => {
+        lightbox.classList.add('hidden');
+        applyFont(window.WIKI_USER_FONT || 'sans');
+        const stored = storedScales();
+        applyScale('ui', stored.ui);
+        applyScale('text', stored.text);
+    };
 
     btn.addEventListener('click', open);
     closeBtn.addEventListener('click', close);
@@ -226,15 +246,17 @@ export const init = () => {
     saveBtn.addEventListener('click', async () => {
         saveBtn.disabled = true;
         const result = await api.call('user_save_preferences',
-            { email: emailInput.value.trim(), fontFamily: selectedFont, fontSize: selectedFontSize,
+            { email: emailInput.value.trim(), fontFamily: selectedFont,
+              uiScale: String(selectedScales.ui), textScale: String(selectedScales.text),
               dailyDigest: digestCb && digestCb.checked ? '1' : '0',
               notifyAgentJobs: jobNotifyCb && jobNotifyCb.checked ? '1' : '0',
               // Absent until the options have loaded — and absent means "keep" server-side.
               ...(document.getElementById('pref-avatar') ? { avatar: document.getElementById('pref-avatar').value } : {}) }, 'POST');
         saveBtn.disabled = false;
         if (result.success) {
-            window.WIKI_USER_FONT      = selectedFont;
-            window.WIKI_USER_FONT_SIZE = selectedFontSize;
+            window.WIKI_USER_FONT       = selectedFont;
+            window.WIKI_USER_UI_SCALE   = selectedScales.ui;
+            window.WIKI_USER_TEXT_SCALE = selectedScales.text;
             // Your own bubbles repaint at once; other browsers hear it from the users event.
             invalidateUsers();
             showToast(t('prefs.saved'), 'success');

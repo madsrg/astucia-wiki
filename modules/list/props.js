@@ -36,6 +36,8 @@ import { saveListData } from './data.js';
 import { confirmModal, showToast } from '../core/utils.js';
 import { icons } from '../core/icons.js';
 import { t } from '../i18n/index.js';
+import { getTaxonomy, flatten } from '../core/taxonomy.js';
+import { enhanceSelect } from '../core/dropdown.js';
 import { normalizeList, spaceLists, loadLookupTargets, targetList, targetName, projectableFields, titleField, GROUP_TYPES, groupEntries, ensureEntryCounter, commentsOn } from './fields.js';
 
 const el = (tag, cls, text) => {
@@ -62,19 +64,108 @@ const newId = () => `col_${Date.now()}_${++seq}`;
 const newSubId = () => `sf_${Date.now()}_${++seq}`;
 const newSub = () => ({ id: newSubId(), name: '', type: 'text_single', _new: true });
 
-/** A Choice field's choices, one per line — for a field and for a group's sub-field. */
+let choiceSeq = 0;
+
+/** Does this choice take its values from the taxonomy? The editor's switch, else what is saved. */
+const fromTax = (d) => d._fromTaxonomy ?? !!d.taxonomy;
+
+/**
+ * A Choice's settings — for a field and for a group's sub-field: where its values come from,
+ * either choices typed one per line (`options`) or the items of a taxonomy folder
+ * (`taxonomy`, the folder's path — taxonomy_lists.php), and whether an item may have several
+ * (`multiple`). The typed choices are kept while the folder is chosen, so switching back
+ * loses nothing until the list is saved.
+ */
 const choicesEditor = (d) => {
-    const g = el('div', 'list-props-field');
-    g.appendChild(el('label', 'list-props-desc-label', t('list.choices-label')));
+    const g = el('div', 'list-props-field list-props-choice');
+    const key = ++choiceSeq;
+    const radio = (value, label) => {
+        const lab = el('label', 'list-props-choice-src');
+        const r = el('input');
+        r.type = 'radio';
+        r.name = `choice-src-${key}`;
+        r.value = value;
+        r.className = `list-props-choice-src-${value}`;
+        lab.append(r, el('span', '', label));
+        return [lab, r];
+    };
+    const [typedLab, typedR] = radio('typed', t('list.choices-typed'));
+    const [taxLab, taxR] = radio('taxonomy', t('list.choices-taxonomy'));
+    const srcRow = el('div', 'list-props-choice-srcs');
+    srcRow.append(typedLab, taxLab);
+    g.appendChild(srcRow);
+
+    const typedBox = el('div', 'list-props-choice-typed');
+    typedBox.appendChild(el('label', 'list-props-desc-label', t('list.choices-label')));
     const ta = el('textarea', 'form-control list-props-choices');
     ta.rows = 3;
     ta.value = (d.options || []).join('\n');
     ta.addEventListener('input', () => {
         d.options = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
     });
-    g.appendChild(ta);
+    typedBox.appendChild(ta);
+
+    const taxBox = el('div', 'list-props-choice-tax');
+    taxBox.appendChild(el('label', 'list-props-desc-label', t('list.choices-folder')));
+    const folderSel = el('select', 'form-control list-props-choice-folder');
+    folderSel.dataset.ddPrompt = '';
+    taxBox.appendChild(folderSel);
+    const taxHint = el('p', 'field-helptext');
+    taxBox.appendChild(taxHint);
+    folderSel.addEventListener('change', () => { d.taxonomy = folderSel.value; });
+    // The folders, at every depth, indented — a folder holding only subfolders is offered
+    // too: its values are the items anywhere inside it.
+    getTaxonomy().then(({ nodes }) => {
+        const folders = flatten(nodes).filter(n => n.heading);
+        const none = el('option', '', t('list.choices-pick-folder'));
+        none.value = '';
+        folderSel.appendChild(none);
+        const known = new Set(folders.map(f => f.path.toLocaleLowerCase()));
+        if (d.taxonomy && !known.has(String(d.taxonomy).toLocaleLowerCase())) {
+            const o = el('option', '', t('list.choices-folder-missing', { folder: d.taxonomy }));
+            o.value = d.taxonomy;
+            o.dataset.note = '1';
+            folderSel.appendChild(o);
+        }
+        folders.forEach(f => {
+            const o = el('option', '', f.name);
+            o.value = f.path;
+            o.title = f.path;
+            if (f.depth) o.dataset.depth = String(f.depth);
+            folderSel.appendChild(o);
+        });
+        const match = folders.find(f => f.path.toLocaleLowerCase() === String(d.taxonomy || '').toLocaleLowerCase());
+        folderSel.value = match ? match.path : (d.taxonomy || '');
+        taxHint.textContent = folders.length ? t('list.choices-folder-hint') : t('list.choices-no-folders');
+        enhanceSelect(folderSel, { placeholder: t('list.choices-pick-folder') });
+    });
+
+    const multiLab = el('label', 'list-props-choice-multi');
+    const multi = el('input');
+    multi.type = 'checkbox';
+    multi.className = 'list-props-choice-multiple';
+    multi.checked = !!d.multiple;
+    multi.addEventListener('change', () => { d.multiple = multi.checked; });
+    multiLab.append(multi, el('span', '', t('list.choices-multiple')));
+
+    g.append(typedBox, taxBox, multiLab);
+    const show = () => {
+        const tax = taxR.checked;
+        typedBox.classList.toggle('hidden', tax);
+        taxBox.classList.toggle('hidden', !tax);
+    };
+    typedR.addEventListener('change', () => { d.taxonomy = undefined; d._fromTaxonomy = false; show(); });
+    taxR.addEventListener('change', () => { d._fromTaxonomy = true; d.taxonomy = folderSel.value || d.taxonomy || ''; show(); });
+    (fromTax(d) ? taxR : typedR).checked = true;
+    show();
     return g;
 };
+
+/** How many items hold more than one value in a choice — before "several" may be turned off. */
+const itemsWithSeveral = (colId, subId = null) => (state.currentListData?.items || []).filter(i => {
+    const cells = subId == null ? [i[colId]] : groupEntries({ multiple: true }, Array.isArray(i[colId]) ? i[colId] : (i[colId] ? [i[colId]] : [])).map(e => e[subId]);
+    return cells.some(v => Array.isArray(v) && v.filter(x => String(x).trim() !== '').length > 1);
+}).length;
 
 /**
  * A Number's settings: how many decimals it shows, and a unit after it. Both only change how
@@ -506,7 +597,14 @@ const validate = () => {
         const key = name.toLocaleLowerCase();
         if (seen.has(key)) return [t('list.field-name-taken', { name }), d.id];
         seen.set(key, d.id);
-        if (d.type === 'choice' && !(d.options || []).length) return [t('list.choices-required', { name }), d.id];
+        if (d.type === 'choice') {
+            if (fromTax(d) && !d.taxonomy) return [t('list.choices-folder-required', { name }), d.id];
+            if (!fromTax(d) && !(d.options || []).length) return [t('list.choices-required', { name }), d.id];
+            if (!d.multiple && !d._new) {
+                const n = itemsWithSeveral(d.id);
+                if (n) return [t('list.choice-several-off-refused', { name, n }), d.id];
+            }
+        }
         if (d.type === 'lookup' && d.lookup?.list == null) return [t('list.lookup-target-required', { name }), d.id];
         if (d.type === 'object') {
             if (!d.fields.length) return [t('list.group-fields-required', { name }), d.id];
@@ -516,7 +614,15 @@ const validate = () => {
                 if (!sub) return [t('list.group-field-name-required', { name }), d.id];
                 if (subSeen.has(sub.toLocaleLowerCase())) return [t('list.group-field-name-taken', { name, sub }), d.id];
                 subSeen.add(sub.toLocaleLowerCase());
-                if (sf.type === 'choice' && !(sf.options || []).length) return [t('list.choices-required', { name: `${name} › ${sub}` }), d.id];
+                if (sf.type === 'choice') {
+                    const both = `${name} › ${sub}`;
+                    if (fromTax(sf) && !sf.taxonomy) return [t('list.choices-folder-required', { name: both }), d.id];
+                    if (!fromTax(sf) && !(sf.options || []).length) return [t('list.choices-required', { name: both }), d.id];
+                    if (!sf.multiple && !sf._new) {
+                        const n = itemsWithSeveral(d.id, sf.id);
+                        if (n) return [t('list.choice-several-off-refused', { name: both, n }), d.id];
+                    }
+                }
             }
             // Several → one is safe only while no item has more than one entry.
             if (!d._new && d._origMultiple && !d.multiple) {
@@ -528,11 +634,18 @@ const validate = () => {
     return null;
 };
 
+/** A choice's saved settings: its folder or its typed choices, and `multiple` when set. */
+const cleanChoice = (d) => {
+    const out = fromTax(d) && d.taxonomy ? { taxonomy: d.taxonomy } : { options: [...(d.options || [])] };
+    if (d.multiple) out.multiple = true;
+    return out;
+};
+
 const clean = (d) => {
     const c = { id: d.id, name: d.name.trim(), type: d.type, description: (d.description || '').trim() };
     if (d.role) c.role = d.role;
     c.showInListView = d.showInListView !== false;
-    if (d.type === 'choice') c.options = [...(d.options || [])];
+    if (d.type === 'choice') Object.assign(c, cleanChoice(d));
     if (d.type === 'number') {
         c.decimals = Math.min(6, Math.max(0, parseInt(d.decimals, 10) || 0));
         const unit = (d.unit || '').trim();
@@ -546,7 +659,7 @@ const clean = (d) => {
         c.multiple = !!d.multiple;
         c.fields = d.fields.map(sf => {
             const f = { id: sf.id, name: sf.name.trim(), type: sf.type };
-            if (sf.type === 'choice') f.options = [...(sf.options || [])];
+            if (sf.type === 'choice') Object.assign(f, cleanChoice(sf));
             return f;
         });
         const ids = c.fields.map(f => f.id);

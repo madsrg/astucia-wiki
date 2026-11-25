@@ -101,6 +101,7 @@ define('MAIL_PROVIDER', $env('MAIL_PROVIDER', ''));      // 'sendgrid' | 'mailgu
 define('SENDGRID_API_KEY',    $env('SENDGRID_API_KEY', ''));
 define('SENDGRID_FROM_EMAIL', $env('SENDGRID_FROM_EMAIL', ''));
 define('SENDGRID_FROM_NAME',  $env('SENDGRID_FROM_NAME', APP_TITLE));
+define('SENDGRID_REGION',     $env('SENDGRID_REGION', 'eu'));   // 'eu' | 'global'
 define('MAILGUN_API_KEY',    $env('MAILGUN_API_KEY', ''));
 define('MAILGUN_DOMAIN',     $env('MAILGUN_DOMAIN', ''));
 define('MAILGUN_REGION',     $env('MAILGUN_REGION', 'us'));

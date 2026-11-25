@@ -24,7 +24,7 @@ function _llm_registry(): array {
     static $cache = null;
     if ($cache !== null) return $cache;
 
-    $cache = ['providers' => [], 'model_rules' => []];
+    $cache = ['providers' => [], 'presets' => [], 'model_rules' => []];
     $file  = __DIR__ . '/llm_providers.json';
     if (!is_file($file)) return $cache;
     $j = json_decode(file_get_contents($file), true);
@@ -38,6 +38,24 @@ function _llm_registry(): array {
                 'family'      => $p['family']      ?? 'openai-chat',
                 'label'       => $p['label']       ?? $p['id'],
                 'default_url' => $p['default_url'] ?? '',
+            ];
+        }
+    }
+    if (isset($j['presets']) && is_array($j['presets'])) {
+        $ids = array_column($cache['providers'], 'id');
+        foreach ($j['presets'] as $p) {
+            if (empty($p['id']) || empty($p['provider'])) continue;
+            // A preset for a provider the registry does not know would save a connection the
+            // save action then refuses.
+            if ($ids && !in_array($p['provider'], $ids, true)) continue;
+            $cache['presets'][] = [
+                'id'       => (string)$p['id'],
+                'label'    => (string)($p['label'] ?? $p['id']),
+                'provider' => (string)$p['provider'],
+                'url'      => (string)($p['url'] ?? ''),
+                'model'    => (string)($p['model'] ?? ''),
+                'key_url'  => (string)($p['key_url'] ?? ''),
+                'no_key'   => !empty($p['no_key']),
             ];
         }
     }
@@ -66,6 +84,11 @@ function llm_providers(): array {
 
 // Resolve a provider id to its profile; unknown ids default to the openai-chat
 // family so a stale/typo'd config still behaves sensibly rather than erroring.
+/** The setup wizard's service cards (llm_providers.json → presets). */
+function llm_presets(): array {
+    return _llm_registry()['presets'];
+}
+
 function llm_provider(string $id): array {
     foreach (llm_providers() as $p) {
         if ($p['id'] === $id) return $p;

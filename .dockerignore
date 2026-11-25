@@ -25,6 +25,7 @@ password_tokens.json
 login_throttle.json
 spaces.json
 settings.json
+mail_settings.json
 
 # Rebuilt in the vendor stage; copying the host's copy would defeat that.
 vendor/

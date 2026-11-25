@@ -57,7 +57,7 @@ const updateRequestsBadge = () => {
 
 const TAB_GROUPS = {
     users:      ['users', 'requests', 'api'],
-    ai:         ['ai', 'llm', 'jobs', 'mcp', 'skills'],
+    ai:         ['ai', 'llm', 'jobs', 'oneoff', 'mcp', 'skills'],
     monitoring: ['logs', 'errorlog', 'audit', 'diagnostics', 'realtime', 'sysinfo'],
     content:    ['reindex', 'deleted', 'retention', 'metadata', 'maps', 'taxonomy', 'workflows', 'generators'],
 };
@@ -73,7 +73,12 @@ const switchGroup = (groupName) => {
     switchTab(lastTabInGroup[groupName] || TAB_GROUPS[groupName][0]);
 };
 
+// The load the last switchTab started for its pane, so a caller can wait for the list before
+// drawing a form over it (openAdminAt) — otherwise the list, arriving later, replaces the form.
+let tabLoad = Promise.resolve();
+
 const switchTab = (name) => {
+    tabLoad = Promise.resolve();
     document.querySelectorAll('.admin-tab').forEach(tb =>
         tb.classList.toggle('active', tb.dataset.tab === name));
     document.querySelectorAll('.admin-pane').forEach(p =>
@@ -86,6 +91,7 @@ const switchTab = (name) => {
     document.getElementById('admin-footer-ai')?.classList.toggle('hidden',           name !== 'ai');
     document.getElementById('admin-footer-api')?.classList.toggle('hidden',           name !== 'api');
     document.getElementById('admin-footer-jobs')?.classList.toggle('hidden',         name !== 'jobs');
+    document.getElementById('admin-footer-oneoff')?.classList.toggle('hidden',       name !== 'oneoff');
     document.getElementById('admin-footer-mcp')?.classList.toggle('hidden',          name !== 'mcp');
     document.getElementById('admin-footer-llm')?.classList.toggle('hidden',          name !== 'llm');
     document.getElementById('admin-footer-deleted')?.classList.toggle('hidden',      name !== 'deleted');
@@ -101,17 +107,18 @@ const switchTab = (name) => {
     if (name === 'diagnostics') loadDiagnostics();
     if (name === 'realtime')    loadRealtimeStatus();
     if (name === 'sysinfo')     loadSystemInfo();
-    if (name === 'ai')          loadAiUsers();
+    if (name === 'ai')          tabLoad = loadAiUsers();
     if (name === 'api')         loadApiAccounts();
     if (name === 'jobs')        loadAgentJobs();
+    if (name === 'oneoff')      tabLoad = loadOneoffJobs();
     if (name === 'deleted')     loadDeletedPages();
     if (name === 'reindex')     loadReindexPane();
     if (name === 'retention')   loadRetentionPane();
     if (name === 'metadata')    loadMetadataPane();
     if (name === 'maps')        loadMapsPane();
     if (name === 'mcp')         loadMcpServers();
-    if (name === 'llm')         loadLlmConnections();
-    if (name === 'workflows')   loadWorkflows();
+    if (name === 'llm')         tabLoad = loadLlmConnections();
+    if (name === 'workflows')   tabLoad = loadWorkflows();
     if (name === 'generators')  loadGenerators();
     if (name === 'taxonomy')    loadTaxonomyPane();
     if (name === 'skills')      loadSkills();
@@ -1711,7 +1718,10 @@ const loadAiUsers = async () => {
     if (container) container.innerHTML = `<p class="admin-loading">${t('admin.users.loading')}</p>`;
     const result = await api.call('admin_get_ai_users');
     if (result.success) {
-        aiUsers = result.data || [];
+        // By name, as people read a list: case- and accent-insensitive, numbers in order
+        // ("Bot 2" before "Bot 10"). users.json keeps creation order.
+        aiUsers = (result.data || []).slice().sort((a, b) =>
+            String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base', numeric: true }));
         aiAvatarIds = result.avatars || [];
         renderAiUserList();
     } else {
@@ -2463,8 +2473,7 @@ const renderAgentJobList = () => {
         : '';
 
     if (!agentJobs.length) {
-        container.innerHTML = serverTimeHtml + `<p class="admin-empty">${t('admin.jobs.none')}</p>`;
-        renderOneoffSection(container);
+        container.innerHTML = serverTimeHtml + `<p class="admin-empty">${t('admin.jobs.none')}</p>` + runnerStatusHtml();
         return;
     }
     const table = document.createElement('table');
@@ -2525,7 +2534,7 @@ const renderAgentJobList = () => {
     table.appendChild(tbody);
     container.innerHTML = serverTimeHtml;
     container.appendChild(table);
-    renderOneoffSection(container);
+    container.insertAdjacentHTML('beforeend', runnerStatusHtml());
 };
 
 // --- One-off jobs (/aiJob) ----------------------------------------------------
@@ -2552,6 +2561,20 @@ const runnerStatusHtml = () => {
         + t(stale ? 'admin.oneoff.runner-stale' : 'admin.oneoff.runner-ok',
             { time: last.toLocaleString(), interval: runnerInterval })
         + `</div>`;
+};
+
+const loadOneoffJobs = async () => {
+    const container = document.getElementById('admin-oneoff-list');
+    if (container) container.innerHTML = `<p class="admin-loading">${t('admin.users.loading')}</p>`;
+    const result = await api.call('admin_get_agent_jobs');
+    if (!container) return;
+    if (!result.success) { container.innerHTML = `<p class="admin-empty">${t('admin.users.failed')}</p>`; return; }
+    oneoffJobs      = result.oneoff   || [];
+    oneoffQueued    = result.oneoff_queued    || 0;
+    runnerHeartbeat = result.runner_heartbeat || null;
+    runnerInterval  = result.runner_interval  || 15;
+    container.innerHTML = '';
+    renderOneoffSection(container);
 };
 
 const renderOneoffSection = (container) => {
@@ -3682,6 +3705,25 @@ export const init = () => {
 
     document.getElementById('admin-btn').addEventListener('click', (e) => { e.preventDefault(); openAdmin(); });
 
+    // Opened on a given tab from elsewhere — the setup checklist's "Set it up" buttons:
+    // `wiki:open-admin` with { tab, action }, action 'new' opening that tab's add form.
+    const NEW_FORMS = { ai: () => openAiUserForm(null), llm: () => openLlmConnectionForm(null),
+                        workflows: () => document.getElementById('admin-workflows-add-btn')?.click() };
+    // The setup wizard added a provider: the list, if it is the one showing, is out of date.
+    window.addEventListener('wiki:llm-connections-changed', () => {
+        if (!document.getElementById('admin-pane-llm')?.classList.contains('hidden')) loadLlmConnections();
+    });
+    window.addEventListener('wiki:open-admin', async (e) => {
+        const { tab, action } = e.detail || {};
+        await openAdmin();
+        const group = Object.keys(TAB_GROUPS).find(g => TAB_GROUPS[g].includes(tab));
+        if (!group) return;
+        lastTabInGroup[group] = tab;
+        switchGroup(group);
+        await tabLoad;
+        if (action === 'new') NEW_FORMS[tab]?.();
+    });
+
     document.getElementById('admin-lightbox-close-btn').addEventListener('click', () => {
         document.getElementById('admin-lightbox').classList.add('hidden');
         stopJobPoll(); // the job keeps running server-side; just stop the live poll
@@ -3715,6 +3757,7 @@ export const init = () => {
     document.getElementById('admin-ai-add-btn')?.addEventListener('click', () => openAiUserForm(null));
     document.getElementById('admin-api-add-btn')?.addEventListener('click', () => openApiAccountForm(null));
     document.getElementById('admin-jobs-add-btn')?.addEventListener('click', () => openJobForm(null));
+    document.getElementById('admin-oneoff-refresh-btn')?.addEventListener('click', () => loadOneoffJobs());
     document.getElementById('admin-mcp-add-btn')?.addEventListener('click', () => openMcpServerForm(null));
     document.getElementById('admin-llm-add-btn')?.addEventListener('click', () => openLlmConnectionForm(null));
 

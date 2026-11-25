@@ -54,7 +54,10 @@ const load = async () => {
     const r = await api.call('admin_taxonomy', { space: '' });
     if (!r.success) { showToast(r.message || t('admin.tax.load-failed'), 'error'); return false; }
     _data = { mode: r.mode, nodes: r.nodes || [], counts: r.counts || {}, unclassified: r.unclassified || [],
-              fieldCounts: r.field_counts || {}, misplaced: r.misplaced || [] };
+              fieldCounts: r.field_counts || {}, misplaced: r.misplaced || [],
+              // List values naming each item, and the list fields bound to each folder
+              // (taxonomy_lists.php) — the server refuses a delete either would break.
+              listCounts: r.list_counts || {}, listRefs: r.list_refs || {} };
     _fields = boundFields(_data.nodes);
     // Folders first, then items, alphabetical — the order the tree, the arrow keys and
     // the Move/Merge lists all follow.
@@ -87,7 +90,13 @@ const valueUse = (path) => {
     }
     return n;
 };
-const inUse    = (path) => exactUse(path) + belowUse(path) + valueUse(path);
+/** List values naming `path` or an item below it. */
+const listUse = (path) => Object.entries(_data.listCounts || {})
+    .filter(([k]) => under(k, path)).reduce((a, [, n]) => a + n, 0);
+/** List fields bound to `path` or a folder below it. */
+const listRefsBelow = (path) => Object.entries(_data.listRefs || {})
+    .filter(([k]) => under(k, path)).flatMap(([, v]) => v);
+const inUse    = (path) => exactUse(path) + belowUse(path) + valueUse(path) + listUse(path) + listRefsBelow(path).length;
 
 // A folder sits at the top level or inside another folder — never inside an item
 // (taxonomy.php says why). These are the client's copies of that rule, so a button is off,
@@ -527,6 +536,9 @@ const renderDetails = () => {
     box.appendChild(el('p', 'tax-usage', n.heading
         ? t('admin.tax.d-usage-folder', { m: belowUse(n.path) })
         : t('admin.tax.d-usage-item', { n: exactUse(n.path), m: belowUse(n.path) })));
+    if (!n.heading && listUse(n.path)) box.appendChild(el('p', 'tax-usage', t('admin.tax.d-usage-list', { n: listUse(n.path) })));
+    const refs = n.heading ? (_data.listRefs?.[lc(n.path)] || []) : [];
+    if (refs.length) box.appendChild(el('p', 'tax-usage tax-list-refs', t('admin.tax.d-list-refs', { fields: refs.join(', ') })));
     const asValue = fieldOfValue(n.path);
     if (asValue && !n.heading) {
         const cnt = (_data.fieldCounts[lc(asValue.field)] || {})[lc(n.name)] || 0;

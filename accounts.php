@@ -185,6 +185,39 @@ function wiki_requests_mutate(callable $fn): mixed {
     }
 }
 
+// --- Display preferences ---------------------------------------------------------
+//
+// Two sizes, both a percentage in steps of 5: the interface (sidebar, labels, buttons,
+// dialogs — the root font size, 100% = 11pt) and the text of content (pages, lists, chat,
+// the editor), relative to the interface. They replaced one `fontSize` in points, which
+// is still read for an account that has not saved since: 10pt → 90% and so on. Defaults:
+// interface 100%, text 90%.
+
+// 'sans' is the system's own sans-serif (the default, and what it always meant); 'source' the
+// bundled Source Sans 3. 'system' was briefly the name for 'sans' and is read as it.
+const WIKI_FONTS      = ['sans', 'source', 'serif', 'mono'];
+const WIKI_UI_SCALE   = [80, 150];
+const WIKI_TEXT_SCALE = [70, 150];
+
+/** A percentage within [min, max] on a step of 5, or null for anything else. */
+function wiki_scale_valid($v, array $range): ?int {
+    if (!is_numeric($v)) return null;
+    $n = (int)$v;
+    return ((string)$n === trim((string)$v) && $n >= $range[0] && $n <= $range[1] && $n % 5 === 0) ? $n : null;
+}
+
+/** ['font', 'ui', 'text'] for a user record or a session user; defaults for anything unset. */
+function wiki_display_prefs(?array $u): array {
+    $u = $u ?? [];
+    $font = $u['fontFamily'] ?? '';
+    if ($font === 'system') $font = 'sans';
+    if (!in_array($font, WIKI_FONTS, true)) $font = 'sans';
+    $legacy = ['10pt' => 90, '11pt' => 100, '12pt' => 110, '14pt' => 125, '16pt' => 145];
+    $ui = wiki_scale_valid($u['uiScale'] ?? null, WIKI_UI_SCALE) ?? ($legacy[$u['fontSize'] ?? ''] ?? 100);
+    $text = wiki_scale_valid($u['textScale'] ?? null, WIKI_TEXT_SCALE) ?? 90;
+    return ['font' => $font, 'ui' => $ui, 'text' => $text];
+}
+
 // --- The session -----------------------------------------------------------------
 
 /**
@@ -199,8 +232,9 @@ function wiki_session_user(array $u, string $via, array $extra = []): array {
         'email'      => trim((string)($u['email'] ?? '')) ?: wiki_user_otp_email($u),
         'role'       => $u['role']       ?? 'editor',
         'spaces'     => $u['spaces']     ?? null,
-        'fontFamily' => $u['fontFamily'] ?? 'sans',
-        'fontSize'   => $u['fontSize']   ?? 'normal',
+        'fontFamily' => wiki_display_prefs($u)['font'],
+        'uiScale'    => wiki_display_prefs($u)['ui'],
+        'textScale'  => wiki_display_prefs($u)['text'],
         'auth'       => $via === 'sso' ? 'oidc' : ($via === 'password' ? 'password' : 'otp'),
         'via'        => $via,
         'signed_in_at' => time(),

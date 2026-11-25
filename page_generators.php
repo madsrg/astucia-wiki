@@ -335,6 +335,8 @@ function wiki_gen_rows(array $list, string $source_dir, array $source): array {
         $out = [];
         foreach ($subkeys as $sid => $k) {
             $v = $entry[$sid] ?? '';
+            // A choice allowing several values holds a list: printed joined, as the table does.
+            if (is_array($v) && array_is_list($v)) $v = implode('; ', array_map('strval', array_filter($v, 'is_scalar')));
             $out[$k] = is_scalar($v) ? (string)$v : '';
         }
         $out['_text'] = wiki_list_group_summary($col, $entry);

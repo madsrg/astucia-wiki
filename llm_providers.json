@@ -20,6 +20,66 @@
       "default_url": "https://api.anthropic.com/v1/messages"
     }
   ],
+  "_comment_presets": "Quick setup (the setup checklist's LLM Provider wizard): one card per service. Each is a preset for a provider above — 'provider' (its id), 'url' (the endpoint), 'model' (a suggestion the admin can change; model names go out of date, so review these), 'key_url' (where that service issues API keys) and 'no_key' for a local server that takes none. A service that speaks the OpenAI Chat Completions format needs only a preset, no code.",
+  "presets": [
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "provider": "openai",
+      "url": "https://api.openai.com/v1/chat/completions",
+      "model": "gpt-5",
+      "key_url": "https://platform.openai.com/api-keys"
+    },
+    {
+      "id": "anthropic",
+      "label": "Anthropic",
+      "provider": "anthropic",
+      "url": "https://api.anthropic.com/v1/messages",
+      "model": "claude-sonnet-5-5",
+      "key_url": "https://console.anthropic.com/settings/keys"
+    },
+    {
+      "id": "gemini",
+      "label": "Google Gemini",
+      "provider": "openai",
+      "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      "model": "gemini-2.5-flash",
+      "key_url": "https://aistudio.google.com/apikey"
+    },
+    {
+      "id": "mistral",
+      "label": "Mistral",
+      "provider": "openai",
+      "url": "https://api.mistral.ai/v1/chat/completions",
+      "model": "mistral-large-latest",
+      "key_url": "https://console.mistral.ai/api-keys"
+    },
+    {
+      "id": "openrouter",
+      "label": "OpenRouter",
+      "provider": "openai",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "model": "openrouter/auto",
+      "key_url": "https://openrouter.ai/keys"
+    },
+    {
+      "id": "groq",
+      "label": "Groq",
+      "provider": "openai",
+      "url": "https://api.groq.com/openai/v1/chat/completions",
+      "model": "llama-3.3-70b-versatile",
+      "key_url": "https://console.groq.com/keys"
+    },
+    {
+      "id": "ollama",
+      "label": "Ollama",
+      "provider": "openai",
+      "url": "http://localhost:11434/v1/chat/completions",
+      "model": "llama3.2",
+      "key_url": "https://ollama.com/download",
+      "no_key": true
+    }
+  ],
   "_comment_model_rules": "Per-MODEL request rules. The provider decides the wire format; the model decides which tuning parameters that format will accept, so these are matched separately. First matching 'match' pattern wins (case-insensitive regex, anchored patterns recommended); a model matching nothing gets the conservative defaults sampling=true, thinking=null, effort=false, reasoning_effort=false, i.e. exactly the pre-rules behaviour. Matching happens against the bare model name, after gateway prefixes and version tags are stripped (OpenRouter 'anthropic/claude-opus-5', Bedrock 'us.anthropic.claude-opus-5', Vertex 'claude-opus-5@2026...' all match '^claude-opus-5'). Patterns are prefixes, not exact names, so a point release inherits its predecessor's rules automatically — 'claude-sonnet-5-5' matches '^claude-sonnet-5'. That is why a new model in a known family usually needs no edit here; the longer names are listed anyway so the table says which models it has actually been checked against. The hazard is the same property: a future point release that needs DIFFERENT rules from its predecessor must get its own entry ABOVE the shorter pattern, or it will silently inherit the wrong ones. Fields: sampling (false = the model rejects temperature/top_p/top_k, so they are never sent), thinking ('adaptive' = Anthropic adaptive thinking, 'budget_tokens' = older fixed-budget extended thinking, null = the model cannot be asked to think), effort (supports output_config.effort), reasoning_effort (OpenAI reasoning_effort / responses reasoning.effort). Requests are also retried without a parameter the API rejects at runtime, so an unlisted model still works — the table just saves the wasted round trip.",
   "model_rules": [
     {

@@ -731,6 +731,13 @@ function wiki_tax_op(string $op, array $in): array {
             if ($heading && !$index[wiki_tax_lc($path)]['heading'] && ($fv = wiki_tax_value_use($path)) > 0) {
                 throw new WikiTaxonomyException($fv . ' page(s) use "' . end($segs) . '" as a field value, and a folder cannot be one.');
             }
+            if ($heading && !$index[wiki_tax_lc($path)]['heading'] && ($lv = wiki_tax_list_value_use($path)) > 0) {
+                throw new WikiTaxonomyException($lv . ' list value(s) use "' . end($segs) . '", and a folder cannot be one.');
+            }
+            if (!$heading && $index[wiki_tax_lc($path)]['heading'] && ($refs = wiki_tax_list_folder_refs($path))) {
+                throw new WikiTaxonomyException('List fields take their values from "' . $path . '" or a folder in it ('
+                    . implode(', ', $refs) . '), so it must stay a folder.');
+            }
             if (array_key_exists('field', $in)) {
                 $fname = trim((string)$in['field']);
                 if ($fname !== '' && ($why = wiki_tax_field_name_problem($fname)) !== '') throw new WikiTaxonomyException($why);
@@ -750,6 +757,7 @@ function wiki_tax_op(string $op, array $in): array {
                 throw new WikiTaxonomyException('"' . $path . '" contains folders, and a folder cannot be inside an item. Move them out first.');
             }
             $fields_before = wiki_tax_fields();
+            $nodes_before = wiki_tax_nodes();
             wiki_tax_mutate(function (array &$nodes) use ($segs, $name, $heading, $in) {
                 $parent = array_slice($segs, 0, -1);
                 $list = &_wiki_tax_children($nodes, $parent);
@@ -775,6 +783,7 @@ function wiki_tax_op(string $op, array $in): array {
             if ($newPath !== $path) {
                 $rewritten = wiki_tax_rewrite($path, $newPath);
                 $rewritten += _wiki_tax_follow_values($fields_before, $path, $newPath);
+                $rewritten += wiki_tax_lists_follow($nodes_before, $path, $newPath);
             }
             break;
         }
@@ -794,12 +803,15 @@ function wiki_tax_op(string $op, array $in): array {
             if ($index[wiki_tax_lc($path)]['heading'] && _wiki_tax_is_item($index, $parent)) {
                 throw new WikiTaxonomyException(WIKI_TAX_FOLDER_IN_ITEM);
             }
+            $nodes_before = wiki_tax_nodes();
             wiki_tax_mutate(function (array &$nodes) use ($segs, $parent) {
                 $node = _wiki_tax_take($nodes, $segs);
                 $list = &_wiki_tax_children($nodes, wiki_tax_split($parent));
                 $list[] = $node;
             }, "Taxonomy: move $path to $newPath");
             $rewritten = wiki_tax_rewrite($path, $newPath);
+            // A list field's folder follows; a value is a name, which a move does not change.
+            $rewritten += wiki_tax_lists_follow($nodes_before, $path, $newPath);
             break;
         }
 
@@ -816,6 +828,11 @@ function wiki_tax_op(string $op, array $in): array {
                 throw new WikiTaxonomyException('"' . $path . '" contains folders, and merging it into an item would put them inside one. Move them out first.');
             }
             $fields_before = wiki_tax_fields();
+            $nodes_before = wiki_tax_nodes();
+            if (_wiki_tax_is_item($index, $target) && ($refs = wiki_tax_list_folder_refs($path))) {
+                throw new WikiTaxonomyException('List fields take their values from "' . $path . '" or a folder in it ('
+                    . implode(', ', $refs) . '), and merging it into an item would leave them without one.');
+            }
             if ($index[wiki_tax_lc($target)]['heading'] && (wiki_tax_usage()[wiki_tax_lc($path)]['count'] ?? 0) > 0) {
                 throw new WikiTaxonomyException('"' . $target . '" is a folder, and pages tagged "' . $path . '" would end up tagged with it.');
             }
@@ -828,6 +845,7 @@ function wiki_tax_op(string $op, array $in): array {
             }, "Taxonomy: merge $path into $target");
             $rewritten = wiki_tax_rewrite($path, $target);
             $rewritten += _wiki_tax_follow_values($fields_before, $path, $target);
+            $rewritten += wiki_tax_lists_follow($nodes_before, $path, $target);
             break;
         }
 
@@ -841,6 +859,13 @@ function wiki_tax_op(string $op, array $in): array {
             $fv = wiki_tax_value_use($path);
             if ($fv > 0) throw new WikiTaxonomyException($fv . ' page(s) use "' . $path
                 . '" or an item below it as a field value. Merge it into another item instead, which moves those pages with it.');
+            $lv = wiki_tax_list_value_use($path);
+            if ($lv > 0) throw new WikiTaxonomyException($lv . ' list value(s) use "' . $path
+                . '" or an item below it. Merge it into another item instead, which moves those values with it.');
+            if ($refs = wiki_tax_list_folder_refs($path)) {
+                throw new WikiTaxonomyException('List fields take their values from "' . $path . '" or a folder in it: '
+                    . implode(', ', $refs) . '. Point them at another folder first.');
+            }
             wiki_tax_mutate(function (array &$nodes) use ($path) {
                 _wiki_tax_take($nodes, wiki_tax_split($path));
             }, "Taxonomy: delete $path");
@@ -910,3 +935,5 @@ function wiki_tax_import_check(string $raw): array {
 function wiki_tax_import(array $nodes): void {
     wiki_tax_mutate(function (array &$cur) use ($nodes) { $cur = $nodes; }, 'Taxonomy: import');
 }
+
+require_once __DIR__ . '/taxonomy_lists.php';

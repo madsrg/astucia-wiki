@@ -11,6 +11,10 @@
 // Field types:
 //   autoincrement            the hidden ItemId
 //   text_single, text_multi, date, choice
+//                            A choice's values are `options` (typed) — or, with `taxonomy`
+//                            (a folder's path), the names of the items anywhere inside that
+//                            taxonomy folder (taxonomy_lists.php). `multiple`: several values,
+//                            stored as an array. Both also on a group's choice sub-field.
 //   number                   a JSON number (or null). `decimals` (0–6) is how many it shows,
 //                            `unit` an optional word shown after it ("kr", "kg", "%"). Sorted
 //                            as a number; a view filter may compare: "> 10", "<= 5", "= 3".
@@ -38,6 +42,7 @@
 import { state } from '../core/state.js';
 import { api } from '../core/api.js';
 import { t, getLanguage } from '../i18n/index.js';
+import { getTaxonomy } from '../core/taxonomy.js';
 
 // Fields a lookup may display or "also show": plain values. Not another lookup — a chain
 // of lists to resolve for one cell is a second feature.
@@ -150,6 +155,82 @@ export const lookupsPending = (data) => lookupFields(data).some(c => !cache.has(
 const lookupIds = (value) => (Array.isArray(value) ? value : (value == null || value === '' ? [] : [value]))
     .map(v => parseInt(v, 10)).filter(Number.isFinite);
 
+// ── Choices from the taxonomy ─────────────────────────────────────────────────
+//
+// The tree is wiki-wide and changes rarely; it is fetched once a list that needs it is open
+// (getTaxonomy caches for 30 s) and held here, so building the item form and filtering the
+// table stay synchronous.
+
+let taxNodes = null;
+
+/** Choice fields and sub-fields of `data` that take their values from a taxonomy folder. */
+const taxonomyChoices = (data) => (data?.columns || []).flatMap(c =>
+    c.type === 'object' ? (c.fields || []).filter(f => f.type === 'choice' && f.taxonomy)
+                        : (c.type === 'choice' && c.taxonomy ? [c] : []));
+
+/** Is the tree still to be fetched for this list? */
+export const taxonomyPending = (data) => taxNodes === null && taxonomyChoices(data).length > 0;
+
+/** Fetch the tree when the list needs it (or `force`). Returns true when it arrived. */
+export const loadTaxonomy = async (data, { force = false } = {}) => {
+    if (!force && !taxonomyPending(data)) return false;
+    taxNodes = (await getTaxonomy(force)).nodes || [];
+    return true;
+};
+
+/** The folder node a field names, or null. */
+const taxFolder = (path) => {
+    let list = taxNodes || [], node = null;
+    for (const seg of String(path || '').split('/').map(x => x.trim()).filter(Boolean)) {
+        node = list.find(n => String(n.name).toLocaleLowerCase() === seg.toLocaleLowerCase()) || null;
+        if (!node) return null;
+        list = node.children || [];
+    }
+    return node && node.heading ? node : null;
+};
+
+/**
+ * What a Choice offers: [{ value, label, depth, heading }]. Typed choices are flat. A taxonomy
+ * folder gives its items at every depth, each under its subfolder's heading (headings are not
+ * values) — or null when the folder is gone.
+ */
+export const choiceOptions = (f) => {
+    if (!f?.taxonomy) return (f?.options || []).map(o => ({ value: o, label: o, depth: 0, heading: false }));
+    const folder = taxFolder(f.taxonomy);
+    if (!folder) return null;
+    const out = [];
+    const byName = (a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base', numeric: true });
+    const walk = (nodes, depth) => {
+        [...(nodes || [])].sort((a, b) => (!!b.heading - !!a.heading) || byName(a, b)).forEach(n => {
+            out.push({ value: n.heading ? '' : n.name, label: n.name, depth, heading: !!n.heading });
+            walk(n.children, depth + 1);
+        });
+    };
+    walk(folder.children, 0);
+    // A folder holding nothing but subfolders still has no values to offer.
+    return out;
+};
+
+/** A choice's value as a list of names — one, several, or none. */
+export const choiceValues = (v) => (Array.isArray(v) ? v : (v == null || v === '' ? [] : [v]))
+    .map(x => String(x)).filter(x => x.trim() !== '');
+
+/** For a filter: the names of the term or subfolder `name` and every item below it in the field's folder. */
+const taxonomyBelow = (f, name) => {
+    const folder = taxFolder(f.taxonomy);
+    if (!folder) return null;
+    const want = String(name).trim().toLocaleLowerCase();
+    let found = null;
+    // An item or a subfolder: "Finance" may be either, and both stand for what is below them.
+    const find = (nodes) => { for (const n of nodes || []) { if (found) return; if (String(n.name).toLocaleLowerCase() === want) found = n; else find(n.children); } };
+    find(folder.children);
+    if (!found) return null;
+    const names = [];
+    const all = (n) => { if (!n.heading) names.push(String(n.name).toLocaleLowerCase()); (n.children || []).forEach(all); };
+    all(found);
+    return names;
+};
+
 /** A number or Yes/No value as it reads; anything else as its text. */
 export const formatValue = (col, v) => {
     if (col?.type === 'number') {
@@ -159,6 +240,7 @@ export const formatValue = (col, v) => {
         return col.unit ? `${text} ${col.unit}` : text;
     }
     if (col?.type === 'boolean') return v === true ? t('list.yes') : t('list.no');
+    if (Array.isArray(v)) return choiceValues(v).join('; ');
     return v == null ? '' : String(v);
 };
 
@@ -213,6 +295,12 @@ export const filterMatches = (col, item, value, columns) => {
             const x = Number(m[2]);
             return { '<': n < x, '<=': n <= x, '>': n > x, '>=': n >= x, '=': n === x }[m[1] || '='];
         }
+    }
+    // A choice from the taxonomy: a filter naming a term matches it and every item below it —
+    // "Finance" finds Budget and Payroll, as tag search does. Anything else is "contains".
+    if (col?.type === 'choice' && col.taxonomy && needle) {
+        const below = taxonomyBelow(col, needle);
+        if (below) return choiceValues(item[col.id]).some(v => below.includes(v.toLocaleLowerCase()));
     }
     const text = col ? cellText(col, item, columns) : String(item?.[col?.id] ?? '');
     return text.toLowerCase().includes(needle.toLowerCase());
@@ -282,7 +370,8 @@ const summaryFields = (col) => {
 
 /** One entry as one line — "Main St 1, Oslo": its summary fields, empty ones left out. */
 export const groupSummary = (col, entry) => summaryFields(col)
-    .map(id => entry?.[id]).filter(v => v != null && String(v).trim() !== '')
+    .map(id => (Array.isArray(entry?.[id]) ? choiceValues(entry[id]).join(', ') : entry?.[id]))
+    .filter(v => v != null && String(v).trim() !== '')
     .map(String).join(', ');
 
 /**

@@ -32,7 +32,7 @@ document.addEventListener('keydown', (e) => {
  * Dress `select` (once). `placeholder` is what the box says with nothing chosen.
  * Returns the wrapper, which also carries `sync()`.
  */
-export const enhanceSelect = (select, { placeholder = '' } = {}) => {
+export const enhanceSelect = (select, { placeholder = '', menuClass = '' } = {}) => {
     if (!select || select.dataset.dd) return select?.closest('.dd');
     select.dataset.dd = '1';
     const wrap = document.createElement('span');
@@ -91,8 +91,21 @@ export const enhanceSelect = (select, { placeholder = '' } = {}) => {
             // The empty option is "nothing chosen": a row for clearing a value, but not
             // in a multi-select, and not where it is only a prompt (data-dd-prompt).
             if (opt.value === '' && (select.multiple || 'ddPrompt' in select.dataset)) return;
+            // A disabled option is a heading — a taxonomy folder above its items: shown, never
+            // picked, and skipped by the keyboard. `data-depth` indents a row under its heading.
+            const depth = parseInt(opt.dataset.depth || '0', 10) || 0;
+            if (opt.disabled) {
+                const h = document.createElement('div');
+                h.className = 'dd-heading';
+                h.textContent = opt.textContent;
+                if (depth) h.style.paddingLeft = `${0.75 + depth * 0.9}rem`;
+                h.addEventListener('mousedown', (e) => e.preventDefault());
+                menu.appendChild(h);
+                return;
+            }
             const it = document.createElement('div');
             it.className = 'dd-item' + (opt.selected ? ' is-selected' : '') + (opt.dataset.note ? ' is-note' : '');
+            if (depth) it.style.paddingLeft = `${0.5 + depth * 0.9}rem`;
             it.setAttribute('role', 'option');
             it.setAttribute('aria-selected', opt.selected ? 'true' : 'false');
             it.dataset.value = opt.value;
@@ -123,7 +136,7 @@ export const enhanceSelect = (select, { placeholder = '' } = {}) => {
     const open = () => {
         closeOpen();
         menu = document.createElement('div');
-        menu.className = 'dd-menu';
+        menu.className = 'dd-menu' + (menuClass ? ' ' + menuClass : '');
         menu.setAttribute('role', 'listbox');
         if (select.multiple) menu.setAttribute('aria-multiselectable', 'true');
         render();

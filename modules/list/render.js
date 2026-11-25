@@ -2,6 +2,7 @@
 // Free software under the GNU GPL v3 or later. See LICENSE for the full notice,
 // or <https://www.gnu.org/licenses/>. Distributed WITHOUT ANY WARRANTY.
 import { state } from '../core/state.js';
+import { taxonomyPending, loadTaxonomy } from './fields.js';
 import { cellText, cellParts, partsElement, normalizeList, loadLookupTargets, lookupsPending,
          setLookupSpace, filterMatches, sortValue, commentEntries, commentsOn, COMMENTS } from './fields.js';
 import { icons } from '../core/icons.js';
@@ -95,6 +96,14 @@ export const renderListView = () => {
     if (lookupsPending(state.currentListData)) {
         const data = state.currentListData;
         loadLookupTargets(data).then(changed => {
+            if (changed && state.currentListData === data) renderListView();
+        });
+    }
+    // A choice from the taxonomy needs the tree for its view filters ("Finance" matches the
+    // items below it) — fetched once, then painted again.
+    if (taxonomyPending(state.currentListData)) {
+        const data = state.currentListData;
+        loadTaxonomy(data).then(changed => {
             if (changed && state.currentListData === data) renderListView();
         });
     }
