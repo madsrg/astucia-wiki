@@ -22,7 +22,8 @@ optional git version history.
 to date as the list changes: a customer page per customer, in Markdown or HTML, with cards for
 the groups and linked items each row holds. An edit button on the page opens the row's item,
 comments can be added in place, and the page shows the change as soon as it is saved. Lists
-have text, number, Yes/No, date, choice, lookup and group fields, and a comment log on every item.
+have text, number, Yes/No, date, choice, lookup and group fields — a choice can take its values
+from a folder of the taxonomy — and a comment log on every item.
 
 **Tags with a taxonomy** — one tree of tags for the whole wiki: folders group, items are the
 tags pages carry (`Department/Finance`). A tree editor to rename, move and merge — every page
@@ -42,7 +43,8 @@ one of the items in Department — chosen from a dropdown and searchable as
 `department:Finance`. All off by default: on a Space that mirrors somebody's vault, the
 wiki does not touch the block at all.
 
-**AI** — AI users that read and write wiki pages · one-off agent jobs, and scheduled ones
+**AI** — AI users that read and write wiki pages, **create lists and add items to them**, and
+**hand a conversation on to each other** by mentioning another AI user · one-off agent jobs, and scheduled ones
 that run from every few minutes to once a year, or on any **cron expression** · team and
 per-page chat · **AI memory**, so an AI keeps what it learns as ordinary pages you can read
 and correct · **AI skills** — procedures an administrator writes once, in the open Agent
@@ -64,6 +66,9 @@ codes, both, or username and password · **automatic access** for SSO sign-ins b
 their claims · mentions, page comments and a daily digest email · an optional audit log · **retention
 policies** for chat, mentions and every log the wiki writes · a REST API
 with service tokens, stored only as a hash · UI in nine languages.
+
+**A setup checklist** shows administrators what is set up and what is left, with wizards that
+connect an LLM provider or an email service in a minute — each tested before it is saved.
 
 **Live updates** — a **Mercure** hub ships inside the image and is **on by default**, so
 chats, pages, the file tree, mentions and job results arrive by push instead of polling.
@@ -92,7 +97,7 @@ docker run -d \
     --restart=always \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
-    madsrotwitt/astucia-wiki:2026.11.4
+    madsrotwitt/astucia-wiki:2026.11.5
 ```
 
 Open <http://localhost:8080>. A fresh install creates a Space called **Main** with a start
@@ -118,7 +123,7 @@ docker run -d \
     -p 8080:80 \
     -v /srv/astucia-wiki/data:/data \
     --env-file /srv/astucia-wiki/wiki.env \
-    madsrotwitt/astucia-wiki:2026.11.4
+    madsrotwitt/astucia-wiki:2026.11.5
 ```
 
 Docker parses that file itself, not a shell: **do not quote values** (`APP_TITLE=My Wiki`, not
@@ -128,7 +133,7 @@ value. Back the file up separately from the data volume; it may hold mail creden
 ## Podman
 
 The same image runs under Podman — name the registry in full,
-`docker.io/madsrotwitt/astucia-wiki:2026.11.4`. For a rootless install with a host
+`docker.io/madsrotwitt/astucia-wiki:2026.11.5`. For a rootless install with a host
 directory, add `--userns=keep-id:uid=82,gid=82 --user 0` so your files stay yours. The
 repository ships a ready-made Quadlet unit, `docker/astucia-wiki.container`, for running it
 as a systemd service with `podman auto-update`; see *With Podman* in `DOCKER.md`.
@@ -138,7 +143,7 @@ as a systemd service with `podman auto-update`; see *With Podman* in `DOCKER.md`
 | Tag | Mutability |
 |-----|-----------|
 | `sha-<commit>` | **immutable** — one commit, one image. Pin this in production |
-| `2026.11.4` | moves only if that release is rebuilt |
+| `2026.11.5` | moves only if that release is rebuilt |
 | `latest` | moves on every release |
 
 The image carries OCI labels, so a running container can always tell you what it is:
